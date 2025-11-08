@@ -1,6 +1,6 @@
 import React from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
+import { href, Link, useLocation } from 'react-router-dom';
+// import { useAuth } from '../contexts/AuthContext';
 import {
   Home,
   Package,
@@ -12,7 +12,9 @@ import {
   Wrench,
   ScanLine,
   LogOut,
-  User
+  User,
+  FactoryIcon,
+   LayoutDashboard
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -20,7 +22,7 @@ interface LayoutProps {
 }
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
-  const { user, logout } = useAuth();
+  // const { user, logout } = useAuth();
   const location = useLocation();
 
   const navigation = [
@@ -33,12 +35,22 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: 'Product Lifecycle', href: '/product-lifecycle', icon: GitBranch },
     { name: 'Repair', href: '/repair', icon: Wrench },
     { name: 'Barcode', href: '/barcode', icon: ScanLine },
+    { name: 'Production Management', href: '/production-management', icon: FactoryIcon },
+    { name: 'Production Management Dashboard', href: '/production-management/dashboard', icon: LayoutDashboard },
+    { name: 'Dashboard2', href: '/dashboard2', icon: LayoutDashboard },
+    { name: 'Item Master', href: '/item-master', icon: Package },
+    { name: 'BOM Management', href: '/bom-management', icon: FactoryIcon },
+    { name: 'Product Orders', href: '/product-orders', icon: ShoppingCart },
+    { name: 'Quality Control', href: '/quality-control', icon: Shield },
+    { name: 'Work Center Management', href: '/work-center-management', icon: Factory },
+    { name: 'Reports', href: '/reports', icon: Factory },
+    // { name: 'New', href: '/new', icon: Home }
   ];
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Sidebar */}
-      <div className="fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg">
+      <div className="fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg overflow-y-auto">
         <div className="flex h-full flex-col">
           {/* Logo */}
           <div className="flex h-16 items-center justify-center border-b border-gray-200">
@@ -78,12 +90,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <User className="h-8 w-8 text-gray-400" />
               </div>
               <div className="ml-3">
-                <p className="text-sm font-medium text-gray-700">{user?.name}</p>
-                <p className="text-xs text-gray-500">{user?.role}</p>
+                {/* <p className="text-sm font-medium text-gray-700">{user?.name}</p> */}
+                {/* <p className="text-xs text-gray-500">{user?.role}</p> */}
               </div>
             </div>
             <button
-              onClick={logout}
+              // onClick={logout}
               className="mt-3 w-full flex items-center px-2 py-2 text-sm font-medium text-gray-600 rounded-md hover:bg-gray-50 hover:text-gray-900 transition-colors"
             >
               <LogOut className="mr-3 h-4 w-4" />
