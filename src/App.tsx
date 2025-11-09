@@ -21,15 +21,23 @@ import Quality from './pages/modules/Quality';
 import ProductLifecycle from './pages/modules/ProductLifecycle';
 import Repair from './pages/modules/Repair';
 import Barcode from './pages/modules/Barcode';
-import ProductionManagement from './pages/modules/ProductionManagement';
-import ProductionDashboard from './pages/modules/ProductionDashboard';
+// import ProductionManagement from './pages/modules/ProductionManagement';
+// import ProductionDashboard from './pages/modules/ProductionDashboard';
 import Dash from './pages/modules/Dashboard2';
 import ItemMaster from './pages/modules/ItemMaster';
 import BOMManagement from './pages/modules/BOMManagement';
 import ProductionOrders from './pages/modules/ProductOrder';
 import QualityControl from './pages/modules/QualityControl';
 import WorkCenterManagement from './pages/modules/WorkCenterManagement';
-import ReportsPage from './pages/modules/Reports'; 
+// import ReportsPage from './pages/modules/Reports'; 
+import Dashboard3 from './pages/modules/Dashboard3';
+import BudgetPage from './pages/modules/Budget';
+import Projects from './pages/modules/Projects';
+import Reports from './pages/modules/Reports2';
+import Progress from './pages/modules/Progress';
+import WBS from './pages/modules/WBS';
+import Resources from './pages/modules/Resources';
+import Milestones from './pages/modules/MileStones';
 // import Page from './pages/modules/Page';
 // import ProtectedRoute from './components/ProtectedRoute';
 
@@ -41,7 +49,15 @@ function App() {
         <div className="min-h-screen bg-gray-50">
           <Routes>
             {/* <Route path="/login" element={<Login />} /> */}
-            <Route path="/reports" element={<ReportsPage />} />
+            <Route path="/dashboard3" element={<Dashboard3 />} />
+            <Route path="/budget" element={<BudgetPage />} />
+            <Route path="/projects" element={<Projects />} />
+            <Route path="/wbs" element={<WBS />} />
+            <Route path="/resources" element={<Resources />} />
+            <Route path="/projects-reports" element={<Reports />} />
+            <Route path="/progress" element={<Progress />} />
+            <Route path="/milestones" element={<Milestones />} />
+            {/* <Route path="/reports" element={<ReportsPage />} /> */}
             <Route path="/" element={<Dashboard />} />
             {/* <Route path="/new" element={<Page />} /> */}
             <Route path="/work-center-management" element={<WorkCenterManagement />} />
@@ -50,8 +66,8 @@ function App() {
             <Route path="/bom-management" element={<BOMManagement />} />
             <Route path="/item-master" element={<ItemMaster />} />
             <Route path="/dashboard2" element={<Dash />} />
-            <Route path="/production-management" element={<ProductionManagement />} />
-            <Route path="/production-management/dashboard" element={<ProductionDashboard />} />
+            {/* <Route path="/production-management" element={<ProductionManagement />} /> */}
+            {/* <Route path="/production-management/dashboard" element={<ProductionDashboard />} /> */}
             <Route path="/inventory" element={<Inventory />} />
             <Route path="/inventory/receipt" element={<Receipt />} />
             <Route path="/inventory/deliveries" element={<Deliveries />} />

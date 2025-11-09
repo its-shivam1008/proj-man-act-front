@@ -1,3 +1,107 @@
+// types/erpModels.ts
+
+// ============================================================================
+// 🏗 PROJECT MANAGEMENT ENTITIES
+// ============================================================================
+
+export interface Project {
+  id: string;
+  code: string;
+  name: string;
+  client: string;
+  type: "construction" | "infrastructure" | "renovation" | "other";
+  location: string;
+  budget: number;
+  startDate: string;
+  endDate: string;
+  manager: string;
+  status: "planning" | "active" | "on-hold" | "completed" | "cancelled";
+  progress: number;
+  actualCost: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WBSItem {
+  id: string;
+  projectId: string;
+  parentId?: string;
+  name: string;
+  description: string;
+  type: "phase" | "activity" | "task";
+  startDate: string;
+  endDate: string;
+  duration: number;
+  assignedTeam: string[];
+  plannedCost: number;
+  actualCost: number;
+  progress: number;
+  status: "not-started" | "in-progress" | "completed" | "delayed";
+  dependencies: string[];
+  createdAt: string;
+}
+
+export interface Resource {
+  id: string;
+  projectId: string;
+  wbsItemId?: string;
+  type: "labour" | "equipment" | "material";
+  name: string;
+  quantity: number;
+  unit: string;
+  rate: number;
+  totalCost: number;
+  availability: "available" | "booked" | "unavailable";
+  assignedDate?: string;
+  createdAt: string;
+}
+
+export interface Budget {
+  id: string;
+  projectId: string;
+  category: "material" | "labour" | "equipment" | "overhead" | "other";
+  description: string;
+  plannedAmount: number;
+  actualAmount: number;
+  variance: number;
+  variancePercent: number;
+  status: "within-budget" | "over-budget" | "critical";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProgressUpdate {
+  id: string;
+  projectId: string;
+  wbsItemId: string;
+  date: string;
+  percentComplete: number;
+  materialUsed: { name: string; quantity: number; unit: string }[];
+  labourHours: number;
+  equipmentHours: number;
+  remarks: string;
+  photos?: string[];
+  updatedBy: string;
+  createdAt: string;
+}
+
+export interface Milestone {
+  id: string;
+  projectId: string;
+  name: string;
+  description: string;
+  dueDate: string;
+  value: number;
+  percentValue: number;
+  status: "pending" | "achieved" | "delayed";
+  billingStatus: "not-billed" | "billed" | "paid";
+  achievedDate?: string;
+  createdAt: string;
+}
+
+// ============================================================================
+// 🏭 MANUFACTURING & PRODUCTION ENTITIES
+// ============================================================================
 
 export interface BOMItem {
   materialId: string;
@@ -12,7 +116,7 @@ export interface BOM {
   productName: string;
   items: BOMItem[];
   version: string;
-  status: 'active' | 'inactive' | 'draft';
+  status: "active" | "inactive" | "draft";
   createdAt: string;
   updatedAt: string;
 }
@@ -37,8 +141,8 @@ export interface WorkOrder {
   plannedEndDate: string;
   actualStartDate?: string;
   actualEndDate?: string;
-  status: 'planned' | 'in-progress' | 'completed' | 'cancelled';
-  priority: 'low' | 'medium' | 'high' | 'urgent';
+  status: "planned" | "in-progress" | "completed" | "cancelled";
+  priority: "low" | "medium" | "high" | "urgent";
   assignedTo?: string;
   routing: RoutingStep[];
   producedQuantity: number;
@@ -55,8 +159,8 @@ export interface WorkCenter {
   capacity: number; // hours per day
   costPerHour: number;
   efficiency: number; // percentage
-  status: 'active' | 'maintenance' | 'inactive';
-  shift: 'single' | 'double' | 'triple';
+  status: "active" | "maintenance" | "inactive";
+  shift: "single" | "double" | "triple";
   operatorCount: number;
   createdAt: string;
   updatedAt: string;
@@ -74,7 +178,7 @@ export interface MaterialIssue {
   unit: string;
   issuedBy: string;
   issuedDate: string;
-  status: 'issued' | 'backflushed' | 'returned';
+  status: "issued" | "backflushed" | "returned";
   notes?: string;
   createdAt: string;
 }
@@ -84,11 +188,11 @@ export interface QualityCheck {
   checkNumber: string;
   workOrderId: string;
   workOrderNumber: string;
-  inspectionType: 'in-process' | 'final' | 'material';
+  inspectionType: "in-process" | "final" | "material";
   parameter: string;
   standardValue: string;
   actualValue: string;
-  result: 'pass' | 'fail' | 'pending';
+  result: "pass" | "fail" | "pending";
   inspectedBy: string;
   inspectedDate: string;
   notes?: string;
@@ -115,10 +219,14 @@ export interface Material {
   createdAt: string;
 }
 
+// ============================================================================
+// 📊 ANALYTICS & PERFORMANCE
+// ============================================================================
+
 export interface KPI {
   label: string;
   value: string | number;
   change?: number;
-  trend?: 'up' | 'down' | 'stable';
-  type: 'success' | 'warning' | 'danger' | 'info';
+  trend?: "up" | "down" | "stable";
+  type: "success" | "warning" | "danger" | "info";
 }

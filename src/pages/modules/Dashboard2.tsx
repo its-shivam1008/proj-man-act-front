@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import KPICard from '../../components/KPI-Card'
+import {KPICard} from '../../components/KPI-Card'
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { storage, STORAGE_KEYS } from '../../lib/storage';
 import { WorkOrder, QualityCheck, WorkCenter } from '../../types/production';

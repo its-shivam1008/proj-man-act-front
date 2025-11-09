@@ -14,7 +14,11 @@ import {
   LogOut,
   User,
   FactoryIcon,
-   LayoutDashboard
+   LayoutDashboard,
+   CircleDollarSign,
+   FolderKanban,
+   Network,
+    Flag,
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -35,22 +39,35 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: 'Product Lifecycle', href: '/product-lifecycle', icon: GitBranch },
     { name: 'Repair', href: '/repair', icon: Wrench },
     { name: 'Barcode', href: '/barcode', icon: ScanLine },
-    { name: 'Production Management', href: '/production-management', icon: FactoryIcon },
-    { name: 'Production Management Dashboard', href: '/production-management/dashboard', icon: LayoutDashboard },
-    { name: 'Dashboard2', href: '/dashboard2', icon: LayoutDashboard },
-    { name: 'Item Master', href: '/item-master', icon: Package },
+    // { name: 'Production Management', href: '/production-management', icon: FactoryIcon },
+    // { name: 'Production Management Dashboard', href: '/production-management/dashboard', icon: LayoutDashboard },
+    //Projects
+    {name:'Project Dashboard',href:'/dashboard3',icon:FolderKanban},
+    {name:'Projects',href:'/projects' ,icon:FolderKanban},
+    {name:'WBS Management',href:'/wbs' ,icon:Network},
+    {name:'Resources',href:'/resources' ,icon:User},
+    {name:'Budget & Cost',href:'/budget' ,icon:CircleDollarSign},
+    {name:'Progress Updates',href:'/progress' ,icon:GitBranch},
+    {name:'Milestones',href:'/milestones' ,icon:Flag},
+    // {name:'Projects Reports',href:'/projects-reports' ,icon:Factory},
+
+
+    //Production
+    { name: 'Production Dashboard ', href: '/dashboard2', icon: LayoutDashboard },
+    { name: 'Item Master', href: '/item-master', icon: Package }, 
     { name: 'BOM Management', href: '/bom-management', icon: FactoryIcon },
     { name: 'Product Orders', href: '/product-orders', icon: ShoppingCart },
     { name: 'Quality Control', href: '/quality-control', icon: Shield },
     { name: 'Work Center Management', href: '/work-center-management', icon: Factory },
     { name: 'Reports', href: '/reports', icon: Factory },
+    // {name:'Budget',href:'/budget' ,icon:CircleDollarSign}
     // { name: 'New', href: '/new', icon: Home }
   ];
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Sidebar */}
-      <div className="fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg overflow-y-auto">
+      <div className="fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg overflow-y-auto ">
         <div className="flex h-full flex-col">
           {/* Logo */}
           <div className="flex h-16 items-center justify-center border-b border-gray-200">
