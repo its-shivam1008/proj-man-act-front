@@ -19,6 +19,10 @@ import {
    FolderKanban,
    Network,
     Flag,
+    TrendingUp,      // <-- Add this
+  AlertTriangle, // <-- Add this
+  Droplet,
+  HandCoins,
 } from 'lucide-react';
 
 // interface LayoutProps {
@@ -62,6 +66,19 @@ const Layout: React.FC = () => {
     { name: 'Reports', href: '/reports', icon: Factory },
     // {name:'Budget',href:'/budget' ,icon:CircleDollarSign}
     // { name: 'New', href: '/new', icon: Home }
+
+    // --- ADD PLANT & MACHINERY LINKS BELOW ---
+    { name: 'Plant & Machinery', href: '/plant-machinery', icon: FactoryIcon },
+    { name: 'Equipment Mgt', href: '/plant-machinery/equipment', icon: Settings },
+    { name: 'Preventive Maint.', href: '/plant-machinery/preventive-maintenance', icon: Wrench },
+    { name: 'Breakdown Mgt', href: '/plant-machinery/breakdown', icon: AlertTriangle },
+    { name: 'Spare Parts', href: '/plant-machinery/spare-parts', icon: Package },
+    { name: 'Fuel & Lubricant', href: '/plant-machinery/fuel', icon: Droplet },
+    { name: 'Calibration & Safety', href: '/plant-machinery/safety', icon: Shield },
+    { name: 'Equipment Allocation', href: '/plant-machinery/allocation', icon: HandCoins },
+    { name: 'Equipment Costing', href: '/plant-machinery/costing', icon: CircleDollarSign },
+    { name: 'P&M Reports', href: '/plant-machinery/reports', icon: TrendingUp },
+    // --- END OF NEW LINKS ---
   ];
 
   return (
@@ -70,8 +87,8 @@ const Layout: React.FC = () => {
       <div className="fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg overflow-y-auto ">
         <div className="flex h-full flex-col">
           {/* Logo */}
-          <div className="flex h-16 items-center justify-center border-b border-gray-200">
-            <h1 className="text-xl font-bold text-gray-900">SCM Pro</h1>
+          <div className="flex h-fit items-center justify-center border-b border-gray-200">
+            <h1 className="text-xl py-4 font-bold text-gray-900">SCM Pro</h1>
           </div>
 
           {/* Navigation */}
@@ -101,7 +118,7 @@ const Layout: React.FC = () => {
           </nav>
 
           {/* User Profile */}
-          <div className="border-t border-gray-200 p-4">
+          <div className="border-t border-gray-200 p-4 flex items-center ">
             <div className="flex items-center">
               <div className="flex-shrink-0">
                 <User className="h-8 w-8 text-gray-400" />

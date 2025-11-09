@@ -54,7 +54,7 @@ const Barcode: React.FC = () => {
   };
 
   return (
-    <Layout>
+    // <Layout>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -239,7 +239,7 @@ const Barcode: React.FC = () => {
           </div>
         </div>
       </div>
-    </Layout>
+    // </Layout>
   );
 };
 

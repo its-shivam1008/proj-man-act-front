@@ -1792,7 +1792,7 @@ const Quality: React.FC = () => {
   };
 
   return (
-    <Layout>
+    // <Layout>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -1838,7 +1838,7 @@ const Quality: React.FC = () => {
         {showCreateAlertForm && <CreateAlertForm />}
         {showCreateTeamForm && <CreateTeamForm />}
       </div>
-    </Layout>
+    // </Layout>
   );
 };
 

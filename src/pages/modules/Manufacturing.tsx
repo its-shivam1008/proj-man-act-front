@@ -1853,7 +1853,7 @@ const Manufacturing: React.FC = () => {
   };
 
   return (
-    <Layout>
+    // <Layout>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -1899,7 +1899,7 @@ const Manufacturing: React.FC = () => {
         {showScheduleForm && <ScheduleOrderForm />}
         {showCreateBOMForm && <CreateBOMForm />}
       </div>
-    </Layout>
+    // </Layout>
   );
 };
 

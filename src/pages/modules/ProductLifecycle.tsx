@@ -1354,7 +1354,7 @@ const ProductLifecycle: React.FC = () => {
   };
 
   return (
-    <Layout>
+    // <Layout>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -1397,7 +1397,7 @@ const ProductLifecycle: React.FC = () => {
         {/* Create Forms */}
         {showCreateEcoForm && <CreateEcoForm />}
       </div>
-    </Layout>
+    // </Layout>
   );
 };
 

@@ -41,6 +41,18 @@ import Resources from './pages/modules/Resources';
 import Milestones from './pages/modules/MileStones';
 // import Page from './pages/modules/Page';
 // import ProtectedRoute from './components/ProtectedRoute';
+import PlantMachinery from './pages/modules/PlantMachinery';
+import BreakdownMaintenancePage from './pages/modules/plant-machinery/BreakdownMaintenance';
+import CalibrationSafetyPage from './pages/modules/plant-machinery/CalibrationSafety';
+import PlantMachineryDashboard from './pages/modules/plant-machinery/Dashboard';
+import EquipmentAllocationPage from './pages/modules/plant-machinery/EquipmentAllocation';
+import EquipmentCostingPage from './pages/modules/plant-machinery/EquipmentCosting';
+import EquipmentMaster from './pages/modules/plant-machinery/EquipmentMaster';
+import FuelLubricantPage from './pages/modules/plant-machinery/FuelLubricant';
+import PreventiveMaintenancePage from './pages/modules/plant-machinery/PreventiveMaintenance';
+import PlantMachineryReportsPage from './pages/modules/plant-machinery/Reports';
+import SparePartsPage from './pages/modules/plant-machinery/SpareParts';
+
 
 function App() {
   return (
@@ -87,6 +99,16 @@ function App() {
             <Route path="/product-lifecycle" element={<ProductLifecycle />} />
             <Route path="/repair" element={<Repair />} />
             <Route path="/barcode" element={<Barcode />} />
+            <Route path="/plant-machinery" element={<PlantMachineryDashboard />} />
+            <Route path="/plant-machinery/equipment" element={<EquipmentMaster />} />
+            <Route path="/plant-machinery/preventive-maintenance" element={<PreventiveMaintenancePage />} />
+            <Route path="/plant-machinery/breakdown" element={<BreakdownMaintenancePage />} />
+            <Route path="/plant-machinery/spare-parts" element={<SparePartsPage />} />
+            <Route path="/plant-machinery/fuel" element={<FuelLubricantPage />} />
+            <Route path="/plant-machinery/allocation" element={<EquipmentAllocationPage />} />
+            <Route path="/plant-machinery/Safety" element={<CalibrationSafetyPage />} />
+            <Route path="/plant-machinery/costing" element={<EquipmentCostingPage />} />
+            <Route path="/plant-machinery/reports" element={<PlantMachineryReportsPage />} />
             </Route>
           </Routes>
         </div>
