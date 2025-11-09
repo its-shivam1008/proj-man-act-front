@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 // import { AuthProvider } from './contexts/AuthContext';
+import Layout from './components/Layout';
 import { DataProvider } from './contexts/DataContext';
 // import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -29,7 +30,7 @@ import BOMManagement from './pages/modules/BOMManagement';
 import ProductionOrders from './pages/modules/ProductOrder';
 import QualityControl from './pages/modules/QualityControl';
 import WorkCenterManagement from './pages/modules/WorkCenterManagement';
-// import ReportsPage from './pages/modules/Reports'; 
+import ReportsPage from './pages/modules/Reports'; 
 import Dashboard3 from './pages/modules/Dashboard3';
 import BudgetPage from './pages/modules/Budget';
 import Projects from './pages/modules/Projects';
@@ -49,6 +50,7 @@ function App() {
         <div className="min-h-screen bg-gray-50">
           <Routes>
             {/* <Route path="/login" element={<Login />} /> */}
+            <Route element={<Layout />}>
             <Route path="/dashboard3" element={<Dashboard3 />} />
             <Route path="/budget" element={<BudgetPage />} />
             <Route path="/projects" element={<Projects />} />
@@ -57,7 +59,7 @@ function App() {
             <Route path="/projects-reports" element={<Reports />} />
             <Route path="/progress" element={<Progress />} />
             <Route path="/milestones" element={<Milestones />} />
-            {/* <Route path="/reports" element={<ReportsPage />} /> */}
+            <Route path="/reports" element={<ReportsPage />} />
             <Route path="/" element={<Dashboard />} />
             {/* <Route path="/new" element={<Page />} /> */}
             <Route path="/work-center-management" element={<WorkCenterManagement />} />
@@ -85,6 +87,7 @@ function App() {
             <Route path="/product-lifecycle" element={<ProductLifecycle />} />
             <Route path="/repair" element={<Repair />} />
             <Route path="/barcode" element={<Barcode />} />
+            </Route>
           </Routes>
         </div>
       </DataProvider>

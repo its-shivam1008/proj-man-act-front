@@ -1,6 +1,7 @@
-import { Card, CardContent } from "../components/ui/card";
+// import { Card, CardContent } from "../components/ui/card";
 import { TrendingUp, TrendingDown, Minus, LucideIcon } from "lucide-react";
 import { cn } from "../lib/utils";
+import { Card, CardContent } from "./ui/card";
 
 interface KPICardProps {
   title: string;
@@ -8,7 +9,7 @@ interface KPICardProps {
   change?: number;
   trend?: "up" | "down" | "stable";
   type?: "success" | "warning" | "danger" | "info";
-  icon?: LucideIcon;
+  icon?: any;
 }
 
 export function KPICard({ title, value, change, trend, type = "info", icon: Icon }: KPICardProps) {

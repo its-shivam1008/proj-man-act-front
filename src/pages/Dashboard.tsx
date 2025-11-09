@@ -135,7 +135,7 @@ const Dashboard: React.FC = () => {
   ];
 
   return (
-    <Layout>
+    // <Layout>
       <div className="space-y-6">
         {/* Header */}
         <div>
@@ -256,7 +256,7 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
       </div>
-    </Layout>
+    // </Layout>
   );
 };
 

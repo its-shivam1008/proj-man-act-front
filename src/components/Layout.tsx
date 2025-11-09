@@ -1,5 +1,5 @@
 import React from 'react';
-import { href, Link, useLocation } from 'react-router-dom';
+import { href, Link, useLocation, Outlet } from 'react-router-dom';
 // import { useAuth } from '../contexts/AuthContext';
 import {
   Home,
@@ -21,11 +21,11 @@ import {
     Flag,
 } from 'lucide-react';
 
-interface LayoutProps {
-  children: React.ReactNode;
-}
+// interface LayoutProps {
+//   children: React.ReactNode;
+// }
 
-const Layout: React.FC<LayoutProps> = ({ children }) => {
+const Layout: React.FC = () => {
   // const { user, logout } = useAuth();
   const location = useLocation();
 
@@ -126,7 +126,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       <div className="pl-64">
         <main className="py-6">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            {children}
+            <Outlet />
           </div>
         </main>
       </div>

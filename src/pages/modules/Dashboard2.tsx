@@ -60,45 +60,51 @@ export default function Dashboard() {
       {/* KPI Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <KPICard
-          label="Active Work Orders"
+          title="Active Work Orders"
           value={kpis.activeOrders}
           type="info"
-          icon={<Activity className="w-5 h-5" />}
+          icon={Activity}
         />
+
         <KPICard
-          label="Completed Orders"
+          title="Completed Orders"
           value={kpis.completedOrders}
           type="success"
-          icon={<CheckCircle2 className="w-5 h-5" />}
+          icon={CheckCircle2}
         />
+
         <KPICard
-          label="Production Efficiency"
+          title="Production Efficiency"
           value={`${kpis.efficiency}%`}
           change={kpis.efficiency - 85}
-          trend={kpis.efficiency > 85 ? 'up' : 'down'}
-          type={kpis.efficiency > 85 ? 'success' : 'warning'}
-          icon={<TrendingUp className="w-5 h-5" />}
+          trend={kpis.efficiency > 85 ? "up" : "down"}
+          type={kpis.efficiency > 85 ? "success" : "warning"}
+          icon={TrendingUp}
         />
+
         <KPICard
-          label="Quality Pass Rate"
+          title="Quality Pass Rate"
           value={`${kpis.qualityRate}%`}
           change={kpis.qualityRate - 95}
-          trend={kpis.qualityRate > 95 ? 'up' : 'down'}
-          type={kpis.qualityRate > 95 ? 'success' : 'warning'}
-          icon={<CheckCircle2 className="w-5 h-5" />}
+          trend={kpis.qualityRate > 95 ? "up" : "down"}
+          type={kpis.qualityRate > 95 ? "success" : "warning"}
+          icon={CheckCircle2}
         />
+
         <KPICard
-          label="Work Center Utilization"
+          title="Work Center Utilization"
           value={`${kpis.utilizationRate}%`}
           type="info"
-          icon={<Package className="w-5 h-5" />}
+          icon={Package}
         />
+
         <KPICard
-          label="Rejection Rate"
+          title="Rejection Rate"
           value={`${kpis.rejectionRate}%`}
-          type={kpis.rejectionRate < 2 ? 'success' : 'danger'}
-          icon={<AlertTriangle className="w-5 h-5" />}
+          type={kpis.rejectionRate < 2 ? "success" : "danger"}
+          icon={AlertTriangle}
         />
+
       </div>
 
       {/* Recent Activity */}
