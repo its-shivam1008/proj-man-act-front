@@ -170,7 +170,7 @@ const ScrapOrder: React.FC = () => {
   );
 
   return (
-    <Layout>
+    // <Layout>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -392,7 +392,7 @@ const ScrapOrder: React.FC = () => {
         {/* Create Scrap Order Form Modal */}
         {showCreateForm && <CreateScrapOrderForm />}
       </div>
-    </Layout>
+    // </Layout>
   );
 };
 

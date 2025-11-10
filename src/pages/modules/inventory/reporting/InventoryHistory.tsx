@@ -200,7 +200,7 @@ const InventoryHistory: React.FC = () => {
   };
 
   return (
-    <Layout>
+    // <Layout>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -430,7 +430,7 @@ const InventoryHistory: React.FC = () => {
         {/* Create History Form Modal */}
         {showCreateForm && <CreateHistoryForm />}
       </div>
-    </Layout>
+    // </Layout>
   );
 };
 

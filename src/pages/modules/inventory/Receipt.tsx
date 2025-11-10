@@ -178,7 +178,7 @@ const Receipt: React.FC = () => {
   );
 
   return (
-    <Layout>
+    // <Layout>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -378,7 +378,7 @@ const Receipt: React.FC = () => {
         {/* Create Receipt Form Modal */}
         {showCreateForm && <CreateReceiptForm />}
       </div>
-    </Layout>
+    // </Layout>
   );
 };
 

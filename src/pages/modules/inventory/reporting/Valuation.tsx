@@ -198,7 +198,7 @@ const Valuation: React.FC = () => {
   const negativeValuation = Math.abs(valuationData.filter(item => item.totalValue < 0).reduce((sum, item) => sum + item.totalValue, 0));
 
   return (
-    <Layout>
+    // <Layout>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -442,7 +442,7 @@ const Valuation: React.FC = () => {
         {/* Create Valuation Form Modal */}
         {showCreateForm && <CreateValuationForm />}
       </div>
-    </Layout>
+    // </Layout>
   );
 };
 

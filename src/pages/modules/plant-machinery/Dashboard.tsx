@@ -66,7 +66,7 @@ const PlantMachineryDashboard: React.FC = () => {
     },
     {
       name: 'Breakdown Maintenance',
-      href: '/plant-machinery/breakdown-maintenance',
+      href: '/plant-machinery/breakdown',
       icon: Wrench,
       color: 'bg-destructive',
       count: stats.activeBreakdowns,
@@ -82,7 +82,7 @@ const PlantMachineryDashboard: React.FC = () => {
     },
     {
       name: 'Fuel & Lubricants',
-      href: '/plant-machinery/fuel-lubricant',
+      href: '/plant-machinery/fuel',
       icon: Fuel,
       color: 'bg-orange-500',
       count: 0,
@@ -90,7 +90,7 @@ const PlantMachineryDashboard: React.FC = () => {
     },
     {
       name: 'Calibration & Safety',
-      href: '/plant-machinery/calibration-safety',
+      href: '/plant-machinery/safety',
       icon: Shield,
       color: 'bg-purple-500',
       count: 0,

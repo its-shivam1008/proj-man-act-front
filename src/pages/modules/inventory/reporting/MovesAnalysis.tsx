@@ -242,7 +242,7 @@ const MovesAnalysis: React.FC = () => {
   };
 
   return (
-    <Layout>
+    // <Layout>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -485,7 +485,7 @@ const MovesAnalysis: React.FC = () => {
         {/* Create Analysis Form Modal */}
         {showCreateForm && <CreateAnalysisForm />}
       </div>
-    </Layout>
+    // </Layout>
   );
 };
 

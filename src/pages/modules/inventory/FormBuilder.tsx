@@ -254,7 +254,7 @@ const FormBuilder: React.FC = () => {
   );
 
   return (
-    <Layout>
+    // <Layout>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -461,7 +461,7 @@ const FormBuilder: React.FC = () => {
         {/* Add Field Modal */}
         {showAddField && <AddFieldForm />}
       </div>
-    </Layout>
+    // </Layout>
   );
 };
 
