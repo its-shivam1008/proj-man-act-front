@@ -52,6 +52,7 @@ import FuelLubricantPage from './pages/modules/plant-machinery/FuelLubricant';
 import PreventiveMaintenancePage from './pages/modules/plant-machinery/PreventiveMaintenance';
 import PlantMachineryReportsPage from './pages/modules/plant-machinery/Reports';
 import SparePartsPage from './pages/modules/plant-machinery/SpareParts';
+import Products from './pages/modules/inventory/Products';
 import { UserPermissionsPage } from './pages/modules/UserPermissions';
 
 
@@ -86,6 +87,7 @@ function App() {
             <Route path="/inventory" element={<Inventory />} />
             <Route path="/inventory/receipt" element={<Receipt />} />
             <Route path="/inventory/deliveries" element={<Deliveries />} />
+            <Route path='/inventory/products' element={<Products/>}/>
             <Route path="/inventory/scrap-order" element={<ScrapOrder />} />
             <Route path="/inventory/forecasting" element={<Forecasting />} />
             <Route path="/inventory/reporting/stock" element={<Stock />} />

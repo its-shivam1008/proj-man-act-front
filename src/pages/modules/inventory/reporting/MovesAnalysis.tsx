@@ -13,7 +13,8 @@ import {
   Edit,
   Eye,
   Trash2,
-  Target
+  Target,
+  X
 } from 'lucide-react';
 
 const MovesAnalysis: React.FC = () => {
@@ -22,6 +23,9 @@ const MovesAnalysis: React.FC = () => {
   const [analysisFilter, setAnalysisFilter] = useState('all');
   const [periodFilter, setPeriodFilter] = useState('this-month');
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showViewForm, setShowViewForm] = useState(false);
+  const [showUpdateForm, setShowUpdateForm] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<any>(null);
 
   // Sample data for moves analysis
   const [movesAnalysisData] = useState([
@@ -75,6 +79,15 @@ const MovesAnalysis: React.FC = () => {
     return matchesSearch && matchesAnalysis;
   });
 
+  const handleUpdateSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // TODO: Implement update logic here, e.g., update via context
+    // Assuming useData has an updateMovesAnalysis function: updateMovesAnalysis(selectedItem.id, formData);
+    console.log('Updating analysis item:', selectedItem);
+    setShowUpdateForm(false);
+    setSelectedItem(null);
+  };
+
   const CreateAnalysisForm = () => (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
       <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
@@ -85,7 +98,7 @@ const MovesAnalysis: React.FC = () => {
               onClick={() => setShowCreateForm(false)}
               className="text-gray-400 hover:text-gray-600"
             >
-              <Trash2 className="h-6 w-6" />
+              <X className="h-6 w-6" />
             </button>
           </div>
           
@@ -98,7 +111,7 @@ const MovesAnalysis: React.FC = () => {
                 <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
                   <option>Select Product</option>
                   {inventory.map(item => (
-                    <option key={item.id} value={item.id}>{item.name}</option>
+                    <option key={item.id} value={item.name}>{item.name}</option>
                   ))}
                 </select>
               </div>
@@ -214,6 +227,272 @@ const MovesAnalysis: React.FC = () => {
       </div>
     </div>
   );
+
+  const ViewAnalysisForm = () => {
+    if (!selectedItem) return null;
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">View Moves Analysis</h3>
+              <button
+                onClick={() => {
+                  setShowViewForm(false);
+                  setSelectedItem(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">ID</label>
+                  <p className="text-sm text-gray-900">{selectedItem.id}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Product</label>
+                  <p className="text-sm text-gray-900">{selectedItem.product}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Demand</label>
+                  <p className="text-sm text-gray-900">{selectedItem.demand}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">SN/Lots</label>
+                  <p className="text-sm text-gray-900">{selectedItem.snLots}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Packaging Qty</label>
+                  <p className="text-sm text-gray-900">{selectedItem.packagingQty}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                  <p className="text-sm text-gray-900">{selectedItem.quantity}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Real Quantity</label>
+                  <p className="text-sm text-gray-900">{selectedItem.realQuantity}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Unit Price</label>
+                  <div className="flex items-center">
+                    <DollarSign className="h-4 w-4 text-gray-400 mr-1" />
+                    <p className="text-sm text-gray-900">{selectedItem.unitPrice.toFixed(2)}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Inbound Trend</label>
+                  <div className="flex items-center">
+                    {getTrendIcon(selectedItem.inboundTrend)}
+                    <span className={`ml-2 text-sm ${getTrendColor(selectedItem.inboundTrend)}`}>{selectedItem.inboundTrend}</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Outbound Trend</label>
+                  <div className="flex items-center">
+                    {getTrendIcon(selectedItem.outboundTrend)}
+                    <span className={`ml-2 text-sm ${getTrendColor(selectedItem.outboundTrend)}`}>{selectedItem.outboundTrend}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Turnover Rate</label>
+                <p className="text-sm font-medium text-gray-900">{selectedItem.turnoverRate.toFixed(1)}x</p>
+              </div>
+
+              <div className="flex justify-end pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowViewForm(false);
+                    setSelectedItem(null);
+                  }}
+                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const UpdateAnalysisForm = () => {
+    if (!selectedItem) return null;
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">Update Moves Analysis</h3>
+              <button
+                onClick={() => {
+                  setShowUpdateForm(false);
+                  setSelectedItem(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <form className="space-y-4" onSubmit={handleUpdateSubmit}>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Product
+                  </label>
+                  <select 
+                    defaultValue={selectedItem.product}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option>Select Product</option>
+                    {inventory.map(item => (
+                      <option key={item.id} value={item.name}>{item.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Demand
+                  </label>
+                  <input
+                    type="number"
+                    defaultValue={selectedItem.demand}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Number of SN/Lots
+                  </label>
+                  <input
+                    type="number"
+                    defaultValue={selectedItem.snLots}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Packaging Quantity
+                  </label>
+                  <input
+                    type="number"
+                    defaultValue={selectedItem.packagingQty}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Unit Price
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    defaultValue={selectedItem.unitPrice}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Quantity
+                  </label>
+                  <input
+                    type="number"
+                    defaultValue={selectedItem.quantity}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Real Quantity
+                  </label>
+                  <input
+                    type="number"
+                    defaultValue={selectedItem.realQuantity}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Inbound Trend
+                  </label>
+                  <select 
+                    defaultValue={selectedItem.inboundTrend}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="up">Increasing</option>
+                    <option value="down">Decreasing</option>
+                    <option value="stable">Stable</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Outbound Trend
+                  </label>
+                  <select 
+                    defaultValue={selectedItem.outboundTrend}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="up">Increasing</option>
+                    <option value="down">Decreasing</option>
+                    <option value="stable">Stable</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUpdateForm(false);
+                    setSelectedItem(null);
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                >
+                  Update Analysis
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const getTrendIcon = (trend: string) => {
     switch (trend) {
@@ -466,10 +745,22 @@ const MovesAnalysis: React.FC = () => {
                     {item.turnoverRate.toFixed(1)}x
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button className="text-blue-600 hover:text-blue-900 mr-3">
+                    <button 
+                      className="text-blue-600 hover:text-blue-900 mr-3"
+                      onClick={() => {
+                        setSelectedItem(item);
+                        setShowViewForm(true);
+                      }}
+                    >
                       <Eye className="h-4 w-4" />
                     </button>
-                    <button className="text-green-600 hover:text-green-900 mr-3">
+                    <button 
+                      className="text-green-600 hover:text-green-900 mr-3"
+                      onClick={() => {
+                        setSelectedItem(item);
+                        setShowUpdateForm(true);
+                      }}
+                    >
                       <Edit className="h-4 w-4" />
                     </button>
                     <button className="text-red-600 hover:text-red-900">
@@ -484,6 +775,10 @@ const MovesAnalysis: React.FC = () => {
 
         {/* Create Analysis Form Modal */}
         {showCreateForm && <CreateAnalysisForm />}
+        {/* View Analysis Form Modal */}
+        {showViewForm && <ViewAnalysisForm />}
+        {/* Update Analysis Form Modal */}
+        {showUpdateForm && <UpdateAnalysisForm />}
       </div>
     // </Layout>
   );

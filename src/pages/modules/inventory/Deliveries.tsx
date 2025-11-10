@@ -15,7 +15,8 @@ import {
   AlertTriangle,
   Edit,
   Eye,
-  Trash2
+  Trash2,
+  X
 } from 'lucide-react';
 
 const Deliveries: React.FC = () => {
@@ -24,6 +25,9 @@ const Deliveries: React.FC = () => {
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showViewForm, setShowViewForm] = useState(false);
+  const [showUpdateForm, setShowUpdateForm] = useState(false);
+  const [selectedDelivery, setSelectedDelivery] = useState<any>(null);
 
   const filteredDeliveries = deliveries.filter(delivery => {
     const matchesSearch = delivery.deliverTo.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -32,6 +36,15 @@ const Deliveries: React.FC = () => {
     const matchesPriority = priorityFilter === 'all' || delivery.priority === priorityFilter;
     return matchesSearch && matchesStatus && matchesPriority;
   });
+
+  const handleUpdateSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // TODO: Implement update logic here, e.g., update via context
+    // Assuming useData has an updateDelivery function: updateDelivery(selectedDelivery.id, formData);
+    console.log('Updating delivery:', selectedDelivery);
+    setShowUpdateForm(false);
+    setSelectedDelivery(null);
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -90,7 +103,7 @@ const Deliveries: React.FC = () => {
               onClick={() => setShowCreateForm(false)}
               className="text-gray-400 hover:text-gray-600"
             >
-              <XCircle className="h-6 w-6" />
+              <X className="h-6 w-6" />
             </button>
           </div>
           
@@ -197,6 +210,263 @@ const Deliveries: React.FC = () => {
       </div>
     </div>
   );
+
+  const ViewDeliveryForm = () => {
+    if (!selectedDelivery) return null;
+    const product = inventory.find(item => item.id === selectedDelivery.productId);
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">View Delivery</h3>
+              <button
+                onClick={() => {
+                  setShowViewForm(false);
+                  setSelectedDelivery(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Delivery ID</label>
+                  <p className="text-sm text-gray-900">{selectedDelivery.id}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Deliver To</label>
+                  <p className="text-sm text-gray-900">{selectedDelivery.deliverTo}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Operation Type</label>
+                  <p className="text-sm text-gray-900">{selectedDelivery.operationType}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <div className="flex items-center">
+                    {getStatusIcon(selectedDelivery.status)}
+                    <span className={`ml-2 inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(selectedDelivery.status)}`}>
+                      {selectedDelivery.status.replace('-', ' ')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Product</label>
+                  <p className="text-sm text-gray-900">{product?.name || 'Unknown Product'}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                  <p className="text-sm text-gray-900">{selectedDelivery.quantity} units</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Shipping Method</label>
+                  <p className="text-sm text-gray-900">{selectedDelivery.shippingMethod}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getPriorityColor(selectedDelivery.priority)}`}>
+                    {selectedDelivery.priority}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Scheduled Date</label>
+                <div className="flex items-center">
+                  <Calendar className="h-4 w-4 text-gray-400 mr-1" />
+                  <p className="text-sm text-gray-900">{selectedDelivery.scheduledDate}</p>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowViewForm(false);
+                    setSelectedDelivery(null);
+                  }}
+                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const UpdateDeliveryForm = () => {
+    if (!selectedDelivery) return null;
+    const product = inventory.find(item => item.id === selectedDelivery.productId);
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">Update Delivery</h3>
+              <button
+                onClick={() => {
+                  setShowUpdateForm(false);
+                  setSelectedDelivery(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <form className="space-y-4" onSubmit={handleUpdateSubmit}>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Deliver To
+                  </label>
+                  <input
+                    type="text"
+                    defaultValue={selectedDelivery.deliverTo}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Operation Type
+                  </label>
+                  <select 
+                    defaultValue={selectedDelivery.operationType}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option>Sale</option>
+                    <option>Transfer</option>
+                    <option>Return</option>
+                    <option>Sample</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Product
+                  </label>
+                  <select 
+                    defaultValue={selectedDelivery.productId}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option>Select Product</option>
+                    {inventory.map(item => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Quantity
+                  </label>
+                  <input
+                    type="number"
+                    defaultValue={selectedDelivery.quantity}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Shipping Method
+                  </label>
+                  <select 
+                    defaultValue={selectedDelivery.shippingMethod}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option>Standard</option>
+                    <option>Express</option>
+                    <option>Overnight</option>
+                    <option>Ground</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Priority
+                  </label>
+                  <select 
+                    defaultValue={selectedDelivery.priority}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Status
+                  </label>
+                  <select 
+                    defaultValue={selectedDelivery.status}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="draft">Draft</option>
+                    <option value="ready">Ready</option>
+                    <option value="in-transit">In Transit</option>
+                    <option value="delivered">Delivered</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Scheduled Date
+                  </label>
+                  <input
+                    type="date"
+                    defaultValue={selectedDelivery.scheduledDate}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUpdateForm(false);
+                    setSelectedDelivery(null);
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                >
+                  Update Delivery
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     // <Layout>
@@ -335,7 +605,7 @@ const Deliveries: React.FC = () => {
                   Deliver To
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Products
+                  Product
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Shipping Method
@@ -355,71 +625,86 @@ const Deliveries: React.FC = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredDeliveries.map((delivery) => (
-                <tr key={delivery.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {delivery.id}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <User className="h-4 w-4 text-gray-400 mr-2" />
-                      <div className="text-sm font-medium text-gray-900">{delivery.deliverTo}</div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    <div className="max-w-xs">
-                      {delivery.products.map((product, index) => {
-                        const item = inventory.find(i => i.id === product.productId);
-                        return (
-                          <div key={index} className="text-xs text-gray-600 flex items-center">
-                            <Package className="h-3 w-3 mr-1" />
-                            {item?.name} ({product.quantity} units)
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {delivery.shippingMethod}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getPriorityColor(delivery.priority)}`}>
-                      {delivery.priority}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      {getStatusIcon(delivery.status)}
-                      <span className={`ml-2 inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(delivery.status)}`}>
-                        {delivery.status.replace('-', ' ')}
+              {filteredDeliveries.map((delivery) => {
+                const product = inventory.find(item => item.id === delivery.productId);
+                return (
+                  <tr key={delivery.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {delivery.id}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <User className="h-4 w-4 text-gray-400 mr-2" />
+                        <div className="text-sm font-medium text-gray-900">{delivery.deliverTo}</div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <div className="flex items-center">
+                        <Package className="h-4 w-4 text-gray-400 mr-2" />
+                        <div>
+                          <div className="text-sm font-medium text-gray-900">{product?.name || 'Unknown Product'}</div>
+                          <div className="text-xs text-gray-500">{delivery.quantity} units</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {delivery.shippingMethod}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getPriorityColor(delivery.priority)}`}>
+                        {delivery.priority}
                       </span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    <div className="flex items-center">
-                      <Calendar className="h-4 w-4 text-gray-400 mr-1" />
-                      {delivery.scheduledDate}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button className="text-blue-600 hover:text-blue-900 mr-3">
-                      <Eye className="h-4 w-4" />
-                    </button>
-                    <button className="text-green-600 hover:text-green-900 mr-3">
-                      <Edit className="h-4 w-4" />
-                    </button>
-                    <button className="text-red-600 hover:text-red-900">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        {getStatusIcon(delivery.status)}
+                        <span className={`ml-2 inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(delivery.status)}`}>
+                          {delivery.status.replace('-', ' ')}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <div className="flex items-center">
+                        <Calendar className="h-4 w-4 text-gray-400 mr-1" />
+                        {delivery.scheduledDate}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <button 
+                        className="text-blue-600 hover:text-blue-900 mr-3"
+                        onClick={() => {
+                          setSelectedDelivery(delivery);
+                          setShowViewForm(true);
+                        }}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </button>
+                      <button 
+                        className="text-green-600 hover:text-green-900 mr-3"
+                        onClick={() => {
+                          setSelectedDelivery(delivery);
+                          setShowUpdateForm(true);
+                        }}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </button>
+                      <button className="text-red-600 hover:text-red-900">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
 
         {/* Create Delivery Form Modal */}
         {showCreateForm && <CreateDeliveryForm />}
+        {/* View Delivery Form Modal */}
+        {showViewForm && <ViewDeliveryForm />}
+        {/* Update Delivery Form Modal */}
+        {showUpdateForm && <UpdateDeliveryForm />}
       </div>
     // </Layout>
   );

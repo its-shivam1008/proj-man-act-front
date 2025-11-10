@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import Layout from '../../components/Layout';
-import { ScanLine, Package, Truck, FileText, Search, Plus, CheckCircle, AlertTriangle } from 'lucide-react';
+import { ScanLine, Package, Truck, FileText, Search, Plus, CheckCircle, AlertTriangle, X, Barcode as BarcodeIcon } from 'lucide-react';
 
 const Barcode: React.FC = () => {
   const [scanResult, setScanResult] = useState('');
@@ -10,6 +10,9 @@ const Barcode: React.FC = () => {
     { id: 2, code: 'AR-002-2024', item: 'Aluminum Rods', action: 'Inventory Check', timestamp: '2024-01-15 09:15', status: 'success' },
     { id: 3, code: 'HP-003-2024', item: 'Hydraulic Pumps', action: 'Shipping', timestamp: '2024-01-14 16:45', status: 'warning' },
   ]);
+  const [showGenerateModal, setShowGenerateModal] = useState(false);
+  const [generateForm, setGenerateForm] = useState({ itemName: '', category: 'steel' });
+  const [generatedCode, setGeneratedCode] = useState('');
 
   const handleScan = (code: string) => {
     if (code.trim()) {
@@ -24,6 +27,42 @@ const Barcode: React.FC = () => {
       };
       setRecentScans([newScan, ...recentScans.slice(0, 9)]);
       setScanResult('');
+    }
+  };
+
+  const handleGenerateBarcode = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (generateForm.itemName.trim()) {
+      const prefixes = {
+        steel: 'SP',
+        aluminum: 'AR',
+        hydraulic: 'HP',
+        electrical: 'EL',
+      };
+      const prefix = prefixes[generateForm.category as keyof typeof prefixes] || 'UN';
+      const year = new Date().getFullYear();
+      const number = Math.floor(Math.random() * 1000) + 1; // Simple random for demo; in real app, use sequential ID
+      const newCode = `${prefix}-${number.toString().padStart(3, '0')}-${year}`;
+      
+      setGeneratedCode(newCode);
+      
+      // Optionally add to recent scans as a 'Generated' action
+      const newScan = {
+        id: recentScans.length + 1,
+        code: newCode,
+        item: generateForm.itemName,
+        action: 'Barcode Generated',
+        timestamp: new Date().toLocaleString(),
+        status: 'success'
+      };
+      setRecentScans([newScan, ...recentScans.slice(0, 9)]);
+      
+      // Reset form and close modal after a delay to show the code
+      setTimeout(() => {
+        setGenerateForm({ itemName: '', category: 'steel' });
+        setGeneratedCode('');
+        setShowGenerateModal(false);
+      }, 2000);
     }
   };
 
@@ -53,6 +92,13 @@ const Barcode: React.FC = () => {
     }
   };
 
+  const categories = [
+    { value: 'steel', label: 'Steel Products' },
+    { value: 'aluminum', label: 'Aluminum Products' },
+    { value: 'hydraulic', label: 'Hydraulic Components' },
+    { value: 'electrical', label: 'Electrical Parts' },
+  ];
+
   return (
     // <Layout>
       <div className="space-y-6">
@@ -64,7 +110,10 @@ const Barcode: React.FC = () => {
               Scan barcodes for inventory tracking, shipping, and quality control
             </p>
           </div>
-          <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center">
+          <button 
+            onClick={() => setShowGenerateModal(true)}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+          >
             <Plus className="h-4 w-4 mr-2" />
             Generate Barcode
           </button>
@@ -238,6 +287,74 @@ const Barcode: React.FC = () => {
             </table>
           </div>
         </div>
+
+        {/* Generate Barcode Modal */}
+        {showGenerateModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center">
+                    <BarcodeIcon className="h-6 w-6 text-blue-600 mr-2" />
+                    <h2 className="text-xl font-semibold text-gray-900">Generate Barcode</h2>
+                  </div>
+                  <button
+                    onClick={() => setShowGenerateModal(false)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="h-6 w-6" />
+                  </button>
+                </div>
+                <form onSubmit={handleGenerateBarcode} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Item Name
+                    </label>
+                    <input
+                      type="text"
+                      value={generateForm.itemName}
+                      onChange={(e) => setGenerateForm({ ...generateForm, itemName: e.target.value })}
+                      placeholder="e.g., Steel Plates"
+                      required
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Category
+                    </label>
+                    <select
+                      value={generateForm.category}
+                      onChange={(e) => setGenerateForm({ ...generateForm, category: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      {categories.map((cat) => (
+                        <option key={cat.value} value={cat.value}>
+                          {cat.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                  >
+                    Generate Barcode
+                  </button>
+                </form>
+                {generatedCode && (
+                  <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                    <p className="text-sm font-medium text-green-800 mb-2">Generated Barcode:</p>
+                    <div className="flex items-center justify-between bg-white p-3 rounded border">
+                      <span className="font-mono text-lg font-semibold">{generatedCode}</span>
+                      <CheckCircle className="h-5 w-5 text-green-500" />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     // </Layout>
   );

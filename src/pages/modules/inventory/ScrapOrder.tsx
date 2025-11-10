@@ -13,7 +13,8 @@ import {
   XCircle,
   AlertTriangle,
   Edit,
-  Eye
+  Eye,
+  X
 } from 'lucide-react';
 
 const ScrapOrder: React.FC = () => {
@@ -22,6 +23,9 @@ const ScrapOrder: React.FC = () => {
   const [reasonFilter, setReasonFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showViewForm, setShowViewForm] = useState(false);
+  const [showUpdateForm, setShowUpdateForm] = useState(false);
+  const [selectedScrap, setSelectedScrap] = useState<any>(null);
 
   const filteredScrapOrders = scrapOrders.filter(scrap => {
     const product = inventory.find(item => item.id === scrap.productId);
@@ -31,6 +35,21 @@ const ScrapOrder: React.FC = () => {
     const matchesReason = reasonFilter === 'all' || scrap.reason === reasonFilter;
     return matchesSearch && matchesStatus && matchesReason;
   });
+
+  const handleUpdateSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // TODO: Implement update logic here, e.g., update via context
+    // Assuming useData has an updateScrapOrder function: updateScrapOrder(selectedScrap.id, formData);
+    console.log('Updating scrap order:', selectedScrap);
+    setShowUpdateForm(false);
+    setSelectedScrap(null);
+  };
+
+  const handleApprove = (scrapId: string) => {
+    // TODO: Implement approve logic here, e.g., update status to 'approved'
+    console.log('Approving scrap order:', scrapId);
+    // For demo, you could update the state here if needed
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -83,7 +102,7 @@ const ScrapOrder: React.FC = () => {
               onClick={() => setShowCreateForm(false)}
               className="text-gray-400 hover:text-gray-600"
             >
-              <XCircle className="h-6 w-6" />
+              <X className="h-6 w-6" />
             </button>
           </div>
           
@@ -169,9 +188,214 @@ const ScrapOrder: React.FC = () => {
     </div>
   );
 
+  const ViewScrapOrderForm = () => {
+    if (!selectedScrap) return null;
+    const product = inventory.find(item => item.id === selectedScrap.productId);
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">View Scrap Order</h3>
+              <button
+                onClick={() => {
+                  setShowViewForm(false);
+                  setSelectedScrap(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Scrap ID</label>
+                  <p className="text-sm text-gray-900">{selectedScrap.id}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Product</label>
+                  <p className="text-sm text-gray-900">{product?.name || 'Unknown Product'}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                  <p className="text-sm text-gray-900">{selectedScrap.quantity} units</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
+                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getReasonColor(selectedScrap.reason)}`}>
+                    {selectedScrap.reason}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Scrap Location</label>
+                  <p className="text-sm text-gray-900">{selectedScrap.scrapLocation}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <div className="flex items-center">
+                    {getStatusIcon(selectedScrap.status)}
+                    <span className={`ml-2 inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(selectedScrap.status)}`}>
+                      {selectedScrap.status}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                <p className="text-sm text-gray-900">{selectedScrap.date}</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Remark</label>
+                <p className="text-sm text-gray-900">{selectedScrap.remark}</p>
+              </div>
+
+              <div className="flex justify-end pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowViewForm(false);
+                    setSelectedScrap(null);
+                  }}
+                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const UpdateScrapOrderForm = () => {
+    if (!selectedScrap) return null;
+    const product = inventory.find(item => item.id === selectedScrap.productId);
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">Update Scrap Order</h3>
+              <button
+                onClick={() => {
+                  setShowUpdateForm(false);
+                  setSelectedScrap(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <form className="space-y-4" onSubmit={handleUpdateSubmit}>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Product Name
+                  </label>
+                  <select 
+                    defaultValue={selectedScrap.productId}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">Select Product</option>
+                    {inventory.map(item => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Quantity
+                  </label>
+                  <input
+                    type="number"
+                    defaultValue={selectedScrap.quantity}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Scrap Reason
+                  </label>
+                  <select 
+                    defaultValue={selectedScrap.reason}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="damaged">Damaged</option>
+                    <option value="expired">Expired</option>
+                    <option value="lost">Lost</option>
+                    <option value="obsolete">Obsolete</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Scrap Location
+                  </label>
+                  <select 
+                    defaultValue={selectedScrap.scrapLocation}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option>Scrap Yard A</option>
+                    <option>Scrap Yard B</option>
+                    <option>Disposal Center</option>
+                    <option>Recycling Center</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Remark
+                </label>
+                <textarea
+                  rows={3}
+                  defaultValue={selectedScrap.remark}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUpdateForm(false);
+                    setSelectedScrap(null);
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                >
+                  Update Scrap Order
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     // <Layout>
-      <div className="space-y-6">
+      <div className="space-y-6 w-full">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -370,14 +594,29 @@ const ScrapOrder: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <button className="text-blue-600 hover:text-blue-900 mr-3">
+                      <button 
+                        className="text-blue-600 hover:text-blue-900 mr-3"
+                        onClick={() => {
+                          setSelectedScrap(scrap);
+                          setShowViewForm(true);
+                        }}
+                      >
                         <Eye className="h-4 w-4" />
                       </button>
-                      <button className="text-green-600 hover:text-green-900 mr-3">
+                      <button 
+                        className="text-green-600 hover:text-green-900 mr-3"
+                        onClick={() => {
+                          setSelectedScrap(scrap);
+                          setShowUpdateForm(true);
+                        }}
+                      >
                         <Edit className="h-4 w-4" />
                       </button>
                       {scrap.status === 'pending' && (
-                        <button className="text-purple-600 hover:text-purple-900">
+                        <button 
+                          className="text-purple-600 hover:text-purple-900"
+                          onClick={() => handleApprove(scrap.id)}
+                        >
                           Approve
                         </button>
                       )}
@@ -391,6 +630,10 @@ const ScrapOrder: React.FC = () => {
 
         {/* Create Scrap Order Form Modal */}
         {showCreateForm && <CreateScrapOrderForm />}
+        {/* View Scrap Order Form Modal */}
+        {showViewForm && <ViewScrapOrderForm />}
+        {/* Update Scrap Order Form Modal */}
+        {showUpdateForm && <UpdateScrapOrderForm />}
       </div>
     // </Layout>
   );

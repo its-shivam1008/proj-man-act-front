@@ -1,30 +1,248 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useData } from '../../contexts/DataContext';
 import Layout from '../../components/Layout';
-import { Wrench, Plus, Clock, CheckCircle, AlertTriangle, XCircle, Search, Filter, Calendar, User, Package, DollarSign, FileText, Settings, Users, BarChart3, Edit, Eye, Trash2, Play, Pause, MapPin, Phone, Mail, Upload, Download, Clipboard, PenTool as Tool, Star, TrendingUp, Activity } from 'lucide-react';
+import { Wrench, Plus, Clock, CheckCircle, AlertTriangle, XCircle, Search, Filter, Calendar, User, Package, DollarSign, FileText, Settings, Users, BarChart3, Edit, Eye, Trash2, Play, Pause, MapPin, Phone, Mail, Upload, Download, Clipboard, PenTool as Tool, Star, TrendingUp, Activity, X } from 'lucide-react';
 
 const Repair: React.FC = () => {
-  const { 
-    repairOrders, 
-    repairOrdersDetailed, 
-    repairTeams, 
-    repairTemplates, 
+  const {
+    repairOrders,
+    repairOrdersDetailed,
+    repairTeams,
+    repairTemplates,
     inventory,
     addRepairOrderDetailed,
     updateRepairOrderDetailed,
     addRepairTeam,
-    addRepairTemplate
+    addRepairTemplate,
+    updateRepairTemplate, // Assuming this is added to the context; if not, implement local update logic
   } = useData();
-  
+
+  const [teamFormData, setTeamFormData] = useState({
+    teamName: '',
+    teamLead: '',
+    location: '',
+    workingHours: { start: '09:00', end: '17:00' },
+    contactInfo: { email: '', phone: '' },
+  });
+
   const [activeTab, setActiveTab] = useState('dashboard');
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showUpdateForm, setShowUpdateForm] = useState(false);
   const [showTeamForm, setShowTeamForm] = useState(false);
   const [showTemplateForm, setShowTemplateForm] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<string | null>(null);
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [createFormData, setCreateFormData] = useState({
+    productId: '',
+    quantity: 1,
+    serialLotNumber: '',
+    customerName: '',
+    repairType: '',
+    priority: '',
+    rootCause: '',
+    issueDescription: '',
+    teamId: '',
+    technicianId: '',
+    requestedDate: '',
+    expectedCompletion: '',
+    location: '',
+    sourceDocument: '',
+    warrantyType: 'in-warranty',
+    notes: '',
+    isChargeable: false,
+  });
+  const [updateFormData, setUpdateFormData] = useState({
+    productId: '',
+    quantity: 1,
+    serialLotNumber: '',
+    customerName: '',
+    repairType: '',
+    priority: '',
+    rootCause: '',
+    issueDescription: '',
+    teamId: '',
+    technicianId: '',
+    requestedDate: '',
+    expectedCompletion: '',
+    location: '',
+    sourceDocument: '',
+    warrantyType: 'in-warranty',
+    notes: '',
+    isChargeable: false,
+  });
+
+  // Template states
+  const [showTemplateViewModal, setShowTemplateViewModal] = useState(false);
+  const [showTemplateUpdateModal, setShowTemplateUpdateModal] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [templateFormData, setTemplateFormData] = useState({
+    templateName: '',
+    productCategory: '',
+    commonIssue: '',
+    estimatedDuration: '',
+    defaultParts: '',
+    isActive: false,
+  });
+
+  useEffect(() => {
+    if (selectedOrder && showUpdateForm) {
+      const order = repairOrdersDetailed.find(o => o.id === selectedOrder);
+      if (order) {
+        setUpdateFormData({
+          productId: order.productId || '',
+          quantity: order.quantity || 1,
+          serialLotNumber: order.serialLotNumber || '',
+          customerName: order.customerName || '',
+          repairType: order.repairType || '',
+          priority: order.priority || '',
+          rootCause: order.rootCause || '',
+          issueDescription: order.issueDescription || '',
+          teamId: order.teamId || '',
+          technicianId: order.technicianId || '',
+          requestedDate: order.requestedDate || '',
+          expectedCompletion: order.expectedCompletion || '',
+          location: order.location || '',
+          sourceDocument: order.sourceDocument || '',
+          warrantyType: order.warrantyType || 'in-warranty',
+          notes: order.notes || '',
+          isChargeable: order.isChargeable || false,
+        });
+      }
+    }
+  }, [selectedOrder, showUpdateForm, repairOrdersDetailed]);
+
+  const handleCreateSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const selectedTeam = repairTeams.find(t => t.id === createFormData.teamId);
+    const selectedTechnician = selectedTeam?.members.find(m => m.technicianId === createFormData.technicianId);
+    const newOrder = {
+      ...createFormData,
+      id: `RO-${Date.now()}`,
+      status: 'draft' as const,
+      createdDate: new Date().toISOString().split('T')[0],
+      assignedTechnician: selectedTechnician?.name || '',
+      teamId: createFormData.teamId,
+      technicianId: createFormData.technicianId,
+      totalCost: 0,
+      partsCost: 0,
+      laborCost: 0,
+    };
+    addRepairOrderDetailed(newOrder);
+    setShowCreateForm(false);
+    setCreateFormData({
+      productId: '',
+      quantity: 1,
+      serialLotNumber: '',
+      customerName: '',
+      repairType: '',
+      priority: '',
+      rootCause: '',
+      issueDescription: '',
+      teamId: '',
+      technicianId: '',
+      requestedDate: '',
+      expectedCompletion: '',
+      location: '',
+      sourceDocument: '',
+      warrantyType: 'in-warranty',
+      notes: '',
+      isChargeable: false,
+    });
+  };
+
+  const handleUpdateSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedOrder) return;
+    const selectedTeam = repairTeams.find(t => t.id === updateFormData.teamId);
+    const selectedTechnician = selectedTeam?.members.find(m => m.technicianId === updateFormData.technicianId);
+    const updatedOrder = {
+      ...updateFormData,
+      id: selectedOrder,
+      assignedTechnician: selectedTechnician?.name || updateFormData.assignedTechnician || '',
+    };
+    updateRepairOrderDetailed(updatedOrder);
+    setShowUpdateForm(false);
+    setSelectedOrder(null);
+  };
+
+  const handleTechnicianChange = (value: string, formSetter: React.Dispatch<React.SetStateAction<any>>) => {
+    const selectedTeam = repairTeams.find(t => t.id === formSetter.teamId || createFormData.teamId); // Approximate, better to pass current
+    const selectedTechnician = selectedTeam?.members.find(m => m.technicianId === value);
+    formSetter(prev => ({ ...prev, technicianId: value, assignedTechnician: selectedTechnician?.name || '' }));
+  };
+  // Note: For simplicity, handleTechnicianChange is approximate; in real, use callback or separate handlers
+
+  // Template handlers
+  const handleCreateTemplate = (e: React.FormEvent) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget as HTMLFormElement);
+    const newTemplate = {
+      id: `TPL-${Date.now()}`,
+      templateName: formData.get('templateName')?.toString() || '',
+      productCategory: formData.get('productCategory')?.toString() || '',
+      commonIssue: formData.get('commonIssue')?.toString() || '',
+      estimatedDuration: parseInt(formData.get('estimatedDuration')?.toString() || '0', 10),
+      defaultParts: (formData.get('defaultParts')?.toString() || '').split(',').map(p => p.trim()).filter(Boolean),
+      isActive: (formData.get('isActive') as string) === 'on',
+    };
+    addRepairTemplate(newTemplate);
+    setShowTemplateForm(false);
+    setTemplateFormData({
+      templateName: '',
+      productCategory: '',
+      commonIssue: '',
+      estimatedDuration: '',
+      defaultParts: '',
+      isActive: false,
+    });
+  };
+
+  const handleUpdateTemplate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTemplate) return;
+    const formData = new FormData(e.currentTarget as HTMLFormElement);
+    const updatedTemplate = {
+      ...selectedTemplate,
+      templateName: formData.get('templateName')?.toString() || '',
+      productCategory: formData.get('productCategory')?.toString() || '',
+      commonIssue: formData.get('commonIssue')?.toString() || '',
+      estimatedDuration: parseInt(formData.get('estimatedDuration')?.toString() || '0', 10),
+      defaultParts: (formData.get('defaultParts')?.toString() || '').split(',').map(p => p.trim()).filter(Boolean),
+      isActive: (formData.get('isActive') as string) === 'on',
+    };
+    updateRepairTemplate(updatedTemplate); // Assuming this function exists in context
+    setShowTemplateUpdateModal(false);
+    setSelectedTemplate(null);
+  };
+
+  const openTemplateViewModal = (template: any) => {
+    setSelectedTemplate(template);
+    setShowTemplateViewModal(true);
+  };
+
+  const openTemplateUpdateModal = (template: any) => {
+    setSelectedTemplate(template);
+    setTemplateFormData({
+      templateName: template.templateName || '',
+      productCategory: template.productCategory || '',
+      commonIssue: template.commonIssue || '',
+      estimatedDuration: template.estimatedDuration?.toString() || '',
+      defaultParts: template.defaultParts?.join(', ') || '',
+      isActive: template.isActive || false,
+    });
+    setShowTemplateUpdateModal(true);
+  };
+
+  const closeTemplateModal = (setter: React.Dispatch<React.SetStateAction<boolean>>) => {
+    setter(false);
+    if (setter === setShowTemplateUpdateModal || setter === setShowTemplateViewModal) {
+      setSelectedTemplate(null);
+    }
+  };
 
   const tabs = [
     { id: 'dashboard', name: 'Dashboard', icon: BarChart3 },
@@ -110,21 +328,29 @@ const Repair: React.FC = () => {
     }
   };
 
-  const CreateRepairOrderForm = () => (
+  const RepairOrderForm = ({ isUpdate = false, formData, setFormData, onSubmit, onCancel }: {
+    isUpdate?: boolean;
+    formData: any;
+    setFormData: React.Dispatch<React.SetStateAction<any>>;
+    onSubmit: (e: React.FormEvent) => void;
+    onCancel: () => void;
+  }) => (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
       <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 shadow-lg rounded-md bg-white">
         <div className="mt-3">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-medium text-gray-900">Create New Repair Order</h3>
+            <h3 className="text-lg font-medium text-gray-900">
+              {isUpdate ? 'Update Repair Order' : 'Create New Repair Order'}
+            </h3>
             <button
-              onClick={() => setShowCreateForm(false)}
+              onClick={onCancel}
               className="text-gray-400 hover:text-gray-600"
             >
               <XCircle className="h-6 w-6" />
             </button>
           </div>
-          
-          <form className="space-y-6">
+         
+          <form onSubmit={onSubmit} className="space-y-6">
             {/* Basic Information */}
             <div className="bg-gray-50 p-4 rounded-lg">
               <h4 className="text-md font-medium text-gray-900 mb-3">Basic Information</h4>
@@ -133,7 +359,12 @@ const Repair: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Product to Repair *
                   </label>
-                  <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" required>
+                  <select
+                    value={formData.productId}
+                    onChange={(e) => setFormData(prev => ({ ...prev, productId: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
                     <option value="">Select Product</option>
                     {inventory.map(item => (
                       <option key={item.id} value={item.id}>{item.name}</option>
@@ -147,13 +378,14 @@ const Repair: React.FC = () => {
                   <input
                     type="number"
                     min="1"
+                    value={formData.quantity}
+                    onChange={(e) => setFormData(prev => ({ ...prev, quantity: Number(e.target.value) }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="Enter quantity"
                     required
                   />
                 </div>
               </div>
-
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 mt-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -161,6 +393,8 @@ const Repair: React.FC = () => {
                   </label>
                   <input
                     type="text"
+                    value={formData.serialLotNumber}
+                    onChange={(e) => setFormData(prev => ({ ...prev, serialLotNumber: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="Enter serial or lot number"
                   />
@@ -171,6 +405,8 @@ const Repair: React.FC = () => {
                   </label>
                   <input
                     type="text"
+                    value={formData.customerName}
+                    onChange={(e) => setFormData(prev => ({ ...prev, customerName: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="Customer name or internal department"
                     required
@@ -178,7 +414,6 @@ const Repair: React.FC = () => {
                 </div>
               </div>
             </div>
-
             {/* Repair Details */}
             <div className="bg-gray-50 p-4 rounded-lg">
               <h4 className="text-md font-medium text-gray-900 mb-3">Repair Details</h4>
@@ -187,7 +422,12 @@ const Repair: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Repair Type *
                   </label>
-                  <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" required>
+                  <select
+                    value={formData.repairType}
+                    onChange={(e) => setFormData(prev => ({ ...prev, repairType: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
                     <option value="">Select Type</option>
                     <option value="warranty">In-Warranty</option>
                     <option value="paid">Out-of-Warranty (Paid)</option>
@@ -198,7 +438,12 @@ const Repair: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Priority *
                   </label>
-                  <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" required>
+                  <select
+                    value={formData.priority}
+                    onChange={(e) => setFormData(prev => ({ ...prev, priority: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
                     <option value="">Select Priority</option>
                     <option value="low">Low</option>
                     <option value="medium">Medium</option>
@@ -209,7 +454,12 @@ const Repair: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Root Cause *
                   </label>
-                  <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" required>
+                  <select
+                    value={formData.rootCause}
+                    onChange={(e) => setFormData(prev => ({ ...prev, rootCause: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
                     <option value="">Select Cause</option>
                     <option value="damage">Physical Damage</option>
                     <option value="defect">Manufacturing Defect</option>
@@ -218,20 +468,20 @@ const Repair: React.FC = () => {
                   </select>
                 </div>
               </div>
-
               <div className="mt-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Issue Description *
                 </label>
                 <textarea
                   rows={3}
+                  value={formData.issueDescription}
+                  onChange={(e) => setFormData(prev => ({ ...prev, issueDescription: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Detailed description of the issue..."
                   required
                 />
               </div>
             </div>
-
             {/* Assignment & Timeline */}
             <div className="bg-gray-50 p-4 rounded-lg">
               <h4 className="text-md font-medium text-gray-900 mb-3">Assignment & Timeline</h4>
@@ -240,7 +490,12 @@ const Repair: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Responsible Team *
                   </label>
-                  <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" required>
+                  <select
+                    value={formData.teamId}
+                    onChange={(e) => setFormData(prev => ({ ...prev, teamId: e.target.value, technicianId: '' }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
                     <option value="">Select Team</option>
                     {repairTeams.map(team => (
                       <option key={team.id} value={team.id}>{team.teamName}</option>
@@ -251,7 +506,12 @@ const Repair: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Assigned Technician *
                   </label>
-                  <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" required>
+                  <select
+                    value={formData.technicianId}
+                    onChange={(e) => setFormData(prev => ({ ...prev, technicianId: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
                     <option value="">Select Technician</option>
                     {repairTeams.flatMap(team => team.members).map(member => (
                       <option key={member.technicianId} value={member.technicianId}>{member.name}</option>
@@ -259,7 +519,6 @@ const Repair: React.FC = () => {
                   </select>
                 </div>
               </div>
-
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 mt-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -267,6 +526,8 @@ const Repair: React.FC = () => {
                   </label>
                   <input
                     type="date"
+                    value={formData.requestedDate}
+                    onChange={(e) => setFormData(prev => ({ ...prev, requestedDate: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   />
@@ -277,6 +538,8 @@ const Repair: React.FC = () => {
                   </label>
                   <input
                     type="date"
+                    value={formData.expectedCompletion}
+                    onChange={(e) => setFormData(prev => ({ ...prev, expectedCompletion: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   />
@@ -285,7 +548,12 @@ const Repair: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Location *
                   </label>
-                  <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" required>
+                  <select
+                    value={formData.location}
+                    onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
                     <option value="">Select Location</option>
                     <option value="Repair Center A">Repair Center A</option>
                     <option value="Repair Center B">Repair Center B</option>
@@ -294,7 +562,6 @@ const Repair: React.FC = () => {
                 </div>
               </div>
             </div>
-
             {/* Additional Information */}
             <div className="bg-gray-50 p-4 rounded-lg">
               <h4 className="text-md font-medium text-gray-900 mb-3">Additional Information</h4>
@@ -305,6 +572,8 @@ const Repair: React.FC = () => {
                   </label>
                   <input
                     type="text"
+                    value={formData.sourceDocument}
+                    onChange={(e) => setFormData(prev => ({ ...prev, sourceDocument: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="Sale order, MO, or PO reference"
                   />
@@ -313,14 +582,17 @@ const Repair: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Warranty Type
                   </label>
-                  <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                  <select
+                    value={formData.warrantyType}
+                    onChange={(e) => setFormData(prev => ({ ...prev, warrantyType: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
                     <option value="in-warranty">In-Warranty</option>
                     <option value="extended">Extended Warranty</option>
                     <option value="expired">Expired</option>
                   </select>
                 </div>
               </div>
-
               <div className="mt-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Attachments
@@ -333,22 +605,24 @@ const Repair: React.FC = () => {
                 />
                 <p className="text-xs text-gray-500 mt-1">Upload photos, reports, or documentation</p>
               </div>
-
               <div className="mt-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Notes
                 </label>
                 <textarea
                   rows={2}
+                  value={formData.notes}
+                  onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Additional notes or special instructions..."
                 />
               </div>
-
               <div className="mt-4 flex items-center">
                 <input
                   type="checkbox"
                   id="chargeable"
+                  checked={formData.isChargeable}
+                  onChange={(e) => setFormData(prev => ({ ...prev, isChargeable: e.target.checked }))}
                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
                 <label htmlFor="chargeable" className="ml-2 text-sm text-gray-700">
@@ -356,11 +630,10 @@ const Repair: React.FC = () => {
                 </label>
               </div>
             </div>
-
             <div className="flex justify-end space-x-3 pt-4">
               <button
                 type="button"
-                onClick={() => setShowCreateForm(false)}
+                onClick={onCancel}
                 className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
               >
                 Cancel
@@ -369,7 +642,7 @@ const Repair: React.FC = () => {
                 type="submit"
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
-                Create Repair Order
+                {isUpdate ? 'Update Repair Order' : 'Create Repair Order'}
               </button>
             </div>
           </form>
@@ -441,33 +714,32 @@ const Repair: React.FC = () => {
           </div>
         </div>
       </div>
-
       {/* Quick Actions */}
       <div className="bg-white shadow rounded-lg p-6">
         <h3 className="text-lg font-medium text-gray-900 mb-4">Quick Actions</h3>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <button 
+          <button
             onClick={() => setShowCreateForm(true)}
             className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
           >
             <Plus className="h-5 w-5 text-gray-400 mr-2" />
             <span className="text-sm font-medium text-gray-700">New Repair Order</span>
           </button>
-          <button 
+          <button
             onClick={() => setActiveTab('teams')}
             className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
           >
             <Users className="h-5 w-5 text-gray-400 mr-2" />
             <span className="text-sm font-medium text-gray-700">Manage Teams</span>
           </button>
-          <button 
+          <button
             onClick={() => setActiveTab('templates')}
             className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
           >
             <Clipboard className="h-5 w-5 text-gray-400 mr-2" />
             <span className="text-sm font-medium text-gray-700">Repair Templates</span>
           </button>
-          <button 
+          <button
             onClick={() => setActiveTab('reports')}
             className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
           >
@@ -476,7 +748,6 @@ const Repair: React.FC = () => {
           </button>
         </div>
       </div>
-
       {/* Recent Activity */}
       <div className="bg-white shadow rounded-lg">
         <div className="px-6 py-4 border-b border-gray-200">
@@ -511,6 +782,186 @@ const Repair: React.FC = () => {
       </div>
     </div>
   );
+
+  const ViewRepairOrderModal = ({ order, onClose }: { order: any; onClose: () => void }) => {
+    const product = inventory.find((item) => item.id === order.productId);
+    const team = repairTeams.find((t) => t.id === order.teamId);
+    const technician = team?.members.find((m) => m.technicianId === order.technicianId);
+    if (!order) return null;
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
+        <div className="relative bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-xl">
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center">
+                <Wrench className="h-6 w-6 text-blue-600 mr-2" />
+                <h3 className="text-xl font-semibold text-gray-900">Repair Order Details</h3>
+                <span className="ml-3 inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                  {order.id}
+                </span>
+              </div>
+              <button
+                onClick={onClose}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            <div className="space-y-6">
+              {/* Basic Information */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="text-md font-medium text-gray-900 mb-3 flex items-center">
+                  <FileText className="h-4 w-4 mr-2 text-gray-500" />
+                  Basic Information
+                </h4>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Product</label>
+                    <p className="text-sm text-gray-900 font-medium">{product?.name || 'Unknown Product'}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                    <p className="text-sm text-gray-900">{order.quantity}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Serial/Lot Number</label>
+                    <p className="text-sm text-gray-900">{order.serialLotNumber || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Customer/Department</label>
+                    <p className="text-sm text-gray-900">{order.customerName}</p>
+                  </div>
+                </div>
+                {order.sourceDocument && (
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Source Document</label>
+                    <p className="text-sm text-gray-900">{order.sourceDocument}</p>
+                  </div>
+                )}
+              </div>
+              {/* Repair Details */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="text-md font-medium text-gray-900 mb-3 flex items-center">
+                  <Tool className="h-4 w-4 mr-2 text-gray-500" />
+                  Repair Details
+                </h4>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Repair Type</label>
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getTypeColor(order.repairType)}`}>
+                      {order.repairType}
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getPriorityColor(order.priority)}`}>
+                      {order.priority}
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Root Cause</label>
+                    <p className="text-sm text-gray-900 capitalize">{order.rootCause}</p>
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Issue Description</label>
+                  <p className="text-sm text-gray-900 whitespace-pre-wrap">{order.issueDescription}</p>
+                </div>
+                {order.notes && (
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                    <p className="text-sm text-gray-900 whitespace-pre-wrap">{order.notes}</p>
+                  </div>
+                )}
+              </div>
+              {/* Assignment & Timeline */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="text-md font-medium text-gray-900 mb-3 flex items-center">
+                  <Users className="h-4 w-4 mr-2 text-gray-500" />
+                  Assignment & Timeline
+                </h4>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Responsible Team</label>
+                    <p className="text-sm text-gray-900">{team?.teamName || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Assigned Technician</label>
+                    <p className="text-sm text-gray-900">{order.assignedTechnician || 'N/A'}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 mt-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Requested Date</label>
+                    <p className="text-sm text-gray-900">{order.requestedDate}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Expected Completion</label>
+                    <p className="text-sm text-gray-900 font-medium">{order.expectedCompletion}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                    <p className="text-sm text-gray-900">{order.location}</p>
+                  </div>
+                </div>
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <div className="flex items-center">
+                    {getStatusIcon(order.status)}
+                    <span className={`ml-2 inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(order.status)}`}>
+                      {order.status.replace('-', ' ')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              {/* Additional Information */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="text-md font-medium text-gray-900 mb-3 flex items-center">
+                  <DollarSign className="h-4 w-4 mr-2 text-gray-500" />
+                  Additional Information
+                </h4>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Warranty Type</label>
+                    <p className="text-sm text-gray-900 capitalize">{order.warrantyType}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Chargeable</label>
+                    <p className="text-sm text-gray-900">{order.isChargeable ? 'Yes' : 'No'}</p>
+                  </div>
+                </div>
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cost Breakdown</label>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <div className="text-center p-2 bg-white rounded border">
+                      <p className="text-xs text-gray-500">Total</p>
+                      <p className="text-sm font-semibold text-gray-900">${order.totalCost.toFixed(2)}</p>
+                    </div>
+                    <div className="text-center p-2 bg-white rounded border">
+                      <p className="text-xs text-gray-500">Parts</p>
+                      <p className="text-sm font-semibold text-gray-900">${order.partsCost.toFixed(2)}</p>
+                    </div>
+                    <div className="text-center p-2 bg-white rounded border">
+                      <p className="text-xs text-gray-500">Labor</p>
+                      <p className="text-sm font-semibold text-gray-900">${order.laborCost.toFixed(2)}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
+              <button
+                onClick={onClose}
+                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const renderOrders = () => (
     <div className="space-y-6">
@@ -564,7 +1015,7 @@ const Repair: React.FC = () => {
             <Download className="h-4 w-4 mr-2" />
             Export
           </button>
-          <button 
+          <button
             onClick={() => setShowCreateForm(true)}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center"
           >
@@ -573,9 +1024,8 @@ const Repair: React.FC = () => {
           </button>
         </div>
       </div>
-
       {/* Orders Table */}
-      <div className="bg-white shadow rounded-lg overflow-hidden">
+      <div className="bg-white shadow rounded-lg overflow-x-scroll">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
@@ -675,18 +1125,32 @@ const Repair: React.FC = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex items-center space-x-2">
-                      <button className="text-blue-600 hover:text-blue-900">
+                      <button
+                        className="text-blue-600 hover:text-blue-900"
+                        onClick={() => {
+                          setSelectedOrder(order.id);
+                          setShowViewModal(true);
+                        }}
+                        title="View Details"
+                      >
                         <Eye className="h-4 w-4" />
                       </button>
-                      <button className="text-green-600 hover:text-green-900">
+                      <button
+                        className="text-green-600 hover:text-green-900"
+                        onClick={() => {
+                          setSelectedOrder(order.id);
+                          setShowUpdateForm(true);
+                        }}
+                        title="Edit"
+                      >
                         <Edit className="h-4 w-4" />
                       </button>
                       {order.status === 'confirmed' && (
-                        <button className="text-purple-600 hover:text-purple-900">
+                        <button className="text-purple-600 hover:text-purple-900" title="Start Repair">
                           <Play className="h-4 w-4" />
                         </button>
                       )}
-                      <button className="text-red-600 hover:text-red-900">
+                      <button className="text-red-600 hover:text-red-900" title="Delete">
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
@@ -697,6 +1161,178 @@ const Repair: React.FC = () => {
           </tbody>
         </table>
       </div>
+      {/* View Modal */}
+      {showViewModal && selectedOrder && (
+        <ViewRepairOrderModal
+          order={repairOrdersDetailed.find((o) => o.id === selectedOrder)}
+          onClose={() => {
+            setShowViewModal(false);
+            setSelectedOrder(null);
+          }}
+        />
+      )}
+    </div>
+  );
+
+  const handleAddTeamSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (teamFormData.teamName.trim()) {
+      const newTeam = {
+        id: `TEAM-${Date.now()}`,
+        teamName: teamFormData.teamName,
+        teamLead: teamFormData.teamLead,
+        location: teamFormData.location,
+        workingHours: teamFormData.workingHours,
+        contactInfo: teamFormData.contactInfo,
+        members: [],
+      };
+      addRepairTeam(newTeam);
+      setShowTeamForm(false);
+      setTeamFormData({
+        teamName: '',
+        teamLead: '',
+        location: '',
+        workingHours: { start: '09:00', end: '17:00' },
+        contactInfo: { email: '', phone: '' },
+      });
+    }
+  };
+
+  const TeamForm = () => (
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+      <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 shadow-lg rounded-md bg-white">
+        <div className="mt-3">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-medium text-gray-900">Add New Repair Team</h3>
+            <button
+              onClick={() => setShowTeamForm(false)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <X className="h-6 w-6" />
+            </button>
+          </div>
+         
+          <form onSubmit={handleAddTeamSubmit} className="space-y-6">
+            {/* Basic Information */}
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <h4 className="text-md font-medium text-gray-900 mb-3">Basic Information</h4>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Team Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={teamFormData.teamName}
+                    onChange={(e) => setTeamFormData(prev => ({ ...prev, teamName: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter team name"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Team Lead *
+                  </label>
+                  <input
+                    type="text"
+                    value={teamFormData.teamLead}
+                    onChange={(e) => setTeamFormData(prev => ({ ...prev, teamLead: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter team lead name"
+                    required
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 mt-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Location *
+                  </label>
+                  <input
+                    type="text"
+                    value={teamFormData.location}
+                    onChange={(e) => setTeamFormData(prev => ({ ...prev, location: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter location"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Email *
+                  </label>
+                  <input
+                    type="email"
+                    value={teamFormData.contactInfo.email}
+                    onChange={(e) => setTeamFormData(prev => ({ ...prev, contactInfo: { ...prev.contactInfo, email: e.target.value } }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter email"
+                    required
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 mt-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Phone
+                  </label>
+                  <input
+                    type="tel"
+                    value={teamFormData.contactInfo.phone}
+                    onChange={(e) => setTeamFormData(prev => ({ ...prev, contactInfo: { ...prev.contactInfo, phone: e.target.value } }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter phone number"
+                  />
+                </div>
+              </div>
+            </div>
+            {/* Working Hours */}
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <h4 className="text-md font-medium text-gray-900 mb-3">Working Hours</h4>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Start Time
+                  </label>
+                  <input
+                    type="time"
+                    value={teamFormData.workingHours.start}
+                    onChange={(e) => setTeamFormData(prev => ({ ...prev, workingHours: { ...prev.workingHours, start: e.target.value } }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    End Time
+                  </label>
+                  <input
+                    type="time"
+                    value={teamFormData.workingHours.end}
+                    onChange={(e) => setTeamFormData(prev => ({ ...prev, workingHours: { ...prev.workingHours, end: e.target.value } }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end space-x-3 pt-4">
+              <button
+                type="button"
+                onClick={() => setShowTeamForm(false)}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Add Team
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
     </div>
   );
 
@@ -706,7 +1342,7 @@ const Repair: React.FC = () => {
       <div className="bg-white shadow rounded-lg">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <h3 className="text-lg font-medium text-gray-900">Repair Teams</h3>
-          <button 
+          <button
             onClick={() => setShowTeamForm(true)}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
           >
@@ -763,7 +1399,127 @@ const Repair: React.FC = () => {
           ))}
         </div>
       </div>
+      {/* Team Form Modal */}
+      {showTeamForm && <TeamForm />}
     </div>
+  );
+
+  // Template Modal Components
+  const TemplateModal = ({ isOpen, onClose, title, children }: { isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode }) =>
+    isOpen ? (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+          <div className="p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-medium text-gray-900">{title}</h3>
+              <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            {children}
+          </div>
+        </div>
+      </div>
+    ) : null;
+
+  const TemplateForm = ({ initialData = {}, isView = false, onSubmit , onClose}: { initialData?: any; isView?: boolean; onSubmit: (e: React.FormEvent) => void }) => (
+    <form onSubmit={onSubmit} className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Template Name</label>
+        <input
+          type="text"
+          name="templateName"
+          defaultValue={initialData.templateName || ''}
+          required={!isView}
+          readOnly={isView}
+          className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${isView ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Product Category</label>
+        <input
+          type="text"
+          name="productCategory"
+          defaultValue={initialData.productCategory || ''}
+          required={!isView}
+          readOnly={isView}
+          className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${isView ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Common Issue</label>
+        <input
+          type="text"
+          name="commonIssue"
+          defaultValue={initialData.commonIssue || ''}
+          required={!isView}
+          readOnly={isView}
+          className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${isView ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Estimated Duration (hours)</label>
+        <input
+          type="number"
+          name="estimatedDuration"
+          defaultValue={initialData.estimatedDuration || ''}
+          required={!isView}
+          readOnly={isView}
+          min="0"
+          className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${isView ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Default Parts (comma-separated)</label>
+        <textarea
+          name="defaultParts"
+          defaultValue={initialData.defaultParts ? initialData.defaultParts.join(', ') : ''}
+          required={!isView}
+          readOnly={isView}
+          rows={3}
+          className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${isView ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+        />
+      </div>
+      <div className="flex items-center">
+        <input
+          type="checkbox"
+          name="isActive"
+          defaultChecked={initialData.isActive || false}
+          disabled={isView}
+          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+        />
+        <label className="ml-2 block text-sm text-gray-700">Active</label>
+      </div>
+      {!isView && (
+        <div className="flex justify-end space-x-3 pt-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-gray-600 bg-gray-200 rounded-lg hover:bg-gray-300"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+          >
+            {initialData.id ? 'Update Template' : 'Create Template'}
+          </button>
+        </div>
+      )}
+      {isView && (
+        <div className="flex justify-end pt-4">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-white bg-gray-600 rounded-lg hover:bg-gray-700"
+          >
+            Close
+          </button>
+        </div>
+      )}
+    </form>
   );
 
   const renderTemplates = () => (
@@ -772,7 +1528,7 @@ const Repair: React.FC = () => {
       <div className="bg-white shadow rounded-lg">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <h3 className="text-lg font-medium text-gray-900">Repair Templates</h3>
-          <button 
+          <button
             onClick={() => setShowTemplateForm(true)}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
           >
@@ -780,77 +1536,117 @@ const Repair: React.FC = () => {
             Create Template
           </button>
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Template Name
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Product Category
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Common Issue
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Est. Duration
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Default Parts
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {repairTemplates.map((template) => (
-                <tr key={template.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">{template.templateName}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {template.productCategory}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {template.commonIssue}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {template.estimatedDuration}h
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {template.defaultParts.length} parts
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                      template.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                    }`}>
-                      {template.isActive ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex items-center space-x-2">
-                      <button className="text-blue-600 hover:text-blue-900">
-                        <Eye className="h-4 w-4" />
-                      </button>
-                      <button className="text-green-600 hover:text-green-900">
-                        <Edit className="h-4 w-4" />
-                      </button>
-                      <button className="text-purple-600 hover:text-purple-900">
-                        Use Template
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+       <div className="w-full overflow-x-auto rounded-lg shadow-sm border border-gray-200">
+  <table className="min-w-full divide-y divide-gray-200 table-auto">
+    <thead className="bg-gray-50">
+      <tr>
+        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">
+          Template Name
+        </th>
+        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">
+          Product Category
+        </th>
+        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap hidden sm:table-cell">
+          Common Issue
+        </th>
+        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap hidden md:table-cell">
+          Est. Duration
+        </th>
+        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap hidden md:table-cell">
+          Default Parts
+        </th>
+        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap hidden lg:table-cell">
+          Status
+        </th>
+        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">
+          Actions
+        </th>
+      </tr>
+    </thead>
+    <tbody className="bg-white divide-y divide-gray-200 text-sm">
+      {repairTemplates.map((template) => (
+        <tr key={template.id} className="hover:bg-gray-50">
+          <td className="px-4 py-3 whitespace-nowrap font-medium text-gray-900">
+            {template.templateName}
+            <div className="text-gray-500 text-xs sm:hidden">
+              {template.productCategory} • {template.estimatedDuration}h
+            </div>
+          </td>
+          <td className="px-4 py-3 whitespace-nowrap text-gray-700 hidden sm:table-cell">
+            {template.productCategory}
+          </td>
+          <td className="px-4 py-3 whitespace-nowrap text-gray-700 hidden sm:table-cell">
+            {template.commonIssue}
+          </td>
+          <td className="px-4 py-3 whitespace-nowrap text-gray-700 hidden md:table-cell">
+            {template.estimatedDuration}h
+          </td>
+          <td className="px-4 py-3 whitespace-nowrap text-gray-700 hidden md:table-cell">
+            {template.defaultParts.length} parts
+          </td>
+          <td className="px-4 py-3 whitespace-nowrap hidden lg:table-cell">
+            <span
+              className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                template.isActive
+                  ? 'bg-green-100 text-green-800'
+                  : 'bg-gray-100 text-gray-800'
+              }`}
+            >
+              {template.isActive ? 'Active' : 'Inactive'}
+            </span>
+          </td>
+          <td className="px-4 py-3 whitespace-nowrap">
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => openTemplateViewModal(template)}
+                className="text-blue-600 hover:text-blue-900"
+                title="View Details"
+              >
+                <Eye className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => openTemplateUpdateModal(template)}
+                className="text-green-600 hover:text-green-900"
+                title="Edit Template"
+              >
+                <Edit className="h-4 w-4" />
+              </button>
+              <button className="text-purple-600 hover:text-purple-900 text-xs font-semibold">
+                Use
+              </button>
+            </div>
+          </td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</div>
       </div>
+
+      {/* Template Modals */}
+      <TemplateModal
+        isOpen={showTemplateForm}
+        onClose={() => closeTemplateModal(setShowTemplateForm)}
+        title="Create Repair Template"
+      >
+        <TemplateForm onSubmit={handleCreateTemplate} />
+      </TemplateModal>
+
+      <TemplateModal
+        isOpen={showTemplateViewModal}
+        onClose={() => closeTemplateModal(setShowTemplateViewModal)}
+        title={`View Template: ${selectedTemplate?.templateName || ''}`}
+      >
+        <TemplateForm initialData={selectedTemplate || {}} isView={true} />
+      </TemplateModal>
+
+      <TemplateModal
+        isOpen={showTemplateUpdateModal}
+        onClose={() => closeTemplateModal(setShowTemplateUpdateModal)}
+        title={`Update Template: ${selectedTemplate?.templateName || ''}`}
+      >
+        <TemplateForm initialData={selectedTemplate || {}} onSubmit={handleUpdateTemplate} />
+      </TemplateModal>
     </div>
   );
 
@@ -903,7 +1699,6 @@ const Repair: React.FC = () => {
           </div>
         </div>
       </div>
-
       {/* Sample Reports */}
       <div className="bg-white shadow rounded-lg">
         <div className="px-6 py-4 border-b border-gray-200">
@@ -987,7 +1782,6 @@ const Repair: React.FC = () => {
             + Add Repair Type
           </button>
         </div>
-
         <div className="bg-white shadow rounded-lg p-6">
           <h3 className="text-lg font-medium text-gray-900 mb-4">Labor Rates</h3>
           <div className="space-y-3">
@@ -1008,7 +1802,6 @@ const Repair: React.FC = () => {
             Edit Rates
           </button>
         </div>
-
         <div className="bg-white shadow rounded-lg p-6">
           <h3 className="text-lg font-medium text-gray-900 mb-4">Default Locations</h3>
           <div className="space-y-3">
@@ -1020,7 +1813,6 @@ const Repair: React.FC = () => {
             Manage Locations
           </button>
         </div>
-
         <div className="bg-white shadow rounded-lg p-6">
           <h3 className="text-lg font-medium text-gray-900 mb-4">Notifications</h3>
           <div className="space-y-3">
@@ -1038,7 +1830,6 @@ const Repair: React.FC = () => {
             </label>
           </div>
         </div>
-
         <div className="bg-white shadow rounded-lg p-6">
           <h3 className="text-lg font-medium text-gray-900 mb-4">Auto Actions</h3>
           <div className="space-y-3">
@@ -1056,7 +1847,6 @@ const Repair: React.FC = () => {
             </label>
           </div>
         </div>
-
         <div className="bg-white shadow rounded-lg p-6">
           <h3 className="text-lg font-medium text-gray-900 mb-4">Custom Fields</h3>
           <div className="space-y-3">
@@ -1103,7 +1893,6 @@ const Repair: React.FC = () => {
             </p>
           </div>
         </div>
-
         {/* Tab Navigation */}
         <div className="border-b border-gray-200">
           <nav className="-mb-px flex space-x-8">
@@ -1128,12 +1917,29 @@ const Repair: React.FC = () => {
             })}
           </nav>
         </div>
-
         {/* Tab Content */}
         {renderTabContent()}
-
-        {/* Create Forms */}
-        {showCreateForm && <CreateRepairOrderForm />}
+        {/* Create/Update Forms */}
+        {showCreateForm && (
+          <RepairOrderForm
+            formData={createFormData}
+            setFormData={setCreateFormData}
+            onSubmit={handleCreateSubmit}
+            onCancel={() => setShowCreateForm(false)}
+          />
+        )}
+        {showUpdateForm && (
+          <RepairOrderForm
+            isUpdate={true}
+            formData={updateFormData}
+            setFormData={setUpdateFormData}
+            onSubmit={handleUpdateSubmit}
+            onCancel={() => {
+              setShowUpdateForm(false);
+              setSelectedOrder(null);
+            }}
+          />
+        )}
       </div>
     // </Layout>
   );

@@ -12,7 +12,8 @@ import {
   BarChart3,
   Edit,
   Eye,
-  Trash2
+  Trash2,
+  X
 } from 'lucide-react';
 
 const Valuation: React.FC = () => {
@@ -21,6 +22,9 @@ const Valuation: React.FC = () => {
   const [methodFilter, setMethodFilter] = useState('all');
   const [periodFilter, setPeriodFilter] = useState('this-month');
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showViewForm, setShowViewForm] = useState(false);
+  const [showUpdateForm, setShowUpdateForm] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<any>(null);
 
   // Sample valuation data
   const [valuationData] = useState([
@@ -63,6 +67,15 @@ const Valuation: React.FC = () => {
     return matchesSearch && matchesMethod;
   });
 
+  const handleUpdateSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // TODO: Implement update logic here, e.g., update via context
+    // Assuming useData has an updateValuation function: updateValuation(selectedItem.id, formData);
+    console.log('Updating valuation:', selectedItem);
+    setShowUpdateForm(false);
+    setSelectedItem(null);
+  };
+
   const CreateValuationForm = () => (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
       <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
@@ -73,7 +86,7 @@ const Valuation: React.FC = () => {
               onClick={() => setShowCreateForm(false)}
               className="text-gray-400 hover:text-gray-600"
             >
-              <Trash2 className="h-6 w-6" />
+              <X className="h-6 w-6" />
             </button>
           </div>
           
@@ -108,7 +121,7 @@ const Valuation: React.FC = () => {
                 <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
                   <option>Select Product</option>
                   {inventory.map(item => (
-                    <option key={item.id} value={item.id}>{item.name}</option>
+                    <option key={item.id} value={item.name}>{item.name}</option>
                   ))}
                 </select>
               </div>
@@ -179,6 +192,234 @@ const Valuation: React.FC = () => {
       </div>
     </div>
   );
+
+  const ViewValuationForm = () => {
+    if (!selectedItem) return null;
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">View Valuation</h3>
+              <button
+                onClick={() => {
+                  setShowViewForm(false);
+                  setSelectedItem(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">ID</label>
+                  <p className="text-sm text-gray-900">{selectedItem.id}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                  <div className="flex items-center">
+                    <Calendar className="h-4 w-4 text-gray-400 mr-2" />
+                    <p className="text-sm text-gray-900">{selectedItem.date}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Reference</label>
+                  <p className="text-sm text-gray-900">{selectedItem.reference}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Product</label>
+                  <div className="flex items-center">
+                    <Package className="h-4 w-4 text-gray-400 mr-2" />
+                    <p className="text-sm text-gray-900">{selectedItem.product}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                  <p className={`text-sm font-medium ${selectedItem.quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {selectedItem.quantity > 0 ? '+' : ''}{selectedItem.quantity}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Unit Value</label>
+                  <p className="text-sm text-gray-900">${selectedItem.unitValue.toFixed(2)}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Total Value</label>
+                  <p className={`text-sm font-medium ${selectedItem.totalValue > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    ${selectedItem.totalValue.toLocaleString()}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Method</label>
+                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getMethodColor(selectedItem.method)}`}>
+                    {selectedItem.method}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowViewForm(false);
+                    setSelectedItem(null);
+                  }}
+                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const UpdateValuationForm = () => {
+    if (!selectedItem) return null;
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">Update Valuation</h3>
+              <button
+                onClick={() => {
+                  setShowUpdateForm(false);
+                  setSelectedItem(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <form className="space-y-4" onSubmit={handleUpdateSubmit}>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    defaultValue={selectedItem.date}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Reference
+                  </label>
+                  <input
+                    type="text"
+                    defaultValue={selectedItem.reference}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Product
+                  </label>
+                  <select 
+                    defaultValue={selectedItem.product}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option>Select Product</option>
+                    {inventory.map(item => (
+                      <option key={item.id} value={item.name}>{item.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Quantity
+                  </label>
+                  <input
+                    type="number"
+                    defaultValue={selectedItem.quantity}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Unit Value
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    defaultValue={selectedItem.unitValue}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Valuation Method
+                  </label>
+                  <select 
+                    defaultValue={selectedItem.method}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="FIFO">FIFO (First In, First Out)</option>
+                    <option value="LIFO">LIFO (Last In, First Out)</option>
+                    <option value="Average Cost">Average Cost</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Notes
+                </label>
+                <textarea
+                  rows={3}
+                  defaultValue={selectedItem.notes || ''}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUpdateForm(false);
+                    setSelectedItem(null);
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                >
+                  Update Valuation
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const getMethodColor = (method: string) => {
     switch (method) {
@@ -423,10 +664,22 @@ const Valuation: React.FC = () => {
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button className="text-blue-600 hover:text-blue-900 mr-3">
+                    <button 
+                      className="text-blue-600 hover:text-blue-900 mr-3"
+                      onClick={() => {
+                        setSelectedItem(item);
+                        setShowViewForm(true);
+                      }}
+                    >
                       <Eye className="h-4 w-4" />
                     </button>
-                    <button className="text-green-600 hover:text-green-900 mr-3">
+                    <button 
+                      className="text-green-600 hover:text-green-900 mr-3"
+                      onClick={() => {
+                        setSelectedItem(item);
+                        setShowUpdateForm(true);
+                      }}
+                    >
                       <Edit className="h-4 w-4" />
                     </button>
                     <button className="text-red-600 hover:text-red-900">
@@ -441,6 +694,10 @@ const Valuation: React.FC = () => {
 
         {/* Create Valuation Form Modal */}
         {showCreateForm && <CreateValuationForm />}
+        {/* View Valuation Form Modal */}
+        {showViewForm && <ViewValuationForm />}
+        {/* Update Valuation Form Modal */}
+        {showUpdateForm && <UpdateValuationForm />}
       </div>
     // </Layout>
   );

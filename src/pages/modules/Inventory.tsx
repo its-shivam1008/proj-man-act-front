@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useData } from '../../contexts/DataContext';
-import Layout from '../../components/Layout';
+import { Outlet } from "react-router-dom";
+
+// import Layout from '../../components/Layout';
 import { 
   Package, 
   Search, 
@@ -293,11 +295,12 @@ const Inventory: React.FC = () => {
       icon: Truck,
       hasDropdown: true,
       dropdownItems: [
-        { name: 'Receipt', path: '/inventory/receipt' },
-        { name: 'Deliveries', path: '/inventory/deliveries' },
-        { name: 'Scrap Order', path: '/inventory/scrap-order' },
-        { name: 'Forecasting', path: '/inventory/forecasting' }
-      ]
+  { name: 'Receipt', path: 'receipt' },
+  { name: 'Deliveries', path: 'deliveries' },
+  { name: 'Scrap Order', path: 'scrap-order' },
+  { name: 'Forecasting', path: 'forecasting' }
+]
+
     },
     { id: 'products', name: 'Products', icon: Package },
     { 
@@ -316,10 +319,11 @@ const Inventory: React.FC = () => {
   ];
 
   const handleOperationClick = (path: string) => {
-    setShowOperationsDropdown(false);
-    setShowReportingDropdown(false);
-    navigate(path);
-  };
+  setShowOperationsDropdown(false);
+  setShowReportingDropdown(false);
+  navigate(path.replace('/inventory/', '')); // makes path relative to parent
+};
+
 
   const renderOverview = () => (
     <div className="space-y-6">
@@ -386,7 +390,7 @@ const Inventory: React.FC = () => {
         <h3 className="text-lg font-medium text-gray-900 mb-4">Quick Actions</h3>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <button 
-            onClick={() => navigate('/inventory/receipt')}
+            onClick={() => navigate('receipt')}
             className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
           >
             <Plus className="h-5 w-5 text-gray-400 mr-2" />
@@ -399,11 +403,11 @@ const Inventory: React.FC = () => {
             <Truck className="h-5 w-5 text-gray-400 mr-2" />
             <span className="text-sm font-medium text-gray-700">New Delivery</span>
           </button>
-          <button className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+          <button className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"  onClick={() => navigate('products')}>
             <Package className="h-5 w-5 text-gray-400 mr-2" />
             <span className="text-sm font-medium text-gray-700">Add Product</span>
           </button>
-          <button className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+          <button className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors" onClick={() => navigate('reporting/inventory-history')}>
             <BarChart3 className="h-5 w-5 text-gray-400 mr-2" />
             <span className="text-sm font-medium text-gray-700">View Reports</span>
           </button>
@@ -1087,8 +1091,8 @@ const Inventory: React.FC = () => {
 
         {/* Tab Content */}
         {renderTabContent()}
+        <Outlet/>
       </div>
-    // </Layout>
   );
 };
 

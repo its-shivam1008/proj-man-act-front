@@ -12,7 +12,8 @@ import {
   ArrowRight,
   Edit,
   Eye,
-  Trash2
+  Trash2,
+  X
 } from 'lucide-react';
 
 const InventoryHistory: React.FC = () => {
@@ -23,6 +24,8 @@ const InventoryHistory: React.FC = () => {
   const [operationFilter, setOperationFilter] = useState('all');
   const [monthFilter, setMonthFilter] = useState('this-month');
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showUpdateForm, setShowUpdateForm] = useState(false);
+  const [selectedMove, setSelectedMove] = useState<any>(null);
 
   const filteredMoves = stockMoves.filter(move => {
     const product = inventory.find(item => item.id === move.productId);
@@ -36,6 +39,15 @@ const InventoryHistory: React.FC = () => {
     return matchesSearch && matchesProduct && matchesLocation && matchesOperation;
   });
 
+  const handleUpdateSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // TODO: Implement update logic here, e.g., update via context
+    // Assuming useData has an updateStockMove function: updateStockMove(selectedMove.id, formData);
+    console.log('Updating move:', selectedMove);
+    setShowUpdateForm(false);
+    setSelectedMove(null);
+  };
+
   const CreateHistoryForm = () => (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
       <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
@@ -46,7 +58,7 @@ const InventoryHistory: React.FC = () => {
               onClick={() => setShowCreateForm(false)}
               className="text-gray-400 hover:text-gray-600"
             >
-              <Trash2 className="h-6 w-6" />
+              <X className="h-6 w-6" />
             </button>
           </div>
           
@@ -159,6 +171,153 @@ const InventoryHistory: React.FC = () => {
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
                 Add Transaction
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+
+  const UpdateHistoryForm = () => (
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+      <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+        <div className="mt-3">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-medium text-gray-900">Update Transaction History</h3>
+            <button
+              onClick={() => {
+                setShowUpdateForm(false);
+                setSelectedMove(null);
+              }}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <X className="h-6 w-6" />
+            </button>
+          </div>
+          
+          <form className="space-y-4" onSubmit={handleUpdateSubmit}>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Date
+                </label>
+                <input
+                  type="date"
+                  defaultValue={selectedMove?.date || ''}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Reference
+                </label>
+                <input
+                  type="text"
+                  defaultValue={selectedMove?.reference || ''}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Product
+                </label>
+                <select 
+                  defaultValue={selectedMove?.productId || ''}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Select Product</option>
+                  {inventory.map(item => (
+                    <option key={item.id} value={item.id}>{item.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Quantity
+                </label>
+                <input
+                  type="number"
+                  defaultValue={selectedMove?.quantity || ''}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  From Location
+                </label>
+                <input
+                  type="text"
+                  defaultValue={selectedMove?.fromLocation || ''}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  To Location
+                </label>
+                <input
+                  type="text"
+                  defaultValue={selectedMove?.toLocation || ''}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Operation Type
+                </label>
+                <select 
+                  defaultValue={selectedMove?.operationType || ''}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="receipt">Receipt</option>
+                  <option value="delivery">Delivery</option>
+                  <option value="internal">Internal Transfer</option>
+                  <option value="scrap">Scrap</option>
+                  <option value="adjustment">Adjustment</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Status
+                </label>
+                <select 
+                  defaultValue={selectedMove?.status || ''}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="draft">Draft</option>
+                  <option value="confirmed">Confirmed</option>
+                  <option value="done">Done</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-3 pt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowUpdateForm(false);
+                  setSelectedMove(null);
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              >
+                Update Transaction
               </button>
             </div>
           </form>
@@ -413,7 +572,13 @@ const InventoryHistory: React.FC = () => {
                       <button className="text-blue-600 hover:text-blue-900 mr-3">
                         <Eye className="h-4 w-4" />
                       </button>
-                      <button className="text-green-600 hover:text-green-900 mr-3">
+                      <button 
+                        className="text-green-600 hover:text-green-900 mr-3"
+                        onClick={() => {
+                          setSelectedMove(move);
+                          setShowUpdateForm(true);
+                        }}
+                      >
                         <Edit className="h-4 w-4" />
                       </button>
                       <button className="text-red-600 hover:text-red-900">
@@ -429,6 +594,8 @@ const InventoryHistory: React.FC = () => {
 
         {/* Create History Form Modal */}
         {showCreateForm && <CreateHistoryForm />}
+        {/* Update History Form Modal */}
+        {showUpdateForm && <UpdateHistoryForm />}
       </div>
     // </Layout>
   );

@@ -2,11 +2,11 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '../../contexts/DataContext';
 import Layout from '../../components/Layout';
-import { 
-  Factory, 
-  Plus, 
-  Search, 
-  Filter, 
+import {
+  Factory,
+  Plus,
+  Search,
+  Filter,
   Calendar,
   Clock,
   CheckCircle,
@@ -21,7 +21,8 @@ import {
   TrendingUp,
   Target,
   Zap,
-  Activity
+  Activity,
+  X
 } from 'lucide-react';
 
 const Manufacturing: React.FC = () => {
@@ -36,6 +37,9 @@ const Manufacturing: React.FC = () => {
   const [showCreateWOForm, setShowCreateWOForm] = useState(false);
   const [showScheduleForm, setShowScheduleForm] = useState(false);
   const [showCreateBOMForm, setShowCreateBOMForm] = useState(false);
+  const [showViewMOForm, setShowViewMOForm] = useState(false);
+  const [showUpdateMOForm, setShowUpdateMOForm] = useState(false);
+  const [selectedMO, setSelectedMO] = useState<any>(null);
 
   // Sample data for comprehensive manufacturing management
   const [workOrders] = useState([
@@ -79,7 +83,6 @@ const Manufacturing: React.FC = () => {
       instructions: 'Perform pressure test'
     }
   ]);
-
   const [billsOfMaterials] = useState([
     {
       id: 'BOM-001',
@@ -112,7 +115,6 @@ const Manufacturing: React.FC = () => {
       validTo: '2024-12-31'
     }
   ]);
-
   const [workCenters] = useState([
     {
       id: 'WC-001',
@@ -148,13 +150,11 @@ const Manufacturing: React.FC = () => {
       status: 'maintenance'
     }
   ]);
-
   // Sample BOM routing data
   const [routings] = useState([
     { id: 'RT-001', name: 'Standard Valve Production', operations: ['Cutting', 'Assembly', 'Quality Check'] },
     { id: 'RT-002', name: 'Gauge Manufacturing', operations: ['Machining', 'Calibration', 'Testing'] }
   ]);
-
   // Sample employees/operators
   const [employees] = useState([
     { id: 'EMP-001', name: 'John Smith', role: 'Machine Operator' },
@@ -162,6 +162,15 @@ const Manufacturing: React.FC = () => {
     { id: 'EMP-003', name: 'Mike Johnson', role: 'Quality Inspector' },
     { id: 'EMP-004', name: 'David Brown', role: 'Production Manager' }
   ]);
+
+  const handleUpdateSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // TODO: Implement update logic here, e.g., update via context
+    // Assuming useData has an updateManufacturingOrder function: updateManufacturingOrder(selectedMO.id, formData);
+    console.log('Updating manufacturing order:', selectedMO);
+    setShowUpdateMOForm(false);
+    setSelectedMO(null);
+  };
 
   // Create Manufacturing Order Form
   const CreateMOForm = () => (
@@ -177,7 +186,7 @@ const Manufacturing: React.FC = () => {
               <X className="h-6 w-6" />
             </button>
           </div>
-          
+         
           <form className="space-y-6">
             {/* Product and Quantity */}
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
@@ -204,7 +213,6 @@ const Manufacturing: React.FC = () => {
                 />
               </div>
             </div>
-
             {/* BOM and Routing */}
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div>
@@ -231,7 +239,6 @@ const Manufacturing: React.FC = () => {
                 </select>
               </div>
             </div>
-
             {/* Work Center and Responsible Person */}
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div>
@@ -257,7 +264,6 @@ const Manufacturing: React.FC = () => {
                 </select>
               </div>
             </div>
-
             {/* Dates */}
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div>
@@ -279,7 +285,6 @@ const Manufacturing: React.FC = () => {
                 />
               </div>
             </div>
-
             {/* Locations */}
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div>
@@ -305,7 +310,6 @@ const Manufacturing: React.FC = () => {
                 </select>
               </div>
             </div>
-
             {/* Status */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -318,7 +322,6 @@ const Manufacturing: React.FC = () => {
                 <option value="done">Done</option>
               </select>
             </div>
-
             <div className="flex justify-end space-x-3 pt-6 border-t">
               <button
                 type="button"
@@ -340,6 +343,271 @@ const Manufacturing: React.FC = () => {
     </div>
   );
 
+  const ViewMOForm = () => {
+    if (!selectedMO) return null;
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">View Manufacturing Order</h3>
+              <button
+                onClick={() => {
+                  setShowViewMOForm(false);
+                  setSelectedMO(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Order ID</label>
+                  <p className="text-sm text-gray-900">{selectedMO.id}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Product</label>
+                  <div className="flex items-center">
+                    <Package className="h-4 w-4 text-gray-400 mr-2" />
+                    <p className="text-sm text-gray-900">{selectedMO.productName}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                  <p className="text-sm text-gray-900">{selectedMO.quantity} units</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(selectedMO.status)}`}>
+                    {selectedMO.status.replace('-', ' ')}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getPriorityColor(selectedMO.priority)}`}>
+                    {selectedMO.priority}
+                  </span>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                  <p className="text-sm text-gray-900">{selectedMO.startDate}</p>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                <p className="text-sm text-gray-900">{selectedMO.endDate}</p>
+              </div>
+
+              <div className="flex justify-end pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowViewMOForm(false);
+                    setSelectedMO(null);
+                  }}
+                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const UpdateMOForm = () => {
+    if (!selectedMO) return null;
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 shadow-lg rounded-md bg-white">
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-medium text-gray-900">Update Manufacturing Order</h3>
+              <button
+                onClick={() => {
+                  setShowUpdateMOForm(false);
+                  setSelectedMO(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <form className="space-y-6" onSubmit={handleUpdateSubmit}>
+              {/* Product and Quantity */}
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Product to Manufacture *
+                  </label>
+                  <select defaultValue={selectedMO.productName} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    <option value="">Select Product</option>
+                    <option value="industrial-valve">Industrial Valve</option>
+                    <option value="pressure-gauge">Pressure Gauge</option>
+                    <option value="hydraulic-pump">Hydraulic Pump</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Quantity to Produce *
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    defaultValue={selectedMO.quantity}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+              {/* BOM and Routing */}
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    BOM (Bill of Materials)
+                  </label>
+                  <select defaultValue={selectedMO.bomId} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    <option value="">Auto-filled after product selection</option>
+                    {billsOfMaterials.map(bom => (
+                      <option key={bom.id} value={bom.id}>{bom.product} - {bom.version}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">BOM will be automatically selected based on product</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Routing (Operations Path) *
+                  </label>
+                  <select defaultValue={selectedMO.routingId} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    <option value="">Select Routing</option>
+                    {routings.map(routing => (
+                      <option key={routing.id} value={routing.id}>{routing.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {/* Work Center and Responsible Person */}
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Work Center *
+                  </label>
+                  <select defaultValue={selectedMO.workCenterId} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    <option value="">Select Work Center</option>
+                    {workCenters.map(wc => (
+                      <option key={wc.id} value={wc.id}>{wc.name} ({wc.code})</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Responsible Person *
+                  </label>
+                  <select defaultValue={selectedMO.responsiblePersonId} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    <option value="">Select Responsible Person</option>
+                    {employees.map(emp => (
+                      <option key={emp.id} value={emp.id}>{emp.name} - {emp.role}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {/* Dates */}
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Planned Start Date *
+                  </label>
+                  <input
+                    type="datetime-local"
+                    defaultValue={selectedMO.plannedStartDate}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Deadline *
+                  </label>
+                  <input
+                    type="datetime-local"
+                    defaultValue={selectedMO.deadline}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+              {/* Locations */}
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Raw Material Location
+                  </label>
+                  <select defaultValue={selectedMO.rawMaterialLocation} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    <option value="">Select Location</option>
+                    <option value="warehouse-a">Warehouse A</option>
+                    <option value="warehouse-b">Warehouse B</option>
+                    <option value="warehouse-c">Warehouse C</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Finished Product Location
+                  </label>
+                  <select defaultValue={selectedMO.finishedProductLocation} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    <option value="">Select Location</option>
+                    <option value="finished-goods">Finished Goods</option>
+                    <option value="warehouse-a">Warehouse A</option>
+                    <option value="warehouse-b">Warehouse B</option>
+                  </select>
+                </div>
+              </div>
+              {/* Status */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Status
+                </label>
+                <select defaultValue={selectedMO.status} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                  <option value="draft">Draft</option>
+                  <option value="confirmed">Confirmed</option>
+                  <option value="in-progress">In Progress</option>
+                  <option value="done">Done</option>
+                </select>
+              </div>
+              <div className="flex justify-end space-x-3 pt-6 border-t">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUpdateMOForm(false);
+                    setSelectedMO(null);
+                  }}
+                  className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                >
+                  Update Manufacturing Order
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Create Work Order Form
   const CreateWOForm = () => (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
@@ -354,7 +622,7 @@ const Manufacturing: React.FC = () => {
               <X className="h-6 w-6" />
             </button>
           </div>
-          
+         
           <form className="space-y-6">
             {/* Operation and Work Center */}
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
@@ -384,7 +652,6 @@ const Manufacturing: React.FC = () => {
                 </select>
               </div>
             </div>
-
             {/* Employee and Times */}
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div>
@@ -410,7 +677,6 @@ const Manufacturing: React.FC = () => {
                 />
               </div>
             </div>
-
             {/* Scheduled Times */}
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div>
@@ -432,7 +698,6 @@ const Manufacturing: React.FC = () => {
                 />
               </div>
             </div>
-
             {/* Actual Duration and Overlap */}
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div>
@@ -459,7 +724,6 @@ const Manufacturing: React.FC = () => {
                 </label>
               </div>
             </div>
-
             {/* Dependencies and Status */}
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div>
@@ -485,7 +749,6 @@ const Manufacturing: React.FC = () => {
                 </select>
               </div>
             </div>
-
             <div className="flex justify-end space-x-3 pt-6 border-t">
               <button
                 type="button"
@@ -506,7 +769,6 @@ const Manufacturing: React.FC = () => {
       </div>
     </div>
   );
-
   // Schedule Order Form
   const ScheduleOrderForm = () => (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
@@ -521,7 +783,7 @@ const Manufacturing: React.FC = () => {
               <X className="h-6 w-6" />
             </button>
           </div>
-          
+         
           <form className="space-y-6">
             {/* MO ID and Product */}
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
@@ -549,7 +811,6 @@ const Manufacturing: React.FC = () => {
                 </select>
               </div>
             </div>
-
             {/* Quantity and BOM */}
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div>
@@ -575,7 +836,6 @@ const Manufacturing: React.FC = () => {
                 </select>
               </div>
             </div>
-
             {/* Routing and Work Center */}
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div>
@@ -601,7 +861,6 @@ const Manufacturing: React.FC = () => {
                 </select>
               </div>
             </div>
-
             {/* Operations List */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -625,7 +884,6 @@ const Manufacturing: React.FC = () => {
                 </div>
               </div>
             </div>
-
             {/* Production Location and Dates */}
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div>
@@ -652,7 +910,6 @@ const Manufacturing: React.FC = () => {
                 <p className="text-xs text-gray-500 mt-1">Based on routing and quantity</p>
               </div>
             </div>
-
             {/* Schedule Dates */}
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div>
@@ -674,7 +931,6 @@ const Manufacturing: React.FC = () => {
                 />
               </div>
             </div>
-
             {/* Priority and Responsible */}
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div>
@@ -700,7 +956,6 @@ const Manufacturing: React.FC = () => {
                 </select>
               </div>
             </div>
-
             {/* Status */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -713,7 +968,6 @@ const Manufacturing: React.FC = () => {
                 <option value="done">Done</option>
               </select>
             </div>
-
             <div className="flex justify-end space-x-3 pt-6 border-t">
               <button
                 type="button"
@@ -734,7 +988,6 @@ const Manufacturing: React.FC = () => {
       </div>
     </div>
   );
-
   // Create BOM Form
   const CreateBOMForm = () => (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
@@ -749,7 +1002,7 @@ const Manufacturing: React.FC = () => {
               <X className="h-6 w-6" />
             </button>
           </div>
-          
+         
           <form className="space-y-6">
             {/* Product and BOM Type */}
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
@@ -775,7 +1028,6 @@ const Manufacturing: React.FC = () => {
                 </select>
               </div>
             </div>
-
             {/* Components Section */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -790,7 +1042,7 @@ const Manufacturing: React.FC = () => {
                     <div className="col-span-2">Unit Cost</div>
                     <div className="col-span-1">Actions</div>
                   </div>
-                  
+                 
                   <div className="grid grid-cols-12 gap-2 items-center">
                     <div className="col-span-5">
                       <select className="w-full px-2 py-1 border border-gray-300 rounded text-sm">
@@ -818,7 +1070,7 @@ const Manufacturing: React.FC = () => {
                       </button>
                     </div>
                   </div>
-                  
+                 
                   <div className="grid grid-cols-12 gap-2 items-center">
                     <div className="col-span-5">
                       <select className="w-full px-2 py-1 border border-gray-300 rounded text-sm">
@@ -848,7 +1100,7 @@ const Manufacturing: React.FC = () => {
                     </div>
                   </div>
                 </div>
-                
+               
                 <button
                   type="button"
                   className="mt-3 text-blue-600 hover:text-blue-800 text-sm flex items-center"
@@ -858,7 +1110,6 @@ const Manufacturing: React.FC = () => {
                 </button>
               </div>
             </div>
-
             {/* Byproducts */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -883,7 +1134,6 @@ const Manufacturing: React.FC = () => {
                 </select>
               </div>
             </div>
-
             {/* Routing and Reference */}
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div>
@@ -908,7 +1158,6 @@ const Manufacturing: React.FC = () => {
                 />
               </div>
             </div>
-
             {/* Validity Dates */}
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div>
@@ -930,7 +1179,6 @@ const Manufacturing: React.FC = () => {
                 />
               </div>
             </div>
-
             {/* Attachments */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -951,7 +1199,6 @@ const Manufacturing: React.FC = () => {
                 </div>
               </div>
             </div>
-
             <div className="flex justify-end space-x-3 pt-6 border-t">
               <button
                 type="button"
@@ -1093,7 +1340,6 @@ const Manufacturing: React.FC = () => {
           </div>
         </div>
       </div>
-
       {/* Real-time Dashboard */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Work Center Status */}
@@ -1107,7 +1353,7 @@ const Manufacturing: React.FC = () => {
                 <div key={wc.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                   <div className="flex items-center">
                     <div className={`w-3 h-3 rounded-full mr-3 ${
-                      wc.status === 'operational' ? 'bg-green-500' : 
+                      wc.status === 'operational' ? 'bg-green-500' :
                       wc.status === 'maintenance' ? 'bg-yellow-500' : 'bg-red-500'
                     }`} />
                     <div>
@@ -1124,7 +1370,6 @@ const Manufacturing: React.FC = () => {
             </div>
           </div>
         </div>
-
         {/* Production Schedule */}
         <div className="bg-white shadow rounded-lg">
           <div className="px-6 py-4 border-b border-gray-200">
@@ -1153,7 +1398,6 @@ const Manufacturing: React.FC = () => {
           </div>
         </div>
       </div>
-
       {/* Kanban View */}
       <div className="bg-white shadow rounded-lg">
         <div className="px-6 py-4 border-b border-gray-200">
@@ -1200,12 +1444,14 @@ const Manufacturing: React.FC = () => {
           <h2 className="text-xl font-bold text-gray-900">Manufacturing Orders</h2>
           <p className="text-sm text-gray-600">Create and manage production orders</p>
         </div>
-        <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center">
+        <button 
+          onClick={() => setShowCreateMOForm(true)}
+          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+        >
           <Plus className="h-4 w-4 mr-2" />
           New Manufacturing Order
         </button>
       </div>
-
       {/* Filters */}
       <div className="bg-white shadow rounded-lg p-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
@@ -1250,7 +1496,6 @@ const Manufacturing: React.FC = () => {
           </select>
         </div>
       </div>
-
       {/* Manufacturing Orders Table */}
       <div className="bg-white shadow rounded-lg overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200">
@@ -1315,8 +1560,8 @@ const Manufacturing: React.FC = () => {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div 
-                      className="bg-blue-600 h-2 rounded-full" 
+                    <div
+                      className="bg-blue-600 h-2 rounded-full"
                       style={{ width: `${order.status === 'done' ? 100 : order.status === 'in-progress' ? 60 : 20}%` }}
                     />
                   </div>
@@ -1325,8 +1570,24 @@ const Manufacturing: React.FC = () => {
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                  <button className="text-blue-600 hover:text-blue-900 mr-3">View</button>
-                  <button className="text-green-600 hover:text-green-900 mr-3">Edit</button>
+                  <button 
+                    className="text-blue-600 hover:text-blue-900 mr-3"
+                    onClick={() => {
+                      setSelectedMO(order);
+                      setShowViewMOForm(true);
+                    }}
+                  >
+                    View
+                  </button>
+                  <button 
+                    className="text-green-600 hover:text-green-900 mr-3"
+                    onClick={() => {
+                      setSelectedMO(order);
+                      setShowUpdateMOForm(true);
+                    }}
+                  >
+                    Edit
+                  </button>
                   <button className="text-purple-600 hover:text-purple-900">Start</button>
                 </td>
               </tr>
@@ -1345,12 +1606,14 @@ const Manufacturing: React.FC = () => {
           <h2 className="text-xl font-bold text-gray-900">Work Orders</h2>
           <p className="text-sm text-gray-600">Manage operations and track time</p>
         </div>
-        <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center">
+        <button 
+          onClick={() => setShowCreateWOForm(true)}
+          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+        >
           <Plus className="h-4 w-4 mr-2" />
           Create Work Order
         </button>
       </div>
-
       {/* Work Orders Table */}
       <div className="bg-white shadow rounded-lg overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200">
@@ -1414,7 +1677,7 @@ const Manufacturing: React.FC = () => {
                       {wo.actualTime}h / {wo.estimatedTime}h
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-1 mt-1">
-                      <div 
+                      <div
                         className={`h-1 rounded-full ${
                           wo.actualTime > wo.estimatedTime ? 'bg-red-500' : 'bg-green-500'
                         }`}
@@ -1463,13 +1726,15 @@ const Manufacturing: React.FC = () => {
             <option value="next-week">Next Week</option>
             <option value="this-month">This Month</option>
           </select>
-          <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center">
+          <button 
+            onClick={() => setShowScheduleForm(true)}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+          >
             <Calendar className="h-4 w-4 mr-2" />
             Schedule Order
           </button>
         </div>
       </div>
-
       {/* Gantt Chart Placeholder */}
       <div className="bg-white shadow rounded-lg">
         <div className="px-6 py-4 border-b border-gray-200">
@@ -1493,7 +1758,6 @@ const Manufacturing: React.FC = () => {
           </div>
         </div>
       </div>
-
       {/* Work Center Capacity */}
       <div className="bg-white shadow rounded-lg">
         <div className="px-6 py-4 border-b border-gray-200">
@@ -1506,7 +1770,7 @@ const Manufacturing: React.FC = () => {
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="text-sm font-medium text-gray-900">{wc.name}</h4>
                   <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                    wc.status === 'operational' ? 'bg-green-100 text-green-800' : 
+                    wc.status === 'operational' ? 'bg-green-100 text-green-800' :
                     wc.status === 'maintenance' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
                   }`}>
                     {wc.status}
@@ -1518,9 +1782,9 @@ const Manufacturing: React.FC = () => {
                     <span className="font-medium">{wc.currentLoad}%</span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div 
+                    <div
                       className={`h-2 rounded-full ${
-                        wc.currentLoad > 90 ? 'bg-red-500' : 
+                        wc.currentLoad > 90 ? 'bg-red-500' :
                         wc.currentLoad > 70 ? 'bg-yellow-500' : 'bg-green-500'
                       }`}
                       style={{ width: `${wc.currentLoad}%` }}
@@ -1547,12 +1811,14 @@ const Manufacturing: React.FC = () => {
           <h2 className="text-xl font-bold text-gray-900">Bills of Materials</h2>
           <p className="text-sm text-gray-600">Define product structures and components</p>
         </div>
-        <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center">
+        <button 
+          onClick={() => setShowCreateBOMForm(true)}
+          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+        >
           <Plus className="h-4 w-4 mr-2" />
           Create BOM
         </button>
       </div>
-
       {/* BOM List */}
       <div className="bg-white shadow rounded-lg overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200">
@@ -1650,7 +1916,6 @@ const Manufacturing: React.FC = () => {
           Generate Report
         </button>
       </div>
-
       {/* Report Categories */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         <div className="bg-white shadow rounded-lg p-6 hover:shadow-md transition-shadow cursor-pointer">
@@ -1698,7 +1963,6 @@ const Manufacturing: React.FC = () => {
           </div>
         </div>
       </div>
-
       {/* Sample Report */}
       <div className="bg-white shadow rounded-lg">
         <div className="px-6 py-4 border-b border-gray-200">
@@ -1733,7 +1997,6 @@ const Manufacturing: React.FC = () => {
           <p className="text-sm text-gray-600">Configure manufacturing parameters and preferences</p>
         </div>
       </div>
-
       {/* Settings Categories */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         <div className="bg-white shadow rounded-lg p-6">
@@ -1757,7 +2020,6 @@ const Manufacturing: React.FC = () => {
             </label>
           </div>
         </div>
-
         <div className="bg-white shadow rounded-lg p-6">
           <h3 className="text-lg font-medium text-gray-900 mb-4">Work Centers</h3>
           <div className="space-y-3">
@@ -1775,7 +2037,6 @@ const Manufacturing: React.FC = () => {
             </button>
           </div>
         </div>
-
         <div className="bg-white shadow rounded-lg p-6">
           <h3 className="text-lg font-medium text-gray-900 mb-4">Quality Control</h3>
           <div className="space-y-3">
@@ -1794,7 +2055,6 @@ const Manufacturing: React.FC = () => {
           </div>
         </div>
       </div>
-
       {/* Integration Settings */}
       <div className="bg-white shadow rounded-lg p-6">
         <h3 className="text-lg font-medium text-gray-900 mb-4">Module Integrations</h3>
@@ -1864,7 +2124,6 @@ const Manufacturing: React.FC = () => {
             </p>
           </div>
         </div>
-
         {/* Tab Navigation */}
         <div className="border-b border-gray-200">
           <nav className="-mb-px flex space-x-8 overflow-x-auto">
@@ -1889,15 +2148,15 @@ const Manufacturing: React.FC = () => {
             })}
           </nav>
         </div>
-
         {/* Tab Content */}
         {renderTabContent()}
-
         {/* Form Modals */}
         {showCreateMOForm && <CreateMOForm />}
         {showCreateWOForm && <CreateWOForm />}
         {showScheduleForm && <ScheduleOrderForm />}
         {showCreateBOMForm && <CreateBOMForm />}
+        {showViewMOForm && <ViewMOForm />}
+        {showUpdateMOForm && <UpdateMOForm />}
       </div>
     // </Layout>
   );
