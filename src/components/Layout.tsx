@@ -23,6 +23,7 @@ import {
   AlertTriangle, // <-- Add this
   Droplet,
   HandCoins,
+  UserRound
 } from 'lucide-react';
 
 // interface LayoutProps {
@@ -54,7 +55,8 @@ const Layout: React.FC = () => {
     {name:'Progress Updates',href:'/progress' ,icon:GitBranch},
     {name:'Milestones',href:'/milestones' ,icon:Flag},
     // {name:'Projects Reports',href:'/projects-reports' ,icon:Factory},
-
+    
+    {name:'Permissions',href:'/permissions' ,icon: UserRound },
 
     //Production
     { name: 'Production Dashboard ', href: '/dashboard2', icon: LayoutDashboard },

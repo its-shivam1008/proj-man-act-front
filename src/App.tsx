@@ -52,6 +52,7 @@ import FuelLubricantPage from './pages/modules/plant-machinery/FuelLubricant';
 import PreventiveMaintenancePage from './pages/modules/plant-machinery/PreventiveMaintenance';
 import PlantMachineryReportsPage from './pages/modules/plant-machinery/Reports';
 import SparePartsPage from './pages/modules/plant-machinery/SpareParts';
+import { UserPermissionsPage } from './pages/modules/UserPermissions';
 
 
 function App() {
@@ -109,6 +110,7 @@ function App() {
             <Route path="/plant-machinery/Safety" element={<CalibrationSafetyPage />} />
             <Route path="/plant-machinery/costing" element={<EquipmentCostingPage />} />
             <Route path="/plant-machinery/reports" element={<PlantMachineryReportsPage />} />
+            <Route path="/permissions" element={<UserPermissionsPage />} />
             </Route>
           </Routes>
         </div>
