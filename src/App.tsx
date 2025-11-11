@@ -4,6 +4,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import { DataProvider } from './contexts/DataContext';
 // import Login from './pages/Login';
+import InventoryDashboard from './pages/InventoryDashboard';
 import Dashboard from './pages/Dashboard';
 import Inventory from './pages/modules/Inventory';
 import Receipt from './pages/modules/inventory/Receipt';
@@ -31,7 +32,7 @@ import ProductionOrders from './pages/modules/ProductOrder';
 import QualityControl from './pages/modules/QualityControl';
 import WorkCenterManagement from './pages/modules/WorkCenterManagement';
 import ReportsPage from './pages/modules/Reports'; 
-import ProjectManagementDashboard from './pages/modules/ProjectManagementDashboard';
+import ProjectManagementDashboard from './pages/modules/ProjectManagementdashboard';
 import BudgetPage from './pages/modules/Budget';
 import Projects from './pages/modules/Projects';
 import Reports from './pages/modules/Reports2';
@@ -74,6 +75,7 @@ function App() {
             {/* <Route path="/production-management/dashboard" element={<ProductionDashboard />} /> */}
 
             {/* Inventory  */}
+            <Route path="/inventory/dashboard" element={<InventoryDashboard />} />
             <Route path="/inventory" element={<Inventory />} />
             <Route path="/inventory/receipt" element={<Receipt />} />
             <Route path="/inventory/deliveries" element={<Deliveries />} />
@@ -85,7 +87,7 @@ function App() {
             <Route path="/inventory/reporting/moves-analysis" element={<MovesAnalysis />} />
             <Route path="/inventory/reporting/valuation" element={<Valuation />} />
             <Route path="/inventory/form-builder" element={<FormBuilder />} />
-            
+
             <Route path="/inventory/manufacturing" element={<Manufacturing />} />
             <Route path="/inventory/purchase" element={<Purchase />} />
             <Route path="/inventory/maintenance" element={<Maintenance />} />

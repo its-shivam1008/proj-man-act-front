@@ -37,7 +37,7 @@ const Layout: React.FC = () => {
 
   const mainLinks = [
   { name: 'Dashboard', href: '/', icon: Home },
-  { name: 'Inventory', href: '/inventory', icon: Package },
+  { name: 'Inventory', href: '/inventory/dashboard', icon: Package },
   { name: 'Production', href: '/production', icon: Factory },
   { name: 'Project', href: '/project-management', icon: FolderKanban },
   { name: 'Plant & Machinery', href: '/plant-machinery', icon: FactoryIcon },
@@ -47,7 +47,8 @@ const Layout: React.FC = () => {
 // Links for the Inventory Module
 const inventoryLinks = [
   { name: 'Main Dashboard', href: '/', icon: Home }, // Link to go back
-  { name: 'Inventory Dashboard', href: '/inventory', icon: LayoutDashboard },
+  { name: 'Dashboard', href: '/inventory/dashboard', icon: LayoutDashboard },
+  { name: 'Inventory', href: '/inventory', icon: Package },
   { name: 'Manufacturing', href: '/inventory/manufacturing', icon: Factory },
   { name: 'Purchase', href: '/inventory/purchase', icon: ShoppingCart },
   { name: 'Maintenance', href: '/inventory/maintenance', icon: Settings },
