@@ -5,7 +5,7 @@ import { storage, STORAGE_KEYS } from '../../lib/storage';
 import { WorkOrder, QualityCheck, WorkCenter } from '../../types/production';
 import { Activity, Package, AlertTriangle, CheckCircle2, Clock, TrendingUp } from 'lucide-react';
 
-export default function Dashboard() {
+export default function ProductionManagementDashboard() {
   const [kpis, setKpis] = useState({
     activeOrders: 0,
     completedOrders: 0,

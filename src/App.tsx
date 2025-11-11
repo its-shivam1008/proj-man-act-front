@@ -24,14 +24,14 @@ import Repair from './pages/modules/Repair';
 import Barcode from './pages/modules/Barcode';
 // import ProductionManagement from './pages/modules/ProductionManagement';
 // import ProductionDashboard from './pages/modules/ProductionDashboard';
-import Dash from './pages/modules/Dashboard2';
+import ProductionManagementDashboard from './pages/modules/ProductionManagementDashboard';
 import ItemMaster from './pages/modules/ItemMaster';
 import BOMManagement from './pages/modules/BOMManagement';
 import ProductionOrders from './pages/modules/ProductOrder';
 import QualityControl from './pages/modules/QualityControl';
 import WorkCenterManagement from './pages/modules/WorkCenterManagement';
 import ReportsPage from './pages/modules/Reports'; 
-import Dashboard3 from './pages/modules/Dashboard3';
+import ProjectManagementDashboard from './pages/modules/ProjectManagementDashboard';
 import BudgetPage from './pages/modules/Budget';
 import Projects from './pages/modules/Projects';
 import Reports from './pages/modules/Reports2';
@@ -65,25 +65,15 @@ function App() {
           <Routes>
             {/* <Route path="/login" element={<Login />} /> */}
             <Route element={<Layout />}>
-            <Route path="/dashboard3" element={<Dashboard3 />} />
-            <Route path="/budget" element={<BudgetPage />} />
-            <Route path="/projects" element={<Projects />} />
-            <Route path="/wbs" element={<WBS />} />
-            <Route path="/resources" element={<Resources />} />
-            <Route path="/projects-reports" element={<Reports />} />
-            <Route path="/progress" element={<Progress />} />
-            <Route path="/milestones" element={<Milestones />} />
-            <Route path="/reports" element={<ReportsPage />} />
+            
             <Route path="/" element={<Dashboard />} />
+            <Route path="/permissions" element={<UserPermissionsPage />} />
             {/* <Route path="/new" element={<Page />} /> */}
-            <Route path="/work-center-management" element={<WorkCenterManagement />} />
-            <Route path="/quality-control" element={<QualityControl />} />
-            <Route path="/product-orders" element={<ProductionOrders />} />
-            <Route path="/bom-management" element={<BOMManagement />} />
-            <Route path="/item-master" element={<ItemMaster />} />
-            <Route path="/dashboard2" element={<Dash />} />
+            
             {/* <Route path="/production-management" element={<ProductionManagement />} /> */}
             {/* <Route path="/production-management/dashboard" element={<ProductionDashboard />} /> */}
+
+            {/* Inventory  */}
             <Route path="/inventory" element={<Inventory />} />
             <Route path="/inventory/receipt" element={<Receipt />} />
             <Route path="/inventory/deliveries" element={<Deliveries />} />
@@ -95,13 +85,35 @@ function App() {
             <Route path="/inventory/reporting/moves-analysis" element={<MovesAnalysis />} />
             <Route path="/inventory/reporting/valuation" element={<Valuation />} />
             <Route path="/inventory/form-builder" element={<FormBuilder />} />
-            <Route path="/manufacturing" element={<Manufacturing />} />
-            <Route path="/purchase" element={<Purchase />} />
-            <Route path="/maintenance" element={<Maintenance />} />
-            <Route path="/quality" element={<Quality />} />
-            <Route path="/product-lifecycle" element={<ProductLifecycle />} />
-            <Route path="/repair" element={<Repair />} />
-            <Route path="/barcode" element={<Barcode />} />
+            
+            <Route path="/inventory/manufacturing" element={<Manufacturing />} />
+            <Route path="/inventory/purchase" element={<Purchase />} />
+            <Route path="/inventory/maintenance" element={<Maintenance />} />
+            <Route path="/inventory/quality" element={<Quality />} />
+            <Route path="/inventory/product-lifecycle" element={<ProductLifecycle />} />
+            <Route path="/inventory/repair" element={<Repair />} />
+            <Route path="/inventory/barcode" element={<Barcode />} />
+
+            {/* production management */}
+            <Route path="/production" element={<ProductionManagementDashboard />} />
+            <Route path="/production/work-center-management" element={<WorkCenterManagement />} />
+            <Route path="/production/quality-control" element={<QualityControl />} />
+            <Route path="/production/product-orders" element={<ProductionOrders />} />
+            <Route path="/production/bom-management" element={<BOMManagement />} />
+            <Route path="/production/item-master" element={<ItemMaster />} />
+            <Route path="/production/reports" element={<ReportsPage />} />
+
+            {/* Project Management */}
+            <Route path="/project-management" element={<ProjectManagementDashboard />} />
+            <Route path="/project-management/budget" element={<BudgetPage />} />
+            <Route path="/project-management/projects" element={<Projects />} />
+            <Route path="/project-management/wbs" element={<WBS />} />
+            <Route path="/project-management/resources" element={<Resources />} />
+            <Route path="/project-management/project-reports" element={<Reports />} />
+            <Route path="/project-management/progress" element={<Progress />} />
+            <Route path="/project-management/milestones" element={<Milestones />} />
+
+            {/* Plant and Machinery */}
             <Route path="/plant-machinery" element={<PlantMachineryDashboard />} />
             <Route path="/plant-machinery/equipment" element={<EquipmentMaster />} />
             <Route path="/plant-machinery/preventive-maintenance" element={<PreventiveMaintenancePage />} />
@@ -112,7 +124,7 @@ function App() {
             <Route path="/plant-machinery/Safety" element={<CalibrationSafetyPage />} />
             <Route path="/plant-machinery/costing" element={<EquipmentCostingPage />} />
             <Route path="/plant-machinery/reports" element={<PlantMachineryReportsPage />} />
-            <Route path="/permissions" element={<UserPermissionsPage />} />
+            
             </Route>
           </Routes>
         </div>

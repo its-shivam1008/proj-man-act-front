@@ -6,7 +6,7 @@ import { FolderKanban, DollarSign, TrendingUp, AlertCircle } from "lucide-react"
 import { Badge } from "../../components/ui/badge";
 import { Progress } from "../../components/ui/progress";
 
-export default function Dashboard() {
+export default function ProjectManagementDashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
