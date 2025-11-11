@@ -2,8 +2,8 @@ import React from 'react'
 
 const Dashboard = () => {
   return (
-    <main className='min-h-screen w-full flex items-center justify-center'>
-        <div className='text-4xl font-bold '>Main dashboard page Todo</div>
+    <main className='min-h-screen w-full flex justify-center items-center'>
+        <div className='text-4xl font-bold'>Main Dashboard todo</div>
     </main>
   )
 }
