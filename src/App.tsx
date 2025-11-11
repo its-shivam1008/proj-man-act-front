@@ -26,20 +26,25 @@ import Barcode from './pages/modules/Barcode';
 // import ProductionManagement from './pages/modules/ProductionManagement';
 // import ProductionDashboard from './pages/modules/ProductionDashboard';
 import ProductionManagementDashboard from './pages/modules/ProductionManagementDashboard';
+import PPCDashboard from './pages/modules/PPC';
 import ItemMaster from './pages/modules/ItemMaster';
 import BOMManagement from './pages/modules/BOMManagement';
 import ProductionOrders from './pages/modules/ProductOrder';
 import QualityControl from './pages/modules/QualityControl';
 import WorkCenterManagement from './pages/modules/WorkCenterManagement';
-import ReportsPage from './pages/modules/Reports'; 
+import ReportsPage from './pages/modules/Reports';
 import ProjectManagementDashboard from './pages/modules/ProjectManagementdashboard';
+import MaterialIssue from './pages/modules/MaterialIssue&Consumption';
 import BudgetPage from './pages/modules/Budget';
 import Projects from './pages/modules/Projects';
 import Reports from './pages/modules/Reports2';
 import Progress from './pages/modules/Progress';
 import WBS from './pages/modules/WBS';
 import Resources from './pages/modules/Resources';
-import Milestones from './pages/modules/MileStones';
+import BillingPage from './pages/modules/Billing';
+// import Milestones from './pages/modules/MileStones';
+import ProcurementPage from './pages/modules/Procurement&MaterialTracking'
+// import ProductionExecution from './pages/modules/ProductionExecution';
 // import Page from './pages/modules/Page';
 // import ProtectedRoute from './components/ProtectedRoute';
 import PlantMachinery from './pages/modules/PlantMachinery';
@@ -54,7 +59,12 @@ import PreventiveMaintenancePage from './pages/modules/plant-machinery/Preventiv
 import PlantMachineryReportsPage from './pages/modules/plant-machinery/Reports';
 import SparePartsPage from './pages/modules/plant-machinery/SpareParts';
 import Products from './pages/modules/inventory/Products';
+import QualityInspectionPage from './pages/modules/QualityInspectionPage';
+import ReceiptOfFinishedGoods from './pages/modules/ReceiptOfFinishedGoods';
+import CostingPerformance from './pages/modules/CostingPerformance';
+import ProductionExecution from './pages/modules/ProductionExecution';
 import { UserPermissionsPage } from './pages/modules/UserPermissions';
+import ProductionReportingAnalytics from './pages/modules/ProductionReportingAnalytics';
 
 
 function App() {
@@ -66,72 +76,81 @@ function App() {
           <Routes>
             {/* <Route path="/login" element={<Login />} /> */}
             <Route element={<Layout />}>
-            
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/permissions" element={<UserPermissionsPage />} />
-            {/* <Route path="/new" element={<Page />} /> */}
-            
-            {/* <Route path="/production-management" element={<ProductionManagement />} /> */}
-            {/* <Route path="/production-management/dashboard" element={<ProductionDashboard />} /> */}
 
-            {/* Inventory  */}
-            <Route path="/inventory/dashboard" element={<InventoryDashboard />} />
-            <Route path="/inventory" element={<Inventory />} />
-            <Route path="/inventory/receipt" element={<Receipt />} />
-            <Route path="/inventory/deliveries" element={<Deliveries />} />
-            <Route path='/inventory/products' element={<Products/>}/>
-            <Route path="/inventory/scrap-order" element={<ScrapOrder />} />
-            <Route path="/inventory/forecasting" element={<Forecasting />} />
-            <Route path="/inventory/reporting/stock" element={<Stock />} />
-            <Route path="/inventory/reporting/inventory-history" element={<InventoryHistory />} />
-            <Route path="/inventory/reporting/moves-analysis" element={<MovesAnalysis />} />
-            <Route path="/inventory/reporting/valuation" element={<Valuation />} />
-            <Route path="/inventory/form-builder" element={<FormBuilder />} />
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/permissions" element={<UserPermissionsPage />} />
+              {/* <Route path="/new" element={<Page />} /> */}
 
-            <Route path="/inventory/manufacturing" element={<Manufacturing />} />
-            <Route path="/inventory/purchase" element={<Purchase />} />
-            <Route path="/inventory/maintenance" element={<Maintenance />} />
-            <Route path="/inventory/quality" element={<Quality />} />
-            <Route path="/inventory/product-lifecycle" element={<ProductLifecycle />} />
-            <Route path="/inventory/repair" element={<Repair />} />
-            <Route path="/inventory/barcode" element={<Barcode />} />
+              {/* <Route path="/production-management" element={<ProductionManagement />} /> */}
+              {/* <Route path="/production-management/dashboard" element={<ProductionDashboard />} /> */}
 
-            {/* production management */}
-            <Route path="/production" element={<ProductionManagementDashboard />} />
-            <Route path="/production/work-center-management" element={<WorkCenterManagement />} />
-            <Route path="/production/quality-control" element={<QualityControl />} />
-            <Route path="/production/product-orders" element={<ProductionOrders />} />
-            <Route path="/production/bom-management" element={<BOMManagement />} />
-            <Route path="/production/item-master" element={<ItemMaster />} />
-            <Route path="/production/reports" element={<ReportsPage />} />
+              {/* Inventory  */}
+              <Route path="/inventory/dashboard" element={<InventoryDashboard />} />
+              <Route path="/inventory" element={<Inventory />} />
+              <Route path="/inventory/receipt" element={<Receipt />} />
+              <Route path="/inventory/deliveries" element={<Deliveries />} />
+              <Route path='/inventory/products' element={<Products />} />
+              <Route path="/inventory/scrap-order" element={<ScrapOrder />} />
+              <Route path="/inventory/forecasting" element={<Forecasting />} />
+              <Route path="/inventory/reporting/stock" element={<Stock />} />
+              <Route path="/inventory/reporting/inventory-history" element={<InventoryHistory />} />
+              <Route path="/inventory/reporting/moves-analysis" element={<MovesAnalysis />} />
+              <Route path="/inventory/reporting/valuation" element={<Valuation />} />
+              <Route path="/inventory/form-builder" element={<FormBuilder />} />
 
-            {/* Project Management */}
-            <Route path="/project-management" element={<ProjectManagementDashboard />} />
-            <Route path="/project-management/budget" element={<BudgetPage />} />
-            <Route path="/project-management/projects" element={<Projects />} />
-            <Route path="/project-management/wbs" element={<WBS />} />
-            <Route path="/project-management/resources" element={<Resources />} />
-            <Route path="/project-management/project-reports" element={<Reports />} />
-            <Route path="/project-management/progress" element={<Progress />} />
-            <Route path="/project-management/milestones" element={<Milestones />} />
+              <Route path="/inventory/manufacturing" element={<Manufacturing />} />
+              <Route path="/inventory/purchase" element={<Purchase />} />
+              <Route path="/inventory/maintenance" element={<Maintenance />} />
+              <Route path="/inventory/quality" element={<Quality />} />
+              <Route path="/inventory/product-lifecycle" element={<ProductLifecycle />} />
+              <Route path="/inventory/repair" element={<Repair />} />
+              <Route path="/inventory/barcode" element={<Barcode />} />
 
-            {/* Plant and Machinery */}
-            <Route path="/plant-machinery" element={<PlantMachineryDashboard />} />
-            <Route path="/plant-machinery/equipment" element={<EquipmentMaster />} />
-            <Route path="/plant-machinery/preventive-maintenance" element={<PreventiveMaintenancePage />} />
-            <Route path="/plant-machinery/breakdown" element={<BreakdownMaintenancePage />} />
-            <Route path="/plant-machinery/spare-parts" element={<SparePartsPage />} />
-            <Route path="/plant-machinery/fuel" element={<FuelLubricantPage />} />
-            <Route path="/plant-machinery/allocation" element={<EquipmentAllocationPage />} />
-            <Route path="/plant-machinery/Safety" element={<CalibrationSafetyPage />} />
-            <Route path="/plant-machinery/costing" element={<EquipmentCostingPage />} />
-            <Route path="/plant-machinery/reports" element={<PlantMachineryReportsPage />} />
-            
+              {/* production management */}
+              <Route path="/production" element={<ProductionManagementDashboard />} />
+              <Route path="/production/work-center-management" element={<WorkCenterManagement />} />
+              <Route path="/production/ppc" element={<PPCDashboard />} />
+              <Route path="/production/quality-control" element={<QualityControl />} />
+              <Route path="/production/product-orders" element={<ProductionOrders />} />
+              <Route path="/production/bom-management" element={<BOMManagement />} />
+              <Route path="/production/qualityinspection" element={<QualityInspectionPage/>} />
+              <Route path="/production/item-master" element={<ItemMaster />} />
+              <Route path='/production/productionexecution' element={<ProductionExecution />} />
+              <Route path="/production/materialissue" element={<MaterialIssue/>}/>
+              <Route path="/production/reports" element={<ReportsPage />} />
+              <Route path='/production/receipt-of-finish-goods' element={<ReceiptOfFinishedGoods/>}/>
+              <Route path="/production/costingperformance" element={<CostingPerformance/>} />
+              <Route path="/production/production-report-analytics" element={<ProductionReportingAnalytics/>}/>
+
+              {/* Project Management */}
+              <Route path="/project-management" element={<ProjectManagementDashboard />} />
+              <Route path="/project-management/budget" element={<BudgetPage />} />
+              <Route path="/project-management/projects" element={<Projects />} />
+              <Route path="/project-management/wbs" element={<WBS />} />
+              <Route path="/project-management/resources" element={<Resources />} />
+              <Route path="/project-management/ProcurementMaterialTracking" element={<ProcurementPage />} />
+              <Route path="/project-management/project-reports" element={<Reports />} />
+              <Route path="/project-management/progress" element={<Progress />} />
+              <Route path='/project-management/billing' element={<BillingPage />} />
+              {/* <Route path="/project-management/milestones" element={<Milestones />} /> */}
+
+              {/* Plant and Machinery */}
+              <Route path="/plant-machinery" element={<PlantMachineryDashboard />} />
+              <Route path="/plant-machinery/equipment" element={<EquipmentMaster />} />
+              <Route path="/plant-machinery/preventive-maintenance" element={<PreventiveMaintenancePage />} />
+              <Route path="/plant-machinery/breakdown" element={<BreakdownMaintenancePage />} />
+              <Route path="/plant-machinery/spare-parts" element={<SparePartsPage />} />
+              <Route path="/plant-machinery/fuel" element={<FuelLubricantPage />} />
+              <Route path="/plant-machinery/allocation" element={<EquipmentAllocationPage />} />
+              <Route path="/plant-machinery/Safety" element={<CalibrationSafetyPage />} />
+              <Route path="/plant-machinery/costing" element={<EquipmentCostingPage />} />
+              <Route path="/plant-machinery/reports" element={<PlantMachineryReportsPage />} />
+
             </Route>
           </Routes>
         </div>
       </DataProvider>
-      {/* </AuthProvider> */}   
+      {/* </AuthProvider> */}
     </Router>
   );
 }

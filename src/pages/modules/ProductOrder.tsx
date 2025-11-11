@@ -1,366 +1,345 @@
-import { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, FileText, CheckCircle, XCircle } from 'lucide-react';
-import { ProductionOrder, ItemMaster, BOM, Routing } from '../../types/production';
-import { getFromStorage, addToStorage, updateInStorage, deleteFromStorage, generateId, STORAGE_KEYS } from '../../utils/localStorage';
+"use client";
 
-export default function ProductionOrders() {
-  const [orders, setOrders] = useState<ProductionOrder[]>([]);
-  const [items, setItems] = useState<ItemMaster[]>([]);
-  const [boms, setBOMs] = useState<BOM[]>([]);
-  const [showForm, setShowForm] = useState(false);
-  const [editingOrder, setEditingOrder] = useState<ProductionOrder | null>(null);
-  const [formData, setFormData] = useState<Partial<ProductionOrder>>({
-    orderNumber: '',
-    productId: '',
-    productName: '',
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Card, CardHeader, CardTitle, CardContent,
+} from "../../components/ui/card";
+import { Button } from "../../components/ui/button";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "../../components/ui/dialog";
+import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "../../components/ui/table";
+import { Badge } from "../../components/ui/badge";
+import {
+  Download, Plus, Trash2, Play, Pause, Printer,
+} from "lucide-react";
+import {
+  ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
+} from "recharts";
+import { storage, STORAGE_KEYS } from "../../lib/storage";
+
+/* -----------------------------------
+   Type Definitions
+----------------------------------- */
+type WorkOrder = {
+  id: string;
+  orderNo: string;
+  productId: string;
+  productName?: string;
+  quantity: number;
+  batchNo?: string;
+  bomId?: string;
+  routingId?: string;
+  workCenterId?: string;
+  operators?: string[];
+  startDate?: string;
+  endDate?: string;
+  dueDate?: string;
+  status?: "planned" | "released" | "in-progress" | "paused" | "completed" | "cancelled";
+  reservedMaterials?: { itemId: string; qty: number }[];
+  attachments?: { id: string; name: string; dataUrl: string }[];
+  plannedHours?: number;
+  plannedCost?: number;
+  actualHours?: number;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+type Audit = {
+  id: string;
+  workOrderId?: string;
+  action: string;
+  timestamp: string;
+  details?: any;
+};
+
+type WorkLog = {
+  id: string;
+  workOrderId: string;
+  type: "start" | "stop" | "manual" | "note";
+  timestamp: string;
+  durationMinutes?: number;
+  notes?: string;
+  user?: string;
+};
+
+const genId = (pref = "id") => `${pref}_${Math.random().toString(36).slice(2, 9)}`;
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
+/* -----------------------------------
+   Main Component
+----------------------------------- */
+export default function WorkOrdersAdvanced() {
+  const [orders, setOrders] = useState<WorkOrder[]>(() => storage.get(STORAGE_KEYS.WORK_ORDERS, []));
+  const [inventory, setInventory] = useState<Record<string, any>>(() => storage.get(STORAGE_KEYS.INVENTORY, {}));
+  const boms = storage.get(STORAGE_KEYS.BOMS, []);
+  const routings = storage.get(STORAGE_KEYS.ROUTINGS, []);
+  const workCenters = storage.get(STORAGE_KEYS.WORK_CENTERS, []);
+  const items = storage.get(STORAGE_KEYS.ITEMS, []);
+  const [logs, setLogs] = useState<WorkLog[]>(() => storage.get(STORAGE_KEYS.WORK_LOGS, []));
+  const [audit, setAudit] = useState<Audit[]>(() => storage.get(STORAGE_KEYS.WORK_ORDER_AUDIT, []));
+
+  const timersRef = useRef<Record<string, number | null>>({});
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<WorkOrder | null>(null);
+  const [form, setForm] = useState<Partial<WorkOrder>>({
+    productId: "",
+    productName: "",
     quantity: 0,
-    bomId: '',
-    routingId: '',
-    startDate: '',
-    dueDate: '',
-    status: 'created',
-    priority: 'medium',
-    batchNumber: '',
-    plannedCost: 0,
-    actualCost: 0,
+    batchNo: "",
+    bomId: "",
+    routingId: "",
+    workCenterId: "",
+    startDate: todayISO(),
+    endDate: todayISO(),
+    dueDate: todayISO(),
+    status: "planned",
+    operators: [],
+    attachments: [],
   });
 
+  /* -----------------------------------
+     Persist to localStorage
+  ----------------------------------- */
   useEffect(() => {
-    loadOrders();
-    loadItems();
-    loadBOMs();
-  }, []);
+    storage.set(STORAGE_KEYS.WORK_ORDERS, orders);
+    storage.set(STORAGE_KEYS.INVENTORY, inventory);
+    storage.set(STORAGE_KEYS.WORK_LOGS, logs);
+    storage.set(STORAGE_KEYS.WORK_ORDER_AUDIT, audit);
+  }, [orders, inventory, logs, audit]);
 
-  const loadOrders = () => {
-    const data = getFromStorage<ProductionOrder>(STORAGE_KEYS.PRODUCTION_ORDERS);
-    setOrders(data);
-  };
-
-  const loadItems = () => {
-    const data = getFromStorage<ItemMaster>(STORAGE_KEYS.ITEMS);
-    setItems(data);
-  };
-
-  const loadBOMs = () => {
-    const data = getFromStorage<BOM>(STORAGE_KEYS.BOMS);
-    setBOMs(data);
-  };
-
-  const finishedProducts = items.filter(item => item.type === 'finished');
-
-  const handleProductChange = (productId: string) => {
-    const product = items.find(i => i.id === productId);
-    const productBOMs = boms.filter(b => b.productId === productId && b.isActive);
-
-    if (product && productBOMs.length > 0) {
-      const plannedCost = productBOMs[0].totalCost * (formData.quantity || 0);
-      setFormData({
-        ...formData,
-        productId,
-        productName: product.itemName,
-        bomId: productBOMs[0].id,
-        plannedCost,
-        orderNumber: `PO-${Date.now()}`,
-        batchNumber: `BATCH-${Date.now()}`,
-      });
-    }
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (editingOrder) {
-      const updated = { ...editingOrder, ...formData } as ProductionOrder;
-      updateInStorage(STORAGE_KEYS.PRODUCTION_ORDERS, editingOrder.id, updated);
-    } else {
-      const newOrder: ProductionOrder = {
-        ...formData,
-        id: generateId(),
-        createdAt: new Date().toISOString(),
-      } as ProductionOrder;
-      addToStorage(STORAGE_KEYS.PRODUCTION_ORDERS, newOrder);
-    }
-    resetForm();
-    loadOrders();
-  };
-
-  const handleEdit = (order: ProductionOrder) => {
-    setEditingOrder(order);
-    setFormData(order);
-    setShowForm(true);
-  };
-
-  const handleDelete = (id: string) => {
-    if (confirm('Are you sure you want to delete this production order?')) {
-      deleteFromStorage(STORAGE_KEYS.PRODUCTION_ORDERS, id);
-      loadOrders();
-    }
-  };
-
-  const handleStatusChange = (id: string, status: ProductionOrder['status']) => {
-    const order = orders.find(o => o.id === id);
-    if (order) {
-      const updated = { ...order, status };
-      updateInStorage(STORAGE_KEYS.PRODUCTION_ORDERS, id, updated);
-      loadOrders();
-    }
-  };
-
-  const resetForm = () => {
-    setFormData({
-      orderNumber: '',
-      productId: '',
-      productName: '',
-      quantity: 0,
-      bomId: '',
-      routingId: '',
-      startDate: '',
-      dueDate: '',
-      status: 'created',
-      priority: 'medium',
-      batchNumber: '',
-      plannedCost: 0,
-      actualCost: 0,
+  /* -----------------------------------
+     Derived Data
+  ----------------------------------- */
+  const ordersByStatus = useMemo(() => {
+    const map: Record<string, number> = {};
+    orders.forEach((o) => {
+      map[o.status || "planned"] = (map[o.status || "planned"] || 0) + 1;
     });
-    setEditingOrder(null);
-    setShowForm(false);
+    return Object.keys(map).map((k) => ({ name: k, value: map[k] }));
+  }, [orders]);
+
+  /* -----------------------------------
+     CRUD Operations
+  ----------------------------------- */
+  const openNew = () => {
+    setEditing(null);
+    setForm({
+      productId: "",
+      productName: "",
+      quantity: 0,
+      batchNo: "",
+      bomId: "",
+      routingId: "",
+      workCenterId: "",
+      startDate: todayISO(),
+      endDate: todayISO(),
+      dueDate: todayISO(),
+      status: "planned",
+      operators: [],
+      attachments: [],
+    });
+    setDialogOpen(true);
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'created': return 'bg-gray-100 text-gray-800';
-      case 'material-issued': return 'bg-blue-100 text-blue-800';
-      case 'in-production': return 'bg-yellow-100 text-yellow-800';
-      case 'quality-check': return 'bg-purple-100 text-purple-800';
-      case 'completed': return 'bg-green-100 text-green-800';
-      case 'cancelled': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
+  const openEdit = (wo: WorkOrder) => {
+    setEditing(wo);
+    setForm({ ...wo });
+    setDialogOpen(true);
   };
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'high': return 'bg-red-100 text-red-800';
-      case 'medium': return 'bg-yellow-100 text-yellow-800';
-      case 'low': return 'bg-green-100 text-green-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
+  const save = () => {
+    if (!form.productId || !form.quantity) return alert("Product and quantity are required");
+
+    const now = new Date().toISOString();
+    const payload: WorkOrder = {
+      ...(editing || {}),
+      id: editing ? editing.id : genId("wo"),
+      orderNo: editing ? editing.orderNo : `WO-${todayISO()}-${Math.floor(Math.random() * 9000) + 1000}`,
+      productId: form.productId!,
+      productName: form.productName || form.productId,
+      quantity: Number(form.quantity),
+      batchNo: form.batchNo,
+      bomId: form.bomId,
+      routingId: form.routingId,
+      workCenterId: form.workCenterId,
+      startDate: form.startDate,
+      endDate: form.endDate,
+      dueDate: form.dueDate,
+      status: form.status,
+      operators: form.operators || [],
+      attachments: form.attachments || [],
+      plannedHours: form.plannedHours || 0,
+      plannedCost: form.plannedCost || 0,
+      actualHours: form.actualHours || 0,
+      createdAt: editing ? editing.createdAt : now,
+      updatedAt: now,
+    };
+
+    const updated = editing
+      ? orders.map((o) => (o.id === editing.id ? payload : o))
+      : [payload, ...orders];
+    setOrders(updated);
+    setDialogOpen(false);
   };
 
+  const remove = (id: string) => {
+    if (!confirm("Delete this work order?")) return;
+    setOrders((prev) => prev.filter((o) => o.id !== id));
+  };
+
+  /* -----------------------------------
+     Inventory Safe Renderer
+  ----------------------------------- */
+  const renderInventory = () => {
+    const entries = Object.entries(inventory || {});
+    if (entries.length === 0) return <div>No inventory data</div>;
+
+    return entries.map(([key, val]) => {
+      const item = items.find((i: any) => i.id === key);
+      const name = item?.name || key;
+      const qty = typeof val === "object" ? val.qty : val;
+      const wh = typeof val === "object" ? val.warehouse : "—";
+      return (
+        <div key={key} className="text-sm border-b border-dashed py-1">
+          {name}: <strong>{qty}</strong> (Warehouse: {wh})
+        </div>
+      );
+    });
+  };
+
+  /* -----------------------------------
+     Export CSV
+  ----------------------------------- */
+  const exportOrdersCSV = () => {
+    if (!orders.length) return alert("No orders to export");
+    const keys = [
+      "orderNo", "productName", "quantity", "workCenterId",
+      "status", "plannedHours", "actualHours",
+    ];
+    const csv = [
+      keys.join(","),
+      ...orders.map((o) => keys.map((k) => `"${(o as any)[k] ?? ""}"`).join(",")),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `workorders_${todayISO()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  /* -----------------------------------
+     UI Rendering
+  ----------------------------------- */
   return (
-    <div className="space-y-6 p-4">
+    <div className="space-y-6 p-4 md:p-6">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold text-gray-800">Production Orders</h2>
-          <p className="text-gray-600">Create and manage production work orders</p>
+          <h2 className="text-2xl font-bold">Work Orders (Advanced)</h2>
+          <p className="text-muted-foreground">
+            Create, edit, and track work orders with inventory integration.
+          </p>
         </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus size={20} />
-          Create Order
-        </button>
+        <div className="flex gap-2">
+          <Button onClick={openNew}><Plus className="mr-2 h-4 w-4" /> New Order</Button>
+          <Button variant="outline" onClick={exportOrdersCSV}>
+            <Download className="mr-2 h-4 w-4" /> Export CSV
+          </Button>
+        </div>
       </div>
 
-      {showForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-bold mb-4">{editingOrder ? 'Edit Production Order' : 'Create Production Order'}</h3>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Product*</label>
-                  <select
-                    required
-                    value={formData.productId}
-                    onChange={(e) => handleProductChange(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Select Product</option>
-                    {finishedProducts.map(item => (
-                      <option key={item.id} value={item.id}>{item.itemCode} - {item.itemName}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Quantity*</label>
-                  <input
-                    type="number"
-                    required
-                    value={formData.quantity}
-                    onChange={(e) => {
-                      const qty = parseFloat(e.target.value) || 0;
-                      const bom = boms.find(b => b.id === formData.bomId);
-                      setFormData({
-                        ...formData,
-                        quantity: qty,
-                        plannedCost: bom ? bom.totalCost * qty : 0,
-                      });
-                    }}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Start Date*</label>
-                  <input
-                    type="date"
-                    required
-                    value={formData.startDate}
-                    onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Due Date*</label>
-                  <input
-                    type="date"
-                    required
-                    value={formData.dueDate}
-                    onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Priority*</label>
-                  <select
-                    value={formData.priority}
-                    onChange={(e) => setFormData({ ...formData, priority: e.target.value as any })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                  <select
-                    value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="created">Created</option>
-                    <option value="material-issued">Material Issued</option>
-                    <option value="in-production">In Production</option>
-                    <option value="quality-check">Quality Check</option>
-                    <option value="completed">Completed</option>
-                    <option value="cancelled">Cancelled</option>
-                  </select>
-                </div>
-              </div>
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-gray-600">Order Number:</span>
-                    <span className="ml-2 font-medium">{formData.orderNumber || 'Auto-generated'}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-600">Batch Number:</span>
-                    <span className="ml-2 font-medium">{formData.batchNumber || 'Auto-generated'}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-600">Planned Cost:</span>
-                    <span className="ml-2 font-medium">${formData.plannedCost?.toFixed(2)}</span>
-                  </div>
-                </div>
-              </div>
-              <div className="flex gap-3 justify-end">
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  {editingOrder ? 'Update' : 'Create'}
-                </button>
-              </div>
-            </form>
+      {/* Inventory Snapshot */}
+      <Card>
+        <CardHeader><CardTitle>Inventory Snapshot</CardTitle></CardHeader>
+        <CardContent>
+          <div className="max-h-48 overflow-y-auto">{renderInventory()}</div>
+        </CardContent>
+      </Card>
+
+      {/* Orders Table */}
+      <Card>
+        <CardHeader><CardTitle>Work Orders ({orders.length})</CardTitle></CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Order</TableHead>
+                <TableHead>Product</TableHead>
+                <TableHead>Qty</TableHead>
+                <TableHead>Work Center</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Planned Hrs</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {orders.map((wo) => (
+                <TableRow key={wo.id}>
+                  <TableCell>{wo.orderNo}</TableCell>
+                  <TableCell>{wo.productName}</TableCell>
+                  <TableCell>{wo.quantity}</TableCell>
+                  <TableCell>{wo.workCenterId || "—"}</TableCell>
+                  <TableCell><Badge>{wo.status}</Badge></TableCell>
+                  <TableCell>{wo.plannedHours ?? "—"}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-2">
+                      <Button size="icon" variant="ghost" onClick={() => openEdit(wo)}>✏️</Button>
+                      <Button size="icon" variant="ghost" onClick={() => remove(wo.id)}><Trash2 /></Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {/* Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editing ? "Edit Work Order" : "New Work Order"}</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Product ID</Label>
+              <Input value={form.productId || ""} onChange={(e) => setForm({ ...form, productId: e.target.value })} />
+            </div>
+            <div>
+              <Label>Product Name</Label>
+              <Input value={form.productName || ""} onChange={(e) => setForm({ ...form, productName: e.target.value })} />
+            </div>
+            <div>
+              <Label>Quantity</Label>
+              <Input type="number" value={form.quantity ?? 0} onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })} />
+            </div>
+            <div>
+              <Label>Work Center</Label>
+              <Input value={form.workCenterId || ""} onChange={(e) => setForm({ ...form, workCenterId: e.target.value })} />
+            </div>
+            <div>
+              <Label>Status</Label>
+              <Input value={form.status || "planned"} onChange={(e) => setForm({ ...form, status: e.target.value as any })} />
+            </div>
+            <div>
+              <Label>Due Date</Label>
+              <Input type="date" value={form.dueDate || todayISO()} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} />
+            </div>
           </div>
-        </div>
-      )}
-
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order #</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Start Date</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Due Date</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {orders.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
-                    <FileText className="mx-auto mb-2" size={48} />
-                    <p>No production orders found. Create your first order to get started.</p>
-                  </td>
-                </tr>
-              ) : (
-                orders.map((order) => (
-                  <tr key={order.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{order.orderNumber}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{order.productName}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{order.quantity}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{order.startDate}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{order.dueDate}</td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-2 py-1 text-xs rounded-full ${getPriorityColor(order.priority)}`}>
-                        {order.priority}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <select
-                        value={order.status}
-                        onChange={(e) => handleStatusChange(order.id, e.target.value as any)}
-                        className={`px-2 py-1 text-xs rounded-full border-0 ${getStatusColor(order.status)}`}
-                      >
-                        <option value="created">Created</option>
-                        <option value="material-issued">Material Issued</option>
-                        <option value="in-production">In Production</option>
-                        <option value="quality-check">Quality Check</option>
-                        <option value="completed">Completed</option>
-                        <option value="cancelled">Cancelled</option>
-                      </select>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleEdit(order)}
-                          className="text-blue-600 hover:text-blue-800 transition-colors"
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(order.id)}
-                          className="text-red-600 hover:text-red-800 transition-colors"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button onClick={save}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

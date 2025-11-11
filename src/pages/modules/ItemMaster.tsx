@@ -1,283 +1,396 @@
-import { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Package } from 'lucide-react';
-import { ItemMaster as ItemMasterType } from '.../../types/production';
-import { getFromStorage, addToStorage, updateInStorage, deleteFromStorage, generateId, STORAGE_KEYS } from '../../utils/localStorage';
+"use client";
 
+import React, { useState, useEffect, useMemo } from "react";
+import { Plus, Edit2, Trash2, Package, Search, TrendingUp, RefreshCcw } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { toast } from "sonner";
+
+// --- Local Storage Helpers ---
+const STORAGE_KEYS = {
+  ITEMS: "ITEM_MASTER_DATA",
+};
+
+const getStorage = <T,>(key: string, def: T): T => {
+  if (typeof window === "undefined") return def;
+  try {
+    const data = localStorage.getItem(key);
+    return data ? JSON.parse(data) : def;
+  } catch {
+    return def;
+  }
+};
+const setStorage = (key: string, value: any) => {
+  localStorage.setItem(key, JSON.stringify(value));
+};
+const genId = () => `ITEM-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+
+// --- Type ---
+interface ItemMaster {
+  id: string;
+  itemCode: string;
+  itemName: string;
+  description: string;
+  type: "raw" | "semi-finished" | "finished";
+  unit: string;
+  stockQuantity: number;
+  reorderLevel: number;
+  standardCost: number;
+  location: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+// --- Component ---
 export default function ItemMaster() {
-  const [items, setItems] = useState<ItemMasterType[]>([]);
+  const [items, setItems] = useState<ItemMaster[]>([]);
   const [showForm, setShowForm] = useState(false);
-  const [editingItem, setEditingItem] = useState<ItemMasterType | null>(null);
-  const [formData, setFormData] = useState<Partial<ItemMasterType>>({
-    itemCode: '',
-    itemName: '',
-    description: '',
-    type: 'raw',
-    unit: 'pcs',
+  const [editingItem, setEditingItem] = useState<ItemMaster | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [formData, setFormData] = useState<Partial<ItemMaster>>({
+    itemCode: "",
+    itemName: "",
+    description: "",
+    type: "raw",
+    unit: "pcs",
     stockQuantity: 0,
     reorderLevel: 0,
     standardCost: 0,
-    location: '',
+    location: "",
   });
 
+  // Load from localStorage
   useEffect(() => {
-    loadItems();
+    const data = getStorage<ItemMaster[]>(STORAGE_KEYS.ITEMS, []);
+    setItems(data);
   }, []);
 
-  const loadItems = () => {
-    const data = getFromStorage<ItemMasterType>(STORAGE_KEYS.ITEMS);
-    setItems(data);
+  const saveToStorage = (updated: ItemMaster[]) => {
+    setItems(updated);
+    setStorage(STORAGE_KEYS.ITEMS, updated);
   };
 
+  // Derived Stats
+  const totalItems = items.length;
+  const lowStockCount = items.filter((i) => i.stockQuantity <= i.reorderLevel).length;
+  const totalInventoryValue = items
+    .reduce((sum, i) => sum + i.stockQuantity * i.standardCost, 0)
+    .toFixed(2);
+
+  // Filtered items
+  const filteredItems = useMemo(() => {
+    return items.filter(
+      (i) =>
+        i.itemCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        i.itemName.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [searchTerm, items]);
+
+  // CRUD
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.itemCode || !formData.itemName) {
+      toast.error("Item Code and Name are required");
+      return;
+    }
+
+    const now = new Date().toISOString();
     if (editingItem) {
-      const updated = { ...editingItem, ...formData } as ItemMasterType;
-      updateInStorage(STORAGE_KEYS.ITEMS, editingItem.id, updated);
+      const updated = items.map((it) =>
+        it.id === editingItem.id
+          ? { ...formData, id: editingItem.id, updatedAt: now } as ItemMaster
+          : it
+      );
+      saveToStorage(updated);
+      toast.success("Item updated successfully");
     } else {
-      const newItem: ItemMasterType = {
-        ...formData,
-        id: generateId(),
-        createdAt: new Date().toISOString(),
-      } as ItemMasterType;
-      addToStorage(STORAGE_KEYS.ITEMS, newItem);
+      const newItem: ItemMaster = {
+        ...(formData as ItemMaster),
+        id: genId(),
+        createdAt: now,
+      };
+      saveToStorage([newItem, ...items]);
+      toast.success("Item added successfully");
     }
     resetForm();
-    loadItems();
   };
 
-  const handleEdit = (item: ItemMasterType) => {
+  const handleEdit = (item: ItemMaster) => {
     setEditingItem(item);
     setFormData(item);
     setShowForm(true);
   };
 
   const handleDelete = (id: string) => {
-    if (confirm('Are you sure you want to delete this item?')) {
-      deleteFromStorage(STORAGE_KEYS.ITEMS, id);
-      loadItems();
+    if (confirm("Are you sure you want to delete this item?")) {
+      const updated = items.filter((i) => i.id !== id);
+      saveToStorage(updated);
+      toast.success("Item deleted");
     }
   };
 
   const resetForm = () => {
+    setEditingItem(null);
+    setShowForm(false);
     setFormData({
-      itemCode: '',
-      itemName: '',
-      description: '',
-      type: 'raw',
-      unit: 'pcs',
+      itemCode: "",
+      itemName: "",
+      description: "",
+      type: "raw",
+      unit: "pcs",
       stockQuantity: 0,
       reorderLevel: 0,
       standardCost: 0,
-      location: '',
+      location: "",
     });
-    setEditingItem(null);
-    setShowForm(false);
+  };
+
+  const resetAll = () => {
+    if (confirm("Clear all items?")) {
+      setStorage(STORAGE_KEYS.ITEMS, []);
+      setItems([]);
+      toast("All items cleared!");
+    }
   };
 
   return (
-    <div className="space-y-6 p-5">
+    <div className="space-y-6 p-5 max-w-7xl mx-auto">
+      {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold text-gray-800">Item Master</h2>
-          <p className="text-gray-600">Manage raw materials, semi-finished, and finished products</p>
+          <h2 className="text-3xl font-bold">Item Master</h2>
+          <p className="text-gray-600">Manage raw materials, semi-finished goods, and finished products</p>
         </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus size={20} />
-          Add Item
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setShowForm(true)}
+            className="flex items-center gap-2 bg-black text-white px-4 py-2 rounded-lg  transition-all"
+          >
+            <Plus size={18} /> Add Item
+          </button>
+          <button
+            onClick={resetAll}
+            className="flex items-center gap-2 border px-4 py-2 rounded-lg hover:bg-gray-50 transition-all"
+          >
+            <RefreshCcw size={18} /> Reset
+          </button>
+        </div>
       </div>
 
-      {showForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-bold mb-4">{editingItem ? 'Edit Item' : 'Add New Item'}</h3>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Item Code*</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.itemCode}
-                    onChange={(e) => setFormData({ ...formData, itemCode: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Item Name*</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.itemName}
-                    onChange={(e) => setFormData({ ...formData, itemName: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <textarea
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  rows={2}
-                />
-              </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Type*</label>
-                  <select
-                    value={formData.type}
-                    onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="raw">Raw Material</option>
-                    <option value="semi-finished">Semi-Finished</option>
-                    <option value="finished">Finished Product</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Unit*</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.unit}
-                    onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="pcs, kg, ltr"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-                  <input
-                    type="text"
-                    value={formData.location}
-                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Stock Quantity</label>
-                  <input
-                    type="number"
-                    value={formData.stockQuantity}
-                    onChange={(e) => setFormData({ ...formData, stockQuantity: parseFloat(e.target.value) || 0 })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Reorder Level</label>
-                  <input
-                    type="number"
-                    value={formData.reorderLevel}
-                    onChange={(e) => setFormData({ ...formData, reorderLevel: parseFloat(e.target.value) || 0 })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Standard Cost ($)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.standardCost}
-                    onChange={(e) => setFormData({ ...formData, standardCost: parseFloat(e.target.value) || 0 })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-              <div className="flex gap-3 justify-end">
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  {editingItem ? 'Update' : 'Create'}
-                </button>
-              </div>
-            </form>
-          </div>
+      {/* Search & Stats */}
+      <div className="grid sm:grid-cols-4 gap-4">
+        <div className="col-span-2 flex items-center gap-3">
+          <Search className="text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search items..."
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
         </div>
-      )}
+        <div className="bg-white p-3 rounded-lg border shadow-sm text-center">
+          <p className="text-gray-500 text-sm">Total Items</p>
+          <p className="text-2xl font-bold">{totalItems}</p>
+        </div>
+        <div className="bg-white p-3 rounded-lg border shadow-sm text-center">
+          <p className="text-gray-500 text-sm">Low Stock</p>
+          <p className="text-2xl font-bold text-red-500">{lowStockCount}</p>
+        </div>
+        <div className="bg-white p-3 rounded-lg border shadow-sm text-center">
+          <p className="text-gray-500 text-sm">Inventory Value</p>
+          <p className="text-2xl font-bold text-green-600">${totalInventoryValue}</p>
+        </div>
+      </div>
 
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      {/* Table */}
+      <div className="bg-white rounded-lg shadow overflow-hidden border">
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-200">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item Code</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item Name</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stock</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cost</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                {["Code", "Name", "Type", "Stock", "Unit", "Cost", "Location", "Actions"].map((h) => (
+                  <th key={h} className="px-6 py-3 text-left font-medium text-gray-600 uppercase tracking-wider">
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {items.length === 0 ? (
+            <tbody className="divide-y">
+              {filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
-                    <Package className="mx-auto mb-2" size={48} />
-                    <p>No items found. Add your first item to get started.</p>
+                  <td colSpan={8} className="text-center py-12 text-gray-400">
+                    <Package className="mx-auto mb-2" size={42} />
+                    No items found. Add your first one.
                   </td>
                 </tr>
               ) : (
-                items.map((item) => (
-                  <tr key={item.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.itemCode}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.itemName}</td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-2 py-1 text-xs rounded-full ${
-                        item.type === 'raw' ? 'bg-yellow-100 text-yellow-800' :
-                        item.type === 'semi-finished' ? 'bg-blue-100 text-blue-800' :
-                        'bg-green-100 text-green-800'
-                      }`}>
+                filteredItems.map((item) => (
+                  <motion.tr
+                    key={item.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="hover:bg-gray-50 transition-all"
+                  >
+                    <td className="px-6 py-3 font-semibold">{item.itemCode}</td>
+                    <td className="px-6 py-3">{item.itemName}</td>
+                    <td className="px-6 py-3">
+                      <span
+                        className={`px-2 py-1 text-xs rounded-full ${
+                          item.type === "raw"
+                            ? "bg-yellow-100 text-yellow-800"
+                            : item.type === "semi-finished"
+                            ? "bg-blue-100 text-blue-800"
+                            : "bg-green-100 text-green-800"
+                        }`}
+                      >
                         {item.type}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <span className={item.stockQuantity <= item.reorderLevel ? 'text-red-600 font-medium' : 'text-gray-900'}>
+                    <td className="px-6 py-3">
+                      <span
+                        className={`${
+                          item.stockQuantity <= item.reorderLevel
+                            ? "text-red-600 font-semibold"
+                            : "text-gray-800"
+                        }`}
+                      >
                         {item.stockQuantity}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.unit}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.standardCost.toFixed(2)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.location}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleEdit(item)}
-                          className="text-blue-600 hover:text-blue-800 transition-colors"
-                        >
+                    <td className="px-6 py-3">{item.unit}</td>
+                    <td className="px-6 py-3">${item.standardCost.toFixed(2)}</td>
+                    <td className="px-6 py-3">{item.location}</td>
+                    <td className="px-6 py-3">
+                      <div className="flex gap-3">
+                        <button onClick={() => handleEdit(item)} className="text-indigo-600 hover:text-indigo-800">
                           <Edit2 size={16} />
                         </button>
-                        <button
-                          onClick={() => handleDelete(item.id)}
-                          className="text-red-600 hover:text-red-800 transition-colors"
-                        >
+                        <button onClick={() => handleDelete(item.id)} className="text-red-600 hover:text-red-800">
                           <Trash2 size={16} />
                         </button>
                       </div>
                     </td>
-                  </tr>
+                  </motion.tr>
                 ))
               )}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* Modal Form */}
+      <AnimatePresence>
+        {showForm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.9 }}
+              className="bg-white rounded-lg p-6 w-full max-w-2xl shadow-lg overflow-y-auto max-h-[90vh]"
+            >
+              <h3 className="text-xl font-bold mb-4">
+                {editingItem ? "Edit Item" : "Add New Item"}
+              </h3>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <input
+                    placeholder="Item Code"
+                    value={formData.itemCode}
+                    onChange={(e) => setFormData({ ...formData, itemCode: e.target.value })}
+                    required
+                    className="border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <input
+                    placeholder="Item Name"
+                    value={formData.itemName}
+                    onChange={(e) => setFormData({ ...formData, itemName: e.target.value })}
+                    required
+                    className="border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <textarea
+                  placeholder="Description"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  className="border p-2 rounded-lg w-full focus:ring-2 focus:ring-indigo-500"
+                  rows={2}
+                />
+
+                <div className="grid grid-cols-3 gap-4">
+                  <select
+                    value={formData.type}
+                    onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
+                    className="border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="raw">Raw Material</option>
+                    <option value="semi-finished">Semi-Finished</option>
+                    <option value="finished">Finished Product</option>
+                  </select>
+                  <input
+                    placeholder="Unit"
+                    value={formData.unit}
+                    onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                    className="border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <input
+                    placeholder="Location"
+                    value={formData.location}
+                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                    className="border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-4">
+                  <input
+                    type="number"
+                    placeholder="Stock Qty"
+                    value={formData.stockQuantity}
+                    onChange={(e) => setFormData({ ...formData, stockQuantity: parseFloat(e.target.value) || 0 })}
+                    className="border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <input
+                    type="number"
+                    placeholder="Reorder Level"
+                    value={formData.reorderLevel}
+                    onChange={(e) => setFormData({ ...formData, reorderLevel: parseFloat(e.target.value) || 0 })}
+                    className="border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <input
+                    type="number"
+                    placeholder="Standard Cost ($)"
+                    step="0.01"
+                    value={formData.standardCost}
+                    onChange={(e) => setFormData({ ...formData, standardCost: parseFloat(e.target.value) || 0 })}
+                    className="border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-3 mt-4">
+                  <button
+                    type="button"
+                    onClick={resetForm}
+                    className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-black text-white rounded-lg "
+                  >
+                    {editingItem ? "Update" : "Create"}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -1,8 +1,42 @@
-import { useEffect, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
-import { storage, STORAGE_KEYS } from '../../lib/storage';
-import { WorkOrder, QualityCheck, WorkCenter, MaterialIssue } from '../../types/production';
-import { BarChart3, TrendingUp, Package, AlertCircle } from 'lucide-react';
+"use client";
+
+import { useEffect, useState } from "react";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "../../components/ui/card";
+import { storage, STORAGE_KEYS } from "../../lib/storage";
+import {
+  WorkOrder,
+  QualityCheck,
+  WorkCenter,
+  MaterialIssue,
+} from "../../types/production";
+import {
+  BarChart3,
+  TrendingUp,
+  Package,
+  AlertCircle,
+  Gauge,
+  Layers,
+} from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
+} from "recharts";
+import { Separator } from "../../components/ui/separator";
+import { Progress } from "../../components/ui/progress";
 
 export default function ReportsPage() {
   const [reportData, setReportData] = useState({
@@ -22,23 +56,48 @@ export default function ReportsPage() {
 
   const generateReport = () => {
     const workOrders: WorkOrder[] = storage.get(STORAGE_KEYS.WORK_ORDERS, []);
-    const qualityChecks: QualityCheck[] = storage.get(STORAGE_KEYS.QUALITY_CHECKS, []);
-    const workCenters: WorkCenter[] = storage.get(STORAGE_KEYS.WORK_CENTERS, []);
-    const materialIssues: MaterialIssue[] = storage.get(STORAGE_KEYS.MATERIAL_ISSUES, []);
+    const qualityChecks: QualityCheck[] = storage.get(
+      STORAGE_KEYS.QUALITY_CHECKS,
+      []
+    );
+    const workCenters: WorkCenter[] = storage.get(
+      STORAGE_KEYS.WORK_CENTERS,
+      []
+    );
+    const materialIssues: MaterialIssue[] = storage.get(
+      STORAGE_KEYS.MATERIAL_ISSUES,
+      []
+    );
 
     const totalOrders = workOrders.length;
-    const completedOrders = workOrders.filter(wo => wo.status === 'completed').length;
-    const inProgressOrders = workOrders.filter(wo => wo.status === 'in-progress').length;
-    const totalProduction = workOrders.reduce((sum, wo) => sum + wo.producedQuantity, 0);
-    const totalRejected = workOrders.reduce((sum, wo) => sum + wo.rejectedQuantity, 0);
+    const completedOrders = workOrders.filter(
+      (wo) => wo.status === "completed"
+    ).length;
+    const inProgressOrders = workOrders.filter(
+      (wo) => wo.status === "in-progress"
+    ).length;
+    const totalProduction = workOrders.reduce(
+      (sum, wo) => sum + (wo.producedQuantity || 0),
+      0
+    );
+    const totalRejected = workOrders.reduce(
+      (sum, wo) => sum + (wo.rejectedQuantity || 0),
+      0
+    );
 
-    const passedQC = qualityChecks.filter(qc => qc.result === 'pass').length;
+    const passedQC = qualityChecks.filter((qc) => qc.result === "pass").length;
     const totalQC = qualityChecks.length;
-    const qcPassRate = totalQC > 0 ? Math.round((passedQC / totalQC) * 100) : 0;
+    const qcPassRate =
+      totalQC > 0 ? Math.round((passedQC / totalQC) * 100) : 0;
 
-    const activeWorkCenters = workCenters.filter(wc => wc.status === 'active').length;
+    const activeWorkCenters = workCenters.filter(
+      (wc) => wc.status === "active"
+    ).length;
     const totalWorkCenters = workCenters.length;
-    const workCenterUtilization = totalWorkCenters > 0 ? Math.round((activeWorkCenters / totalWorkCenters) * 100) : 0;
+    const workCenterUtilization =
+      totalWorkCenters > 0
+        ? Math.round((activeWorkCenters / totalWorkCenters) * 100)
+        : 0;
 
     const materialIssued = materialIssues.length;
 
@@ -54,129 +113,260 @@ export default function ReportsPage() {
     });
   };
 
+  const COLORS = ["#4f46e5", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6"];
+
+  // Prepare chart data
+  const productionStats = [
+    {
+      name: "Produced",
+      value: reportData.totalProduction,
+    },
+    {
+      name: "Rejected",
+      value: reportData.totalRejected,
+    },
+  ];
+
+  const orderStatusData = [
+    { name: "Completed", value: reportData.completedOrders },
+    { name: "In Progress", value: reportData.inProgressOrders },
+  ];
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 p-6">
+      {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-foreground">Production Reports</h1>
-        <p className="text-muted-foreground">Comprehensive analytics and insights</p>
+        <h1 className="text-3xl font-bold">Production Analytics</h1>
+        <p className="text-muted-foreground">
+          Visual insights into manufacturing efficiency and performance
+        </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card className="bg-gradient-card shadow-lg border-l-4 border-l-primary">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Orders</CardTitle>
-            <BarChart3 className="w-5 h-5 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-foreground">{reportData.totalOrders}</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {reportData.completedOrders} completed, {reportData.inProgressOrders} in progress
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-gradient-card shadow-lg border-l-4 border-l-success">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Production</CardTitle>
-            <Package className="w-5 h-5 text-success" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-foreground">{reportData.totalProduction}</div>
-            <p className="text-xs text-muted-foreground mt-1">Units produced</p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-gradient-card shadow-lg border-l-4 border-l-warning">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Quality Pass Rate</CardTitle>
-            <TrendingUp className="w-5 h-5 text-warning" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-foreground">{reportData.qcPassRate}%</div>
-            <p className="text-xs text-muted-foreground mt-1">Quality control performance</p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-gradient-card shadow-lg border-l-4 border-l-destructive">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Rejected Units</CardTitle>
-            <AlertCircle className="w-5 h-5 text-destructive" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-foreground">{reportData.totalRejected}</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {reportData.totalProduction > 0 ? ((reportData.totalRejected / reportData.totalProduction) * 100).toFixed(2) : 0}% rejection rate
-            </p>
-          </CardContent>
-        </Card>
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <KpiCard
+          title="Total Orders"
+          value={reportData.totalOrders}
+          icon={<BarChart3 className="w-5 h-5 text-indigo-600" />}
+          subtitle={`${reportData.completedOrders} completed, ${reportData.inProgressOrders} in progress`}
+        />
+        <KpiCard
+          title="Total Production"
+          value={reportData.totalProduction}
+          icon={<Package className="w-5 h-5 text-green-600" />}
+          subtitle="Units produced"
+        />
+        <KpiCard
+          title="Quality Pass Rate"
+          value={`${reportData.qcPassRate}%`}
+          icon={<TrendingUp className="w-5 h-5 text-yellow-600" />}
+          subtitle="Quality control performance"
+        />
+        <KpiCard
+          title="Rejected Units"
+          value={reportData.totalRejected}
+          icon={<AlertCircle className="w-5 h-5 text-red-600" />}
+          subtitle={`${(
+            (reportData.totalRejected / (reportData.totalProduction || 1)) *
+            100
+          ).toFixed(1)}% rejection rate`}
+        />
       </div>
 
+      <Separator />
+
+      {/* Charts Section */}
       <div className="grid md:grid-cols-2 gap-6">
-        <Card className="shadow-lg">
+        {/* Bar Chart */}
+        <Card className="shadow-md">
           <CardHeader>
-            <CardTitle>Work Center Performance</CardTitle>
+            <CardTitle>Production Overview</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              <div>
-                <div className="flex justify-between mb-2">
-                  <span className="text-sm font-medium">Utilization Rate</span>
-                  <span className="text-sm font-bold">{reportData.workCenterUtilization}%</span>
-                </div>
-                <div className="w-full bg-muted rounded-full h-2">
-                  <div 
-                    className="bg-gradient-primary h-2 rounded-full transition-all duration-500" 
-                    style={{ width: `${reportData.workCenterUtilization}%` }}
-                  />
-                </div>
-              </div>
-            </div>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={productionStats} barSize={60}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip />
+                <Bar
+                  dataKey="value"
+                  fill="url(#gradient)"
+                  radius={[10, 10, 0, 0]}
+                />
+                <defs>
+                  <linearGradient id="gradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.8} />
+                    <stop offset="95%" stopColor="#a855f7" stopOpacity={0.3} />
+                  </linearGradient>
+                </defs>
+              </BarChart>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
 
-        <Card className="shadow-lg">
+        {/* Pie Chart */}
+        <Card className="shadow-md">
+          <CardHeader>
+            <CardTitle>Order Status Distribution</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={260}>
+              <PieChart>
+                <Pie
+                  data={orderStatusData}
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={80}
+                  dataKey="value"
+                  label
+                >
+                  {orderStatusData.map((_, index) => (
+                    <Cell
+                      key={`cell-${index}`}
+                      fill={COLORS[index % COLORS.length]}
+                    />
+                  ))}
+                </Pie>
+                <Tooltip />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Work Center & Material Reports */}
+      <div className="grid md:grid-cols-2 gap-6">
+        <Card className="shadow-md">
+          <CardHeader>
+            <CardTitle>Work Center Utilization</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-medium text-muted-foreground">
+                Utilization Rate
+              </span>
+              <span className="text-sm font-semibold">
+                {reportData.workCenterUtilization}%
+              </span>
+            </div>
+            <Progress value={reportData.workCenterUtilization} />
+            <p className="text-xs text-muted-foreground mt-2">
+              Active vs Total work centers
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-md">
           <CardHeader>
             <CardTitle>Material Consumption</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Material Issues</p>
-                  <p className="text-2xl font-bold">{reportData.materialIssued}</p>
-                </div>
-                <Package className="w-12 h-12 text-primary" />
+            <div className="flex justify-between items-center">
+              <div>
+                <p className="text-sm text-muted-foreground">Material Issues</p>
+                <p className="text-2xl font-bold">
+                  {reportData.materialIssued}
+                </p>
               </div>
+              <Layers className="w-10 h-10 text-indigo-600" />
             </div>
           </CardContent>
         </Card>
       </div>
 
-      <Card className="shadow-lg">
+      {/* Summary Cards */}
+      <Card className="shadow-md">
         <CardHeader>
           <CardTitle>Production Summary</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid md:grid-cols-3 gap-6">
-            <div className="text-center p-4 bg-gradient-card rounded-lg">
-              <p className="text-sm text-muted-foreground mb-2">Completion Rate</p>
-              <p className="text-3xl font-bold text-primary">
-                {reportData.totalOrders > 0 ? Math.round((reportData.completedOrders / reportData.totalOrders) * 100) : 0}%
-              </p>
-            </div>
-            <div className="text-center p-4 bg-gradient-card rounded-lg">
-              <p className="text-sm text-muted-foreground mb-2">Average Efficiency</p>
-              <p className="text-3xl font-bold text-success">
-                {reportData.totalProduction > 0 ? Math.round(((reportData.totalProduction - reportData.totalRejected) / reportData.totalProduction) * 100) : 0}%
-              </p>
-            </div>
-            <div className="text-center p-4 bg-gradient-card rounded-lg">
-              <p className="text-sm text-muted-foreground mb-2">Active Operations</p>
-              <p className="text-3xl font-bold text-accent">{reportData.inProgressOrders}</p>
-            </div>
+            <SummaryCard
+              title="Completion Rate"
+              value={
+                reportData.totalOrders > 0
+                  ? Math.round(
+                      (reportData.completedOrders / reportData.totalOrders) * 100
+                    )
+                  : 0
+              }
+              suffix="%"
+              color="text-indigo-600"
+            />
+            <SummaryCard
+              title="Average Efficiency"
+              value={
+                reportData.totalProduction > 0
+                  ? Math.round(
+                      ((reportData.totalProduction -
+                        reportData.totalRejected) /
+                        reportData.totalProduction) *
+                        100
+                    )
+                  : 0
+              }
+              suffix="%"
+              color="text-green-600"
+            />
+            <SummaryCard
+              title="Active Operations"
+              value={reportData.inProgressOrders}
+              color="text-yellow-600"
+            />
           </div>
         </CardContent>
       </Card>
     </div>
   );
 }
+
+// --- KPI CARD ---
+const KpiCard = ({
+  title,
+  value,
+  icon,
+  subtitle,
+}: {
+  title: string;
+  value: string | number;
+  icon: React.ReactNode;
+  subtitle?: string;
+}) => (
+  <Card className="shadow-sm hover:shadow-lg transition-all duration-300 border-l-4 border-l-indigo-500">
+    <CardHeader className="flex flex-row items-center justify-between pb-2">
+      <CardTitle className="text-sm font-medium text-muted-foreground">
+        {title}
+      </CardTitle>
+      {icon}
+    </CardHeader>
+    <CardContent>
+      <div className="text-3xl font-bold text-foreground">{value}</div>
+      {subtitle && (
+        <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>
+      )}
+    </CardContent>
+  </Card>
+);
+
+// --- Summary Card ---
+const SummaryCard = ({
+  title,
+  value,
+  suffix,
+  color,
+}: {
+  title: string;
+  value: number;
+  suffix?: string;
+  color?: string;
+}) => (
+  <div className="p-4 bg-gradient-card rounded-lg text-center">
+    <p className="text-sm text-muted-foreground mb-2">{title}</p>
+    <p className={`text-3xl font-bold ${color}`}>
+      {value}
+      {suffix || ""}
+    </p>
+  </div>
+);
