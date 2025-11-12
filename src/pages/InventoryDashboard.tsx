@@ -38,15 +38,15 @@ const InventoryDashboard: React.FC = () => {
       status: inventory.filter(item => item.status === 'low-stock' || item.status === 'out-of-stock').length,
       description: 'Stock levels and warehouse management'
     },
-    {
-      name: 'Manufacturing',
-      href: '/inventory/manufacturing',
-      icon: Factory,
-      color: 'bg-green-500',
-      count: manufacturingOrders.length,
-      status: manufacturingOrders.filter(order => order.status === 'in-progress').length,
-      description: 'Production orders and planning'
-    },
+    // {
+    //   name: 'Manufacturing',
+    //   href: '/inventory/manufacturing',
+    //   icon: Factory,
+    //   color: 'bg-green-500',
+    //   count: manufacturingOrders.length,
+    //   status: manufacturingOrders.filter(order => order.status === 'in-progress').length,
+    //   description: 'Production orders and planning'
+    // },
     {
       name: 'Purchase',
       href: '/inventory/purchase',
@@ -56,15 +56,15 @@ const InventoryDashboard: React.FC = () => {
       status: purchaseOrders.filter(order => order.status === 'sent').length,
       description: 'Purchase orders and suppliers'
     },
-    {
-      name: 'Maintenance',
-      href: '/inventory/maintenance',
-      icon: Settings,
-      color: 'bg-orange-500',
-      count: maintenanceRecords.length,
-      status: maintenanceRecords.filter(record => record.status === 'scheduled').length,
-      description: 'Equipment maintenance and schedules'
-    },
+    // {
+    //   name: 'Maintenance',
+    //   href: '/inventory/maintenance',
+    //   icon: Settings,
+    //   color: 'bg-orange-500',
+    //   count: maintenanceRecords.length,
+    //   status: maintenanceRecords.filter(record => record.status === 'scheduled').length,
+    //   description: 'Equipment maintenance and schedules'
+    // },
     {
       name: 'Quality',
       href: '/inventory/quality',

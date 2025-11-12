@@ -65,7 +65,9 @@ import CostingPerformance from './pages/modules/CostingPerformance';
 import ProductionExecution from './pages/modules/ProductionExecution';
 import { UserPermissionsPage } from './pages/modules/UserPermissions';
 import ProductionReportingAnalytics from './pages/modules/ProductionReportingAnalytics';
-
+import KanbanBoard from './pages/modules/plant-machinery/KanbanBoard';
+import PreventivePlanning from './pages/modules/plant-machinery/PreventivePlanning';
+import Teams from './pages/modules/plant-machinery/TeamsAndTechnicians';
 
 function App() {
   return (
@@ -79,13 +81,19 @@ function App() {
 
               <Route path="/" element={<Dashboard />} />
               <Route path="/permissions" element={<UserPermissionsPage />} />
+              <Route path="/purchase" element={<Purchase />} />
+              <Route path="/quality" element={<Quality />} />
+              <Route path="/product-lifecycle" element={<ProductLifecycle />} />
+              <Route path="/repair" element={<Repair />} />
+              <Route path="/barcode" element={<Barcode />} />
+
               {/* <Route path="/new" element={<Page />} /> */}
 
               {/* <Route path="/production-management" element={<ProductionManagement />} /> */}
               {/* <Route path="/production-management/dashboard" element={<ProductionDashboard />} /> */}
 
               {/* Inventory  */}
-              <Route path="/inventory/dashboard" element={<InventoryDashboard />} />
+              {/* <Route path="/inventory/dashboard" element={<InventoryDashboard />} /> */}
               <Route path="/inventory" element={<Inventory />} />
               <Route path="/inventory/receipt" element={<Receipt />} />
               <Route path="/inventory/deliveries" element={<Deliveries />} />
@@ -98,14 +106,9 @@ function App() {
               <Route path="/inventory/reporting/valuation" element={<Valuation />} />
               <Route path="/inventory/form-builder" element={<FormBuilder />} />
 
-              <Route path="/inventory/manufacturing" element={<Manufacturing />} />
-              <Route path="/inventory/purchase" element={<Purchase />} />
-              <Route path="/inventory/maintenance" element={<Maintenance />} />
-              <Route path="/inventory/quality" element={<Quality />} />
-              <Route path="/inventory/product-lifecycle" element={<ProductLifecycle />} />
-              <Route path="/inventory/repair" element={<Repair />} />
-              <Route path="/inventory/barcode" element={<Barcode />} />
-
+              {/* <Route path="/inventory/manufacturing" element={<Manufacturing />} /> */}
+              {/* <Route path="/inventory/maintenance" element={<Maintenance />} /> */}
+              
               {/* production management */}
               <Route path="/production" element={<ProductionManagementDashboard />} />
               <Route path="/production/work-center-management" element={<WorkCenterManagement />} />
@@ -145,6 +148,9 @@ function App() {
               <Route path="/plant-machinery/Safety" element={<CalibrationSafetyPage />} />
               <Route path="/plant-machinery/costing" element={<EquipmentCostingPage />} />
               <Route path="/plant-machinery/reports" element={<PlantMachineryReportsPage />} />
+              <Route path="/plant-machinery/kanban" element={<KanbanBoard />} />
+              <Route path="/plant-machinery/preventive-planning" element={<PreventivePlanning />} />
+              <Route path="/plant-machinery/teams" element={<Teams />} />
 
             </Route>
           </Routes>

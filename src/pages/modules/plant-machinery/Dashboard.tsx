@@ -2,7 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Settings, Wrench, Package, Fuel, Shield, TrendingUp, AlertTriangle,
-  CheckCircle, Clock, DollarSign, Activity, BarChart3
+  CheckCircle, Clock, DollarSign, Activity, BarChart3,
+  CircuitBoard,
+  User,
+  Users,
+  PlaneTakeoff
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
@@ -109,6 +113,30 @@ const PlantMachineryDashboard: React.FC = () => {
       href: '/plant-machinery/reports',
       icon: BarChart3,
       color: 'bg-violet-700',
+      count: 0,
+      description: 'View KPIs and performance metrics'
+    },
+    {
+      name: 'Preventive Planning',
+      href: '/plant-machinery/preventive-planning',
+      icon: PlaneTakeoff,
+      color: 'bg-cyan-700',
+      count: 0,
+      description: 'View KPIs and performance metrics'
+    },
+    {
+      name: 'Teams and Technicians',
+      href: '/plant-machinery/teams',
+      icon: Users,
+      color: 'bg-indigo-700',
+      count: 0,
+      description: 'View KPIs and performance metrics'
+    },
+    {
+      name: 'Kanban board',
+      href: '/plant-machinery/kanban',
+      icon: CircuitBoard,
+      color: 'bg-yellow-700',
       count: 0,
       description: 'View KPIs and performance metrics'
     }
