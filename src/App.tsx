@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 // import { AuthProvider } from './contexts/AuthContext';
 import Layout from './components/Layout';
 import { DataProvider } from './contexts/DataContext';
+import { ensureInitialized } from "./lib/storage";
 // import Login from './pages/Login';
 import InventoryDashboard from './pages/InventoryDashboard';
 import Dashboard from './pages/Dashboard';
@@ -16,9 +17,9 @@ import InventoryHistory from './pages/modules/inventory/reporting/InventoryHisto
 import MovesAnalysis from './pages/modules/inventory/reporting/MovesAnalysis';
 import Valuation from './pages/modules/inventory/reporting/Valuation';
 import FormBuilder from './pages/modules/inventory/FormBuilder';
-import Manufacturing from './pages/modules/Manufacturing';
+// import Manufacturing from './pages/modules/Manufacturing';
 import Purchase from './pages/modules/Purchase';
-import Maintenance from './pages/modules/Maintenance';
+// import Maintenance from './pages/modules/Maintenance';
 import Quality from './pages/modules/Quality';
 import ProductLifecycle from './pages/modules/ProductLifecycle';
 import Repair from './pages/modules/Repair';
@@ -68,8 +69,11 @@ import ProductionReportingAnalytics from './pages/modules/ProductionReportingAna
 import KanbanBoard from './pages/modules/plant-machinery/KanbanBoard';
 import PreventivePlanning from './pages/modules/plant-machinery/PreventivePlanning';
 import Teams from './pages/modules/plant-machinery/TeamsAndTechnicians';
-
+import AssetDisposalTransferPage from './pages/modules/plant-machinery/AssetDisposalTransfer';
 function App() {
+  useEffect(() => {
+    ensureInitialized();
+  }, []);
   return (
     <Router>
       {/* <AuthProvi> */}
@@ -108,7 +112,7 @@ function App() {
 
               {/* <Route path="/inventory/manufacturing" element={<Manufacturing />} /> */}
               {/* <Route path="/inventory/maintenance" element={<Maintenance />} /> */}
-              
+
               {/* production management */}
               <Route path="/production" element={<ProductionManagementDashboard />} />
               <Route path="/production/work-center-management" element={<WorkCenterManagement />} />
@@ -116,14 +120,14 @@ function App() {
               <Route path="/production/quality-control" element={<QualityControl />} />
               <Route path="/production/product-orders" element={<ProductionOrders />} />
               <Route path="/production/bom-management" element={<BOMManagement />} />
-              <Route path="/production/qualityinspection" element={<QualityInspectionPage/>} />
+              <Route path="/production/qualityinspection" element={<QualityInspectionPage />} />
               <Route path="/production/item-master" element={<ItemMaster />} />
               <Route path='/production/productionexecution' element={<ProductionExecution />} />
-              <Route path="/production/materialissue" element={<MaterialIssue/>}/>
+              <Route path="/production/materialissue" element={<MaterialIssue />} />
               <Route path="/production/reports" element={<ReportsPage />} />
-              <Route path='/production/receipt-of-finish-goods' element={<ReceiptOfFinishedGoods/>}/>
-              <Route path="/production/costingperformance" element={<CostingPerformance/>} />
-              <Route path="/production/production-report-analytics" element={<ProductionReportingAnalytics/>}/>
+              <Route path='/production/receipt-of-finish-goods' element={<ReceiptOfFinishedGoods />} />
+              <Route path="/production/costingperformance" element={<CostingPerformance />} />
+              <Route path="/production/production-report-analytics" element={<ProductionReportingAnalytics />} />
 
               {/* Project Management */}
               <Route path="/project-management" element={<ProjectManagementDashboard />} />
@@ -151,6 +155,8 @@ function App() {
               <Route path="/plant-machinery/kanban" element={<KanbanBoard />} />
               <Route path="/plant-machinery/preventive-planning" element={<PreventivePlanning />} />
               <Route path="/plant-machinery/teams" element={<Teams />} />
+              <Route path="/plant-machinery/assets-disposal"
+                element={<AssetDisposalTransferPage />} />
 
             </Route>
           </Routes>

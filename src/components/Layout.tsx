@@ -29,7 +29,8 @@ import {
   ReceiptIndianRupee,
   CircuitBoard,
   Users,
-  PlaneTakeoff
+  PlaneTakeoff,
+  CassetteTape
 } from 'lucide-react';
 
 // --- ADD these imports for shadcn/ui Accordion ---
@@ -111,10 +112,11 @@ const Layout: React.FC = () => {
     { name: 'Preventive Maint.', href: '/plant-machinery/preventive-maintenance', icon: Wrench },
     { name: 'Breakdown Mgt', href: '/plant-machinery/breakdown', icon: AlertTriangle },
     { name: 'Spare Parts', href: '/plant-machinery/spare-parts', icon: Package },
-    { name: 'Fuel & Lubricant', href: '/plant-machinery/fuel', icon: Droplet },
+    // { name: 'Fuel & Lubricant', href: '/plant-machinery/fuel', icon: Droplet },
     { name: 'Calibration & Safety', href: '/plant-machinery/safety', icon: Shield },
     { name: 'Equipment Allocation', href: '/plant-machinery/allocation', icon: HandCoins },
     { name: 'Equipment Costing', href: '/plant-machinery/costing', icon: CircleDollarSign },
+    { name: 'Assets Disposal  Transafer', href: "/plant-machinery/assets-disposal", icon: CassetteTape },
     { name: 'P&M Reports', href: '/plant-machinery/reports', icon: TrendingUp },
     { name: 'Preventive Planning', href: '/plant-machinery/preventive-planning', icon: PlaneTakeoff },
     { name: 'Teams and Technicians', href: '/plant-machinery/teams', icon: Users },
