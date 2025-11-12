@@ -33,7 +33,7 @@ import ProductionOrders from './pages/modules/ProductOrder';
 import QualityControl from './pages/modules/QualityControl';
 import WorkCenterManagement from './pages/modules/WorkCenterManagement';
 import ReportsPage from './pages/modules/Reports';
-import ProjectManagementDashboard from './pages/modules/ProjectManagementdashboard';
+import ProjectManagementDashboard from './pages/modules/ProjectManagementDashboard';
 import MaterialIssue from './pages/modules/MaterialIssue&Consumption';
 import BudgetPage from './pages/modules/Budget';
 import Projects from './pages/modules/Projects';
