@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useData } from '../../../../contexts/DataContext';
+import { storage, STORAGE_KEYS } from '@/lib/storage';
 import Layout from '../../../../components/Layout';
 import { 
   BarChart3, 
@@ -16,59 +17,125 @@ import {
   Target,
   X
 } from 'lucide-react';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  LineChart,
+  Line
+} from 'recharts';
+
+interface MovesAnalysisItem {
+  id: string;
+  product: string;
+  demand: number;
+  snLots: number;
+  packagingQty: number;
+  quantity: number;
+  realQuantity: number;
+  unitPrice: number;
+  inboundTrend: 'up' | 'down' | 'stable';
+  outboundTrend: 'up' | 'down' | 'stable';
+  turnoverRate: number;
+}
+
+interface FormData {
+  product: string;
+  demand: number;
+  snLots: number;
+  packagingQty: number;
+  quantity: number;
+  realQuantity: number;
+  unitPrice: number;
+  inboundTrend: 'up' | 'down' | 'stable';
+  outboundTrend: 'up' | 'down' | 'stable';
+  turnoverRate: number;
+}
 
 const MovesAnalysis: React.FC = () => {
-  const { stockMoves, inventory } = useData();
+  const { inventory } = useData();
+  const [movesAnalysisData, setMovesAnalysisData] = useState<MovesAnalysisItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [analysisFilter, setAnalysisFilter] = useState('all');
   const [periodFilter, setPeriodFilter] = useState('this-month');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showViewForm, setShowViewForm] = useState(false);
   const [showUpdateForm, setShowUpdateForm] = useState(false);
-  const [selectedItem, setSelectedItem] = useState<any>(null);
+  const [selectedItem, setSelectedItem] = useState<MovesAnalysisItem | null>(null);
+  const [createForm, setCreateForm] = useState<FormData>({
+    product: '',
+    demand: 0,
+    snLots: 0,
+    packagingQty: 0,
+    quantity: 0,
+    realQuantity: 0,
+    unitPrice: 0,
+    inboundTrend: 'stable',
+    outboundTrend: 'stable',
+    turnoverRate: 0
+  });
+  const [updateForm, setUpdateForm] = useState<FormData>({});
 
-  // Sample data for moves analysis
-  const [movesAnalysisData] = useState([
-    {
-      id: 'MA-001',
-      product: 'Steel Plates',
-      demand: 150,
-      snLots: 5,
-      packagingQty: 50,
-      quantity: 250,
-      realQuantity: 245,
-      unitPrice: 150.00,
-      inboundTrend: 'up',
-      outboundTrend: 'stable',
-      turnoverRate: 2.5
-    },
-    {
-      id: 'MA-002',
-      product: 'Aluminum Rods',
-      demand: 80,
-      snLots: 3,
-      packagingQty: 25,
-      quantity: 45,
-      realQuantity: 43,
-      unitPrice: 75.00,
-      inboundTrend: 'down',
-      outboundTrend: 'up',
-      turnoverRate: 1.8
-    },
-    {
-      id: 'MA-003',
-      product: 'Hydraulic Pumps',
-      demand: 25,
-      snLots: 2,
-      packagingQty: 5,
+  useEffect(() => {
+    const loadedData = storage.get<MovesAnalysisItem[]>(STORAGE_KEYS.MOVES_ANALYSIS, []);
+    setMovesAnalysisData(Array.isArray(loadedData) ? loadedData : []);
+  }, []);
+
+  const refreshData = () => {
+    const loadedData = storage.get<MovesAnalysisItem[]>(STORAGE_KEYS.MOVES_ANALYSIS, []);
+    setMovesAnalysisData(Array.isArray(loadedData) ? loadedData : []);
+  };
+
+  const handleCreateSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const newItem: MovesAnalysisItem = {
+      ...createForm,
+      id: `MA-${Date.now().toString().slice(-6)}`,
+      unitPrice: parseFloat(createForm.unitPrice.toString()),
+      turnoverRate: parseFloat(createForm.turnoverRate.toString())
+    };
+    storage.push(STORAGE_KEYS.MOVES_ANALYSIS, newItem);
+    refreshData();
+    setShowCreateForm(false);
+    setCreateForm({
+      product: '',
+      demand: 0,
+      snLots: 0,
+      packagingQty: 0,
       quantity: 0,
       realQuantity: 0,
-      unitPrice: 500.00,
+      unitPrice: 0,
       inboundTrend: 'stable',
-      outboundTrend: 'down',
-      turnoverRate: 0.0
-    }
-  ]);
+      outboundTrend: 'stable',
+      turnoverRate: 0
+    });
+  };
+
+  const handleUpdateSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedItem) return;
+    const updatedItem: Partial<MovesAnalysisItem> = {
+      ...updateForm,
+      unitPrice: parseFloat(updateForm.unitPrice?.toString() || '0'),
+      turnoverRate: parseFloat(updateForm.turnoverRate?.toString() || '0')
+    };
+    storage.updateById(STORAGE_KEYS.MOVES_ANALYSIS, selectedItem.id, updatedItem);
+    refreshData();
+    setShowUpdateForm(false);
+    setSelectedItem(null);
+    setUpdateForm({});
+  };
+
+  const handleDelete = (id: string) => {
+    if (!confirm('Are you sure you want to delete this analysis item?')) return;
+    storage.deleteById(STORAGE_KEYS.MOVES_ANALYSIS, id);
+    refreshData();
+  };
 
   const filteredAnalysis = movesAnalysisData.filter(item => {
     const matchesSearch = item.product.toLowerCase().includes(searchTerm.toLowerCase());
@@ -79,14 +146,26 @@ const MovesAnalysis: React.FC = () => {
     return matchesSearch && matchesAnalysis;
   });
 
-  const handleUpdateSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // TODO: Implement update logic here, e.g., update via context
-    // Assuming useData has an updateMovesAnalysis function: updateMovesAnalysis(selectedItem.id, formData);
-    console.log('Updating analysis item:', selectedItem);
-    setShowUpdateForm(false);
-    setSelectedItem(null);
-  };
+  // Prepare data for charts
+  const trendData = [
+    { name: 'Up', Inbound: 0, Outbound: 0 },
+    { name: 'Down', Inbound: 0, Outbound: 0 },
+    { name: 'Stable', Inbound: 0, Outbound: 0 }
+  ];
+
+  movesAnalysisData.forEach(item => {
+    trendData.find(d => d.name === 'Up')!.Inbound += item.inboundTrend === 'up' ? 1 : 0;
+    trendData.find(d => d.name === 'Up')!.Outbound += item.outboundTrend === 'up' ? 1 : 0;
+    trendData.find(d => d.name === 'Down')!.Inbound += item.inboundTrend === 'down' ? 1 : 0;
+    trendData.find(d => d.name === 'Down')!.Outbound += item.outboundTrend === 'down' ? 1 : 0;
+    trendData.find(d => d.name === 'Stable')!.Inbound += item.inboundTrend === 'stable' ? 1 : 0;
+    trendData.find(d => d.name === 'Stable')!.Outbound += item.outboundTrend === 'stable' ? 1 : 0;
+  });
+
+  const turnoverChartData = movesAnalysisData.map(item => ({
+    name: item.product,
+    turnover: item.turnoverRate
+  }));
 
   const CreateAnalysisForm = () => (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
@@ -102,14 +181,19 @@ const MovesAnalysis: React.FC = () => {
             </button>
           </div>
           
-          <form className="space-y-4">
+          <form className="space-y-4" onSubmit={handleCreateSubmit}>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Product
                 </label>
-                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                  <option>Select Product</option>
+                <select 
+                  value={createForm.product}
+                  onChange={(e) => setCreateForm(prev => ({ ...prev, product: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                >
+                  <option value="">Select Product</option>
                   {inventory.map(item => (
                     <option key={item.id} value={item.name}>{item.name}</option>
                   ))}
@@ -121,8 +205,12 @@ const MovesAnalysis: React.FC = () => {
                 </label>
                 <input
                   type="number"
+                  value={createForm.demand}
+                  onChange={(e) => setCreateForm(prev => ({ ...prev, demand: parseInt(e.target.value, 10) || 0 }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Enter demand quantity"
+                  min="0"
+                  required
                 />
               </div>
             </div>
@@ -134,8 +222,12 @@ const MovesAnalysis: React.FC = () => {
                 </label>
                 <input
                   type="number"
+                  value={createForm.snLots}
+                  onChange={(e) => setCreateForm(prev => ({ ...prev, snLots: parseInt(e.target.value, 10) || 0 }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Serial/Lot numbers"
+                  min="0"
+                  required
                 />
               </div>
               <div>
@@ -144,8 +236,12 @@ const MovesAnalysis: React.FC = () => {
                 </label>
                 <input
                   type="number"
+                  value={createForm.packagingQty}
+                  onChange={(e) => setCreateForm(prev => ({ ...prev, packagingQty: parseInt(e.target.value, 10) || 0 }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Package quantity"
+                  min="0"
+                  required
                 />
               </div>
               <div>
@@ -155,8 +251,12 @@ const MovesAnalysis: React.FC = () => {
                 <input
                   type="number"
                   step="0.01"
+                  value={createForm.unitPrice}
+                  onChange={(e) => setCreateForm(prev => ({ ...prev, unitPrice: parseFloat(e.target.value) || 0 }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Unit price"
+                  min="0"
+                  required
                 />
               </div>
             </div>
@@ -168,8 +268,12 @@ const MovesAnalysis: React.FC = () => {
                 </label>
                 <input
                   type="number"
+                  value={createForm.quantity}
+                  onChange={(e) => setCreateForm(prev => ({ ...prev, quantity: parseInt(e.target.value, 10) || 0 }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Current quantity"
+                  min="0"
+                  required
                 />
               </div>
               <div>
@@ -178,8 +282,12 @@ const MovesAnalysis: React.FC = () => {
                 </label>
                 <input
                   type="number"
+                  value={createForm.realQuantity}
+                  onChange={(e) => setCreateForm(prev => ({ ...prev, realQuantity: parseInt(e.target.value, 10) || 0 }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Actual quantity"
+                  min="0"
+                  required
                 />
               </div>
             </div>
@@ -189,7 +297,12 @@ const MovesAnalysis: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Inbound Trend
                 </label>
-                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                <select 
+                  value={createForm.inboundTrend}
+                  onChange={(e) => setCreateForm(prev => ({ ...prev, inboundTrend: e.target.value as 'up' | 'down' | 'stable' }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                >
                   <option value="up">Increasing</option>
                   <option value="down">Decreasing</option>
                   <option value="stable">Stable</option>
@@ -199,7 +312,12 @@ const MovesAnalysis: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Outbound Trend
                 </label>
-                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                <select 
+                  value={createForm.outboundTrend}
+                  onChange={(e) => setCreateForm(prev => ({ ...prev, outboundTrend: e.target.value as 'up' | 'down' | 'stable' }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                >
                   <option value="up">Increasing</option>
                   <option value="down">Decreasing</option>
                   <option value="stable">Stable</option>
@@ -348,6 +466,7 @@ const MovesAnalysis: React.FC = () => {
                 onClick={() => {
                   setShowUpdateForm(false);
                   setSelectedItem(null);
+                  setUpdateForm({});
                 }}
                 className="text-gray-400 hover:text-gray-600"
               >
@@ -362,10 +481,12 @@ const MovesAnalysis: React.FC = () => {
                     Product
                   </label>
                   <select 
-                    defaultValue={selectedItem.product}
+                    value={updateForm.product || selectedItem.product}
+                    onChange={(e) => setUpdateForm(prev => ({ ...prev, product: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
                   >
-                    <option>Select Product</option>
+                    <option value="">Select Product</option>
                     {inventory.map(item => (
                       <option key={item.id} value={item.name}>{item.name}</option>
                     ))}
@@ -377,8 +498,11 @@ const MovesAnalysis: React.FC = () => {
                   </label>
                   <input
                     type="number"
-                    defaultValue={selectedItem.demand}
+                    value={updateForm.demand || selectedItem.demand}
+                    onChange={(e) => setUpdateForm(prev => ({ ...prev, demand: parseInt(e.target.value, 10) || 0 }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    min="0"
+                    required
                   />
                 </div>
               </div>
@@ -390,8 +514,11 @@ const MovesAnalysis: React.FC = () => {
                   </label>
                   <input
                     type="number"
-                    defaultValue={selectedItem.snLots}
+                    value={updateForm.snLots || selectedItem.snLots}
+                    onChange={(e) => setUpdateForm(prev => ({ ...prev, snLots: parseInt(e.target.value, 10) || 0 }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    min="0"
+                    required
                   />
                 </div>
                 <div>
@@ -400,8 +527,11 @@ const MovesAnalysis: React.FC = () => {
                   </label>
                   <input
                     type="number"
-                    defaultValue={selectedItem.packagingQty}
+                    value={updateForm.packagingQty || selectedItem.packagingQty}
+                    onChange={(e) => setUpdateForm(prev => ({ ...prev, packagingQty: parseInt(e.target.value, 10) || 0 }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    min="0"
+                    required
                   />
                 </div>
                 <div>
@@ -411,8 +541,11 @@ const MovesAnalysis: React.FC = () => {
                   <input
                     type="number"
                     step="0.01"
-                    defaultValue={selectedItem.unitPrice}
+                    value={updateForm.unitPrice || selectedItem.unitPrice}
+                    onChange={(e) => setUpdateForm(prev => ({ ...prev, unitPrice: parseFloat(e.target.value) || 0 }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    min="0"
+                    required
                   />
                 </div>
               </div>
@@ -424,8 +557,11 @@ const MovesAnalysis: React.FC = () => {
                   </label>
                   <input
                     type="number"
-                    defaultValue={selectedItem.quantity}
+                    value={updateForm.quantity || selectedItem.quantity}
+                    onChange={(e) => setUpdateForm(prev => ({ ...prev, quantity: parseInt(e.target.value, 10) || 0 }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    min="0"
+                    required
                   />
                 </div>
                 <div>
@@ -434,8 +570,11 @@ const MovesAnalysis: React.FC = () => {
                   </label>
                   <input
                     type="number"
-                    defaultValue={selectedItem.realQuantity}
+                    value={updateForm.realQuantity || selectedItem.realQuantity}
+                    onChange={(e) => setUpdateForm(prev => ({ ...prev, realQuantity: parseInt(e.target.value, 10) || 0 }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    min="0"
+                    required
                   />
                 </div>
               </div>
@@ -446,8 +585,10 @@ const MovesAnalysis: React.FC = () => {
                     Inbound Trend
                   </label>
                   <select 
-                    defaultValue={selectedItem.inboundTrend}
+                    value={updateForm.inboundTrend || selectedItem.inboundTrend}
+                    onChange={(e) => setUpdateForm(prev => ({ ...prev, inboundTrend: e.target.value as 'up' | 'down' | 'stable' }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
                   >
                     <option value="up">Increasing</option>
                     <option value="down">Decreasing</option>
@@ -459,8 +600,10 @@ const MovesAnalysis: React.FC = () => {
                     Outbound Trend
                   </label>
                   <select 
-                    defaultValue={selectedItem.outboundTrend}
+                    value={updateForm.outboundTrend || selectedItem.outboundTrend}
+                    onChange={(e) => setUpdateForm(prev => ({ ...prev, outboundTrend: e.target.value as 'up' | 'down' | 'stable' }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
                   >
                     <option value="up">Increasing</option>
                     <option value="down">Decreasing</option>
@@ -475,6 +618,7 @@ const MovesAnalysis: React.FC = () => {
                   onClick={() => {
                     setShowUpdateForm(false);
                     setSelectedItem(null);
+                    setUpdateForm({});
                   }}
                   className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
                 >
@@ -594,7 +738,7 @@ const MovesAnalysis: React.FC = () => {
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">Avg Turnover</p>
                   <p className="text-2xl font-semibold text-gray-900">
-                    {(movesAnalysisData.reduce((sum, item) => sum + item.turnoverRate, 0) / movesAnalysisData.length).toFixed(1)}
+                    {movesAnalysisData.length > 0 ? (movesAnalysisData.reduce((sum, item) => sum + item.turnoverRate, 0) / movesAnalysisData.length).toFixed(1) : '0'}
                   </p>
                 </div>
               </div>
@@ -606,23 +750,30 @@ const MovesAnalysis: React.FC = () => {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div className="bg-white shadow rounded-lg p-6">
             <h3 className="text-lg font-medium text-gray-900 mb-4">Inbound/Outbound Trends</h3>
-            <div className="h-64 flex items-center justify-center bg-gray-50 rounded-lg">
-              <div className="text-center">
-                <BarChart3 className="h-12 w-12 text-gray-400 mx-auto mb-2" />
-                <p className="text-sm text-gray-500">Chart visualization would be displayed here</p>
-                <p className="text-xs text-gray-400">Integration with charting library</p>
-              </div>
-            </div>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={trendData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="Inbound" fill="#8884d8" name="Inbound" />
+                <Bar dataKey="Outbound" fill="#82ca9d" name="Outbound" />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
           <div className="bg-white shadow rounded-lg p-6">
             <h3 className="text-lg font-medium text-gray-900 mb-4">Turnover Rate Analysis</h3>
-            <div className="h-64 flex items-center justify-center bg-gray-50 rounded-lg">
-              <div className="text-center">
-                <TrendingUp className="h-12 w-12 text-gray-400 mx-auto mb-2" />
-                <p className="text-sm text-gray-500">Turnover rate visualization</p>
-                <p className="text-xs text-gray-400">Performance metrics display</p>
-              </div>
-            </div>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={turnoverChartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Line type="monotone" dataKey="turnover" stroke="#8884d8" />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
         </div>
 
@@ -758,12 +909,27 @@ const MovesAnalysis: React.FC = () => {
                       className="text-green-600 hover:text-green-900 mr-3"
                       onClick={() => {
                         setSelectedItem(item);
+                        setUpdateForm({
+                          product: item.product,
+                          demand: item.demand,
+                          snLots: item.snLots,
+                          packagingQty: item.packagingQty,
+                          quantity: item.quantity,
+                          realQuantity: item.realQuantity,
+                          unitPrice: item.unitPrice,
+                          inboundTrend: item.inboundTrend,
+                          outboundTrend: item.outboundTrend,
+                          turnoverRate: item.turnoverRate
+                        });
                         setShowUpdateForm(true);
                       }}
                     >
                       <Edit className="h-4 w-4" />
                     </button>
-                    <button className="text-red-600 hover:text-red-900">
+                    <button 
+                      className="text-red-600 hover:text-red-900"
+                      onClick={() => handleDelete(item.id)}
+                    >
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </td>

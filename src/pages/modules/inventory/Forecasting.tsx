@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useData } from '../../../contexts/DataContext';
 import Layout from '../../../components/Layout';
 import { 
@@ -14,23 +14,374 @@ import {
   Factory,
   BarChart3,
   Calendar,
-  Target
+  Target,
+  Edit,
+  Eye,
+  Trash2,
+  X
 } from 'lucide-react';
 
+import { storage, STORAGE_KEYS } from '@/lib/storage'; // Adjust path as needed
+
+interface ForecastItem {
+  id: string;
+  productId: string;
+  currentStock: number;
+  demandForecast: number;
+  suggestedReplenishment: number;
+  leadTime: number;
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  replenishmentRule: 'automatic' | 'manual';
+}
+
 const Forecasting: React.FC = () => {
-  const { forecastItems, inventory } = useData();
+  const { inventory } = useData();
+  const [forecastItems, setForecastItems] = useState<ForecastItem[]>([]);
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [ruleFilter, setRuleFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showUpdateForm, setShowUpdateForm] = useState(false);
+  const [showViewForm, setShowViewForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [viewingId, setViewingId] = useState<string | null>(null);
 
-  const filteredForecastItems = forecastItems.filter(forecast => {
-    const product = inventory.find(item => item.id === forecast.productId);
+  useEffect(() => {
+    const initForecastItems = () => {
+      if (!storage.has(STORAGE_KEYS.FORECAST_ITEMS)) {
+        storage.set(STORAGE_KEYS.FORECAST_ITEMS, []);
+      }
+    };
+    initForecastItems();
+
+    const data = storage.get<ForecastItem[]>(STORAGE_KEYS.FORECAST_ITEMS, []);
+    setForecastItems(Array.isArray(data) ? data : []);
+  }, []);
+
+  const safeForecastItems = Array.isArray(forecastItems) ? forecastItems : [];
+  const safeInventory = Array.isArray(inventory) ? inventory : [];
+
+  const filteredForecastItems = safeForecastItems.filter(forecast => {
+    const product = safeInventory.find(item => item.id === forecast.productId);
     const matchesSearch = product?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          forecast.id.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesPriority = priorityFilter === 'all' || forecast.priority === priorityFilter;
     const matchesRule = ruleFilter === 'all' || forecast.replenishmentRule === ruleFilter;
     return matchesSearch && matchesPriority && matchesRule;
   });
+
+  const handleCloseForms = useCallback(() => {
+    setShowCreateForm(false);
+    setShowUpdateForm(false);
+    setShowViewForm(false);
+    setEditingId(null);
+    setViewingId(null);
+  }, []);
+
+  const handleSubmit = useCallback((formData: any) => {
+    const commonData = {
+      productId: formData.productId,
+      currentStock: Number(formData.currentStock) || 0,
+      demandForecast: Number(formData.demandForecast) || 0,
+      suggestedReplenishment: Number(formData.suggestedReplenishment) || 0,
+      leadTime: Number(formData.leadTime) || 0,
+      priority: formData.priority as 'low' | 'medium' | 'high' | 'critical',
+      replenishmentRule: formData.replenishmentRule as 'automatic' | 'manual',
+    };
+
+    const newItem: ForecastItem = {
+      ...commonData,
+      id: editingId || Date.now().toString(),
+    };
+
+    if (editingId) {
+      storage.updateById(STORAGE_KEYS.FORECAST_ITEMS, editingId, newItem);
+    } else {
+      storage.push(STORAGE_KEYS.FORECAST_ITEMS, newItem);
+    }
+
+    const updatedForecastItems = storage.get<ForecastItem[]>(STORAGE_KEYS.FORECAST_ITEMS, []);
+    setForecastItems(Array.isArray(updatedForecastItems) ? updatedForecastItems : []);
+    handleCloseForms();
+  }, [editingId, handleCloseForms]);
+
+  const handleEdit = useCallback((id: string) => {
+    setEditingId(id);
+    setShowUpdateForm(true);
+  }, []);
+
+  const handleView = useCallback((id: string) => {
+    setViewingId(id);
+    setShowViewForm(true);
+  }, []);
+
+  const handleDelete = useCallback((id: string) => {
+    if (confirm('Are you sure you want to delete this forecast item?')) {
+      storage.deleteById(STORAGE_KEYS.FORECAST_ITEMS, id);
+      const updatedForecastItems = storage.get<ForecastItem[]>(STORAGE_KEYS.FORECAST_ITEMS, []);
+      setForecastItems(Array.isArray(updatedForecastItems) ? updatedForecastItems : []);
+    }
+  }, []);
+
+  const handleAddClick = useCallback(() => {
+    setEditingId(null);
+    setShowCreateForm(true);
+  }, []);
+
+  const ForecastForm = ({ initialData }: { initialData?: Partial<ForecastItem> }) => {
+    const [formData, setFormData] = useState({
+      productId: initialData?.productId || '',
+      currentStock: (initialData?.currentStock || 0).toString(),
+      demandForecast: (initialData?.demandForecast || 0).toString(),
+      suggestedReplenishment: (initialData?.suggestedReplenishment || 0).toString(),
+      leadTime: (initialData?.leadTime || 0).toString(),
+      priority: initialData?.priority || 'low',
+      replenishmentRule: initialData?.replenishmentRule || 'automatic',
+    });
+
+    const handleChange = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      setFormData((prev) => ({ ...prev, [field]: e.target.value }));
+    };
+
+    const handleFormSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      handleSubmit(formData);
+    };
+
+    const isEditing = !!initialData;
+
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">
+                {isEditing ? 'Update Forecast Rule' : 'Add Forecast Rule'}
+              </h3>
+              <button
+                onClick={handleCloseForms}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleFormSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Product *
+                  </label>
+                  <select 
+                    value={formData.productId}
+                    onChange={handleChange('productId')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
+                    <option value="">Select Product</option>
+                    {safeInventory.map(item => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Current Stock *
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.currentStock}
+                    onChange={handleChange('currentStock')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    min="0"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Demand Forecast *
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.demandForecast}
+                    onChange={handleChange('demandForecast')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    min="0"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Suggested Replenishment *
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.suggestedReplenishment}
+                    onChange={handleChange('suggestedReplenishment')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    min="0"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Lead Time (days) *
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.leadTime}
+                    onChange={handleChange('leadTime')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    min="0"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Priority *
+                  </label>
+                  <select 
+                    value={formData.priority}
+                    onChange={handleChange('priority')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="critical">Critical</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Replenishment Rule *
+                </label>
+                <select 
+                  value={formData.replenishmentRule}
+                  onChange={handleChange('replenishmentRule')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                >
+                  <option value="automatic">Automatic</option>
+                  <option value="manual">Manual</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={handleCloseForms}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  {isEditing ? 'Update Rule' : 'Add Rule'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const ViewForecastForm = ({ item }: { item: ForecastItem | undefined }) => {
+    if (!item) return null;
+    const product = safeInventory.find(p => p.id === item.productId);
+    const stockStatus = calculateStockStatus(item.currentStock, item.demandForecast);
+
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">View Forecast: {item.id}</h3>
+              <button
+                onClick={handleCloseForms}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Product</label>
+                  <p className="text-sm text-gray-900">{product?.name || 'Unknown Product'}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Current Stock</label>
+                  <p className="text-sm text-gray-900">{item.currentStock} units</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Demand Forecast</label>
+                  <p className="text-sm text-gray-900">{item.demandForecast} units</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Suggested Replenishment</label>
+                  <p className="text-sm text-gray-900">{item.suggestedReplenishment} units</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Lead Time</label>
+                  <p className="text-sm text-gray-900">{item.leadTime} days</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getPriorityColor(item.priority)}`}>
+                    {item.priority}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Stock Status</label>
+                  <span className={`font-medium ${stockStatus.color}`}>
+                    {stockStatus.status}
+                  </span>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Replenishment Rule</label>
+                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getRuleColor(item.replenishmentRule)}`}>
+                    {item.replenishmentRule}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-4">
+                <button
+                  type="button"
+                  onClick={handleCloseForms}
+                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -92,7 +443,10 @@ const Forecasting: React.FC = () => {
               Smart inventory forecasting and automated replenishment suggestions
             </p>
           </div>
-          <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center">
+          <button 
+            onClick={handleAddClick}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+          >
             <Plus className="h-4 w-4 mr-2" />
             Add Forecast Rule
           </button>
@@ -108,7 +462,7 @@ const Forecasting: React.FC = () => {
                 </div>
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">Total Forecasts</p>
-                  <p className="text-2xl font-semibold text-gray-900">{forecastItems.length}</p>
+                  <p className="text-2xl font-semibold text-gray-900">{safeForecastItems.length}</p>
                 </div>
               </div>
             </div>
@@ -122,7 +476,7 @@ const Forecasting: React.FC = () => {
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">Critical Priority</p>
                   <p className="text-2xl font-semibold text-gray-900">
-                    {forecastItems.filter(item => item.priority === 'critical').length}
+                    {safeForecastItems.filter(item => item.priority === 'critical').length}
                   </p>
                 </div>
               </div>
@@ -137,7 +491,7 @@ const Forecasting: React.FC = () => {
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">Auto Rules</p>
                   <p className="text-2xl font-semibold text-gray-900">
-                    {forecastItems.filter(item => item.replenishmentRule === 'automatic').length}
+                    {safeForecastItems.filter(item => item.replenishmentRule === 'automatic').length}
                   </p>
                 </div>
               </div>
@@ -152,7 +506,7 @@ const Forecasting: React.FC = () => {
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">Avg Lead Time</p>
                   <p className="text-2xl font-semibold text-gray-900">
-                    {Math.round(forecastItems.reduce((sum, item) => sum + item.leadTime, 0) / forecastItems.length || 0)} days
+                    {Math.round(safeForecastItems.reduce((sum, item) => sum + item.leadTime, 0) / safeForecastItems.length || 0)} days
                   </p>
                 </div>
               </div>
@@ -170,7 +524,7 @@ const Forecasting: React.FC = () => {
                 <span className="text-sm font-medium text-red-800">Immediate Action Required</span>
               </div>
               <p className="text-2xl font-bold text-red-600 mt-2">
-                {forecastItems.filter(item => item.priority === 'critical').length}
+                {safeForecastItems.filter(item => item.priority === 'critical').length}
               </p>
               <p className="text-xs text-red-600">Items need urgent replenishment</p>
             </div>
@@ -180,7 +534,7 @@ const Forecasting: React.FC = () => {
                 <span className="text-sm font-medium text-yellow-800">Plan Ahead</span>
               </div>
               <p className="text-2xl font-bold text-yellow-600 mt-2">
-                {forecastItems.filter(item => item.priority === 'high' || item.priority === 'medium').length}
+                {safeForecastItems.filter(item => item.priority === 'high' || item.priority === 'medium').length}
               </p>
               <p className="text-xs text-yellow-600">Items to monitor closely</p>
             </div>
@@ -190,7 +544,7 @@ const Forecasting: React.FC = () => {
                 <span className="text-sm font-medium text-green-800">Well Stocked</span>
               </div>
               <p className="text-2xl font-bold text-green-600 mt-2">
-                {forecastItems.filter(item => item.priority === 'low').length}
+                {safeForecastItems.filter(item => item.priority === 'low').length}
               </p>
               <p className="text-xs text-green-600">Items with adequate stock</p>
             </div>
@@ -274,7 +628,7 @@ const Forecasting: React.FC = () => {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredForecastItems.map((forecast) => {
-                const product = inventory.find(item => item.id === forecast.productId);
+                const product = safeInventory.find(item => item.id === forecast.productId);
                 const stockStatus = calculateStockStatus(forecast.currentStock, forecast.demandForecast);
                 return (
                   <tr key={forecast.id} className="hover:bg-gray-50">
@@ -318,16 +672,24 @@ const Forecasting: React.FC = () => {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex items-center space-x-2">
-                        <button className="bg-blue-600 text-white px-3 py-1 rounded text-xs hover:bg-blue-700 transition-colors flex items-center">
-                          <ShoppingCart className="h-3 w-3 mr-1" />
-                          Create PO
-                        </button>
-                        <button className="bg-green-600 text-white px-3 py-1 rounded text-xs hover:bg-green-700 transition-colors flex items-center">
-                          <Factory className="h-3 w-3 mr-1" />
-                          Create MO
-                        </button>
-                      </div>
+                      <button 
+                        className="text-blue-600 hover:text-blue-900 mr-3"
+                        onClick={() => handleView(forecast.id)}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </button>
+                      <button 
+                        className="text-green-600 hover:text-green-900 mr-3"
+                        onClick={() => handleEdit(forecast.id)}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </button>
+                      <button 
+                        className="text-red-600 hover:text-red-900"
+                        onClick={() => handleDelete(forecast.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </td>
                   </tr>
                 );
@@ -343,10 +705,10 @@ const Forecasting: React.FC = () => {
           </div>
           <div className="p-6">
             <div className="space-y-4">
-              {forecastItems
+              {safeForecastItems
                 .filter(item => item.priority === 'critical' || item.priority === 'high')
                 .map((forecast) => {
-                  const product = inventory.find(item => item.id === forecast.productId);
+                  const product = safeInventory.find(item => item.id === forecast.productId);
                   return (
                     <div key={forecast.id} className={`border rounded-lg p-4 ${
                       forecast.priority === 'critical' ? 'border-red-200 bg-red-50' : 'border-orange-200 bg-orange-50'
@@ -378,6 +740,11 @@ const Forecasting: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* Forms Modals */}
+        {showCreateForm && <ForecastForm initialData={undefined} />}
+        {showUpdateForm && editingId && <ForecastForm initialData={safeForecastItems.find(f => f.id === editingId)} />}
+        {showViewForm && viewingId && <ViewForecastForm item={safeForecastItems.find(f => f.id === viewingId)} />}
       </div>
     // </Layout>
   );

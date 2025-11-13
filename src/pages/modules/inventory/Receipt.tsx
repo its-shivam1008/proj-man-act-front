@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useData } from '../../../contexts/DataContext';
 import Layout from '../../../components/Layout';
 import { 
@@ -17,15 +17,47 @@ import {
   Trash2
 } from 'lucide-react';
 
+import { storage, STORAGE_KEYS } from '@/lib/storage'; 
+
+interface ReceiptItem {
+  id: string;
+  receiveFrom: string;
+  operationType: string;
+  products: { productId: string; quantity: number; }[];
+  status: 'draft' | 'in-progress' | 'done' | 'cancelled';
+  scheduledDate: string;
+  warehouse?: string;
+  barcode?: string;
+}
+
 const Receipt: React.FC = () => {
-  const { receipts, inventory } = useData();
+  const { inventory } = useData(); // Keep inventory from context
+  const [receipts, setReceipts] = useState<ReceiptItem[]>([]);
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showUpdateForm, setShowUpdateForm] = useState(false);
+  const [showViewForm, setShowViewForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [viewingId, setViewingId] = useState<string | null>(null);
 
-  const filteredReceipts = receipts.filter(receipt => {
-    const matchesSearch = receipt.receiveFrom.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         receipt.id.toLowerCase().includes(searchTerm.toLowerCase());
+  useEffect(() => {
+    const initReceipts = () => {
+      if (!storage.has(STORAGE_KEYS.RECEIPTS)) {
+        storage.set(STORAGE_KEYS.RECEIPTS, []);
+      }
+    };
+    initReceipts();
+
+    const data = storage.get<ReceiptItem[]>(STORAGE_KEYS.RECEIPTS, []);
+    setReceipts(Array.isArray(data) ? data : []);
+  }, []);
+
+  const safeReceipts = Array.isArray(receipts) ? receipts : [];
+
+  const filteredReceipts = safeReceipts.filter(receipt => {
+    const matchesSearch = receipt.receiveFrom?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         receipt.id?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || receipt.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -60,122 +92,345 @@ const Receipt: React.FC = () => {
     }
   };
 
-  const CreateReceiptForm = () => (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
-        <div className="mt-3">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-medium text-gray-900">Create New Receipt</h3>
-            <button
-              onClick={() => setShowCreateForm(false)}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              <XCircle className="h-6 w-6" />
-            </button>
-          </div>
-          
-          <form className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+  const handleCloseForms = useCallback(() => {
+    setShowCreateForm(false);
+    setShowUpdateForm(false);
+    setShowViewForm(false);
+    setEditingId(null);
+    setViewingId(null);
+  }, []);
+
+  const handleSubmit = useCallback((formData: any) => {
+    const commonData = {
+      receiveFrom: formData.receiveFrom,
+      operationType: formData.operationType,
+      products: [{
+        productId: formData.productId,
+        quantity: Number(formData.quantity) || 0,
+      }],
+      status: editingId ? safeReceipts.find(r => r.id === editingId)?.status || 'draft' : 'draft',
+      scheduledDate: formData.scheduledDate || new Date().toISOString().split('T')[0],
+      warehouse: formData.warehouse,
+      barcode: formData.barcode,
+    };
+
+    const newReceipt: ReceiptItem = {
+      ...commonData,
+      id: editingId || Date.now().toString(),
+    };
+
+    if (editingId) {
+      storage.updateById(STORAGE_KEYS.RECEIPTS, editingId, newReceipt);
+    } else {
+      storage.push(STORAGE_KEYS.RECEIPTS, newReceipt);
+    }
+
+    const updatedReceipts = storage.get<ReceiptItem[]>(STORAGE_KEYS.RECEIPTS, []);
+    setReceipts(Array.isArray(updatedReceipts) ? updatedReceipts : []);
+    handleCloseForms();
+  }, [editingId, safeReceipts, handleCloseForms]);
+
+  const handleEdit = useCallback((id: string) => {
+    setEditingId(id);
+    setShowUpdateForm(true);
+  }, []);
+
+  const handleView = useCallback((id: string) => {
+    setViewingId(id);
+    setShowViewForm(true);
+  }, []);
+
+  const handleDelete = useCallback((id: string) => {
+    if (confirm('Are you sure you want to delete this receipt?')) {
+      storage.deleteById(STORAGE_KEYS.RECEIPTS, id);
+      const updatedReceipts = storage.get<ReceiptItem[]>(STORAGE_KEYS.RECEIPTS, []);
+      setReceipts(Array.isArray(updatedReceipts) ? updatedReceipts : []);
+    }
+  }, []);
+
+  const handleAddClick = useCallback(() => {
+    setEditingId(null);
+    setShowCreateForm(true);
+  }, []);
+
+  const ReceiptForm = ({ initialData, inventory: propInventory }: { initialData?: Partial<ReceiptItem>; inventory: any[] }) => {
+    const safeInventory = Array.isArray(propInventory) ? propInventory : [];
+    const [formData, setFormData] = useState({
+      receiveFrom: initialData?.receiveFrom || '',
+      operationType: initialData?.operationType || 'Purchase',
+      productId: initialData?.products?.[0]?.productId || '',
+      quantity: (initialData?.products?.[0]?.quantity || 0).toString(),
+      warehouse: initialData?.warehouse || 'Warehouse A',
+      scheduledDate: initialData?.scheduledDate || '',
+      barcode: initialData?.barcode || '',
+    });
+
+    const handleChange = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      setFormData((prev) => ({ ...prev, [field]: e.target.value }));
+    };
+
+    const handleFormSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      handleSubmit(formData);
+    };
+
+    const isEditing = !!initialData;
+
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">
+                {isEditing ? 'Update Receipt' : 'Create New Receipt'}
+              </h3>
+              <button
+                onClick={handleCloseForms}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XCircle className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleFormSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Receive From *
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.receiveFrom}
+                    onChange={handleChange('receiveFrom')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Partner/Customer/Supplier"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Operation Type *
+                  </label>
+                  <select 
+                    value={formData.operationType}
+                    onChange={handleChange('operationType')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
+                    <option>Purchase</option>
+                    <option>Transfer</option>
+                    <option>Return</option>
+                    <option>Manufacturing</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Product *
+                  </label>
+                  <select 
+                    value={formData.productId}
+                    onChange={handleChange('productId')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
+                    <option value="">Select Product</option>
+                    {safeInventory.map(item => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Quantity *
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.quantity}
+                    onChange={handleChange('quantity')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter quantity"
+                    min="0"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Warehouse/Location *
+                  </label>
+                  <select 
+                    value={formData.warehouse}
+                    onChange={handleChange('warehouse')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
+                    <option>Warehouse A</option>
+                    <option>Warehouse B</option>
+                    <option>Warehouse C</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Scheduled Date
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.scheduledDate}
+                    onChange={handleChange('scheduledDate')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Receive From
+                  Barcode Scan (Optional)
                 </label>
                 <input
                   type="text"
+                  value={formData.barcode}
+                  onChange={handleChange('barcode')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Partner/Customer/Supplier"
+                  placeholder="Scan or enter barcode"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Operation Type
-                </label>
-                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                  <option>Purchase</option>
-                  <option>Transfer</option>
-                  <option>Return</option>
-                  <option>Manufacturing</option>
-                </select>
-              </div>
-            </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Product
-                </label>
-                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                  <option>Select Product</option>
-                  {inventory.map(item => (
-                    <option key={item.id} value={item.id}>{item.name}</option>
-                  ))}
-                </select>
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={handleCloseForms}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  {isEditing ? 'Update Receipt' : 'Create Receipt'}
+                </button>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Quantity
-                </label>
-                <input
-                  type="number"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter quantity"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Warehouse/Location
-                </label>
-                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                  <option>Warehouse A</option>
-                  <option>Warehouse B</option>
-                  <option>Warehouse C</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Scheduled Date
-                </label>
-                <input
-                  type="date"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Barcode Scan (Optional)
-              </label>
-              <input
-                type="text"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Scan or enter barcode"
-              />
-            </div>
-
-            <div className="flex justify-end space-x-3 pt-4">
-              <button
-                type="button"
-                onClick={() => setShowCreateForm(false)}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Create Receipt
-              </button>
-            </div>
-          </form>
+            </form>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
+
+  const ViewReceiptForm = ({ item }: { item: ReceiptItem | undefined }) => {
+    if (!item) return null;
+
+    const safeProducts = Array.isArray(item.products) ? item.products : [];
+    const productNames = safeProducts.map(p => {
+      const prod = inventory.find(i => i.id === p.productId);
+      return `${prod?.name || 'Unknown'} (${p.quantity} units)`;
+    }).join(', ');
+
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">View Receipt: {item.id}</h3>
+              <button
+                onClick={handleCloseForms}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XCircle className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Receive From</label>
+                  <input
+                    type="text"
+                    value={item.receiveFrom}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
+                    readOnly
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Operation Type</label>
+                  <input
+                    type="text"
+                    value={item.operationType}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
+                    readOnly
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Products</label>
+                <textarea
+                  rows={2}
+                  value={productNames}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
+                  readOnly
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(item.status)}`}>
+                    {item.status.replace('-', ' ')}
+                  </span>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Scheduled Date</label>
+                  <input
+                    type="text"
+                    value={item.scheduledDate}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
+                    readOnly
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Warehouse</label>
+                  <input
+                    type="text"
+                    value={item.warehouse || ''}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
+                    readOnly
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Barcode</label>
+                  <input
+                    type="text"
+                    value={item.barcode || ''}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
+                    readOnly
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-4">
+                <button
+                  type="button"
+                  onClick={handleCloseForms}
+                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     // <Layout>
@@ -189,7 +444,7 @@ const Receipt: React.FC = () => {
             </p>
           </div>
           <button 
-            onClick={() => setShowCreateForm(true)}
+            onClick={handleAddClick}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
           >
             <Plus className="h-4 w-4 mr-2" />
@@ -207,7 +462,7 @@ const Receipt: React.FC = () => {
                 </div>
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">Total Receipts</p>
-                  <p className="text-2xl font-semibold text-gray-900">{receipts.length}</p>
+                  <p className="text-2xl font-semibold text-gray-900">{safeReceipts.length}</p>
                 </div>
               </div>
             </div>
@@ -221,7 +476,7 @@ const Receipt: React.FC = () => {
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">In Progress</p>
                   <p className="text-2xl font-semibold text-gray-900">
-                    {receipts.filter(receipt => receipt.status === 'in-progress').length}
+                    {safeReceipts.filter(receipt => receipt.status === 'in-progress').length}
                   </p>
                 </div>
               </div>
@@ -236,7 +491,7 @@ const Receipt: React.FC = () => {
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">Completed</p>
                   <p className="text-2xl font-semibold text-gray-900">
-                    {receipts.filter(receipt => receipt.status === 'done').length}
+                    {safeReceipts.filter(receipt => receipt.status === 'done').length}
                   </p>
                 </div>
               </div>
@@ -334,7 +589,7 @@ const Receipt: React.FC = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     <div className="max-w-xs">
-                      {receipt.products.map((product, index) => {
+                      {receipt.products?.map((product, index) => {
                         const item = inventory.find(i => i.id === product.productId);
                         return (
                           <div key={index} className="text-xs text-gray-600">
@@ -359,13 +614,22 @@ const Receipt: React.FC = () => {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button className="text-blue-600 hover:text-blue-900 mr-3">
+                    <button 
+                      className="text-blue-600 hover:text-blue-900 mr-3"
+                      onClick={() => handleView(receipt.id)}
+                    >
                       <Eye className="h-4 w-4" />
                     </button>
-                    <button className="text-green-600 hover:text-green-900 mr-3">
+                    <button 
+                      className="text-green-600 hover:text-green-900 mr-3"
+                      onClick={() => handleEdit(receipt.id)}
+                    >
                       <Edit className="h-4 w-4" />
                     </button>
-                    <button className="text-red-600 hover:text-red-900">
+                    <button 
+                      className="text-red-600 hover:text-red-900"
+                      onClick={() => handleDelete(receipt.id)}
+                    >
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </td>
@@ -375,8 +639,22 @@ const Receipt: React.FC = () => {
           </table>
         </div>
 
-        {/* Create Receipt Form Modal */}
-        {showCreateForm && <CreateReceiptForm />}
+        {/* Forms Modals */}
+        {showCreateForm && (
+          <ReceiptForm 
+            inventory={inventory} 
+            initialData={undefined} 
+          />
+        )}
+        {showUpdateForm && editingId && (
+          <ReceiptForm 
+            inventory={inventory} 
+            initialData={safeReceipts.find(r => r.id === editingId)} 
+          />
+        )}
+        {showViewForm && viewingId && (
+          <ViewReceiptForm item={safeReceipts.find(r => r.id === viewingId)} />
+        )}
       </div>
     // </Layout>
   );

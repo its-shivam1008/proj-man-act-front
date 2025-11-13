@@ -1,31 +1,76 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Layout from '../../components/Layout';
-import { ScanLine, Package, Truck, FileText, Search, Plus, CheckCircle, AlertTriangle, X, Barcode as BarcodeIcon } from 'lucide-react';
+import { ScanLine, Package, Truck, FileText, Search, Plus, CheckCircle, AlertTriangle, X, Barcode as BarcodeIcon, Edit, Trash2 } from 'lucide-react';
+import { storage, STORAGE_KEYS, ensureInitialized } from '@/lib/storage'; // Adjust path to your storage.ts file
+
+// Add this key to STORAGE_KEYS in storage.ts
+// BARCODE_SCANS: "BARCODE_SCANS",
+
+// And in ensureInitialized defaults:
+// [STORAGE_KEYS.BARCODE_SCANS]: [
+//   { id: 1, code: 'SP-001-2024', item: 'Steel Plates', action: 'Stock Update', timestamp: '2024-01-15 10:30', status: 'success' },
+//   { id: 2, code: 'AR-002-2024', item: 'Aluminum Rods', action: 'Inventory Check', timestamp: '2024-01-15 09:15', status: 'success' },
+//   { id: 3, code: 'HP-003-2024', item: 'Hydraulic Pumps', action: 'Shipping', timestamp: '2024-01-14 16:45', status: 'warning' },
+// ],
 
 const Barcode: React.FC = () => {
   const [scanResult, setScanResult] = useState('');
   const [scanMode, setScanMode] = useState('inventory');
-  const [recentScans, setRecentScans] = useState([
-    { id: 1, code: 'SP-001-2024', item: 'Steel Plates', action: 'Stock Update', timestamp: '2024-01-15 10:30', status: 'success' },
-    { id: 2, code: 'AR-002-2024', item: 'Aluminum Rods', action: 'Inventory Check', timestamp: '2024-01-15 09:15', status: 'success' },
-    { id: 3, code: 'HP-003-2024', item: 'Hydraulic Pumps', action: 'Shipping', timestamp: '2024-01-14 16:45', status: 'warning' },
-  ]);
+  const [recentScans, setRecentScans] = useState([]);
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [generateForm, setGenerateForm] = useState({ itemName: '', category: 'steel' });
   const [generatedCode, setGeneratedCode] = useState('');
+  const [editingScan, setEditingScan] = useState(null); // For update mode
+
+  // Initialize storage and load recentScans on mount
+  useEffect(() => {
+    ensureInitialized();
+    const loadedScans = storage.get(STORAGE_KEYS.BARCODE_SCANS, [
+      { id: 1, code: 'SP-001-2024', item: 'Steel Plates', action: 'Stock Update', timestamp: '2024-01-15 10:30', status: 'success' },
+      { id: 2, code: 'AR-002-2024', item: 'Aluminum Rods', action: 'Inventory Check', timestamp: '2024-01-15 09:15', status: 'success' },
+      { id: 3, code: 'HP-003-2024', item: 'Hydraulic Pumps', action: 'Shipping', timestamp: '2024-01-14 16:45', status: 'warning' },
+    ]);
+    setRecentScans(loadedScans);
+  }, []);
+
+  // Save recentScans to storage whenever it changes
+  useEffect(() => {
+    if (recentScans.length > 0) {
+      storage.set(STORAGE_KEYS.BARCODE_SCANS, recentScans.slice(0, 10)); // Limit to last 10
+    }
+  }, [recentScans]);
+
+  // CRUD Functions
+  const addScan = (newScan: any) => {
+    setRecentScans(prev => [newScan, ...prev.slice(0, 9)]);
+  };
+
+  const updateScan = (id: number, updatedFields: Partial<any>) => {
+    setRecentScans(prev => prev.map(scan => 
+      scan.id === id ? { ...scan, ...updatedFields } : scan
+    ));
+    setEditingScan(null);
+  };
+
+  const deleteScan = (id: number) => {
+    if (confirm('Are you sure you want to delete this scan?')) {
+      setRecentScans(prev => prev.filter(scan => scan.id !== id));
+    }
+  };
 
   const handleScan = (code: string) => {
     if (code.trim()) {
       const newScan = {
-        id: recentScans.length + 1,
+        id: Date.now(), // Use timestamp as ID for uniqueness
         code: code,
-        item: 'Unknown Item',
+        item: 'Unknown Item', // In real app, lookup from inventory
         action: scanMode === 'inventory' ? 'Stock Update' : 
-                scanMode === 'shipping' ? 'Shipping' : 'Quality Check',
+                scanMode === 'shipping' ? 'Shipping' : 
+                scanMode === 'quality' ? 'Quality Check' : 'Maintenance',
         timestamp: new Date().toLocaleString(),
         status: 'success'
       };
-      setRecentScans([newScan, ...recentScans.slice(0, 9)]);
+      addScan(newScan);
       setScanResult('');
     }
   };
@@ -41,28 +86,43 @@ const Barcode: React.FC = () => {
       };
       const prefix = prefixes[generateForm.category as keyof typeof prefixes] || 'UN';
       const year = new Date().getFullYear();
-      const number = Math.floor(Math.random() * 1000) + 1; // Simple random for demo; in real app, use sequential ID
+      const number = Math.floor(Math.random() * 1000) + 1;
       const newCode = `${prefix}-${number.toString().padStart(3, '0')}-${year}`;
       
       setGeneratedCode(newCode);
       
-      // Optionally add to recent scans as a 'Generated' action
       const newScan = {
-        id: recentScans.length + 1,
+        id: Date.now(),
         code: newCode,
         item: generateForm.itemName,
         action: 'Barcode Generated',
         timestamp: new Date().toLocaleString(),
         status: 'success'
       };
-      setRecentScans([newScan, ...recentScans.slice(0, 9)]);
+      addScan(newScan);
       
-      // Reset form and close modal after a delay to show the code
       setTimeout(() => {
         setGenerateForm({ itemName: '', category: 'steel' });
         setGeneratedCode('');
         setShowGenerateModal(false);
       }, 2000);
+    }
+  };
+
+  // Handle reprocess (simple update example: change status to 'success' and action)
+  const handleReprocess = (scan: any) => {
+    updateScan(scan.id, { 
+      status: 'success', 
+      action: `${scan.action} (Reprocessed)`,
+      timestamp: new Date().toLocaleString() 
+    });
+  };
+
+  // Handle edit (open modal or inline, here simple prompt for demo)
+  const handleEdit = (scan: any) => {
+    const newItem = prompt('Edit item name:', scan.item);
+    if (newItem !== null && newItem.trim()) {
+      updateScan(scan.id, { item: newItem.trim() });
     }
   };
 
@@ -129,7 +189,7 @@ const Barcode: React.FC = () => {
                 </div>
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">Total Scans Today</p>
-                  <p className="text-2xl font-semibold text-gray-900">127</p>
+                  <p className="text-2xl font-semibold text-gray-900">{recentScans.length}</p> {/* Dynamic from state */}
                 </div>
               </div>
             </div>
@@ -142,7 +202,9 @@ const Barcode: React.FC = () => {
                 </div>
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">Inventory Updates</p>
-                  <p className="text-2xl font-semibold text-gray-900">89</p>
+                  <p className="text-2xl font-semibold text-gray-900">
+                    {recentScans.filter(s => s.action.includes('Stock Update') || s.action.includes('Inventory Check')).length}
+                  </p>
                 </div>
               </div>
             </div>
@@ -155,7 +217,9 @@ const Barcode: React.FC = () => {
                 </div>
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">Shipping Scans</p>
-                  <p className="text-2xl font-semibold text-gray-900">23</p>
+                  <p className="text-2xl font-semibold text-gray-900">
+                    {recentScans.filter(s => s.action.includes('Shipping')).length}
+                  </p>
                 </div>
               </div>
             </div>
@@ -168,7 +232,9 @@ const Barcode: React.FC = () => {
                 </div>
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">Quality Checks</p>
-                  <p className="text-2xl font-semibold text-gray-900">15</p>
+                  <p className="text-2xl font-semibold text-gray-900">
+                    {recentScans.filter(s => s.action.includes('Quality Check')).length}
+                  </p>
                 </div>
               </div>
             </div>
@@ -278,8 +344,24 @@ const Barcode: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <button className="text-blue-600 hover:text-blue-900 mr-3">View Details</button>
-                      <button className="text-green-600 hover:text-green-900">Reprocess</button>
+                      <button 
+                        onClick={() => handleEdit(scan)}
+                        className="text-blue-600 hover:text-blue-900 mr-3"
+                      >
+                        <Edit className="h-4 w-4 inline" /> Edit
+                      </button>
+                      <button 
+                        onClick={() => handleReprocess(scan)}
+                        className="text-green-600 hover:text-green-900 mr-3"
+                      >
+                        Reprocess
+                      </button>
+                      <button 
+                        onClick={() => deleteScan(scan.id)}
+                        className="text-red-600 hover:text-red-900"
+                      >
+                        <Trash2 className="h-4 w-4 inline" /> Delete
+                      </button>
                     </td>
                   </tr>
                 ))}

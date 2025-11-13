@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useData } from '../../../contexts/DataContext';
 import Layout from '../../../components/Layout';
 import { 
@@ -17,18 +17,48 @@ import {
   X
 } from 'lucide-react';
 
+import { storage, STORAGE_KEYS } from '@/lib/storage'; // Adjust path as needed
+
+interface ScrapOrderItem {
+  id: string;
+  productId: string;
+  quantity: number;
+  reason: 'damaged' | 'expired' | 'lost' | 'obsolete';
+  scrapLocation: string;
+  status: 'pending' | 'approved' | 'completed';
+  date: string;
+  remark?: string;
+}
+
 const ScrapOrder: React.FC = () => {
-  const { scrapOrders, inventory } = useData();
+  const { inventory } = useData();
+  const [scrapOrders, setScrapOrders] = useState<ScrapOrderItem[]>([]);
   const [statusFilter, setStatusFilter] = useState('all');
   const [reasonFilter, setReasonFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showViewForm, setShowViewForm] = useState(false);
   const [showUpdateForm, setShowUpdateForm] = useState(false);
-  const [selectedScrap, setSelectedScrap] = useState<any>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [viewingId, setViewingId] = useState<string | null>(null);
 
-  const filteredScrapOrders = scrapOrders.filter(scrap => {
-    const product = inventory.find(item => item.id === scrap.productId);
+  useEffect(() => {
+    const initScrapOrders = () => {
+      if (!storage.has(STORAGE_KEYS.SCRAP_ORDERS)) {
+        storage.set(STORAGE_KEYS.SCRAP_ORDERS, []);
+      }
+    };
+    initScrapOrders();
+
+    const data = storage.get<ScrapOrderItem[]>(STORAGE_KEYS.SCRAP_ORDERS, []);
+    setScrapOrders(Array.isArray(data) ? data : []);
+  }, []);
+
+  const safeScrapOrders = Array.isArray(scrapOrders) ? scrapOrders : [];
+  const safeInventory = Array.isArray(inventory) ? inventory : [];
+
+  const filteredScrapOrders = safeScrapOrders.filter(scrap => {
+    const product = safeInventory.find(item => item.id === scrap.productId);
     const matchesSearch = product?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          scrap.id.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || scrap.status === statusFilter;
@@ -36,19 +66,294 @@ const ScrapOrder: React.FC = () => {
     return matchesSearch && matchesStatus && matchesReason;
   });
 
-  const handleUpdateSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // TODO: Implement update logic here, e.g., update via context
-    // Assuming useData has an updateScrapOrder function: updateScrapOrder(selectedScrap.id, formData);
-    console.log('Updating scrap order:', selectedScrap);
+  const handleCloseForms = useCallback(() => {
+    setShowCreateForm(false);
     setShowUpdateForm(false);
-    setSelectedScrap(null);
+    setShowViewForm(false);
+    setEditingId(null);
+    setViewingId(null);
+  }, []);
+
+  const handleSubmit = useCallback((formData: any) => {
+    const commonData = {
+      productId: formData.productId,
+      quantity: Number(formData.quantity) || 0,
+      reason: formData.reason as 'damaged' | 'expired' | 'lost' | 'obsolete',
+      scrapLocation: formData.scrapLocation,
+      status: editingId ? safeScrapOrders.find(s => s.id === editingId)?.status || 'pending' : 'pending',
+      date: editingId ? safeScrapOrders.find(s => s.id === editingId)?.date || new Date().toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      remark: formData.remark,
+    };
+
+    const newScrap: ScrapOrderItem = {
+      ...commonData,
+      id: editingId || Date.now().toString(),
+    };
+
+    if (editingId) {
+      storage.updateById(STORAGE_KEYS.SCRAP_ORDERS, editingId, newScrap);
+    } else {
+      storage.push(STORAGE_KEYS.SCRAP_ORDERS, newScrap);
+    }
+
+    const updatedScrapOrders = storage.get<ScrapOrderItem[]>(STORAGE_KEYS.SCRAP_ORDERS, []);
+    setScrapOrders(Array.isArray(updatedScrapOrders) ? updatedScrapOrders : []);
+    handleCloseForms();
+  }, [editingId, safeScrapOrders, handleCloseForms]);
+
+  const handleEdit = useCallback((id: string) => {
+    setEditingId(id);
+    setShowUpdateForm(true);
+  }, []);
+
+  const handleView = useCallback((id: string) => {
+    setViewingId(id);
+    setShowViewForm(true);
+  }, []);
+
+  const handleDelete = useCallback((id: string) => {
+    if (confirm('Are you sure you want to delete this scrap order?')) {
+      storage.deleteById(STORAGE_KEYS.SCRAP_ORDERS, id);
+      const updatedScrapOrders = storage.get<ScrapOrderItem[]>(STORAGE_KEYS.SCRAP_ORDERS, []);
+      setScrapOrders(Array.isArray(updatedScrapOrders) ? updatedScrapOrders : []);
+    }
+  }, []);
+
+  const handleApprove = useCallback((id: string) => {
+    const updated: Partial<ScrapOrderItem> = { status: 'approved' as const };
+    storage.updateById(STORAGE_KEYS.SCRAP_ORDERS, id, updated);
+    const updatedScrapOrders = storage.get<ScrapOrderItem[]>(STORAGE_KEYS.SCRAP_ORDERS, []);
+    setScrapOrders(Array.isArray(updatedScrapOrders) ? updatedScrapOrders : []);
+  }, []);
+
+  const handleAddClick = useCallback(() => {
+    setEditingId(null);
+    setShowCreateForm(true);
+  }, []);
+
+  const ScrapOrderForm = ({ initialData }: { initialData?: Partial<ScrapOrderItem> }) => {
+    const [formData, setFormData] = useState({
+      productId: initialData?.productId || '',
+      quantity: (initialData?.quantity || 0).toString(),
+      reason: initialData?.reason || 'damaged',
+      scrapLocation: initialData?.scrapLocation || 'Scrap Yard A',
+      remark: initialData?.remark || '',
+    });
+
+    const handleChange = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+      setFormData((prev) => ({ ...prev, [field]: e.target.value }));
+    };
+
+    const handleFormSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      handleSubmit(formData);
+    };
+
+    const isEditing = !!initialData;
+
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">
+                {isEditing ? 'Update Scrap Order' : 'Create New Scrap Order'}
+              </h3>
+              <button
+                onClick={handleCloseForms}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleFormSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Product Name *
+                  </label>
+                  <select 
+                    value={formData.productId}
+                    onChange={handleChange('productId')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
+                    <option value="">Select Product</option>
+                    {safeInventory.map(item => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Quantity *
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.quantity}
+                    onChange={handleChange('quantity')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter quantity to scrap"
+                    min="0"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Scrap Reason *
+                  </label>
+                  <select 
+                    value={formData.reason}
+                    onChange={handleChange('reason')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
+                    <option value="damaged">Damaged</option>
+                    <option value="expired">Expired</option>
+                    <option value="lost">Lost</option>
+                    <option value="obsolete">Obsolete</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Scrap Location *
+                  </label>
+                  <select 
+                    value={formData.scrapLocation}
+                    onChange={handleChange('scrapLocation')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
+                    <option>Scrap Yard A</option>
+                    <option>Scrap Yard B</option>
+                    <option>Disposal Center</option>
+                    <option>Recycling Center</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Remark
+                </label>
+                <textarea
+                  value={formData.remark}
+                  onChange={handleChange('remark')}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Enter detailed reason for scrapping..."
+                />
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={handleCloseForms}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  {isEditing ? 'Update Scrap Order' : 'Create Scrap Order'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
   };
 
-  const handleApprove = (scrapId: string) => {
-    // TODO: Implement approve logic here, e.g., update status to 'approved'
-    console.log('Approving scrap order:', scrapId);
-    // For demo, you could update the state here if needed
+  const ViewScrapOrderForm = ({ item }: { item: ScrapOrderItem | undefined }) => {
+    if (!item) return null;
+    const product = safeInventory.find(p => p.id === item.productId);
+
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">View Scrap Order: {item.id}</h3>
+              <button
+                onClick={handleCloseForms}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Scrap ID</label>
+                  <p className="text-sm text-gray-900">{item.id}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Product</label>
+                  <p className="text-sm text-gray-900">{product?.name || 'Unknown Product'}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                  <p className="text-sm text-gray-900">{item.quantity} units</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
+                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getReasonColor(item.reason)}`}>
+                    {item.reason}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Scrap Location</label>
+                  <p className="text-sm text-gray-900">{item.scrapLocation}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <div className="flex items-center">
+                    {getStatusIcon(item.status)}
+                    <span className={`ml-2 inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(item.status)}`}>
+                      {item.status}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                <p className="text-sm text-gray-900">{item.date}</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Remark</label>
+                <p className="text-sm text-gray-900">{item.remark}</p>
+              </div>
+
+              <div className="flex justify-end pt-4">
+                <button
+                  type="button"
+                  onClick={handleCloseForms}
+                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const getStatusColor = (status: string) => {
@@ -92,307 +397,6 @@ const ScrapOrder: React.FC = () => {
     }
   };
 
-  const CreateScrapOrderForm = () => (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
-        <div className="mt-3">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-medium text-gray-900">Create New Scrap Order</h3>
-            <button
-              onClick={() => setShowCreateForm(false)}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              <X className="h-6 w-6" />
-            </button>
-          </div>
-          
-          <form className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Product Name
-                </label>
-                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                  <option>Select Product</option>
-                  {inventory.map(item => (
-                    <option key={item.id} value={item.id}>{item.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Quantity
-                </label>
-                <input
-                  type="number"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter quantity to scrap"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Scrap Reason
-                </label>
-                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                  <option value="damaged">Damaged</option>
-                  <option value="expired">Expired</option>
-                  <option value="lost">Lost</option>
-                  <option value="obsolete">Obsolete</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Scrap Location
-                </label>
-                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                  <option>Scrap Yard A</option>
-                  <option>Scrap Yard B</option>
-                  <option>Disposal Center</option>
-                  <option>Recycling Center</option>
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Remark
-              </label>
-              <textarea
-                rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Enter detailed reason for scrapping..."
-              />
-            </div>
-
-            <div className="flex justify-end space-x-3 pt-4">
-              <button
-                type="button"
-                onClick={() => setShowCreateForm(false)}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-              >
-                Create Scrap Order
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-  );
-
-  const ViewScrapOrderForm = () => {
-    if (!selectedScrap) return null;
-    const product = inventory.find(item => item.id === selectedScrap.productId);
-    return (
-      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
-          <div className="mt-3">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium text-gray-900">View Scrap Order</h3>
-              <button
-                onClick={() => {
-                  setShowViewForm(false);
-                  setSelectedScrap(null);
-                }}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="h-6 w-6" />
-              </button>
-            </div>
-            
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Scrap ID</label>
-                  <p className="text-sm text-gray-900">{selectedScrap.id}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Product</label>
-                  <p className="text-sm text-gray-900">{product?.name || 'Unknown Product'}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
-                  <p className="text-sm text-gray-900">{selectedScrap.quantity} units</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
-                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getReasonColor(selectedScrap.reason)}`}>
-                    {selectedScrap.reason}
-                  </span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Scrap Location</label>
-                  <p className="text-sm text-gray-900">{selectedScrap.scrapLocation}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                  <div className="flex items-center">
-                    {getStatusIcon(selectedScrap.status)}
-                    <span className={`ml-2 inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(selectedScrap.status)}`}>
-                      {selectedScrap.status}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-                <p className="text-sm text-gray-900">{selectedScrap.date}</p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Remark</label>
-                <p className="text-sm text-gray-900">{selectedScrap.remark}</p>
-              </div>
-
-              <div className="flex justify-end pt-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowViewForm(false);
-                    setSelectedScrap(null);
-                  }}
-                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const UpdateScrapOrderForm = () => {
-    if (!selectedScrap) return null;
-    const product = inventory.find(item => item.id === selectedScrap.productId);
-    return (
-      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
-          <div className="mt-3">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium text-gray-900">Update Scrap Order</h3>
-              <button
-                onClick={() => {
-                  setShowUpdateForm(false);
-                  setSelectedScrap(null);
-                }}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="h-6 w-6" />
-              </button>
-            </div>
-            
-            <form className="space-y-4" onSubmit={handleUpdateSubmit}>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Product Name
-                  </label>
-                  <select 
-                    defaultValue={selectedScrap.productId}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="">Select Product</option>
-                    {inventory.map(item => (
-                      <option key={item.id} value={item.id}>{item.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Quantity
-                  </label>
-                  <input
-                    type="number"
-                    defaultValue={selectedScrap.quantity}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Scrap Reason
-                  </label>
-                  <select 
-                    defaultValue={selectedScrap.reason}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="damaged">Damaged</option>
-                    <option value="expired">Expired</option>
-                    <option value="lost">Lost</option>
-                    <option value="obsolete">Obsolete</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Scrap Location
-                  </label>
-                  <select 
-                    defaultValue={selectedScrap.scrapLocation}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option>Scrap Yard A</option>
-                    <option>Scrap Yard B</option>
-                    <option>Disposal Center</option>
-                    <option>Recycling Center</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Remark
-                </label>
-                <textarea
-                  rows={3}
-                  defaultValue={selectedScrap.remark}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-
-              <div className="flex justify-end space-x-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowUpdateForm(false);
-                    setSelectedScrap(null);
-                  }}
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                >
-                  Update Scrap Order
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   return (
     // <Layout>
       <div className="space-y-6 w-full">
@@ -405,7 +409,7 @@ const ScrapOrder: React.FC = () => {
             </p>
           </div>
           <button 
-            onClick={() => setShowCreateForm(true)}
+            onClick={handleAddClick}
             className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors flex items-center"
           >
             <Plus className="h-4 w-4 mr-2" />
@@ -423,7 +427,7 @@ const ScrapOrder: React.FC = () => {
                 </div>
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">Total Scrap Orders</p>
-                  <p className="text-2xl font-semibold text-gray-900">{scrapOrders.length}</p>
+                  <p className="text-2xl font-semibold text-gray-900">{safeScrapOrders.length}</p>
                 </div>
               </div>
             </div>
@@ -437,7 +441,7 @@ const ScrapOrder: React.FC = () => {
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">Pending Approval</p>
                   <p className="text-2xl font-semibold text-gray-900">
-                    {scrapOrders.filter(scrap => scrap.status === 'pending').length}
+                    {safeScrapOrders.filter(scrap => scrap.status === 'pending').length}
                   </p>
                 </div>
               </div>
@@ -452,7 +456,7 @@ const ScrapOrder: React.FC = () => {
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">Completed</p>
                   <p className="text-2xl font-semibold text-gray-900">
-                    {scrapOrders.filter(scrap => scrap.status === 'completed').length}
+                    {safeScrapOrders.filter(scrap => scrap.status === 'completed').length}
                   </p>
                 </div>
               </div>
@@ -467,7 +471,7 @@ const ScrapOrder: React.FC = () => {
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">Damaged Items</p>
                   <p className="text-2xl font-semibold text-gray-900">
-                    {scrapOrders.filter(scrap => scrap.reason === 'damaged').length}
+                    {safeScrapOrders.filter(scrap => scrap.reason === 'damaged').length}
                   </p>
                 </div>
               </div>
@@ -553,7 +557,7 @@ const ScrapOrder: React.FC = () => {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredScrapOrders.map((scrap) => {
-                const product = inventory.find(item => item.id === scrap.productId);
+                const product = safeInventory.find(item => item.id === scrap.productId);
                 return (
                   <tr key={scrap.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -596,21 +600,21 @@ const ScrapOrder: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <button 
                         className="text-blue-600 hover:text-blue-900 mr-3"
-                        onClick={() => {
-                          setSelectedScrap(scrap);
-                          setShowViewForm(true);
-                        }}
+                        onClick={() => handleView(scrap.id)}
                       >
                         <Eye className="h-4 w-4" />
                       </button>
                       <button 
                         className="text-green-600 hover:text-green-900 mr-3"
-                        onClick={() => {
-                          setSelectedScrap(scrap);
-                          setShowUpdateForm(true);
-                        }}
+                        onClick={() => handleEdit(scrap.id)}
                       >
                         <Edit className="h-4 w-4" />
+                      </button>
+                      <button 
+                        className="text-red-600 hover:text-red-900 mr-3"
+                        onClick={() => handleDelete(scrap.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
                       </button>
                       {scrap.status === 'pending' && (
                         <button 
@@ -628,12 +632,10 @@ const ScrapOrder: React.FC = () => {
           </table>
         </div>
 
-        {/* Create Scrap Order Form Modal */}
-        {showCreateForm && <CreateScrapOrderForm />}
-        {/* View Scrap Order Form Modal */}
-        {showViewForm && <ViewScrapOrderForm />}
-        {/* Update Scrap Order Form Modal */}
-        {showUpdateForm && <UpdateScrapOrderForm />}
+        {/* Forms Modals */}
+        {showCreateForm && <ScrapOrderForm initialData={undefined} />}
+        {showUpdateForm && editingId && <ScrapOrderForm initialData={safeScrapOrders.find(s => s.id === editingId)} />}
+        {showViewForm && viewingId && <ViewScrapOrderForm item={safeScrapOrders.find(s => s.id === viewingId)} />}
       </div>
     // </Layout>
   );

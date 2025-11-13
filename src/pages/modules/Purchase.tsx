@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useData } from '../../contexts/DataContext';
+import { storage, STORAGE_KEYS } from '@/lib/storage';
 import Layout from '../../components/Layout';
 import {
   ShoppingCart,
@@ -34,8 +35,71 @@ import {
   X
 } from 'lucide-react';
 
+interface RFQ {
+  id: string;
+  rfqNumber: string;
+  orderDate: string;
+  currency: string;
+  vendors: string[];
+  paymentTerms: string;
+  deliveryDate: string;
+  products: { name: string; quantity: number; uom: string; unitPrice: number; taxes: number }[];
+  notes: string;
+  status: string;
+}
+
+interface PurchaseOrder {
+  id: string;
+  poNumber: string;
+  vendor: string;
+  orderDate: string;
+  deliveryAddress: string;
+  warehouse: string;
+  incoterms: string;
+  deliveryMethod: string;
+  scheduledDeliveryDate: string;
+  productLines: { product: string; quantity: number; unitPrice: number; taxes: number; subtotal: number }[];
+  responsibleUser: string;
+  totalAmount: number;
+  status: string;
+}
+
+interface PurchaseAgreement {
+  id: string | number;
+  agreementNumber: string;
+  vendor: string;
+  startDate: string;
+  endDate: string;
+  totalValue: number;
+  status: string;
+  terms: string;
+  notes: string;
+}
+
+interface Vendor {
+  id: string;
+  vendorName: string;
+  contactPerson: string;
+  email: string;
+  phone: string;
+  address: string;
+  gstin: string;
+  currency: string;
+  paymentTerms: string;
+  productsSupplied: string;
+  bankName: string;
+  accountNumber: string;
+  ifscCode: string;
+  notes: string;
+  isActive: boolean;
+  vendorRating: number;
+}
+
 const Purchase: React.FC = () => {
-  const { purchaseOrders, rfqs, purchaseAgreements, vendors } = useData();
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+  const [rfqs, setRfqs] = useState<RFQ[]>([]);
+  const [purchaseAgreements, setPurchaseAgreements] = useState<PurchaseAgreement[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
   const [activeTab, setActiveTab] = useState('overview');
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -51,14 +115,36 @@ const Purchase: React.FC = () => {
   const [showCreateVendor, setShowCreateVendor] = useState(false);
   const [showUpdateVendor, setShowUpdateVendor] = useState(false);
   const [showViewVendor, setShowViewVendor] = useState(false);
-  const [editingRfq, setEditingRfq] = useState<any>(null);
-  const [viewingRfq, setViewingRfq] = useState<any>(null);
-  const [editingPo, setEditingPo] = useState<any>(null);
-  const [viewingPo, setViewingPo] = useState<any>(null);
-  const [editingAgreement, setEditingAgreement] = useState<any>(null);
-  const [viewingAgreement, setViewingAgreement] = useState<any>(null);
-  const [editingVendor, setEditingVendor] = useState<any>(null);
-  const [viewingVendor, setViewingVendor] = useState<any>(null);
+  const [editingRfq, setEditingRfq] = useState<RFQ | null>(null);
+  const [viewingRfq, setViewingRfq] = useState<RFQ | null>(null);
+  const [editingPo, setEditingPo] = useState<PurchaseOrder | null>(null);
+  const [viewingPo, setViewingPo] = useState<PurchaseOrder | null>(null);
+  const [editingAgreement, setEditingAgreement] = useState<PurchaseAgreement | null>(null);
+  const [viewingAgreement, setViewingAgreement] = useState<PurchaseAgreement | null>(null);
+  const [editingVendor, setEditingVendor] = useState<Vendor | null>(null);
+  const [viewingVendor, setViewingVendor] = useState<Vendor | null>(null);
+
+  useEffect(() => {
+    const loadedPOs = storage.get<PurchaseOrder[]>(STORAGE_KEYS.PURCHASE_ORDERS, []);
+    setPurchaseOrders(Array.isArray(loadedPOs) ? loadedPOs : []);
+    const loadedRFQs = storage.get<RFQ[]>(STORAGE_KEYS.RFQS, []);
+    setRfqs(Array.isArray(loadedRFQs) ? loadedRFQs : []);
+    const loadedAgreements = storage.get<PurchaseAgreement[]>(STORAGE_KEYS.PURCHASE_AGREEMENTS, []);
+    setPurchaseAgreements(Array.isArray(loadedAgreements) ? loadedAgreements : []);
+    const loadedVendors = storage.get<Vendor[]>(STORAGE_KEYS.VENDORS, []);
+    setVendors(Array.isArray(loadedVendors) ? loadedVendors : []);
+  }, []);
+
+  const refreshData = () => {
+    const loadedPOs = storage.get<PurchaseOrder[]>(STORAGE_KEYS.PURCHASE_ORDERS, []);
+    setPurchaseOrders(Array.isArray(loadedPOs) ? loadedPOs : []);
+    const loadedRFQs = storage.get<RFQ[]>(STORAGE_KEYS.RFQS, []);
+    setRfqs(Array.isArray(loadedRFQs) ? loadedRFQs : []);
+    const loadedAgreements = storage.get<PurchaseAgreement[]>(STORAGE_KEYS.PURCHASE_AGREEMENTS, []);
+    setPurchaseAgreements(Array.isArray(loadedAgreements) ? loadedAgreements : []);
+    const loadedVendors = storage.get<Vendor[]>(STORAGE_KEYS.VENDORS, []);
+    setVendors(Array.isArray(loadedVendors) ? loadedVendors : []);
+  };
 
   const tabs = [
     { id: 'overview', name: 'Overview', icon: BarChart3 },
@@ -69,34 +155,6 @@ const Purchase: React.FC = () => {
     { id: 'reporting', name: 'Reporting', icon: TrendingUp },
     { id: 'settings', name: 'Settings', icon: Settings }
   ];
-  const sampleAgreements = [
-  {
-    id: 1,
-    agreementNumber: 'PA-2024-001',
-    vendor: 'Steel Corp Ltd',
-    startDate: '2024-01-01',
-    endDate: '2024-12-31',
-    totalValue: 50000,
-    status: 'active',
-    terms: 'Annual supply of steel materials at fixed rates',
-    notes: 'Volume commitment: 100 tons'
-  },
-  {
-    id: 2,
-    agreementNumber: 'PA-2024-002',
-    vendor: 'Aluminum Co',
-    startDate: '2024-03-01',
-    endDate: '2025-02-28',
-    totalValue: 30000,
-    status: 'active',
-    terms: 'Quarterly deliveries with price adjustments',
-    notes: 'Preferred supplier for alloys'
-  }
-];
-// Ensure sample data is always used for demo if real data is empty or invalid
-const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?.id) 
-  ? purchaseAgreements 
-  : sampleAgreements;
 
   const CreateRfqForm = () => {
     const [formData, setFormData] = useState({
@@ -112,8 +170,13 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
 
     const handleSubmit = (e: React.FormEvent) => {
       e.preventDefault();
-      // Simulate add
-      console.log('Add RFQ', formData);
+      const newRfq: RFQ = {
+        ...formData,
+        id: Date.now().toString(),
+        status: 'draft'
+      };
+      storage.push(STORAGE_KEYS.RFQS, newRfq);
+      refreshData();
       setShowCreateRfq(false);
       setFormData({
         rfqNumber: '',
@@ -127,10 +190,6 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
       });
     };
 
-    // In the Purchase component, after const { purchaseOrders, rfqs, purchaseAgreements, vendors } = useData();
-// Add this to provide sample data if empty:
-
-// Then in renderAgreements(), replace purchaseAgreements.map with agreementsData.map
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
         <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-4/5 lg:w-3/4 shadow-lg rounded-md bg-white">
@@ -141,7 +200,6 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
                 <X className="h-6 w-6" />
               </button>
             </div>
-
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div>
@@ -259,8 +317,12 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
 
     const handleSubmit = (e: React.FormEvent) => {
       e.preventDefault();
-      // Simulate update
-      console.log('Update RFQ', formData);
+      if (!editingRfq) return;
+      const updatedRfq: Partial<RFQ> = {
+        ...formData
+      };
+      storage.updateById(STORAGE_KEYS.RFQS, editingRfq.id, updatedRfq);
+      refreshData();
       setShowUpdateRfq(false);
       setEditingRfq(null);
     };
@@ -277,7 +339,6 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
                 <X className="h-6 w-6" />
               </button>
             </div>
-
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div>
@@ -426,7 +487,7 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
                     <div>Unit Price</div>
                     <div>Taxes (%)</div>
                   </div>
-                  {viewingRfq.products?.map((product: any, index: number) => (
+                  {viewingRfq.products?.map((product, index) => (
                     <div key={index} className="grid grid-cols-5 gap-2 mb-2 text-sm text-gray-900">
                       <div>{product.name}</div>
                       <div>{product.quantity}</div>
@@ -469,8 +530,13 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
 
     const handleSubmit = (e: React.FormEvent) => {
       e.preventDefault();
-      // Simulate add
-      console.log('Add PO', formData);
+      const newPo: PurchaseOrder = {
+        ...formData,
+        id: Date.now().toString(),
+        status: 'draft'
+      };
+      storage.push(STORAGE_KEYS.PURCHASE_ORDERS, newPo);
+      refreshData();
       setShowCreatePo(false);
       setFormData({
         poNumber: '',
@@ -497,7 +563,6 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
                 <X className="h-6 w-6" />
               </button>
             </div>
-
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div>
@@ -642,8 +707,12 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
 
     const handleSubmit = (e: React.FormEvent) => {
       e.preventDefault();
-      // Simulate update
-      console.log('Update PO', formData);
+      if (!editingPo) return;
+      const updatedPo: Partial<PurchaseOrder> = {
+        ...formData
+      };
+      storage.updateById(STORAGE_KEYS.PURCHASE_ORDERS, editingPo.id, updatedPo);
+      refreshData();
       setShowUpdatePo(false);
       setEditingPo(null);
     };
@@ -660,7 +729,6 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
                 <X className="h-6 w-6" />
               </button>
             </div>
-
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div>
@@ -849,7 +917,7 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
                     <div>Taxes (%)</div>
                     <div>Subtotal</div>
                   </div>
-                  {viewingPo.productLines?.map((line: any, index: number) => (
+                  {viewingPo.productLines?.map((line, index) => (
                     <div key={index} className="grid grid-cols-5 gap-2 mb-2 text-sm text-gray-900">
                       <div>{line.product}</div>
                       <div>{line.quantity}</div>
@@ -884,8 +952,13 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
 
     const handleSubmit = (e: React.FormEvent) => {
       e.preventDefault();
-      // Simulate add
-      console.log('Add Agreement', formData);
+      const newAgreement: PurchaseAgreement = {
+        ...formData,
+        id: Date.now().toString(),
+        status: 'active'
+      };
+      storage.push(STORAGE_KEYS.PURCHASE_AGREEMENTS, newAgreement);
+      refreshData();
       setShowCreateAgreement(false);
       setFormData({
         agreementNumber: '',
@@ -908,7 +981,6 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
                 <X className="h-6 w-6" />
               </button>
             </div>
-
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
@@ -973,8 +1045,12 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
 
     const handleSubmit = (e: React.FormEvent) => {
       e.preventDefault();
-      // Simulate update
-      console.log('Update Agreement', formData);
+      if (!editingAgreement) return;
+      const updatedAgreement: Partial<PurchaseAgreement> = {
+        ...formData
+      };
+      storage.updateById(STORAGE_KEYS.PURCHASE_AGREEMENTS, editingAgreement.id.toString(), updatedAgreement);
+      refreshData();
       setShowUpdateAgreement(false);
       setEditingAgreement(null);
     };
@@ -991,7 +1067,6 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
                 <X className="h-6 w-6" />
               </button>
             </div>
-
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
@@ -1112,8 +1187,14 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
 
     const handleSubmit = (e: React.FormEvent) => {
       e.preventDefault();
-      // Simulate add
-      console.log('Add Vendor', formData);
+      const newVendor: Vendor = {
+        ...formData,
+        id: Date.now().toString(),
+        isActive: true,
+        vendorRating: 0
+      };
+      storage.push(STORAGE_KEYS.VENDORS, newVendor);
+      refreshData();
       setShowCreateVendor(false);
       setFormData({
         vendorName: '',
@@ -1142,7 +1223,6 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
                 <X className="h-6 w-6" />
               </button>
             </div>
-
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
@@ -1245,8 +1325,12 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
 
     const handleSubmit = (e: React.FormEvent) => {
       e.preventDefault();
-      // Simulate update
-      console.log('Update Vendor', formData);
+      if (!editingVendor) return;
+      const updatedVendor: Partial<Vendor> = {
+        ...formData
+      };
+      storage.updateById(STORAGE_KEYS.VENDORS, editingVendor.id, updatedVendor);
+      refreshData();
       setShowUpdateVendor(false);
       setEditingVendor(null);
     };
@@ -1263,7 +1347,6 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
                 <X className="h-6 w-6" />
               </button>
             </div>
-
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
@@ -1628,7 +1711,7 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{rfq.vendors?.length || 0} vendors</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{rfq.orderDate}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{rfq.deliveryDate}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${(rfq.totalAmount || 0).toLocaleString()}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${(rfq.products.reduce((sum, p) => sum + (p.quantity * p.unitPrice), 0) || 0).toLocaleString()}</td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center">
                     {getStatusIcon(rfq.status)}
@@ -1641,7 +1724,12 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
                   <button onClick={() => { setViewingRfq(rfq); setShowViewRfq(true); }} className="text-blue-600 hover:text-blue-900 mr-3"><Eye className="h-4 w-4" /></button>
                   <button onClick={() => { setEditingRfq(rfq); setShowUpdateRfq(true); }} className="text-green-600 hover:text-green-900 mr-3"><Edit className="h-4 w-4" /></button>
                   <button className="text-purple-600 hover:text-purple-900 mr-3"><Send className="h-4 w-4" /></button>
-                  <button className="text-red-600 hover:text-red-900"><Trash2 className="h-4 w-4" /></button>
+                  <button className="text-red-600 hover:text-red-900" onClick={() => {
+                    if (confirm('Are you sure?')) {
+                      storage.deleteById(STORAGE_KEYS.RFQS, rfq.id);
+                      refreshData();
+                    }
+                  }}><Trash2 className="h-4 w-4" /></button>
                 </td>
               </tr>
             ))}
@@ -1701,7 +1789,12 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
                   <button onClick={() => { setViewingPo(po); setShowViewPo(true); }} className="text-blue-600 hover:text-blue-900 mr-3"><Eye className="h-4 w-4" /></button>
                   <button onClick={() => { setEditingPo(po); setShowUpdatePo(true); }} className="text-green-600 hover:text-green-900 mr-3"><Edit className="h-4 w-4" /></button>
                   <button className="text-purple-600 hover:text-purple-900 mr-3"><Package className="h-4 w-4" /></button>
-                  <button className="text-red-600 hover:text-red-900"><Trash2 className="h-4 w-4" /></button>
+                  <button className="text-red-600 hover:text-red-900" onClick={() => {
+                    if (confirm('Are you sure?')) {
+                      storage.deleteById(STORAGE_KEYS.PURCHASE_ORDERS, po.id);
+                      refreshData();
+                    }
+                  }}><Trash2 className="h-4 w-4" /></button>
                 </td>
               </tr>
             ))}
@@ -1710,34 +1803,7 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
       </div>
     </div>
   );
-//   const sampleAgreements = [
-//   {
-//     id: 1,
-//     agreementNumber: 'PA-2024-001',
-//     vendor: 'Steel Corp Ltd',
-//     startDate: '2024-01-01',
-//     endDate: '2024-12-31',
-//     totalValue: 50000,
-//     status: 'active',
-//     terms: 'Annual supply of steel materials at fixed rates',
-//     notes: 'Volume commitment: 100 tons'
-//   },
-//   {
-//     id: 2,
-//     agreementNumber: 'PA-2024-002',
-//     vendor: 'Aluminum Co',
-//     startDate: '2024-03-01',
-//     endDate: '2025-02-28',
-//     totalValue: 30000,
-//     status: 'active',
-//     terms: 'Quarterly deliveries with price adjustments',
-//     notes: 'Preferred supplier for alloys'
-//   }
-// ];
 
-// const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?.id) 
-  // ? purchaseAgreements 
-  // : sampleAgreements;
   const renderAgreements = () => (
     <div className="space-y-6">
       {/* Header */}
@@ -1769,7 +1835,7 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {agreementsData.map((agreement) => (
+            {purchaseAgreements.map((agreement) => (
               <tr key={agreement.id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{agreement?.agreementNumber}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{agreement?.vendor}</td>
@@ -1787,7 +1853,12 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                   <button onClick={() => { setViewingAgreement(agreement); setShowViewAgreement(true); }} className="text-blue-600 hover:text-blue-900 mr-3"><Eye className="h-4 w-4" /></button>
                   <button onClick={() => { setEditingAgreement(agreement); setShowUpdateAgreement(true); }} className="text-green-600 hover:text-green-900 mr-3"><Edit className="h-4 w-4" /></button>
-                  <button className="text-red-600 hover:text-red-900"><Trash2 className="h-4 w-4" /></button>
+                  <button className="text-red-600 hover:text-red-900" onClick={() => {
+                    if (confirm('Are you sure?')) {
+                      storage.deleteById(STORAGE_KEYS.PURCHASE_AGREEMENTS, agreement.id.toString());
+                      refreshData();
+                    }
+                  }}><Trash2 className="h-4 w-4" /></button>
                 </td>
               </tr>
             ))}
@@ -1830,7 +1901,6 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
                 <span className="text-sm font-medium text-gray-900">{vendor.vendorRating}</span>
               </div>
             </div>
-
             <div className="space-y-2 mb-4">
               <div className="flex items-center text-sm text-gray-600">
                 <Mail className="h-4 w-4 mr-2" />
@@ -1849,8 +1919,7 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
                 {vendor.paymentTerms}
               </div>
             </div>
-            
-
+           
             <div className="mb-4">
               <p className="text-xs text-gray-500 mb-1">Products Supplied:</p>
               <div className="flex flex-wrap gap-1">
@@ -1889,7 +1958,12 @@ const agreementsData = (purchaseAgreements?.length > 0 && purchaseAgreements[0]?
               <div className="flex space-x-2">
                 <button onClick={() => { setViewingVendor(vendor); setShowViewVendor(true); }} className="text-blue-600 hover:text-blue-900"><Eye className="h-4 w-4" /></button>
                 <button onClick={() => { setEditingVendor(vendor); setShowUpdateVendor(true); }} className="text-green-600 hover:text-green-900"><Edit className="h-4 w-4" /></button>
-                <button className="text-red-600 hover:text-red-900"><Trash2 className="h-4 w-4" /></button>
+                <button className="text-red-600 hover:text-red-900" onClick={() => {
+                  if (confirm('Are you sure?')) {
+                    storage.deleteById(STORAGE_KEYS.VENDORS, vendor.id);
+                    refreshData();
+                  }
+                }}><Trash2 className="h-4 w-4" /></button>
               </div>
             </div>
           </div>

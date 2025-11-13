@@ -1,23 +1,15 @@
-import React, { useState } from 'react';
-import { useData } from '../../contexts/DataContext';
+import React, { useState, useEffect } from 'react';
+import { storage, STORAGE_KEYS } from '@/lib/storage';
 import Layout from '../../components/Layout';
 import { GitBranch, Plus, FileText, Clock, CheckCircle, AlertTriangle, Search, Filter, Eye, Edit, Trash2, Download, Upload, MessageSquare, Users, Calendar, Package, Settings, BarChart3, XCircle, User, Paperclip, Send, ArrowRight, ArrowLeft, GitCompare as Compare, Archive, FileImage, File as FilePdf, FileCode, Layers, Target, TrendingUp, DollarSign } from 'lucide-react';
 
 const ProductLifecycle: React.FC = () => {
-  const {
-    engineeringChangeOrders,
-    bomVersions,
-    productDocuments,
-    engineeringTeams,
-    ecoComments,
-    inventory,
-    addEngineeringChangeOrder,
-    updateEngineeringChangeOrder,
-    addBomVersion,
-    addProductDocument,
-    addEngineeringTeam,
-    addEcoComment
-  } = useData();
+  const [engineeringChangeOrders, setEngineeringChangeOrders] = useState<any[]>([]);
+  const [bomVersions, setBomVersions] = useState<any[]>([]);
+  const [productDocuments, setProductDocuments] = useState<any[]>([]);
+  const [engineeringTeams, setEngineeringTeams] = useState<any[]>([]);
+  const [ecoComments, setEcoComments] = useState<any[]>([]);
+  const [inventory, setInventory] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState('overview');
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
@@ -30,15 +22,82 @@ const ProductLifecycle: React.FC = () => {
   const [showUpdateEcoForm, setShowUpdateEcoForm] = useState(false);
   const [showViewEcoModal, setShowViewEcoModal] = useState(false);
   const [showViewDocumentModal, setShowViewDocumentModal] = useState(false);
+  const [showViewBomModal, setShowViewBomModal] = useState(false);
   const [selectedEco, setSelectedEco] = useState<string | null>(null);
   const [selectedBomVersions, setSelectedBomVersions] = useState<string[]>([]);
   const [newComment, setNewComment] = useState('');
   const [editingEco, setEditingEco] = useState<any>(null);
   const [viewingEco, setViewingEco] = useState<any>(null);
   const [viewingDocument, setViewingDocument] = useState<any>(null);
+  const [viewingBom, setViewingBom] = useState<any>(null);
   // New states for advanced reports
   const [reportDateRange, setReportDateRange] = useState('last30days');
   const [selectedReport, setSelectedReport] = useState('eco-summary');
+
+  useEffect(() => {
+    setEngineeringChangeOrders(storage.get(STORAGE_KEYS.ENGINEERING_CHANGE_ORDERS, []));
+    setBomVersions(storage.get(STORAGE_KEYS.BOM_VERSIONS, []));
+    setProductDocuments(storage.get(STORAGE_KEYS.PRODUCT_DOCUMENTS, []));
+    setEngineeringTeams(storage.get(STORAGE_KEYS.ENGINEERING_TEAMS, []));
+    setEcoComments(storage.get(STORAGE_KEYS.ECO_COMMENTS, []));
+    setInventory(storage.get(STORAGE_KEYS.INVENTORY, []));
+  }, []);
+
+  // CRUD Functions
+  const addEngineeringChangeOrder = (eco: any) => {
+    storage.push(STORAGE_KEYS.ENGINEERING_CHANGE_ORDERS, eco);
+    setEngineeringChangeOrders(storage.get(STORAGE_KEYS.ENGINEERING_CHANGE_ORDERS, []));
+  };
+
+  const updateEngineeringChangeOrder = (id: string, updated: Partial<any>) => {
+    storage.updateById(STORAGE_KEYS.ENGINEERING_CHANGE_ORDERS, id, updated);
+    setEngineeringChangeOrders(storage.get(STORAGE_KEYS.ENGINEERING_CHANGE_ORDERS, []));
+  };
+
+  const deleteEngineeringChangeOrder = (id: string) => {
+    storage.deleteById(STORAGE_KEYS.ENGINEERING_CHANGE_ORDERS, id);
+    setEngineeringChangeOrders(storage.get(STORAGE_KEYS.ENGINEERING_CHANGE_ORDERS, []));
+  };
+
+  const addBomVersion = (bom: any) => {
+    storage.push(STORAGE_KEYS.BOM_VERSIONS, bom);
+    setBomVersions(storage.get(STORAGE_KEYS.BOM_VERSIONS, []));
+  };
+
+  const deleteBomVersion = (id: string) => {
+    storage.deleteById(STORAGE_KEYS.BOM_VERSIONS, id);
+    setBomVersions(storage.get(STORAGE_KEYS.BOM_VERSIONS, []));
+  };
+
+  const addProductDocument = (doc: any) => {
+    storage.push(STORAGE_KEYS.PRODUCT_DOCUMENTS, doc);
+    setProductDocuments(storage.get(STORAGE_KEYS.PRODUCT_DOCUMENTS, []));
+  };
+
+  const deleteProductDocument = (id: string) => {
+    storage.deleteById(STORAGE_KEYS.PRODUCT_DOCUMENTS, id);
+    setProductDocuments(storage.get(STORAGE_KEYS.PRODUCT_DOCUMENTS, []));
+  };
+
+  const addEngineeringTeam = (team: any) => {
+    storage.push(STORAGE_KEYS.ENGINEERING_TEAMS, team);
+    setEngineeringTeams(storage.get(STORAGE_KEYS.ENGINEERING_TEAMS, []));
+  };
+
+  const deleteEngineeringTeam = (id: string) => {
+    storage.deleteById(STORAGE_KEYS.ENGINEERING_TEAMS, id);
+    setEngineeringTeams(storage.get(STORAGE_KEYS.ENGINEERING_TEAMS, []));
+  };
+
+  const addEcoComment = (comment: any) => {
+    storage.push(STORAGE_KEYS.ECO_COMMENTS, comment);
+    setEcoComments(storage.get(STORAGE_KEYS.ECO_COMMENTS, []));
+  };
+
+  const deleteEcoComment = (id: string) => {
+    storage.deleteById(STORAGE_KEYS.ECO_COMMENTS, id);
+    setEcoComments(storage.get(STORAGE_KEYS.ECO_COMMENTS, []));
+  };
 
   const tabs = [
     { id: 'overview', name: 'Overview', icon: BarChart3 },
@@ -131,6 +190,19 @@ const ProductLifecycle: React.FC = () => {
     if (fileType.includes('image')) return <FileImage className="h-5 w-5 text-blue-500" />;
     if (fileType.includes('cad') || fileType.includes('dwg')) return <FileCode className="h-5 w-5 text-green-500" />;
     return <FileText className="h-5 w-5 text-gray-500" />;
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'active':
+        return 'bg-green-100 text-green-800';
+      case 'draft':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'archived':
+        return 'bg-gray-100 text-gray-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
   };
 
   // Helper for date filtering in reports
@@ -236,7 +308,6 @@ const ProductLifecycle: React.FC = () => {
       documents: [] as File[],
       approvers: [] as string[]
     });
-
     const handleSubmit = (e: React.FormEvent) => {
       e.preventDefault();
       addEngineeringChangeOrder({
@@ -263,7 +334,6 @@ const ProductLifecycle: React.FC = () => {
         approvers: []
       });
     };
-
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
         <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 shadow-lg rounded-md bg-white">
@@ -277,7 +347,7 @@ const ProductLifecycle: React.FC = () => {
                 <XCircle className="h-6 w-6" />
               </button>
             </div>
-           
+          
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
@@ -491,16 +561,13 @@ const ProductLifecycle: React.FC = () => {
   // Update ECO Form
   const UpdateEcoForm = () => {
     const [formData, setFormData] = useState(editingEco || {});
-
     const handleSubmit = (e: React.FormEvent) => {
       e.preventDefault();
       updateEngineeringChangeOrder(editingEco.id, formData);
       setShowUpdateEcoForm(false);
       setEditingEco(null);
     };
-
     if (!editingEco) return null;
-
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
         <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 shadow-lg rounded-md bg-white">
@@ -517,7 +584,7 @@ const ProductLifecycle: React.FC = () => {
                 <XCircle className="h-6 w-6" />
               </button>
             </div>
-           
+          
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
@@ -588,7 +655,6 @@ const ProductLifecycle: React.FC = () => {
   // View ECO Modal
   const ViewEcoModal = () => {
     if (!viewingEco) return null;
-
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
         <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 shadow-lg rounded-md bg-white">
@@ -674,10 +740,86 @@ const ProductLifecycle: React.FC = () => {
     );
   };
 
+  // View BoM Version Modal
+  const ViewBomModal = () => {
+    if (!viewingBom) return null;
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 shadow-lg rounded-md bg-white">
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">View BoM Version: {viewingBom.bomNumber} - {viewingBom.version}</h3>
+              <button
+                onClick={() => {
+                  setShowViewBomModal(false);
+                  setViewingBom(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XCircle className="h-6 w-6" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Product</label>
+                <p className="text-sm text-gray-900">{viewingBom.product}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Version</label>
+                <p className="text-sm font-medium text-blue-600">{viewingBom.version}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(viewingBom.status)}`}>
+                  {viewingBom.status}
+                </span>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Created By</label>
+                <p className="text-sm text-gray-900">{viewingBom.createdBy}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Created Date</label>
+                <p className="text-sm text-gray-900">{viewingBom.createdDate}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Components</label>
+                <div className="bg-gray-50 p-3 rounded-lg">
+                  {viewingBom.components.length > 0 ? (
+                    <ul className="space-y-1 text-sm text-gray-900">
+                      {viewingBom.components.map((component: string, index: number) => (
+                        <li key={index} className="flex items-center">
+                          <Layers className="h-3 w-3 mr-2 text-gray-400" />
+                          {component}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-gray-500">No components defined</p>
+                  )}
+                </div>
+              </div>
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  onClick={() => {
+                    setShowViewBomModal(false);
+                    setViewingBom(null);
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // New: View Document Modal (Read)
   const ViewDocumentModal = () => {
     if (!viewingDocument) return null;
-
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
         <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 shadow-lg rounded-md bg-white">
@@ -773,7 +915,6 @@ const ProductLifecycle: React.FC = () => {
       components: [] as string[],
       status: 'draft'
     });
-
     const handleSubmit = (e: React.FormEvent) => {
       e.preventDefault();
       addBomVersion({
@@ -791,7 +932,6 @@ const ProductLifecycle: React.FC = () => {
         status: 'draft'
       });
     };
-
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
         <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 shadow-lg rounded-md bg-white">
@@ -805,7 +945,7 @@ const ProductLifecycle: React.FC = () => {
                 <XCircle className="h-6 w-6" />
               </button>
             </div>
-           
+          
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">BoM Number *</label>
@@ -896,7 +1036,6 @@ const ProductLifecycle: React.FC = () => {
       version: '',
       file: null as File | null
     });
-
     const handleSubmit = (e: React.FormEvent) => {
       e.preventDefault();
       if (!formData.file) return;
@@ -919,7 +1058,6 @@ const ProductLifecycle: React.FC = () => {
         file: null
       });
     };
-
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
         <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 shadow-lg rounded-md bg-white">
@@ -933,7 +1071,7 @@ const ProductLifecycle: React.FC = () => {
                 <XCircle className="h-6 w-6" />
               </button>
             </div>
-           
+          
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Document Name *</label>
@@ -1044,7 +1182,6 @@ const ProductLifecycle: React.FC = () => {
       contactInfo: { email: '', phone: '' },
       members: [] as { userId: string; name: string; availability: string }[]
     });
-
     const handleSubmit = (e: React.FormEvent) => {
       e.preventDefault();
       addEngineeringTeam({
@@ -1061,7 +1198,6 @@ const ProductLifecycle: React.FC = () => {
         members: []
       });
     };
-
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
         <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 shadow-lg rounded-md bg-white">
@@ -1075,7 +1211,7 @@ const ProductLifecycle: React.FC = () => {
                 <XCircle className="h-6 w-6" />
               </button>
             </div>
-           
+          
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Team Name *</label>
@@ -1449,7 +1585,7 @@ const ProductLifecycle: React.FC = () => {
                     >
                       <Eye className="h-4 w-4" />
                     </button>
-                    <button 
+                    <button
                       onClick={() => {
                         setEditingEco(eco);
                         setShowUpdateEcoForm(true);
@@ -1461,7 +1597,10 @@ const ProductLifecycle: React.FC = () => {
                     <button className="text-purple-600 hover:text-purple-900">
                       <MessageSquare className="h-4 w-4" />
                     </button>
-                    <button className="text-red-600 hover:text-red-900">
+                    <button 
+                      onClick={() => deleteEngineeringChangeOrder(eco.id)}
+                      className="text-red-600 hover:text-red-900"
+                    >
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
@@ -1496,7 +1635,7 @@ const ProductLifecycle: React.FC = () => {
             )}
           </div>
         </div>
-       
+      
         <div className="text-sm text-gray-600 mb-4">
           Select two versions to compare differences. Click on version numbers to select.
         </div>
@@ -1592,7 +1731,13 @@ const ProductLifecycle: React.FC = () => {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                   <div className="flex items-center space-x-2">
-                    <button className="text-blue-600 hover:text-blue-900">
+                    <button
+                      onClick={() => {
+                        setViewingBom(bom);
+                        setShowViewBomModal(true);
+                      }}
+                      className="text-blue-600 hover:text-blue-900"
+                    >
                       <Eye className="h-4 w-4" />
                     </button>
                     <button className="text-green-600 hover:text-green-900">
@@ -1600,6 +1745,12 @@ const ProductLifecycle: React.FC = () => {
                     </button>
                     <button className="text-purple-600 hover:text-purple-900">
                       <Archive className="h-4 w-4" />
+                    </button>
+                    <button 
+                      onClick={() => deleteBomVersion(bom.id)}
+                      className="text-red-600 hover:text-red-900"
+                    >
+                      <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
                 </td>
@@ -1625,7 +1776,7 @@ const ProductLifecycle: React.FC = () => {
             Upload Document
           </button>
         </div>
-       
+      
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
             <FilePdf className="h-8 w-8 text-blue-500 mx-auto mb-2" />
@@ -1737,7 +1888,10 @@ const ProductLifecycle: React.FC = () => {
                     <button className="text-green-600 hover:text-green-900">
                       <Download className="h-4 w-4" />
                     </button>
-                    <button className="text-red-600 hover:text-red-900">
+                    <button 
+                      onClick={() => deleteProductDocument(doc.id)}
+                      className="text-red-600 hover:text-red-900"
+                    >
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
@@ -1755,7 +1909,7 @@ const ProductLifecycle: React.FC = () => {
       {/* Approval Pipeline */}
       <div className="bg-white shadow rounded-lg p-6">
         <h3 className="text-lg font-medium text-gray-900 mb-6">Approval Workflow</h3>
-       
+      
         {engineeringChangeOrders.filter(eco => eco.stage === 'under-review' || eco.stage === 'new').map((eco) => (
           <div key={eco.id} className="border border-gray-200 rounded-lg p-4 mb-4">
             <div className="flex items-center justify-between mb-4">
@@ -1767,7 +1921,7 @@ const ProductLifecycle: React.FC = () => {
                 {eco.priority}
               </span>
             </div>
-           
+          
             <div className="space-y-3">
               {eco.approvers?.map((approver: any, index: number) => (
                 <div key={approver.userId || index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
@@ -1808,7 +1962,7 @@ const ProductLifecycle: React.FC = () => {
                 </div>
               )) || <p>No approvers assigned</p>}
             </div>
-           
+          
             {eco.approvers?.every((approver: any) => approver.status !== 'pending') && (
               <div className="mt-4 p-3 bg-blue-50 rounded-lg">
                 <p className="text-sm text-blue-800">
@@ -1872,6 +2026,15 @@ const ProductLifecycle: React.FC = () => {
                   ))}
                 </div>
               </div>
+              <div className="mt-4 flex justify-end">
+                <button 
+                  onClick={() => deleteEngineeringTeam(team.id)}
+                  className="text-red-600 hover:text-red-900 flex items-center text-sm"
+                >
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  Delete Team
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -1890,7 +2053,7 @@ const ProductLifecycle: React.FC = () => {
           {engineeringChangeOrders.map((eco) => {
             const ecoCommentsList = ecoComments.filter(comment => comment.ecoId === eco.id);
             if (ecoCommentsList.length === 0) return null;
-           
+          
             return (
               <div key={eco.id} className="mb-8">
                 <div className="flex items-center justify-between mb-4">
@@ -1899,7 +2062,7 @@ const ProductLifecycle: React.FC = () => {
                     {eco.stage.replace('-', ' ')}
                   </span>
                 </div>
-               
+              
                 <div className="space-y-4">
                   {ecoCommentsList.map((comment) => (
                     <div key={comment.id} className="flex space-x-3">
@@ -1921,12 +2084,19 @@ const ProductLifecycle: React.FC = () => {
                               <span className="text-xs text-gray-500">{comment.attachments.length} attachment(s)</span>
                             </div>
                           )}
+                          <button 
+                            onClick={() => deleteEcoComment(comment.id)}
+                            className="text-red-500 hover:text-red-700 mt-2 text-xs flex items-center ml-auto"
+                          >
+                            <Trash2 className="h-3 w-3 mr-1" />
+                            Delete
+                          </button>
                         </div>
                       </div>
                     </div>
                   ))}
                 </div>
-               
+              
                 <div className="mt-4 flex space-x-3">
                   <div className="flex-shrink-0">
                     <div className="h-8 w-8 bg-blue-100 rounded-full flex items-center justify-center">
@@ -1942,7 +2112,7 @@ const ProductLifecycle: React.FC = () => {
                         placeholder="Add a comment..."
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
-                      <button 
+                      <button
                         onClick={() => {
                           if (newComment.trim()) {
                             addEcoComment({
@@ -2003,7 +2173,6 @@ const ProductLifecycle: React.FC = () => {
           </div>
         </div>
       </div>
-
       {/* Dynamic Report Content */}
       {selectedReport === 'eco-summary' && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -2076,7 +2245,6 @@ const ProductLifecycle: React.FC = () => {
           </div>
         </div>
       )}
-
       {selectedReport === 'approval-times' && (
         <div className="bg-white shadow rounded-lg p-6">
           <h4 className="text-sm font-medium text-gray-700 mb-4">Approval Metrics</h4>
@@ -2096,7 +2264,6 @@ const ProductLifecycle: React.FC = () => {
           </div>
         </div>
       )}
-
       {selectedReport === 'cost-impact' && (
         <div className="bg-white shadow rounded-lg p-6">
           <h4 className="text-sm font-medium text-gray-700 mb-4">Cost Impact Analysis</h4>
@@ -2116,7 +2283,6 @@ const ProductLifecycle: React.FC = () => {
           </div>
         </div>
       )}
-
       {selectedReport === 'bom-changes' && (
         <div className="bg-white shadow rounded-lg p-6">
           <h4 className="text-sm font-medium text-gray-700 mb-4">BoM Version Changes by Product</h4>
@@ -2130,7 +2296,6 @@ const ProductLifecycle: React.FC = () => {
           </div>
         </div>
       )}
-
       {selectedReport === 'document-stats' && (
         <div className="bg-white shadow rounded-lg p-6">
           <h4 className="text-sm font-medium text-gray-700 mb-4">Document Statistics</h4>
@@ -2362,6 +2527,7 @@ const ProductLifecycle: React.FC = () => {
         {showUpdateEcoForm && <UpdateEcoForm />}
         {showViewEcoModal && <ViewEcoModal />}
         {showViewDocumentModal && <ViewDocumentModal />}
+        {showViewBomModal && <ViewBomModal />}
         {showBomVersionForm && <CreateBomVersionForm />}
         {showDocumentForm && <CreateDocumentForm />}
         {showTeamForm && <CreateTeamForm />}

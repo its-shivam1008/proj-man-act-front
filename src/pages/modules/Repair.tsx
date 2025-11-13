@@ -1,22 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { useData } from '../../contexts/DataContext';
+import { storage, STORAGE_KEYS, ensureInitialized } from '@/lib/storage'; // Adjust path to your storage.ts file
 import Layout from '../../components/Layout';
 import { Wrench, Plus, Clock, CheckCircle, AlertTriangle, XCircle, Search, Filter, Calendar, User, Package, DollarSign, FileText, Settings, Users, BarChart3, Edit, Eye, Trash2, Play, Pause, MapPin, Phone, Mail, Upload, Download, Clipboard, PenTool as Tool, Star, TrendingUp, Activity, X } from 'lucide-react';
 
 const Repair: React.FC = () => {
-  const {
-    repairOrders,
-    repairOrdersDetailed,
-    repairTeams,
-    repairTemplates,
-    inventory,
-    addRepairOrderDetailed,
-    updateRepairOrderDetailed,
-    addRepairTeam,
-    addRepairTemplate,
-    updateRepairTemplate, // Assuming this is added to the context; if not, implement local update logic
-  } = useData();
+  // Local state for data, loaded from storage
+  const [repairOrdersDetailed, setRepairOrdersDetailed] = useState([]);
+  const [repairTeams, setRepairTeams] = useState([]);
+  const [repairTemplates, setRepairTemplates] = useState([]);
+  const [inventory, setInventory] = useState([]);
 
+  // Form states (unchanged)
   const [teamFormData, setTeamFormData] = useState({
     teamName: '',
     teamLead: '',
@@ -24,7 +18,6 @@ const Repair: React.FC = () => {
     workingHours: { start: '09:00', end: '17:00' },
     contactInfo: { email: '', phone: '' },
   });
-
   const [activeTab, setActiveTab] = useState('dashboard');
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
@@ -74,7 +67,6 @@ const Repair: React.FC = () => {
     notes: '',
     isChargeable: false,
   });
-
   // Template states
   const [showTemplateViewModal, setShowTemplateViewModal] = useState(false);
   const [showTemplateUpdateModal, setShowTemplateUpdateModal] = useState(false);
@@ -87,6 +79,52 @@ const Repair: React.FC = () => {
     defaultParts: '',
     isActive: false,
   });
+
+  // Initialize storage and load data on mount
+  useEffect(() => {
+    ensureInitialized();
+    setRepairOrdersDetailed(storage.get(STORAGE_KEYS.REPAIR_ORDERS_DETAILED, []));
+    setRepairTeams(storage.get(STORAGE_KEYS.REPAIR_TEAMS, []));
+    setRepairTemplates(storage.get(STORAGE_KEYS.REPAIR_TEMPLATES, []));
+    setInventory(storage.get(STORAGE_KEYS.INVENTORY, [])); // Assuming INVENTORY key; adjust if needed
+  }, []);
+
+  // Local add/update functions (sync to storage)
+  const addRepairOrderDetailed = (newOrder: any) => {
+    setRepairOrdersDetailed(prev => {
+      const updated = [...prev, newOrder];
+      storage.set(STORAGE_KEYS.REPAIR_ORDERS_DETAILED, updated);
+      return updated;
+    });
+  };
+
+  const updateRepairOrderDetailed = (updatedOrder: any) => {
+    setRepairOrdersDetailed(prev => {
+      const updated = prev.map(order => order.id === updatedOrder.id ? updatedOrder : order);
+      storage.set(STORAGE_KEYS.REPAIR_ORDERS_DETAILED, updated);
+      return updated;
+    });
+  };
+
+  const addRepairTeam = (newTeam: any) => {
+    setRepairTeams(prev => {
+      const updated = [...prev, newTeam];
+      storage.set(STORAGE_KEYS.REPAIR_TEAMS, updated);
+      return updated;
+    });
+  };
+
+  const addRepairTemplate = (newTemplate: any) => {
+    setRepairTemplates(prev => {
+      const updated = [...prev, newTemplate];
+      storage.set(STORAGE_KEYS.REPAIR_TEMPLATES, updated);
+      return updated;
+    });
+  };
+
+  // Rest of the component code remains the same, but replace useData destructuring with local states/functions
+  // For example, in handleCreateSubmit, use local addRepairOrderDetailed, etc.
+  // (Full code below with replacements)
 
   useEffect(() => {
     if (selectedOrder && showUpdateForm) {
@@ -175,7 +213,6 @@ const Repair: React.FC = () => {
     formSetter(prev => ({ ...prev, technicianId: value, assignedTechnician: selectedTechnician?.name || '' }));
   };
   // Note: For simplicity, handleTechnicianChange is approximate; in real, use callback or separate handlers
-
   // Template handlers
   const handleCreateTemplate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -200,13 +237,12 @@ const Repair: React.FC = () => {
       isActive: false,
     });
   };
-
   const handleUpdateTemplate = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTemplate) return;
     const formData = new FormData(e.currentTarget as HTMLFormElement);
     const updatedTemplate = {
-      ...selectedTemplate,
+      id: selectedTemplate.id, // Preserve original ID
       templateName: formData.get('templateName')?.toString() || '',
       productCategory: formData.get('productCategory')?.toString() || '',
       commonIssue: formData.get('commonIssue')?.toString() || '',
@@ -214,16 +250,17 @@ const Repair: React.FC = () => {
       defaultParts: (formData.get('defaultParts')?.toString() || '').split(',').map(p => p.trim()).filter(Boolean),
       isActive: (formData.get('isActive') as string) === 'on',
     };
-    updateRepairTemplate(updatedTemplate); // Assuming this function exists in context
+    // Use storage.push for upsert (update if ID exists)
+    storage.push(STORAGE_KEYS.REPAIR_TEMPLATES, updatedTemplate);
+    // Reload templates to reflect update
+    setRepairTemplates(storage.get(STORAGE_KEYS.REPAIR_TEMPLATES, []));
     setShowTemplateUpdateModal(false);
     setSelectedTemplate(null);
   };
-
   const openTemplateViewModal = (template: any) => {
     setSelectedTemplate(template);
     setShowTemplateViewModal(true);
   };
-
   const openTemplateUpdateModal = (template: any) => {
     setSelectedTemplate(template);
     setTemplateFormData({
@@ -236,14 +273,12 @@ const Repair: React.FC = () => {
     });
     setShowTemplateUpdateModal(true);
   };
-
   const closeTemplateModal = (setter: React.Dispatch<React.SetStateAction<boolean>>) => {
     setter(false);
     if (setter === setShowTemplateUpdateModal || setter === setShowTemplateViewModal) {
       setSelectedTemplate(null);
     }
   };
-
   const tabs = [
     { id: 'dashboard', name: 'Dashboard', icon: BarChart3 },
     { id: 'orders', name: 'Repair Orders', icon: FileText },
@@ -252,7 +287,6 @@ const Repair: React.FC = () => {
     { id: 'reports', name: 'Reports & Analytics', icon: TrendingUp },
     { id: 'settings', name: 'Settings', icon: Settings }
   ];
-
   const filteredOrders = repairOrdersDetailed.filter(order => {
     const product = inventory.find(item => item.id === order.productId);
     const matchesSearch = product?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -263,7 +297,6 @@ const Repair: React.FC = () => {
     const matchesPriority = priorityFilter === 'all' || order.priority === priorityFilter;
     return matchesSearch && matchesStatus && matchesType && matchesPriority;
   });
-
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'draft':
@@ -282,7 +315,6 @@ const Repair: React.FC = () => {
         return 'bg-gray-100 text-gray-800';
     }
   };
-
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case 'low':
@@ -295,7 +327,6 @@ const Repair: React.FC = () => {
         return 'bg-gray-100 text-gray-800';
     }
   };
-
   const getTypeColor = (type: string) => {
     switch (type) {
       case 'warranty':
@@ -308,7 +339,6 @@ const Repair: React.FC = () => {
         return 'bg-gray-100 text-gray-800';
     }
   };
-
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'draft':
@@ -327,7 +357,6 @@ const Repair: React.FC = () => {
         return null;
     }
   };
-
   const RepairOrderForm = ({ isUpdate = false, formData, setFormData, onSubmit, onCancel }: {
     isUpdate?: boolean;
     formData: any;
@@ -349,7 +378,7 @@ const Repair: React.FC = () => {
               <XCircle className="h-6 w-6" />
             </button>
           </div>
-         
+       
           <form onSubmit={onSubmit} className="space-y-6">
             {/* Basic Information */}
             <div className="bg-gray-50 p-4 rounded-lg">
@@ -650,7 +679,6 @@ const Repair: React.FC = () => {
       </div>
     </div>
   );
-
   const renderDashboard = () => (
     <div className="space-y-6">
       {/* Stats Cards */}
@@ -782,7 +810,6 @@ const Repair: React.FC = () => {
       </div>
     </div>
   );
-
   const ViewRepairOrderModal = ({ order, onClose }: { order: any; onClose: () => void }) => {
     const product = inventory.find((item) => item.id === order.productId);
     const team = repairTeams.find((t) => t.id === order.teamId);
@@ -962,7 +989,6 @@ const Repair: React.FC = () => {
       </div>
     );
   };
-
   const renderOrders = () => (
     <div className="space-y-6">
       {/* Filters */}
@@ -1173,7 +1199,6 @@ const Repair: React.FC = () => {
       )}
     </div>
   );
-
   const handleAddTeamSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (teamFormData.teamName.trim()) {
@@ -1197,7 +1222,6 @@ const Repair: React.FC = () => {
       });
     }
   };
-
   const TeamForm = () => (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
       <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 shadow-lg rounded-md bg-white">
@@ -1211,7 +1235,7 @@ const Repair: React.FC = () => {
               <X className="h-6 w-6" />
             </button>
           </div>
-         
+       
           <form onSubmit={handleAddTeamSubmit} className="space-y-6">
             {/* Basic Information */}
             <div className="bg-gray-50 p-4 rounded-lg">
@@ -1335,7 +1359,6 @@ const Repair: React.FC = () => {
       </div>
     </div>
   );
-
   const renderTeams = () => (
     <div className="space-y-6">
       {/* Teams Overview */}
@@ -1403,7 +1426,6 @@ const Repair: React.FC = () => {
       {showTeamForm && <TeamForm />}
     </div>
   );
-
   // Template Modal Components
   const TemplateModal = ({ isOpen, onClose, title, children }: { isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode }) =>
     isOpen ? (
@@ -1423,7 +1445,6 @@ const Repair: React.FC = () => {
         </div>
       </div>
     ) : null;
-
   const TemplateForm = ({ initialData = {}, isView = false, onSubmit , onClose}: { initialData?: any; isView?: boolean; onSubmit: (e: React.FormEvent) => void }) => (
     <form onSubmit={onSubmit} className="space-y-4">
       <div>
@@ -1521,7 +1542,6 @@ const Repair: React.FC = () => {
       )}
     </form>
   );
-
   const renderTemplates = () => (
     <div className="space-y-6">
       {/* Templates Overview */}
@@ -1622,7 +1642,6 @@ const Repair: React.FC = () => {
   </table>
 </div>
       </div>
-
       {/* Template Modals */}
       <TemplateModal
         isOpen={showTemplateForm}
@@ -1631,7 +1650,6 @@ const Repair: React.FC = () => {
       >
         <TemplateForm onSubmit={handleCreateTemplate} />
       </TemplateModal>
-
       <TemplateModal
         isOpen={showTemplateViewModal}
         onClose={() => closeTemplateModal(setShowTemplateViewModal)}
@@ -1639,7 +1657,6 @@ const Repair: React.FC = () => {
       >
         <TemplateForm initialData={selectedTemplate || {}} isView={true} />
       </TemplateModal>
-
       <TemplateModal
         isOpen={showTemplateUpdateModal}
         onClose={() => closeTemplateModal(setShowTemplateUpdateModal)}
@@ -1649,7 +1666,6 @@ const Repair: React.FC = () => {
       </TemplateModal>
     </div>
   );
-
   const renderReports = () => (
     <div className="space-y-6">
       {/* Report Categories */}
@@ -1757,7 +1773,6 @@ const Repair: React.FC = () => {
       </div>
     </div>
   );
-
   const renderSettings = () => (
     <div className="space-y-6">
       {/* Settings Categories */}
@@ -1861,7 +1876,6 @@ const Repair: React.FC = () => {
       </div>
     </div>
   );
-
   const renderTabContent = () => {
     switch (activeTab) {
       case 'dashboard':
@@ -1880,7 +1894,6 @@ const Repair: React.FC = () => {
         return renderDashboard();
     }
   };
-
   return (
     // <Layout>
       <div className="space-y-6">

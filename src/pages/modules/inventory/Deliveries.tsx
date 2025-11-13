@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useData } from '../../../contexts/DataContext';
 import Layout from '../../../components/Layout';
 import { 
@@ -19,31 +19,378 @@ import {
   X
 } from 'lucide-react';
 
+import { storage, STORAGE_KEYS } from '@/lib/storage'; // Adjust path as needed
+
+interface DeliveryItem {
+  id: string;
+  deliverTo: string;
+  operationType: string;
+  productId: string;
+  quantity: number;
+  shippingMethod: string;
+  priority: 'low' | 'medium' | 'high';
+  status: 'draft' | 'ready' | 'in-transit' | 'delivered' | 'cancelled';
+  scheduledDate: string;
+}
+
 const Deliveries: React.FC = () => {
-  const { deliveries, inventory } = useData();
+  const { inventory } = useData();
+  const [deliveries, setDeliveries] = useState<DeliveryItem[]>([]);
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showViewForm, setShowViewForm] = useState(false);
   const [showUpdateForm, setShowUpdateForm] = useState(false);
-  const [selectedDelivery, setSelectedDelivery] = useState<any>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [viewingId, setViewingId] = useState<string | null>(null);
 
-  const filteredDeliveries = deliveries.filter(delivery => {
-    const matchesSearch = delivery.deliverTo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         delivery.id.toLowerCase().includes(searchTerm.toLowerCase());
+  useEffect(() => {
+    const initDeliveries = () => {
+      if (!storage.has(STORAGE_KEYS.DELIVERIES)) {
+        storage.set(STORAGE_KEYS.DELIVERIES, []);
+      }
+    };
+    initDeliveries();
+
+    const data = storage.get<DeliveryItem[]>(STORAGE_KEYS.DELIVERIES, []);
+    setDeliveries(Array.isArray(data) ? data : []);
+  }, []);
+
+  const safeDeliveries = Array.isArray(deliveries) ? deliveries : [];
+  const safeInventory = Array.isArray(inventory) ? inventory : [];
+
+  const filteredDeliveries = safeDeliveries.filter(delivery => {
+    const matchesSearch = delivery.deliverTo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         delivery.id?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || delivery.status === statusFilter;
     const matchesPriority = priorityFilter === 'all' || delivery.priority === priorityFilter;
     return matchesSearch && matchesStatus && matchesPriority;
   });
 
-  const handleUpdateSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // TODO: Implement update logic here, e.g., update via context
-    // Assuming useData has an updateDelivery function: updateDelivery(selectedDelivery.id, formData);
-    console.log('Updating delivery:', selectedDelivery);
+  const handleCloseForms = useCallback(() => {
+    setShowCreateForm(false);
     setShowUpdateForm(false);
-    setSelectedDelivery(null);
+    setShowViewForm(false);
+    setEditingId(null);
+    setViewingId(null);
+  }, []);
+
+  const handleSubmit = useCallback((formData: any) => {
+    const commonData = {
+      deliverTo: formData.deliverTo,
+      operationType: formData.operationType,
+      productId: formData.productId,
+      quantity: Number(formData.quantity) || 0,
+      shippingMethod: formData.shippingMethod,
+      priority: formData.priority as 'low' | 'medium' | 'high',
+      status: editingId ? safeDeliveries.find(d => d.id === editingId)?.status || 'draft' : 'draft',
+      scheduledDate: formData.scheduledDate || new Date().toISOString().split('T')[0],
+    };
+
+    const newDelivery: DeliveryItem = {
+      ...commonData,
+      id: editingId || Date.now().toString(),
+    };
+
+    if (editingId) {
+      storage.updateById(STORAGE_KEYS.DELIVERIES, editingId, newDelivery);
+    } else {
+      storage.push(STORAGE_KEYS.DELIVERIES, newDelivery);
+    }
+
+    const updatedDeliveries = storage.get<DeliveryItem[]>(STORAGE_KEYS.DELIVERIES, []);
+    setDeliveries(Array.isArray(updatedDeliveries) ? updatedDeliveries : []);
+    handleCloseForms();
+  }, [editingId, safeDeliveries, handleCloseForms]);
+
+  const handleEdit = useCallback((id: string) => {
+    setEditingId(id);
+    setShowUpdateForm(true);
+  }, []);
+
+  const handleView = useCallback((id: string) => {
+    setViewingId(id);
+    setShowViewForm(true);
+  }, []);
+
+  const handleDelete = useCallback((id: string) => {
+    if (confirm('Are you sure you want to delete this delivery?')) {
+      storage.deleteById(STORAGE_KEYS.DELIVERIES, id);
+      const updatedDeliveries = storage.get<DeliveryItem[]>(STORAGE_KEYS.DELIVERIES, []);
+      setDeliveries(Array.isArray(updatedDeliveries) ? updatedDeliveries : []);
+    }
+  }, []);
+
+  const handleAddClick = useCallback(() => {
+    setEditingId(null);
+    setShowCreateForm(true);
+  }, []);
+
+  const DeliveryForm = ({ initialData }: { initialData?: Partial<DeliveryItem> }) => {
+    const [formData, setFormData] = useState({
+      deliverTo: initialData?.deliverTo || '',
+      operationType: initialData?.operationType || 'Sale',
+      productId: initialData?.productId || '',
+      quantity: (initialData?.quantity || 0).toString(),
+      shippingMethod: initialData?.shippingMethod || 'Standard',
+      priority: initialData?.priority || 'low',
+      scheduledDate: initialData?.scheduledDate || '',
+    });
+
+    const handleChange = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      setFormData((prev) => ({ ...prev, [field]: e.target.value }));
+    };
+
+    const handleFormSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      handleSubmit(formData);
+    };
+
+    const isEditing = !!initialData;
+
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">
+                {isEditing ? 'Update Delivery' : 'Create New Delivery'}
+              </h3>
+              <button
+                onClick={handleCloseForms}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleFormSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Deliver To *
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.deliverTo}
+                    onChange={handleChange('deliverTo')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Customer/Partner"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Operation Type *
+                  </label>
+                  <select 
+                    value={formData.operationType}
+                    onChange={handleChange('operationType')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
+                    <option>Sale</option>
+                    <option>Transfer</option>
+                    <option>Return</option>
+                    <option>Sample</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Product *
+                  </label>
+                  <select 
+                    value={formData.productId}
+                    onChange={handleChange('productId')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
+                    <option value="">Select Product</option>
+                    {safeInventory.map(item => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Quantity *
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.quantity}
+                    onChange={handleChange('quantity')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter quantity"
+                    min="0"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Shipping Method *
+                  </label>
+                  <select 
+                    value={formData.shippingMethod}
+                    onChange={handleChange('shippingMethod')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
+                    <option>Standard</option>
+                    <option>Express</option>
+                    <option>Overnight</option>
+                    <option>Ground</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Priority *
+                  </label>
+                  <select 
+                    value={formData.priority}
+                    onChange={handleChange('priority')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Scheduled Date
+                </label>
+                <input
+                  type="date"
+                  value={formData.scheduledDate}
+                  onChange={handleChange('scheduledDate')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={handleCloseForms}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  {isEditing ? 'Update Delivery' : 'Create Delivery'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const ViewDeliveryForm = ({ item }: { item: DeliveryItem | undefined }) => {
+    if (!item) return null;
+    const product = safeInventory.find(p => p.id === item.productId);
+
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">View Delivery: {item.id}</h3>
+              <button
+                onClick={handleCloseForms}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Delivery ID</label>
+                  <p className="text-sm text-gray-900">{item.id}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Deliver To</label>
+                  <p className="text-sm text-gray-900">{item.deliverTo}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Operation Type</label>
+                  <p className="text-sm text-gray-900">{item.operationType}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <div className="flex items-center">
+                    {getStatusIcon(item.status)}
+                    <span className={`ml-2 inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(item.status)}`}>
+                      {item.status.replace('-', ' ')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Product</label>
+                  <p className="text-sm text-gray-900">{product?.name || 'Unknown Product'}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                  <p className="text-sm text-gray-900">{item.quantity} units</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Shipping Method</label>
+                  <p className="text-sm text-gray-900">{item.shippingMethod}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getPriorityColor(item.priority)}`}>
+                    {item.priority}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Scheduled Date</label>
+                <div className="flex items-center">
+                  <Calendar className="h-4 w-4 text-gray-400 mr-1" />
+                  <p className="text-sm text-gray-900">{item.scheduledDate}</p>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-4">
+                <button
+                  type="button"
+                  onClick={handleCloseForms}
+                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const getStatusColor = (status: string) => {
@@ -93,381 +440,6 @@ const Deliveries: React.FC = () => {
     }
   };
 
-  const CreateDeliveryForm = () => (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
-        <div className="mt-3">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-medium text-gray-900">Create New Delivery</h3>
-            <button
-              onClick={() => setShowCreateForm(false)}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              <X className="h-6 w-6" />
-            </button>
-          </div>
-          
-          <form className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Deliver To
-                </label>
-                <input
-                  type="text"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Customer/Partner"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Operation Type
-                </label>
-                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                  <option>Sale</option>
-                  <option>Transfer</option>
-                  <option>Return</option>
-                  <option>Sample</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Product
-                </label>
-                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                  <option>Select Product</option>
-                  {inventory.map(item => (
-                    <option key={item.id} value={item.id}>{item.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Quantity
-                </label>
-                <input
-                  type="number"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter quantity"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Shipping Method
-                </label>
-                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                  <option>Standard</option>
-                  <option>Express</option>
-                  <option>Overnight</option>
-                  <option>Ground</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Priority
-                </label>
-                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Scheduled Date
-              </label>
-              <input
-                type="date"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-
-            <div className="flex justify-end space-x-3 pt-4">
-              <button
-                type="button"
-                onClick={() => setShowCreateForm(false)}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Create Delivery
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-  );
-
-  const ViewDeliveryForm = () => {
-    if (!selectedDelivery) return null;
-    const product = inventory.find(item => item.id === selectedDelivery.productId);
-    return (
-      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
-          <div className="mt-3">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium text-gray-900">View Delivery</h3>
-              <button
-                onClick={() => {
-                  setShowViewForm(false);
-                  setSelectedDelivery(null);
-                }}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="h-6 w-6" />
-              </button>
-            </div>
-            
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Delivery ID</label>
-                  <p className="text-sm text-gray-900">{selectedDelivery.id}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Deliver To</label>
-                  <p className="text-sm text-gray-900">{selectedDelivery.deliverTo}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Operation Type</label>
-                  <p className="text-sm text-gray-900">{selectedDelivery.operationType}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                  <div className="flex items-center">
-                    {getStatusIcon(selectedDelivery.status)}
-                    <span className={`ml-2 inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(selectedDelivery.status)}`}>
-                      {selectedDelivery.status.replace('-', ' ')}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Product</label>
-                  <p className="text-sm text-gray-900">{product?.name || 'Unknown Product'}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
-                  <p className="text-sm text-gray-900">{selectedDelivery.quantity} units</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Shipping Method</label>
-                  <p className="text-sm text-gray-900">{selectedDelivery.shippingMethod}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getPriorityColor(selectedDelivery.priority)}`}>
-                    {selectedDelivery.priority}
-                  </span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Scheduled Date</label>
-                <div className="flex items-center">
-                  <Calendar className="h-4 w-4 text-gray-400 mr-1" />
-                  <p className="text-sm text-gray-900">{selectedDelivery.scheduledDate}</p>
-                </div>
-              </div>
-
-              <div className="flex justify-end pt-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowViewForm(false);
-                    setSelectedDelivery(null);
-                  }}
-                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const UpdateDeliveryForm = () => {
-    if (!selectedDelivery) return null;
-    const product = inventory.find(item => item.id === selectedDelivery.productId);
-    return (
-      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
-          <div className="mt-3">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium text-gray-900">Update Delivery</h3>
-              <button
-                onClick={() => {
-                  setShowUpdateForm(false);
-                  setSelectedDelivery(null);
-                }}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="h-6 w-6" />
-              </button>
-            </div>
-            
-            <form className="space-y-4" onSubmit={handleUpdateSubmit}>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Deliver To
-                  </label>
-                  <input
-                    type="text"
-                    defaultValue={selectedDelivery.deliverTo}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Operation Type
-                  </label>
-                  <select 
-                    defaultValue={selectedDelivery.operationType}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option>Sale</option>
-                    <option>Transfer</option>
-                    <option>Return</option>
-                    <option>Sample</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Product
-                  </label>
-                  <select 
-                    defaultValue={selectedDelivery.productId}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option>Select Product</option>
-                    {inventory.map(item => (
-                      <option key={item.id} value={item.id}>{item.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Quantity
-                  </label>
-                  <input
-                    type="number"
-                    defaultValue={selectedDelivery.quantity}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Shipping Method
-                  </label>
-                  <select 
-                    defaultValue={selectedDelivery.shippingMethod}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option>Standard</option>
-                    <option>Express</option>
-                    <option>Overnight</option>
-                    <option>Ground</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Priority
-                  </label>
-                  <select 
-                    defaultValue={selectedDelivery.priority}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Status
-                  </label>
-                  <select 
-                    defaultValue={selectedDelivery.status}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="draft">Draft</option>
-                    <option value="ready">Ready</option>
-                    <option value="in-transit">In Transit</option>
-                    <option value="delivered">Delivered</option>
-                    <option value="cancelled">Cancelled</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Scheduled Date
-                  </label>
-                  <input
-                    type="date"
-                    defaultValue={selectedDelivery.scheduledDate}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowUpdateForm(false);
-                    setSelectedDelivery(null);
-                  }}
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                >
-                  Update Delivery
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   return (
     // <Layout>
       <div className="space-y-6">
@@ -480,7 +452,7 @@ const Deliveries: React.FC = () => {
             </p>
           </div>
           <button 
-            onClick={() => setShowCreateForm(true)}
+            onClick={handleAddClick}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
           >
             <Plus className="h-4 w-4 mr-2" />
@@ -498,7 +470,7 @@ const Deliveries: React.FC = () => {
                 </div>
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">Total Deliveries</p>
-                  <p className="text-2xl font-semibold text-gray-900">{deliveries.length}</p>
+                  <p className="text-2xl font-semibold text-gray-900">{safeDeliveries.length}</p>
                 </div>
               </div>
             </div>
@@ -512,7 +484,7 @@ const Deliveries: React.FC = () => {
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">Ready to Ship</p>
                   <p className="text-2xl font-semibold text-gray-900">
-                    {deliveries.filter(delivery => delivery.status === 'ready').length}
+                    {safeDeliveries.filter(delivery => delivery.status === 'ready').length}
                   </p>
                 </div>
               </div>
@@ -527,7 +499,7 @@ const Deliveries: React.FC = () => {
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">In Transit</p>
                   <p className="text-2xl font-semibold text-gray-900">
-                    {deliveries.filter(delivery => delivery.status === 'in-transit').length}
+                    {safeDeliveries.filter(delivery => delivery.status === 'in-transit').length}
                   </p>
                 </div>
               </div>
@@ -542,7 +514,7 @@ const Deliveries: React.FC = () => {
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">High Priority</p>
                   <p className="text-2xl font-semibold text-gray-900">
-                    {deliveries.filter(delivery => delivery.priority === 'high').length}
+                    {safeDeliveries.filter(delivery => delivery.priority === 'high').length}
                   </p>
                 </div>
               </div>
@@ -626,7 +598,7 @@ const Deliveries: React.FC = () => {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredDeliveries.map((delivery) => {
-                const product = inventory.find(item => item.id === delivery.productId);
+                const product = safeInventory.find(item => item.id === delivery.productId);
                 return (
                   <tr key={delivery.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -672,23 +644,20 @@ const Deliveries: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <button 
                         className="text-blue-600 hover:text-blue-900 mr-3"
-                        onClick={() => {
-                          setSelectedDelivery(delivery);
-                          setShowViewForm(true);
-                        }}
+                        onClick={() => handleView(delivery.id)}
                       >
                         <Eye className="h-4 w-4" />
                       </button>
                       <button 
                         className="text-green-600 hover:text-green-900 mr-3"
-                        onClick={() => {
-                          setSelectedDelivery(delivery);
-                          setShowUpdateForm(true);
-                        }}
+                        onClick={() => handleEdit(delivery.id)}
                       >
                         <Edit className="h-4 w-4" />
                       </button>
-                      <button className="text-red-600 hover:text-red-900">
+                      <button 
+                        className="text-red-600 hover:text-red-900"
+                        onClick={() => handleDelete(delivery.id)}
+                      >
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </td>
@@ -699,12 +668,10 @@ const Deliveries: React.FC = () => {
           </table>
         </div>
 
-        {/* Create Delivery Form Modal */}
-        {showCreateForm && <CreateDeliveryForm />}
-        {/* View Delivery Form Modal */}
-        {showViewForm && <ViewDeliveryForm />}
-        {/* Update Delivery Form Modal */}
-        {showUpdateForm && <UpdateDeliveryForm />}
+        {/* Forms Modals */}
+        {showCreateForm && <DeliveryForm initialData={undefined} />}
+        {showUpdateForm && editingId && <DeliveryForm initialData={safeDeliveries.find(d => d.id === editingId)} />}
+        {showViewForm && viewingId && <ViewDeliveryForm item={safeDeliveries.find(d => d.id === viewingId)} />}
       </div>
     // </Layout>
   );
