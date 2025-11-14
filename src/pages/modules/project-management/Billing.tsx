@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { Button } from "../../../components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import {
     Dialog,
     DialogContent,
@@ -11,18 +11,18 @@ import {
     DialogHeader,
     DialogTitle,
     DialogTrigger,
-} from "../../components/ui/dialog";
-import { Input } from "../../components/ui/input";
-import { Label } from "../../components/ui/label";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
-import { Badge } from "../../components/ui/badge";
+} from "../../../components/ui/dialog";
+import { Input } from "../../../components/ui/input";
+import { Label } from "../../../components/ui/label";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
+import { Badge } from "../../../components/ui/badge";
 import { Plus, Trash2, Edit2, FileText, DollarSign } from "lucide-react";
 import {
     getFromStorage,
     saveToStorage,
     generateId,
     STORAGE_KEYS,
-} from "../../utils/localStorage";
+} from "../../../utils/localStorage";
 import {
     ResponsiveContainer,
     BarChart,

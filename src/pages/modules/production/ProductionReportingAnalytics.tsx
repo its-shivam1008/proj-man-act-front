@@ -1,16 +1,16 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { storage, STORAGE_KEYS } from "../../lib/storage";
+import { storage, STORAGE_KEYS } from "../../../lib/storage";
 import {
   Card,
   CardHeader,
   CardTitle,
   CardContent,
-} from "../../components/ui/card";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { Label } from "../../components/ui/label";
+} from "../../../components/ui/card";
+import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
+import { Label } from "../../../components/ui/label";
 import {
   Table,
   TableHeader,
@@ -18,20 +18,20 @@ import {
   TableBody,
   TableRow,
   TableCell,
-} from "../../components/ui/table";
+} from "../../../components/ui/table";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from "../../components/ui/dialog";
+} from "../../../components/ui/dialog";
 import {
   Tabs,
   TabsList,
   TabsTrigger,
   TabsContent,
-} from "../../components/ui/tabs";
+} from "../../../components/ui/tabs";
 import {
   ResponsiveContainer,
   LineChart,

@@ -6,14 +6,14 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-} from "../../components/ui/card";
-import { storage, STORAGE_KEYS } from "../../lib/storage";
+} from "../../../components/ui/card";
+import { storage, STORAGE_KEYS } from "../../../lib/storage";
 import {
   WorkOrder,
   QualityCheck,
   WorkCenter,
   MaterialIssue,
-} from "../../types/production";
+} from "../../../types/production";
 import {
   BarChart3,
   TrendingUp,
@@ -35,8 +35,8 @@ import {
   Cell,
   Legend,
 } from "recharts";
-import { Separator } from "../../components/ui/separator";
-import { Progress } from "../../components/ui/progress";
+import { Separator } from "../../../components/ui/separator";
+import { Progress } from "../../../components/ui/progress";
 
 export default function ReportsPage() {
   const [reportData, setReportData] = useState({

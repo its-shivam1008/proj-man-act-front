@@ -1,10 +1,10 @@
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
-import { getFromStorage, STORAGE_KEYS } from "../../utils/localStorage";
-import { Project, Budget, Milestone } from "../../types/production";
+import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
+import { getFromStorage, STORAGE_KEYS } from "../../../utils/localStorage";
+import { Project, Budget, Milestone } from "../../../types/production";
 import { useEffect, useState } from "react";
 import { FolderKanban, DollarSign, TrendingUp, AlertCircle } from "lucide-react";
-import { Badge } from "../../components/ui/badge";
-import { Progress } from "../../components/ui/progress";
+import { Badge } from "../../../components/ui/badge";
+import { Progress } from "../../../components/ui/progress";
 import { faker } from '@faker-js/faker'
 import {
   GanttCreateMarkerTrigger,

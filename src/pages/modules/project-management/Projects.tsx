@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
-import { Button } from "../..//components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../..//components/ui/card";
+import { Button } from "../../../components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -9,17 +9,17 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "../..//components/ui/dialog";
-import { Input } from "../..//components/ui/input";
-import { Label } from "../..//components/ui/label";
+} from "../../../components/ui/dialog";
+import { Input } from "../../../components/ui/input";
+import { Label } from "../../../components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "../..//components/ui/select";
-import { Badge } from "../..//components/ui/badge";
+} from "../../../components/ui/select";
+import { Badge } from "../../../components/ui/badge";
 import {
   Table,
   TableBody,
@@ -27,8 +27,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "../..//components/ui/table";
-import { Textarea } from "../..//components/ui/textarea"; // Added Textarea
+} from "../../../components/ui/table";
+import { Textarea } from "../../../components/ui/textarea"; // Added Textarea
 import { Plus, Pencil, Trash2, Eye, Search } from "lucide-react"; // Added Search
 // import { Project } from "../..//types/production"; // Assuming this type is defined elsewhere
 import {
@@ -36,9 +36,9 @@ import {
   saveToStorage,
   generateId,
   STORAGE_KEYS,
-} from "../..//utils/localStorage";
-import { useToast } from "../..//hooks/use-toast";
-import { Progress } from "../..//components/ui/progress";
+} from "../../../utils/localStorage";
+import { useToast } from "../../../hooks/use-toast";
+import { Progress } from "../../../components/ui/progress";
 
 // Define Project type here based on requirements, as the file isn't provided
 type ProjectStatus = 'planning' | 'active' | 'on-hold' | 'completed' | 'cancelled';

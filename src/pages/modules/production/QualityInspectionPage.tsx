@@ -1,16 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { storage, STORAGE_KEYS } from "../../lib/storage";
+import { storage, STORAGE_KEYS } from "../../../lib/storage";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
-} from "../../components/ui/card";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { Label } from "../../components/ui/label";
+} from "../../../components/ui/card";
+import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
+import { Label } from "../../../components/ui/label";
 import {
   Table,
   TableBody,
@@ -18,16 +18,16 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "../../components/ui/table";
-import { Badge } from "../../components/ui/badge";
+} from "../../../components/ui/table";
+import { Badge } from "../../../components/ui/badge";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from "../../components/ui/dialog";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../components/ui/tabs";
+} from "../../../components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../../components/ui/tabs";
 import {
   PieChart,
   Pie,

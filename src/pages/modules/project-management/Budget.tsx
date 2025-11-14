@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 
 /* shadcn/ui */
-import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { Button } from "../../../components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -13,17 +13,17 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "../../components/ui/dialog";
-import { Input } from "../../components/ui/input";
-import { Label } from "../../components/ui/label";
+} from "../../../components/ui/dialog";
+import { Input } from "../../../components/ui/input";
+import { Label } from "../../../components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "../../components/ui/select";
-import { Badge } from "../../components/ui/badge";
+} from "../../../components/ui/select";
+import { Badge } from "../../../components/ui/badge";
 import {
   Table,
   TableBody,
@@ -31,8 +31,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "../../components/ui/table";
-import { Alert, AlertDescription, AlertTitle } from "../../components/ui/alert";
+} from "../../../components/ui/table";
+import { Alert, AlertDescription, AlertTitle } from "../../../components/ui/alert";
 
 /* Icons */
 import {
@@ -64,14 +64,14 @@ import {
 } from "recharts";
 
 /* Types + localStorage utils */
-import { Budget, Project } from "../../types/production";
+import { Budget, Project } from "../../../types/production";
 import {
   getFromStorage,
   saveToStorage,
   generateId,
   STORAGE_KEYS,
-} from "../../utils/localStorage";
-import { useToast } from "../../hooks/use-toast";
+} from "../../../utils/localStorage";
+import { useToast } from "../../../hooks/use-toast";
 
 /** Extend your existing Budget type locally with optional approval status (non-breaking). */
 type BudgetWithApproval = Budget & {

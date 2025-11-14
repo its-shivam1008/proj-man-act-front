@@ -1,17 +1,17 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { storage, STORAGE_KEYS } from "../../lib/storage";
+import { storage, STORAGE_KEYS } from "../../../lib/storage";
 import {
     Card, CardContent, CardHeader, CardTitle
-} from "../../components/ui/card";
-import { Button } from "../../components/ui/button";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "../../components/ui/table";
-import { Input } from "../../components/ui/input";
-import { Label } from "../../components/ui/label";
-import { Dialog, DialogHeader, DialogTitle, DialogFooter, DialogContent } from "../../components/ui/dialog";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../components/ui/tabs";
-import { Badge } from "../../components/ui/badge";
+} from "../../../components/ui/card";
+import { Button } from "../../../components/ui/button";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "../../../components/ui/table";
+import { Input } from "../../../components/ui/input";
+import { Label } from "../../../components/ui/label";
+import { Dialog, DialogHeader, DialogTitle, DialogFooter, DialogContent } from "../../../components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../../components/ui/tabs";
+import { Badge } from "../../../components/ui/badge";
 import { Plus, Download, Barcode, Package, RefreshCw, CheckCircle, FileText } from "lucide-react";
 import {
     ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell

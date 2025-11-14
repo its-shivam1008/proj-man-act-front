@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Edit, Trash2, Search, Download, Upload, BarChart3 } from "lucide-react";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../components/ui/dialog";
-import { Label } from "../../components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
-import { Textarea } from "../../components/ui/textarea";
-import { storage, STORAGE_KEYS } from "../../lib/storage";
+import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../components/ui/dialog";
+import { Label } from "../../../components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
+import { Textarea } from "../../../components/ui/textarea";
+import { storage, STORAGE_KEYS } from "../../../lib/storage";
 import { toast } from "sonner";
 import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip } from "recharts";
 

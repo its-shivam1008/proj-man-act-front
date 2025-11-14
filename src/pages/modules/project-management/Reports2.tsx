@@ -1,17 +1,17 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
-import { Input } from "../../components/ui/input";
-import { Label } from "../../components/ui/label";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
+import { Button } from "../../../components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
+import { Input } from "../../../components/ui/input";
+import { Label } from "../../../components/ui/label";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
 import {
   getFromStorage,
   saveToStorage,
   generateId,
   STORAGE_KEYS,
-} from "../../utils/localStorage";
+} from "../../../utils/localStorage";
 import {
   ResponsiveContainer,
   BarChart,
@@ -35,8 +35,8 @@ import {
   Area,
 } from "recharts";
 import { Calendar, BarChart3, Filter, Plus, Trash2 } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "../../components/ui/dialog";
-import { Select } from "../../components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "../../../components/ui/dialog";
+import { Select } from "../../../components/ui/select";
 
 // -------------------------------
 // ⚙️ Types

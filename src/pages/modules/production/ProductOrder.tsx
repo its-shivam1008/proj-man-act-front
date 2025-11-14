@@ -3,17 +3,17 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Card, CardHeader, CardTitle, CardContent,
-} from "../../components/ui/card";
-import { Button } from "../../components/ui/button";
+} from "../../../components/ui/card";
+import { Button } from "../../../components/ui/button";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "../../components/ui/dialog";
-import { Input } from "../../components/ui/input";
-import { Label } from "../../components/ui/label";
+} from "../../../components/ui/dialog";
+import { Input } from "../../../components/ui/input";
+import { Label } from "../../../components/ui/label";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "../../components/ui/table";
-import { Badge } from "../../components/ui/badge";
+} from "../../../components/ui/table";
+import { Badge } from "../../../components/ui/badge";
 import {
   Download, Plus, Trash2, Play, Pause, Printer,
 } from "lucide-react";
@@ -21,7 +21,7 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
 } from "recharts";
-import { storage, STORAGE_KEYS } from "../../lib/storage";
+import { storage, STORAGE_KEYS } from "../../../lib/storage";
 
 /* -----------------------------------
    Type Definitions
@@ -243,7 +243,7 @@ export default function WorkOrdersAdvanced() {
     <div className="space-y-6 p-4 md:p-6">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold">Work Orders (Advanced)</h2>
+          <h2 className="text-2xl font-bold">Work Orders </h2>
           <p className="text-muted-foreground">
             Create, edit, and track work orders with inventory integration.
           </p>
