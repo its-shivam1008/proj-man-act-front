@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useData } from '../contexts/DataContext';
 import Layout from '../components/Layout';
@@ -28,6 +28,19 @@ const Dashboard: React.FC = () => {
     productRevisions,
     repairOrders
   } = useData();
+
+  useEffect(() => {
+    fetch('http://localhost:4000/ok')
+    .then((res) => {
+      if(!res.ok){
+         throw new Error("CANNOT connect to BACKEND");
+      }
+      return res.json();
+    })
+    .then((data:any) => console.log("Message from backend ->", data.message))
+    .catch((err) => console.log(err))
+  }, [])
+  
 
   const modules = [
     {
