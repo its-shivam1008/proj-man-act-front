@@ -42,7 +42,8 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Plus, Pencil, Trash2, Search } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
-
+import { useDebounce } from "@/hooks/useDebounce";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 // ---------------- Types ----------------
 type ProjectStatus =
   | "planning"
@@ -98,11 +99,18 @@ const PROJECT_TYPES: ProjectType[] = [
 
 // ---------------- Component Start ----------------
 export default function Projects() {
-  const userId = localStorage.getItem('userId');
+  const organisationId = localStorage.getItem('organisationId');
   const dispatch = useDispatch<AppDispatch>();
-  const { projects = [], loading } = useSelector(
-    (state: RootState) => state.projects
-  );
+
+  // 1. get new state from redux
+  const {
+    projects = [],
+    loading,
+    currentPage,
+    totalPages,
+    totalProjects,
+  } = useSelector((state: RootState) => state.projects);
+
   const [color, setColor] = useState("#212121");
   // Dialog/Form State
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -112,16 +120,50 @@ export default function Projects() {
     type: "construction",
   });
 
+  // 2. Setup state for filters and pagination
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] =
     useState<ProjectStatus | "all">("all");
+  const [page, setPage] = useState(1); // Page state
+  const [limit, setLimit] = useState(10); // Items per page
 
+  // 3. Create debounced search term
+  const debouncedSearch = useDebounce(searchTerm, 500);
+
+  // 4. Update the data-fetching useEffect
   useEffect(() => {
-    if(userId){
-      dispatch(fetchProjects());
+    if (organisationId) {
+      dispatch(
+        fetchProjects({
+          page,
+          limit,
+          status: statusFilter,
+          search: debouncedSearch,
+        })
+      );
     }
+  }, [organisationId, page, limit, statusFilter, debouncedSearch]);
+
+  // 5. Handle filter/search changes (reset to page 1)
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
+    setPage(1); // Reset to page 1 on new search
+  };
+
+  const handleStatusChange = (val: any) => {
+    setStatusFilter(val);
+    setPage(1); // Reset to page 1 on new filter
+  };
+  // const [searchTerm, setSearchTerm] = useState("");
+  // const [statusFilter, setStatusFilter] =
+  //   useState<ProjectStatus | "all">("all");
+
+  // useEffect(() => {
+  //   if(organisationId){
+  //     dispatch(fetchProjects());
+  //   }
     
-  }, [dispatch , userId]);
+  // }, [dispatch , organisationId]);
 
 
   const handleSave = async () => {
@@ -182,22 +224,36 @@ export default function Projects() {
     setIsDialogOpen(true);
   };
 
-  const filteredProjects = useMemo(() => {
-    const list = Array.isArray(projects) ? projects : [];
+  // const filteredProjects = useMemo(() => {
+  //   const list = Array.isArray(projects) ? projects : [];
 
-    return list
-      .filter((p) =>
-        statusFilter === "all" ? true : p.status === statusFilter
-      )
-      .filter((p) => {
-        const q = searchTerm.toLowerCase();
-        return (
-          p.name.toLowerCase().includes(q) ||
-          p.code.toLowerCase().includes(q) ||
-          p.clientOrDepartment.toLowerCase().includes(q)
-        );
-      });
-  }, [projects, searchTerm, statusFilter]);
+  //   return list
+  //     .filter((p) =>
+  //       statusFilter === "all" ? true : p.status === statusFilter
+  //     )
+  //     .filter((p) => {
+  //       const q = searchTerm.toLowerCase();
+  //       return (
+  //         p.name.toLowerCase().includes(q) ||
+  //         p.code.toLowerCase().includes(q) ||
+  //         p.clientOrDepartment.toLowerCase().includes(q)
+  //       );
+  //     });
+  // }, [projects, searchTerm, statusFilter]);
+
+  
+  // 7. Pagination handlers
+  const handleNextPage = () => {
+    if (currentPage < totalPages) {
+      setPage(currentPage + 1);
+    }
+  };
+
+  const handlePrevPage = () => {
+    if (currentPage > 1) {
+      setPage(currentPage - 1);
+    }
+  };
 
   const getStatusBadge = (status: Project["status"]) => {
     const variants: Record<ProjectStatus, string> = {
@@ -234,11 +290,11 @@ export default function Projects() {
             placeholder="Search by name, code, client..."
             className="pl-10"
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={handleSearchChange}
           />
         </div>
 
-        <Select value={statusFilter} onValueChange={(val: any) => setStatusFilter(val)}>
+        <Select value={statusFilter} onValueChange={handleStatusChange}>
           <SelectTrigger className="w-full md:w-48">
             <SelectValue placeholder="Filter status" />
           </SelectTrigger>
@@ -256,7 +312,7 @@ export default function Projects() {
       {/* Table */}
       <Card>
         <CardHeader>
-          <CardTitle>All Projects ({filteredProjects?.length ?? 0})</CardTitle>
+          <CardTitle>All Projects ({projects?.length ?? 0})</CardTitle>
         </CardHeader>
 
         <CardContent className="overflow-x-auto">
@@ -287,14 +343,14 @@ export default function Projects() {
                     />
                   </TableCell>
                 </TableRow>
-              ) : filteredProjects.length === 0 ? (
+              ) : projects.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center py-6">
                     No projects found.
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredProjects.map((p) => (
+                projects.map((p) => (
                   <TableRow key={p._id}>
                     <TableCell>{p.code}</TableCell>
                     <TableCell>{p.name}</TableCell>
@@ -333,6 +389,27 @@ export default function Projects() {
             </TableBody>
           </Table>
         </CardContent>
+        <div className="flex items-center justify-end space-x-2 p-4 border-t">
+          <span className="text-sm text-muted-foreground">
+            Page {currentPage} of {totalPages} (Total: {totalProjects})
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handlePrevPage}
+            disabled={currentPage === 1}
+          >
+            <ChevronLeft size={16} />
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleNextPage}
+            disabled={currentPage === totalPages}
+          >
+            <ChevronRight size={16} />
+          </Button>
+        </div>
       </Card>
 
       {/* Create/Edit Dialog */}

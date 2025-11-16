@@ -1,6 +1,8 @@
 import { BASE_URL } from "./../../utils/constants";
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import axios from "axios";
+import api from "@/utils/axiosApi";
+
 export interface Project {
   _id: string;
   name: string;
@@ -15,7 +17,7 @@ export const updateProjectActualCost = createAsyncThunk(
     { rejectWithValue }
   ) => {
     try {
-      await axios.put(`${BASE_URL}/project/update-cost/${id}`, { actualCost });
+      await api.put(`/project/update-cost/${id}`, { actualCost });
       return { id, actualCost };
     } catch (err: any) {
       return rejectWithValue(
@@ -24,23 +26,28 @@ export const updateProjectActualCost = createAsyncThunk(
     }
   }
 );
+
+
 export const fetchProjects = createAsyncThunk(
   "projects/fetch",
-  async (_, { rejectWithValue }) => {
+  async (args: any, { rejectWithValue }) => {
+    const { page, limit, status, search } = args;
     try {
-      // 1️⃣ Get userId from localStorage
-      const userId = localStorage.getItem("userId");
+      
+      const organisationId = localStorage.getItem("organisationId");
 
-      if (!userId) {
-        return rejectWithValue("User ID missing. Please login again.");
-      }
-
-      // 2️⃣ Fetch user-specific projects
-      const res = await axios.get(`${BASE_URL}/get/project`, {
-        params: { userId },
+      
+      const res = await api.get(`/get/project`, {
+        params: {
+          organisationId, 
+          page,
+          limit,
+          status,
+          search,
+        },
       });
 
-      return res.data;
+      return res.data; 
     } catch (error: any) {
       return rejectWithValue(
         error?.response?.data?.message || "Failed to fetch projects."
@@ -56,15 +63,15 @@ export const addProject = createAsyncThunk(
   "projects/add",
   async (data, { rejectWithValue }) => {
     try {
-      const userId = localStorage.getItem("userId");
-
-      const res = await axios.post(`${BASE_URL}/create/project`, {
+      const organisationId = localStorage.getItem("organisationId");
+      const res = await api.post(`/create/project`, {
         ...data,
-        userId, // attach userId to project
+        organisationId, // attach userId to project
       });
 
       return res.data;
     } catch (error: any) {
+      console.log(error);
       return rejectWithValue(
         error?.response?.data?.message || "Failed to create project."
       );
@@ -79,7 +86,7 @@ export const updateProject = createAsyncThunk(
   "projects/update",
   async ({ id, data }, { rejectWithValue }) => {
     try {
-      const res = await axios.put(`${BASE_URL}/project/update/${id}`, data);
+      const res = await api.put(`/project/update/${id}`, data);
       return res.data;
     } catch (error: any) {
       return rejectWithValue(
@@ -96,7 +103,7 @@ export const deleteProject = createAsyncThunk(
   "projects/delete",
   async (id, { rejectWithValue }) => {
     try {
-      await axios.delete(`${BASE_URL}/project/delete/${id}`);
+      await api.delete(`/project/delete/${id}`);
       return id;
     } catch (error: any) {
       return rejectWithValue(
@@ -112,20 +119,27 @@ export const deleteProject = createAsyncThunk(
 const projectsSlice = createSlice({
   name: "projects",
   initialState: {
-    projects: [],
+    projects: [], // This will now hold only one page of projects
     loading: false,
     error: null,
+    // Add new pagination state
+    currentPage: 1,
+    totalPages: 1,
+    totalProjects: 0,
   },
   reducers: {},
   extraReducers: (builder) => {
     builder
       // FETCH
       .addCase(fetchProjects.pending, (state) => {
-        state.loading = true;
-        state.error = null;
+        state.loading = true; 
       })
       .addCase(fetchProjects.fulfilled, (state, action) => {
-        state.projects = action.payload || [];
+        // We now receive a pagination object
+        state.projects = action.payload.projects || [];
+        state.currentPage = action.payload.currentPage;
+        state.totalPages = action.payload.totalPages;
+        state.totalProjects = action.payload.totalProjects;
         state.loading = false;
       })
       .addCase(fetchProjects.rejected, (state, action) => {

@@ -2,12 +2,13 @@ import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import axios from "axios";
 import { PurchaseOrder } from "@/types/procurement";
 import { BASE_URL } from "@/utils/constants";
+import api from "@/utils/axiosApi";
 
 export const fetchPOs = createAsyncThunk<PurchaseOrder[]>(
   "po/fetchPOs",
   async (_, { rejectWithValue }) => {
     try {
-      const res = await axios.get(`${BASE_URL}/procurement/get/pos`); // Ensure /procurement prefix
+      const res = await api.get(`/procurement/get/pos`); // Ensure /procurement prefix
       return res.data.pos || res.data || [];
     } catch (err: any) {
       console.error('Fetch POs error:', err.response?.data || err.message);
@@ -25,7 +26,7 @@ export const receivePO = createAsyncThunk<
     return rejectWithValue('Missing poId');
   }
   try {
-    const res = await axios.post(`${BASE_URL}/procurement/receive-po`, { poId, qty }); // Ensure /procurement prefix
+    const res = await api.post(`/procurement/receive-po`, { poId, qty }); // Ensure /procurement prefix
     return res.data.po as PurchaseOrder;
   } catch (err: any) {
     console.error('Receive PO error:', {

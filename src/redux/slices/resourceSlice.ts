@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import axios from "axios";
-
+import api from "@/utils/axiosApi";
 const API = "http://localhost:4000/resources";
 
 // read userId from localStorage
@@ -21,8 +21,8 @@ export const fetchResources = createAsyncThunk(
       const userId = getUserId();
       if (!userId) return rejectWithValue("User not logged in");
 
-      const res = await axios.get(
-        `${API}/project/${projectId}?userId=${userId}`
+      const res = await api.get(
+        `/project/${projectId}?userId=${userId}`
       );
 
       return res.data;
@@ -39,7 +39,7 @@ export const addResource = createAsyncThunk(
   "resources/addResource",
   async (data: any, { rejectWithValue }) => {
     try {
-      const res = await axios.post(`${API}/create`, data);
+      const res = await api.post(`/create`, data);
       return res.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message ?? err.message);
@@ -57,7 +57,7 @@ export const updateResource = createAsyncThunk(
     { rejectWithValue }
   ) => {
     try {
-      const res = await axios.put(`${API}/update/${id}`, data);
+      const res = await api.put(`/update/${id}`, data);
       return res.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message ?? err.message);
@@ -72,7 +72,7 @@ export const deleteResource = createAsyncThunk(
   "resources/deleteResource",
   async (id: string, { rejectWithValue }) => {
     try {
-      await axios.delete(`${API}/delete/${id}`);
+      await api.delete(`/delete/${id}`);
       return id;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message ?? err.message);

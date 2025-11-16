@@ -2,12 +2,13 @@
 import { BASE_URL } from "@/utils/constants";
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import axios from "axios";
+import api from "@/utils/axiosApi";
 
 export const fetchManpower = createAsyncThunk(
   "manpower/fetchManpower",
   async (_, { rejectWithValue }) => {
     try {
-      const res = await axios.get(BASE_URL);
+      const res = await api.get(BASE_URL);
       return res.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message ?? err.message);

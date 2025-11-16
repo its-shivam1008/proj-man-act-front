@@ -1,6 +1,6 @@
 import React from 'react';
 // Import 'Link' and 'useLocation' from 'react-router-dom', not 'href' or 'Outlet'
-import { Link, useLocation, Outlet } from 'react-router-dom'; 
+import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom'; 
 // import { useAuth } from '../contexts/AuthContext';
 import {
   Home,
@@ -41,7 +41,9 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
-
+import { useDispatch, useSelector } from 'react-redux';
+import { RootState } from '@/redux/store';
+import { logout } from '@/redux/slices/authSlice';
 // interface LayoutProps {
 //   children: React.ReactNode;
 // }
@@ -49,9 +51,17 @@ import {
 const Layout: React.FC = () => {
   // const { user, logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
+  const dispatch = useDispatch();
+  // const {log} = useSelector((state:RootState) => state.auth)
 
   // --- All your link arrays remain unchanged ---
   // (Keep mainLinks, inventoryLinks, productionLinks, projectLinks, and plantLinks exactly as they are)
+
+  const handleLogout = () => {
+    navigate('/login');
+    dispatch(logout())
+  }
 
   const mainLinks = [
     { name: 'Dashboard', href: '/', icon: Home },
@@ -265,7 +275,7 @@ const Layout: React.FC = () => {
               </div>
             </div>
             <button
-              // onClick={logout}
+              onClick={handleLogout}
               className="mt-3 w-full flex items-center px-2 py-2 text-sm font-medium text-gray-600 rounded-md hover:bg-gray-50 hover:text-gray-900 transition-colors"
             >
               <LogOut className="mr-3 h-4 w-4" />

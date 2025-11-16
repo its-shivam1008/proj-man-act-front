@@ -14,11 +14,13 @@ const Login: React.FC = () => {
     (state: RootState) => state.auth
   );
 
+  const token = localStorage.getItem('token');
+
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && token) {
       window.location.href = "/";
-    }
-  }, [isAuthenticated]);
+    } 
+  }, [isAuthenticated, token]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

@@ -1,13 +1,13 @@
 import { BASE_URL } from "@/utils/constants";
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import axios from "axios";
-
+import api from "@/utils/axiosApi";
 
 export const createBudget = createAsyncThunk(
   "budget/createBudget",
   async (payload, { rejectWithValue }) => {
     try {
-      const res = await axios.post(`${BASE_URL}/budget/create`, payload);
+      const res = await api.post(`/budget/create`, payload);
       return res.data.data;
     } catch (err) {
       console.error(err , "error")
@@ -23,7 +23,7 @@ export const fetchBudgetsByProject = createAsyncThunk(
   "budget/fetchBudgetsByProject",
   async (projectId, { rejectWithValue }) => {
     try {
-      const res = await axios.get(`${BASE_URL}/budget/project/${projectId}`);
+      const res = await api.get(`/budget/project/${projectId}`);
       return res.data.data;
     } catch (err) {
       return rejectWithValue(err.response?.data || err.message);
@@ -36,7 +36,7 @@ export const fetchBudgetsByUser = createAsyncThunk(
   "budget/fetchBudgetsByUser",
   async (userId, { rejectWithValue }) => {
     try {
-      const res = await axios.get(`${BASE_URL}/budget/user/${userId}`);
+      const res = await api.get(`/budget/user/${userId}`);
       return res.data.data;
     } catch (err) {
       return rejectWithValue(err.response?.data || err.message);
@@ -49,7 +49,7 @@ export const updateBudget = createAsyncThunk(
   "budget/updateBudget",
   async ({ id, data }, { rejectWithValue }) => {
     try {
-      const res = await axios.put(`${BASE_URL}/budget/update/${id}`, data);
+      const res = await api.put(`/budget/update/${id}`, data);
       return res.data.data;
     } catch (err) {
       return rejectWithValue(err.response?.data || err.message);
@@ -62,7 +62,7 @@ export const deleteBudget = createAsyncThunk(
   "budget/deleteBudget",
   async (id, { rejectWithValue }) => {
     try {
-      await axios.delete(`${BASE_URL}/budget/delete/${id}`);
+      await api.delete(`/budget/delete/${id}`);
       return id;
     } catch (err) {
       return rejectWithValue(err.response?.data || err.message);
@@ -75,7 +75,7 @@ export const approveBudget = createAsyncThunk(
   "budget/approveBudget",
   async (id, { rejectWithValue }) => {
     try {
-      const res = await axios.put(`${BASE_URL}/budget/approve/${id}`);
+      const res = await api.put(`/budget/approve/${id}`);
       return res.data.data;
     } catch (err) {
       return rejectWithValue(err.response?.data || err.message);
@@ -88,7 +88,7 @@ export const approveAllBudgets = createAsyncThunk(
   "budget/approveAllBudgets",
   async (projectId, { rejectWithValue }) => {
     try {
-      const res = await axios.put(`${BASE_URL}/budget/approve-all/${projectId}`);
+      const res = await api.put(`/budget/approve-all/${projectId}`);
       return { projectId };
     } catch (err) {
       return rejectWithValue(err.response?.data || err.message);

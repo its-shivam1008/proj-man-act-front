@@ -2,11 +2,12 @@ import { BASE_URL } from "./../../utils/constants";
 import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
 import axios from "axios";
 import { Milestone, Invoice } from "../../types/billing";
+import api from "@/utils/axiosApi";
 
 export const fetchMilestones = createAsyncThunk(
   "billing/fetchMilestones",
   async () => {
-    const res = await axios.get(`${BASE_URL}/get/milestone`);
+    const res = await api.get(`/get/milestone`);
     return res.data.data as Milestone[];
   }
 );
@@ -16,7 +17,7 @@ export const createMilestone = createAsyncThunk(
   "billing/createMilestone",
   async (payload: Milestone) => {
     try {
-      const res = await axios.post(`${BASE_URL}/create/milestone`, payload);
+      const res = await api.post(`/create/milestone`, payload);
       return res.data.data as Milestone;
     } catch (error) {
       console.error(error);
@@ -28,7 +29,7 @@ export const createMilestone = createAsyncThunk(
 export const updateMilestone = createAsyncThunk(
   "billing/updateMilestone",
   async ({ id, payload }: { id: string; payload: Partial<Milestone> }) => {
-    const res = await axios.put(`${BASE_URL}/milestone/update/${id}`, payload);
+    const res = await api.put(`/milestone/update/${id}`, payload);
     return res.data.data as Milestone;
   }
 );
@@ -36,7 +37,7 @@ export const updateMilestone = createAsyncThunk(
 export const deleteMilestone = createAsyncThunk(
   "billing/deleteMilestone",
   async (id: string) => {
-    await axios.delete(`${BASE_URL}/milestone/delete/${id}`);
+    await api.delete(`/milestone/delete/${id}`);
     return id;
   }
 );
@@ -44,7 +45,7 @@ export const deleteMilestone = createAsyncThunk(
 export const fetchInvoices = createAsyncThunk(
   "billing/fetchInvoices",
   async () => {
-    const res = await axios.get(`${BASE_URL}/get/invoice`);
+    const res = await api.get(`/get/invoice`);
     return res.data.data as Invoice[];
   }
 );
@@ -52,7 +53,7 @@ export const fetchInvoices = createAsyncThunk(
 export const createInvoice = createAsyncThunk(
   "billing/createInvoice",
   async (payload: Invoice) => {
-    const res = await axios.post(`${BASE_URL}/create/invoice`, payload);
+    const res = await api.post(`/create/invoice`, payload);
     return res.data.data as Invoice;
   }
 );
@@ -60,7 +61,7 @@ export const createInvoice = createAsyncThunk(
 export const updateInvoice = createAsyncThunk(
   "billing/updateInvoice",
   async ({ id, payload }: { id: string; payload: Partial<Invoice> }) => {
-    const res = await axios.put(`${BASE_URL}/update/invoice/${id}`, payload);
+    const res = await api.put(`/update/invoice/${id}`, payload);
     return res.data.data as Invoice;
   }
 );
@@ -68,7 +69,7 @@ export const updateInvoice = createAsyncThunk(
 export const deleteInvoice = createAsyncThunk(
   "billing/deleteInvoice",
   async (id: string) => {
-    await axios.delete(`${BASE_URL}/delete/invoice/${id}`);
+    await api.delete(`/delete/invoice/${id}`);
     return id;
   }
 );

@@ -2,11 +2,13 @@ import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
 import axios from "axios";
 import { MRSItem } from "@/types/procurement";
 import { BASE_URL } from "@/utils/constants";
+import api from "@/utils/axiosApi";
+
 export const fetchMRS = createAsyncThunk<MRSItem[]>(
   "mrs/fetchMRS",
   async (_, { rejectWithValue }) => {
     try {
-      const res = await axios.get(`${BASE_URL}/get/mrs`);
+      const res = await api.get(`/get/mrs`);
       return res.data as MRSItem[];
     } catch (err: any) {
       return rejectWithValue(err.response?.data || err.message);
@@ -18,7 +20,7 @@ export const createMRS = createAsyncThunk<MRSItem, Partial<MRSItem>>(
   "mrs/createMRS",
   async (data, { rejectWithValue }) => {
     try {
-      const res = await axios.post(`${BASE_URL}/create/mrs`, data);
+      const res = await api.post(`/create/mrs`, data);
       return res.data.mrs as MRSItem;
     } catch (err: any) {
       // Log full error for debugging
@@ -37,7 +39,7 @@ export const updateMRS = createAsyncThunk<
   { id: string; data: Partial<MRSItem> }
 >("mrs/updateMRS", async ({ id, data }, { rejectWithValue }) => {
   try {
-    const res = await axios.put(`${BASE_URL}/update/mrs/${id}`, data);
+    const res = await api.put(`/update/mrs/${id}`, data);
     return res.data.data as MRSItem;
   } catch (err: any) {
     return rejectWithValue(err.response?.data || err.message);
@@ -48,7 +50,7 @@ export const deleteMRS = createAsyncThunk<string, string>(
   "mrs/deleteMRS",
   async (id, { rejectWithValue }) => {
     try {
-      await axios.delete(`${BASE_URL}/delete/mrs/${id}`);
+      await api.delete(`/delete/mrs/${id}`);
       return id;
     } catch (err: any) {
       return rejectWithValue(err.response?.data || err.message);

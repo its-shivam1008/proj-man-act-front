@@ -1,6 +1,7 @@
 import { BASE_URL } from "@/utils/constants";
 import { createAsyncThunk, createSlice, PayloadAction } from "@reduxjs/toolkit";
 import axios from "axios";
+import api from "@/utils/axiosApi";
 
 export type WBSItemType = "phase" | "activity" | "task" | "subtask";
 export type WBSItemStatus =
@@ -9,10 +10,10 @@ export type WBSItemStatus =
   | "completed"
   | "delayed";
 
-const api = axios.create({
-  baseURL: BASE_URL,
-  headers: { "Content-Type": "application/json" },
-});
+// const api = api.create({
+//   baseURL: BASE_URL,
+//   headers: { "Content-Type": "application/json" },
+// });
 
 export interface WBSItem {
   id: string;

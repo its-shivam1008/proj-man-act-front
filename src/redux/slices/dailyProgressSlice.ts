@@ -2,11 +2,12 @@ import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
 import axios from "axios";
 import { DailyProgressItem } from "../../types/dailyProgress";
 import { BASE_URL } from "@/utils/constants";
+import api from "@/utils/axiosApi";
 
 export const fetchDailyProgress = createAsyncThunk(
   "dailyProgress/fetchAll",
   async () => {
-    const res = await axios.get(BASE_URL + "/get/all/daily/progress");
+    const res = await api.get(BASE_URL + "/get/all/daily/progress");
     return res.data.data as DailyProgressItem[];
   }
 );
@@ -15,7 +16,7 @@ export const fetchDailyProgress = createAsyncThunk(
 export const addDailyProgress = createAsyncThunk(
   "dailyProgress/add",
   async (payload: DailyProgressItem) => {
-    const res = await axios.post(BASE_URL + "/create/daily/progress", payload);
+    const res = await api.post(BASE_URL + "/create/daily/progress", payload);
     return res.data.data as DailyProgressItem;
   }
 );
@@ -30,7 +31,7 @@ export const editDailyProgress = createAsyncThunk(
     id: string;
     payload: Partial<DailyProgressItem>;
   }) => {
-    const res = await axios.put(BASE_URL + "/daily/progress/update/" + id, payload);
+    const res = await api.put(BASE_URL + "/daily/progress/update/" + id, payload);
     return res.data.data as DailyProgressItem;
   }
 );
@@ -39,7 +40,7 @@ export const editDailyProgress = createAsyncThunk(
 export const removeDailyProgress = createAsyncThunk(
   "dailyProgress/delete",
   async (id: string) => {
-    await axios.delete(BASE_URL + "/daily/progress/delete/" + id);
+    await api.delete(BASE_URL + "/daily/progress/delete/" + id);
     return id;
   }
 );

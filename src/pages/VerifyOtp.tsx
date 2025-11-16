@@ -15,14 +15,19 @@ const VerifyOtp: React.FC = () => {
     (state: RootState) => state.auth
   );
 
+  const token = localStorage.getItem('token');
+  console.log("the token is ",token)
+
   const [otp, setOtp] = useState("");
   const [timer, setTimer] = useState(60);
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && token) {
       window.location.href = "/";
+    } else if(!token && isAuthenticated){
+      window.location.href = '/login'
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, token]);
 
   // timer countdown
   useEffect(() => {
