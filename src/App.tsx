@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-// import { AuthProvider } from './contexts/AuthContext';
+import { Toaster } from 'sonner';
+import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import { DataProvider } from './contexts/DataContext';
 import { ensureInitialized } from "./lib/storage";
@@ -70,6 +71,11 @@ import KanbanBoard from './pages/modules/plant-machinery/KanbanBoard';
 import PreventivePlanning from './pages/modules/plant-machinery/PreventivePlanning';
 import Teams from './pages/modules/plant-machinery/TeamsAndTechnicians';
 import AssetDisposalTransferPage from './pages/modules/plant-machinery/AssetDisposalTransfer';
+
+
+import Login from "./pages/Login";
+import Signup from "./pages/Signup";
+import VerifyOtp from "./pages/VerifyOtp";
 function App() {
   useEffect(() => {
     ensureInitialized();
@@ -79,9 +85,24 @@ function App() {
       {/* <AuthProvi> */}
       <DataProvider>
         <div className="min-h-screen bg-gray-50">
+          <Toaster
+            richColors
+            closeButton
+            position="top-right"
+            expand={true}
+          />
           <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
+            <Route path="/verify-otp" element={<VerifyOtp />} />
             {/* <Route path="/login" element={<Login />} /> */}
-            <Route element={<Layout />}>
+            <Route
+              element={
+                <ProtectedRoute>
+                  <Layout />
+                </ProtectedRoute>
+              }
+            >
 
               <Route path="/" element={<Dashboard />} />
               <Route path="/permissions" element={<UserPermissionsPage />} />

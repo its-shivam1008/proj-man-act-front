@@ -1,6 +1,15 @@
 import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { RootState, AppDispatch } from "@/redux/store";
+import { useDispatch, useSelector } from "react-redux";
+import {
+  fetchWbsByProject,
+  createWbsItem,
+  updateWbsItem,
+  deleteWbsItem,
+} from "@/redux/slices/wbsSlice";
+
 import {
   Dialog,
   DialogContent,
@@ -29,26 +38,14 @@ import {
   Package,
   Users,
 } from "lucide-react";
-import {
-  getFromStorage,
-  saveToStorage,
-  generateId,
-  STORAGE_KEYS,
-} from "@/utils/localStorage";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
+import { fetchProjects } from "@/redux/slices/projectSlice";
 
-// Define types locally as we don't have the types file
-// This is based on Project.tsx from previous context
-interface Project {
-  id: string;
-  code: string;
-  name: string;
-  // ... other project fields
-}
+
 
 type WBSItemType = "phase" | "activity" | "task" | "subtask";
-type WBSItemStatus = "not-started" | "in-progress" | "completed" | "delayed";
+type wbstatus = "not-started" | "in-progress" | "completed" | "delayed";
 
 interface WBSItem {
   id: string;
@@ -64,8 +61,8 @@ interface WBSItem {
   actualCost: number;
   manpowerRequirement?: string;
   materialRequirement?: string;
-  dependencies: string[]; // Storing IDs of other WBSItems
-  status: WBSItemStatus;
+  dependencies: string[]; // Storing IDs of other wbs
+  status: wbstatus;
   progress: number;
   createdAt: string;
 }
@@ -76,7 +73,7 @@ const WBS_ITEM_TYPES: WBSItemType[] = [
   "task",
   "subtask",
 ];
-const WBS_ITEM_STATUSES: WBSItemStatus[] = [
+const WBS_ITEM_STATUSES: wbstatus[] = [
   "not-started",
   "in-progress",
   "completed",
@@ -86,7 +83,7 @@ const WBS_ITEM_STATUSES: WBSItemStatus[] = [
 // Recursive Node Component for the WBS Tree
 interface WBSNodeProps {
   item: WBSItem;
-  allWbsItems: WBSItem[];
+  allwbs: WBSItem[];
   level: number;
   onEdit: (item: WBSItem) => void;
   onDelete: (id: string) => void;
@@ -95,7 +92,7 @@ interface WBSNodeProps {
 
 const WBSNode: React.FC<WBSNodeProps> = ({
   item,
-  allWbsItems,
+  allwbs,
   level,
   onEdit,
   onDelete,
@@ -105,12 +102,11 @@ const WBSNode: React.FC<WBSNodeProps> = ({
   const { toast } = useToast();
 
   const children = useMemo(
-    () => allWbsItems.filter((i) => i.parentId === item.id),
-    [allWbsItems, item.id]
+    () => allwbs.filter((i) => i.parentId === item.id),
+    [allwbs, item.id]
   );
-
-  const getStatusColor = (status: WBSItemStatus) => {
-    const colors: Record<WBSItemStatus, string> = {
+  const getStatusColor = (status: wbstatus) => {
+    const colors: Record<wbstatus, string> = {
       "not-started": "bg-gray-100 text-gray-800 border-gray-200",
       "in-progress": "bg-blue-100 text-blue-800 border-blue-200",
       completed: "bg-green-100 text-green-800 border-green-200",
@@ -211,7 +207,7 @@ const WBSNode: React.FC<WBSNodeProps> = ({
           <WBSNode
             key={child.id}
             item={child}
-            allWbsItems={allWbsItems}
+            allwbs={allwbs}
             level={level + 1}
             onEdit={onEdit}
             onDelete={onDelete}
@@ -223,8 +219,19 @@ const WBSNode: React.FC<WBSNodeProps> = ({
 };
 
 export default function WBS() {
-  const [wbsItems, setWbsItems] = useState<WBSItem[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
+  const userId = localStorage.getItem('userId');
+  const dispatch = useDispatch<AppDispatch>();
+  const { wbs, loading } = useSelector((state: RootState) => state.wbs);
+
+  useEffect(() => {
+    dispatch(fetchProjects());
+  }, []);
+
+
+  const { projects, loading: projectLoading } = useSelector(
+    (state: RootState) => state.projects
+  );
+
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     null
   );
@@ -233,20 +240,6 @@ export default function WBS() {
   const [formData, setFormData] = useState<Partial<WBSItem>>({});
   const { toast } = useToast();
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = () => {
-    const wbsData = getFromStorage<WBSItem>(STORAGE_KEYS.WBS_ITEMS);
-    const projectsData = getFromStorage<Project>(STORAGE_KEYS.PROJECTS);
-    setWbsItems(wbsData);
-    setProjects(projectsData);
-    if (projectsData.length > 0 && !selectedProjectId) {
-      // Auto-select first project if none selected
-      // setSelectedProjectId(projectsData[0].id);
-    }
-  };
 
   const handleSave = () => {
     if (!formData.name || !formData.projectId || !formData.type) {
@@ -270,45 +263,39 @@ export default function WBS() {
       return;
     }
 
-    let updatedItems: WBSItem[];
-    const now = new Date().toISOString();
+    // let updatedItems: WBSItem[];
+    // const now = new Date().toISOString();
 
     if (editingItem) {
-      updatedItems = wbsItems.map((item) =>
-        item.id === editingItem.id
-          ? ({ ...editingItem, ...formData } as WBSItem)
-          : item
-      );
+      dispatch(updateWbsItem({ id: editingItem.id, data: formData }))
+        .unwrap()
+        .then(() => {
+          toast({ title: "Updated", description: "WBS item updated successfully" });
+          setIsDialogOpen(false);
+          resetForm();
+        });
+
       toast({
         title: "Success",
         description: "WBS item updated successfully",
       });
     } else {
-      const newItem: WBSItem = {
-        id: generateId(),
-        progress: 0,
-        actualCost: 0,
-        createdAt: now,
-        status: "not-started",
-        dependencies: formData.dependencies || [],
-        ...formData,
-      } as WBSItem;
-      updatedItems = [...wbsItems, newItem];
-      toast({
-        title: "Success",
-        description: "WBS item created successfully",
-      });
-    }
+      dispatch(createWbsItem(formData))
+        .unwrap()
+        .then(() => {
+          toast({ title: "Success", description: "WBS item created successfully" });
+          setIsDialogOpen(false);
+          resetForm();
+        });
 
-    saveToStorage(STORAGE_KEYS.WBS_ITEMS, updatedItems);
-    setWbsItems(updatedItems);
+    }
     setIsDialogOpen(false);
     resetForm();
   };
 
   const handleDelete = (id: string) => {
     // Check if this item is a parent
-    const hasChildren = wbsItems.some((item) => item.parentId === id);
+    const hasChildren = wbs.some((item) => item.parentId === id);
     if (hasChildren) {
       toast({
         title: "Error",
@@ -318,9 +305,14 @@ export default function WBS() {
       return;
     }
 
-    const updatedItems = wbsItems.filter((item) => item.id !== id);
-    saveToStorage(STORAGE_KEYS.WBS_ITEMS, updatedItems);
-    setWbsItems(updatedItems);
+    dispatch(deleteWbsItem(id)).unwrap().then(() => {
+      toast({
+        title: "Success",
+        description: "WBS item deleted successfully",
+      });
+    });
+
+    setwbs(updatedItems);
     toast({
       title: "Success",
       description: "WBS item deleted successfully",
@@ -368,18 +360,31 @@ export default function WBS() {
     else if (formData.type === "subtask") parentType = "task";
     else return [];
 
-    return wbsItems.filter(
+    return wbs.filter(
       (i) => i.projectId === selectedProjectId && i.type === parentType
     );
-  }, [formData.type, selectedProjectId, wbsItems]);
+  }, [formData.type, selectedProjectId, wbs]);
 
-  // Get top-level items for the selected project
   const topLevelItems = useMemo(() => {
-    if (!selectedProjectId) return [];
-    return wbsItems.filter(
+    return wbs.filter(
       (i) => i.projectId === selectedProjectId && i.parentId === null
     );
-  }, [selectedProjectId, wbsItems]);
+  }, [selectedProjectId, wbs]);
+
+  useEffect(() => {
+    if (selectedProjectId) {
+      setFormData((prev) => ({
+        ...prev,
+        projectId: selectedProjectId,
+      }));
+    }
+  }, [selectedProjectId]);
+
+  useEffect(() => {
+    if (selectedProjectId) {
+      dispatch(fetchWbsByProject(selectedProjectId));
+    }
+  }, [selectedProjectId, dispatch]);
 
   return (
     <div className="space-y-6 p-4 md:p-6">
@@ -403,7 +408,7 @@ export default function WBS() {
             <SelectContent>
               {projects.length > 0 ? (
                 projects.map((project) => (
-                  <SelectItem key={project.id} value={project.id}>
+                  <SelectItem key={project._id} value={project._id}>
                     {project.code} - {project.name}
                   </SelectItem>
                 ))
@@ -414,6 +419,7 @@ export default function WBS() {
               )}
             </SelectContent>
           </Select>
+
 
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
@@ -443,8 +449,7 @@ export default function WBS() {
                   <Input
                     disabled
                     value={
-                      projects.find((p) => p.id === formData.projectId)
-                        ?.name || ""
+                      projects.find((p) => p._id === formData.projectId)?.name || ""
                     }
                   />
                 </div>
@@ -588,7 +593,7 @@ export default function WBS() {
                     <Label htmlFor="status">Status</Label>
                     <Select
                       value={formData.status}
-                      onValueChange={(value: WBSItemStatus) =>
+                      onValueChange={(value: wbstatus) =>
                         setFormData({ ...formData, status: value })
                       }
                     >
@@ -643,24 +648,54 @@ export default function WBS() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="dependencies">
-                    Dependencies (comma-separated IDs)
-                  </Label>
-                  <Textarea
-                    id="dependencies"
-                    value={formData.dependencies?.join(", ") || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        dependencies: e.target.value
-                          .split(",")
-                          .map((s) => s.trim())
-                          .filter(Boolean), // Store as array of strings
-                      })
-                    }
-                    placeholder="e.g., task-id-1, task-id-2"
-                  />
+                  <Label>Dependencies</Label>
+
+                  <Select
+                    onValueChange={(value) => {
+                      const newDeps = formData.dependencies ? [...formData.dependencies] : [];
+
+                      // Avoid duplicates
+                      if (!newDeps.includes(value)) {
+                        newDeps.push(value);
+                      }
+
+                      setFormData({ ...formData, dependencies: newDeps });
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select dependency" />
+                    </SelectTrigger>
+
+                    <SelectContent>
+                      {wbs
+                        .filter((item) => item.id !== editingItem?.id) // ⛔ Cannot depend on itself
+                        .map((item) => (
+                          <SelectItem key={item.id} value={item.id}>
+                            {item.name} ({item.type})
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+
+                  {/* SHOW SELECTED DEPENDENCIES */}
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {formData.dependencies?.map((dep) => (
+                      <span
+                        key={dep}
+                        className="px-2 py-1 text-xs bg-blue-100 border rounded cursor-pointer"
+                        onClick={() =>
+                          setFormData({
+                            ...formData,
+                            dependencies: formData.dependencies!.filter((d) => d !== dep),
+                          })
+                        }
+                      >
+                        {wbs.find((w) => w.id === dep)?.name || dep} ✕
+                      </span>
+                    ))}
+                  </div>
                 </div>
+
               </div>
               <DialogFooter>
                 <Button
@@ -714,7 +749,7 @@ export default function WBS() {
               <WBSNode
                 key={item.id}
                 item={item}
-                allWbsItems={wbsItems}
+                allwbs={wbs}
                 level={0}
                 onEdit={openEditDialog}
                 onDelete={handleDelete}

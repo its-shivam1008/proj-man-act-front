@@ -1,5 +1,15 @@
-"use client";
 
+import { useDispatch, useSelector } from "react-redux";
+import {
+  fetchBudgetsByProject,
+  createBudget,
+  updateBudget,
+  deleteBudget as deleteBudgetAction,
+  approveBudget as approveBudgetAction,
+  approveAllBudgets,
+} from "@/redux/slices/budgetSlice";
+import { fetchProjects } from '@/redux/slices/projectSlice'
+import { RootState } from "@/redux/store";
 import { useEffect, useMemo, useState } from "react";
 
 /* shadcn/ui */
@@ -65,12 +75,7 @@ import {
 
 /* Types + localStorage utils */
 import { Budget, Project } from "../../../types/production";
-import {
-  getFromStorage,
-  saveToStorage,
-  generateId,
-  STORAGE_KEYS,
-} from "../../../utils/localStorage";
+
 import { useToast } from "../../../hooks/use-toast";
 
 /** Extend your existing Budget type locally with optional approval status (non-breaking). */
@@ -79,8 +84,13 @@ type BudgetWithApproval = Budget & {
 };
 
 export default function BudgetPage() {
-  const [budgets, setBudgets] = useState<BudgetWithApproval[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
+  const dispatch = useDispatch();
+  const { budgets, loading } = useSelector((state: RootState) => state.budget);
+  const userId = localStorage.getItem('userId')
+
+
+  const { projects } = useSelector((state: RootState) => state.projects);
+
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -88,29 +98,20 @@ export default function BudgetPage() {
   const [formData, setFormData] = useState<Partial<BudgetWithApproval>>({});
 
   const { toast } = useToast();
+  useEffect(() => {
+    dispatch(fetchProjects() as any);
+  }, []);
+  useEffect(() => {
+    if (!selectedProjectId && projects.length > 0) {
+      setSelectedProjectId(projects[0]._id);
+    }
+  }, [projects]);
 
   useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = () => {
-    // Load budgets & projects
-    const budgetsData = getFromStorage<BudgetWithApproval>(STORAGE_KEYS.BUDGETS).map((b: any) => ({
-      approvalStatus: "approvalStatus" in b ? b.approvalStatus : "pending",
-      ...b,
-    }));
-    const projectsData = getFromStorage<Project>(STORAGE_KEYS.PROJECTS);
-
-    setBudgets(budgetsData);
-    setProjects(projectsData);
-
-    // Auto-select the first project if none selected
-    if (!selectedProjectId && projectsData.length > 0) {
-      setSelectedProjectId(projectsData[0].id);
+    if (selectedProjectId) {
+      dispatch(fetchBudgetsByProject(selectedProjectId) as any);
     }
-  };
-
-  /** ---- CRUD ---- */
+  }, [selectedProjectId]);
   const handleSave = () => {
     if (!formData.projectId || !formData.category) {
       toast({
@@ -123,55 +124,33 @@ export default function BudgetPage() {
 
     const planned = Number(formData.plannedAmount || 0);
     const actual = Number(formData.actualAmount || 0);
-    const variance = actual - planned;
-    const variancePercent = planned ? (variance / planned) * 100 : 0;
-    const status: Budget["status"] =
-      variancePercent > 15 ? "critical" : variancePercent > 0 ? "over-budget" : "within-budget";
 
-    let updatedBudgets: BudgetWithApproval[];
-    const now = new Date().toISOString();
+    const payload = {
+      ...formData,
+      plannedAmount: planned,
+      actualAmount: actual,
+      userId: userId,
+      projectName: projects.find(p => p._id === formData.projectId)?.name || "",
+    };
 
     if (editingBudget) {
-      updatedBudgets = budgets.map((b) =>
-        b.id === editingBudget.id
-          ? {
-              ...editingBudget,
-              ...formData,
-              variance,
-              variancePercent,
-              status,
-              updatedAt: now,
-            } as BudgetWithApproval
-          : b
-      );
-      toast({ title: "Success", description: "Budget updated successfully." });
+      dispatch(updateBudget({ id: editingBudget._id, data: payload }) as any);
+      toast({ title: "Success", description: "Budget updated successfully" });
     } else {
-      const newBudget: BudgetWithApproval = {
-        ...(formData as BudgetWithApproval),
-        id: generateId(),
-        variance,
-        variancePercent,
-        status,
-        approvalStatus: "pending",
-        createdAt: now,
-        updatedAt: now,
-      };
-      updatedBudgets = [...budgets, newBudget];
-      toast({ title: "Success", description: "Budget created successfully." });
+      dispatch(createBudget(payload) as any);
+      toast({ title: "Success", description: "Budget created successfully" });
     }
 
-    saveToStorage(STORAGE_KEYS.BUDGETS, updatedBudgets);
-    setBudgets(updatedBudgets);
     setIsDialogOpen(false);
     resetForm();
   };
 
+
   const handleDelete = (id: string) => {
-    const updatedBudgets = budgets.filter((b) => b.id !== id);
-    saveToStorage(STORAGE_KEYS.BUDGETS, updatedBudgets);
-    setBudgets(updatedBudgets);
+    dispatch(deleteBudgetAction(id) as any);
     toast({ title: "Deleted", description: "Budget deleted successfully." });
   };
+
 
   const openEditDialog = (budget: BudgetWithApproval) => {
     setEditingBudget(budget);
@@ -182,7 +161,7 @@ export default function BudgetPage() {
   const openCreateDialog = () => {
     resetForm();
     setFormData({
-      projectId: selectedProjectId || projects[0]?.id,
+      projectId: selectedProjectId || projects[0]?._id,
       category: "material",
       plannedAmount: 0,
       actualAmount: 0,
@@ -196,32 +175,23 @@ export default function BudgetPage() {
     setFormData({});
   };
 
-  const approveBudget = (id: string) => {
-    const updated = budgets.map((b) =>
-      b.id === id ? { ...b, approvalStatus: "approved" as const } : b
-    );
-    saveToStorage(STORAGE_KEYS.BUDGETS, updated);
-    setBudgets(updated);
+  const approveBudgetHandler = (id: string) => {
+    dispatch(approveBudgetAction(id) as any);
     toast({
       title: "Approved",
-      description: "Budget marked as approved.",
+      description: "Budget marked as approved."
     });
   };
 
+
   const approveAllPendingForProject = () => {
-    if (!selectedProjectId) return;
-    const updated = budgets.map((b) =>
-      b.projectId === selectedProjectId && b.approvalStatus !== "approved"
-        ? { ...b, approvalStatus: "approved" as const }
-        : b
-    );
-    saveToStorage(STORAGE_KEYS.BUDGETS, updated);
-    setBudgets(updated);
+    dispatch(approveAllBudgets(selectedProjectId) as any);
     toast({
       title: "Approved",
-      description: "All pending budgets for this project have been approved.",
+      description: "All pending budgets for this project have been approved."
     });
   };
+
 
   /** ---- Helpers ---- */
   const getStatusColor = (status: Budget["status"]) => {
@@ -347,7 +317,7 @@ export default function BudgetPage() {
             </SelectTrigger>
             <SelectContent>
               {projects.map((project) => (
-                <SelectItem key={project.id} value={project.id}>
+                <SelectItem key={project._id} value={project._id}>
                   {project.name}
                 </SelectItem>
               ))}
@@ -383,7 +353,7 @@ export default function BudgetPage() {
                       </SelectTrigger>
                       <SelectContent>
                         {projects.map((project) => (
-                          <SelectItem key={project.id} value={project.id}>
+                          <SelectItem key={project._id} value={project._id}>
                             {project.name}
                           </SelectItem>
                         ))}
@@ -688,7 +658,7 @@ export default function BudgetPage() {
                 </TableRow>
               ) : (
                 projectBudgets.map((budget) => (
-                  <TableRow key={budget.id}>
+                  <TableRow key={budget._id}>
                     <TableCell className="font-medium">
                       {budget.description || "—"}
                     </TableCell>
@@ -734,7 +704,8 @@ export default function BudgetPage() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => approveBudget(budget.id)}
+                            onClick={() => approveBudgetHandler(budget._id)}
+
                           >
                             <ShieldCheck className="h-4 w-4 mr-1" />
                             Approve
@@ -743,7 +714,7 @@ export default function BudgetPage() {
                         <Button variant="ghost" size="icon" onClick={() => openEditDialog(budget)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(budget.id)}>
+                        <Button variant="ghost" size="icon" onClick={() => handleDelete(budget._id)}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>

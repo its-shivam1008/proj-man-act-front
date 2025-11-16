@@ -14,15 +14,16 @@ import {
 } from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "../../../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
 import { Badge } from "../../../components/ui/badge";
-import { Plus, Trash2, Edit2, FileText, DollarSign } from "lucide-react";
-import {
-    getFromStorage,
-    saveToStorage,
-    generateId,
-    STORAGE_KEYS,
-} from "../../../utils/localStorage";
+import { Plus, Trash2, Edit2, FileText, DollarSign, Loader2 } from "lucide-react";
 import {
     ResponsiveContainer,
     BarChart,
@@ -35,73 +36,39 @@ import {
     Tooltip,
     Legend,
 } from "recharts";
-
-// ---- Types ----
-type Milestone = {
-    id: string;
-    name: string;
-    percent: number;
-    value: number;
-    billed: number;
-    balance: number;
-};
-
-type Invoice = {
-    id: string;
-    milestoneId?: string;
-    milestoneName?: string;
-    date: string;
-    amount: number;
-    status: "Pending" | "Approved" | "Paid";
-    createdAt: string;
-    updatedAt: string;
-};
-
-// ---- Storage helpers ----
-const getMilestones = () =>
-    (getFromStorage<Partial<Milestone>[]>(STORAGE_KEYS.MILESTONES) || []).map((m) => {
-        const value = Number(m.value) || 0;
-        const billed = Number(m.billed) || 0;
-        return {
-            id: m.id || generateId(),
-            name: m.name || "Unnamed",
-            percent: Number(m.percent) || 0,
-            value,
-            billed,
-            balance: value - billed,
-        };
-    });
-
-
-const saveMilestones = (list: Milestone[]) => saveToStorage(STORAGE_KEYS.MILESTONES, list);
-
-const getInvoices = () => getFromStorage<Invoice[]>(STORAGE_KEYS.INVOICES) || [];
-const saveInvoices = (list: Invoice[]) => saveToStorage(STORAGE_KEYS.INVOICES, list);
+import { useDispatch, useSelector } from "react-redux";
+import { RootState } from "@/redux/store"; 
+import { Milestone, Invoice } from "@/types/billing"; 
+import {
+    fetchMilestones,
+    createMilestone,
+    updateMilestone,
+    deleteMilestone,
+    fetchInvoices,
+    createInvoice,
+} from "@/redux/slices/billingSlice";
+import { fetchProjects } from "@/redux/slices/projectSlice"; 
+import { Project } from "@/types/project";
 
 export default function BillingPage() {
-    const [milestones, setMilestones] = useState<Milestone[]>([]);
-    const [invoices, setInvoices] = useState<Invoice[]>([]);
+    const dispatch = useDispatch();
+    const { milestones, invoices, loading: billingLoading } = useSelector((state: RootState) => state.billing);
+    const { projects, loading: projectsLoading } = useSelector((state: RootState) => state.projects);
+    const loading = billingLoading || projectsLoading;
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editing, setEditing] = useState<Milestone | null>(null);
-    const [form, setForm] = useState<Partial<Milestone>>({ percent: 0, value: 0 });
-
-    // ---- load ----
+    const [form, setForm] = useState<Partial<Milestone & { projectId: string }>>({ percent: 0, value: 0 });
+    const userId = localStorage.getItem('userId') 
     useEffect(() => {
-        setMilestones(getMilestones());
-        setInvoices(getInvoices());
-    }, []);
+        if(userId){
+            dispatch(fetchProjects()); // Removed userId arg; thunk handles localStorage internally
+        }
+        dispatch(fetchMilestones());
+        dispatch(fetchInvoices());
+        
+    }, [dispatch , userId]);
 
-    // ---- persist helpers ----
-    const persistMilestones = (list: Milestone[]) => {
-        setMilestones(list);
-        saveMilestones(list);
-    };
-    const persistInvoices = (list: Invoice[]) => {
-        setInvoices(list);
-        saveInvoices(list);
-    };
-
-    // ---- CRUD for milestones ----
+    // CRUD for milestones
     const openCreate = () => {
         setEditing(null);
         setForm({ percent: 0, value: 0 });
@@ -110,35 +77,40 @@ export default function BillingPage() {
 
     const openEdit = (m: Milestone) => {
         setEditing(m);
-        setForm(m);
+        setForm({ ...m, projectId: m.projectId });
         setIsDialogOpen(true);
     };
 
-    const handleSave = () => {
-        if (!form.name || !form.value) return;
+    const handleSave = async () => {
+        if (!form.name || typeof form.value !== "number" || !form.projectId || !userId || userId.trim() === '') {
+            alert("Please select a project and fill required fields. Ensure you are logged in.");
+            return;
+        }
         const billed = Number(form.billed) || 0;
         const value = Number(form.value) || 0;
         const balance = value - billed;
 
-        const now = new Date().toISOString();
-
         if (editing) {
-            const updated = milestones.map((m) =>
-                m.id === editing.id
-                    ? { ...m, ...form, billed, balance }
-                    : m
+            await dispatch(
+                updateMilestone({
+                    id: editing._id,
+                    payload: { ...form, billed, balance, projectId: editing.projectId }, // Preserve original projectId
+                })
             );
-            persistMilestones(updated);
         } else {
-            const newMilestone: Milestone = {
-                id: generateId(),
+            const newMilestone: Omit<Milestone, "_id" | "createdAt" | "updatedAt"> & { createdAt: string; updatedAt: string; projectId: string; userId: string } = {
                 name: form.name!,
+                userId: userId.trim(),  // Trim to ensure no whitespace issues
                 percent: form.percent || 0,
-                value: form.value || 0,
+                value,
                 billed,
                 balance,
+                projectId: form.projectId,
+                
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
             };
-            persistMilestones([...milestones, newMilestone]);
+            await dispatch(createMilestone(newMilestone));
         }
         setIsDialogOpen(false);
         setEditing(null);
@@ -146,54 +118,72 @@ export default function BillingPage() {
     };
 
     const handleDelete = (id: string) => {
-        const updated = milestones.filter((m) => m.id !== id);
-        persistMilestones(updated);
+        dispatch(deleteMilestone(id));
     };
 
-    // ---- Generate Invoice ----
-    const generateInvoice = (m?: Milestone) => {
-        const now = new Date().toISOString();
-        const target = m || milestones.find((x) => x.balance > 0);
+    // Generate Invoice
+    const generateInvoice = async (m?: Milestone) => {
+        const safeMilestones = (milestones || []).filter(Boolean);
+        const target = m || safeMilestones.find((x) => (x as Milestone).balance > 0);
         if (!target) return window.alert("No milestone to invoice.");
 
-        const invoice: Invoice = {
-            id: generateId(),
-            milestoneId: target.id,
-            milestoneName: target.name,
+        const now = new Date().toISOString();
+        const invoice: Omit<Invoice, "_id" | "createdAt" | "updatedAt"> & { createdAt: string; updatedAt: string } = {
+            milestoneId: (target as Milestone)._id,
+            milestoneName: (target as Milestone).name,
             date: now.slice(0, 10),
-            amount: target.balance,
+            amount: (target as Milestone).balance,
             status: "Pending",
             createdAt: now,
             updatedAt: now,
         };
-        persistInvoices([...invoices, invoice]);
+        await dispatch(createInvoice(invoice));
 
-        // mark milestone as billed
-        const updated = milestones.map((x) =>
-            x.id === target.id ? { ...x, billed: x.value, balance: 0 } : x
+        // Update milestone as fully billed
+        await dispatch(
+            updateMilestone({
+                id: (target as Milestone)._id,
+                payload: { billed: (target as Milestone).value, balance: 0 },
+            })
         );
-        persistMilestones(updated);
     };
 
-    // ---- Chart Data ----
+    // Chart Data
     const invoicePaymentData = useMemo(() => {
-        return (invoices || []).map((inv) => ({
-            date: inv.date,
-            invoice: inv.amount,
-            payment: inv.status === "Paid" ? inv.amount : 0,
+        const safeInvoices = (invoices || []).filter(Boolean);
+        return safeInvoices.map((inv) => ({
+            date: (inv as Invoice).date,
+            invoice: (inv as Invoice).amount,
+            payment: (inv as Invoice).status === "Paid" ? (inv as Invoice).amount : 0,
         }));
     }, [invoices]);
 
     const forecastData = useMemo(() => {
+        const safeMilestones = (milestones || []).filter(m => m && (m as Milestone).name);
         const cumulative: Record<string, number> = {};
-        milestones.forEach((m) => {
-            cumulative[m.name] = m.value;
+        safeMilestones.forEach((m) => {
+            const milestone = m as Milestone;
+            cumulative[milestone.name] = milestone.value || 0;
         });
         return Object.entries(cumulative).map(([name, val]) => ({
             milestone: name,
             value: val,
         }));
     }, [milestones]);
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center h-64">
+                <Loader2 className="h-8 w-8 animate-spin" />
+            </div>
+        );
+    }
+
+    if (!userId || userId.trim() === '') {
+        return <div className="text-center py-8 text-destructive">Please log in to access Billing.</div>;
+    }
+
+    const safeMilestones = (milestones || []).filter(Boolean);
 
     return (
         <div className="space-y-6 p-4 md:p-6">
@@ -218,7 +208,7 @@ export default function BillingPage() {
             {/* Milestone Table */}
             <Card>
                 <CardHeader>
-                    <CardTitle>Milestones ({milestones.length})</CardTitle>
+                    <CardTitle>Milestones ({safeMilestones.length})</CardTitle>
                 </CardHeader>
                 <CardContent>
                     <Table>
@@ -229,36 +219,42 @@ export default function BillingPage() {
                                 <TableHead>Value</TableHead>
                                 <TableHead>Billed</TableHead>
                                 <TableHead>Balance</TableHead>
+                                <TableHead>Project</TableHead>
                                 <TableHead>Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {milestones.map((m) => (
-                                <TableRow key={m.id}>
-                                    <TableCell>{m.name}</TableCell>
-                                    <TableCell>{m.percent}%</TableCell>
-                                    <TableCell>₹{(m.value ?? 0).toLocaleString()}</TableCell>
-                                    <TableCell>₹{(m.billed ?? 0).toLocaleString()}</TableCell>
-                                    <TableCell>₹{(m.balance ?? 0).toLocaleString()}</TableCell>
+                            {safeMilestones.map((m) => {
+                                const milestone = m as Milestone;
+                                const project = projects.find(p => p._id === milestone.projectId);
+                                return (
+                                    <TableRow key={milestone._id}>
+                                        <TableCell>{milestone.name}</TableCell>
+                                        <TableCell>{milestone.percent}%</TableCell>
+                                        <TableCell>₹{(milestone.value ?? 0).toLocaleString()}</TableCell>
+                                        <TableCell>₹{(milestone.billed ?? 0).toLocaleString()}</TableCell>
+                                        <TableCell>₹{(milestone.balance ?? 0).toLocaleString()}</TableCell>
+                                        <TableCell>{project?.name || "—"}</TableCell>
 
-                                    <TableCell>
-                                        <div className="flex gap-2">
-                                            <Button size="icon" variant="ghost" onClick={() => openEdit(m)}>
-                                                <Edit2 className="h-4 w-4" />
-                                            </Button>
-                                            <Button size="icon" variant="ghost" onClick={() => handleDelete(m.id)}>
-                                                <Trash2 className="h-4 w-4 text-red-600" />
-                                            </Button>
-                                            <Button size="sm" onClick={() => generateInvoice(m)}>
-                                                <FileText className="h-4 w-4 mr-2" /> Invoice
-                                            </Button>
-                                        </div>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
+                                        <TableCell>
+                                            <div className="flex gap-2">
+                                                <Button size="icon" variant="ghost" onClick={() => openEdit(milestone)}>
+                                                    <Edit2 className="h-4 w-4" />
+                                                </Button>
+                                                <Button size="icon" variant="ghost" onClick={() => handleDelete(milestone._id)}>
+                                                    <Trash2 className="h-4 w-4 text-red-600" />
+                                                </Button>
+                                                <Button size="sm" onClick={() => generateInvoice(milestone)}>
+                                                    <FileText className="h-4 w-4 mr-2" /> Invoice
+                                                </Button>
+                                            </div>
+                                        </TableCell>
+                                    </TableRow>
+                                );
+                            })}
                         </TableBody>
                     </Table>
-                    {milestones.length === 0 && (
+                    {safeMilestones.length === 0 && (
                         <div className="text-center py-6 text-muted-foreground">
                             No milestones yet. Add your first one.
                         </div>
@@ -269,7 +265,7 @@ export default function BillingPage() {
             {/* Invoice Table */}
             <Card>
                 <CardHeader>
-                    <CardTitle>Invoices ({invoices.length})</CardTitle>
+                    <CardTitle>Invoices ({invoices?.length || 0})</CardTitle>
                 </CardHeader>
                 <CardContent>
                     <Table>
@@ -282,30 +278,33 @@ export default function BillingPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {invoices.map((inv) => (
-                                <TableRow key={inv.id}>
-                                    <TableCell>{inv.date}</TableCell>
-                                    <TableCell>{inv.milestoneName || "—"}</TableCell>
-                                    <TableCell>₹{(Number(inv.amount) || 0).toLocaleString()}</TableCell>
+                            {(invoices || []).filter(Boolean).map((inv) => {
+                                const invoice = inv as Invoice;
+                                return (
+                                    <TableRow key={invoice._id}>
+                                        <TableCell>{invoice.date}</TableCell>
+                                        <TableCell>{invoice.milestoneName || "—"}</TableCell>
+                                        <TableCell>₹{(Number(invoice.amount) || 0).toLocaleString()}</TableCell>
 
-                                    <TableCell>
-                                        <Badge
-                                            variant={
-                                                inv.status === "Paid"
-                                                    ? "default"
-                                                    : inv.status === "Approved"
-                                                        ? "secondary"
-                                                        : "outline"
-                                            }
-                                        >
-                                            {inv.status}
-                                        </Badge>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
+                                        <TableCell>
+                                            <Badge
+                                                variant={
+                                                    invoice.status === "Paid"
+                                                        ? "default"
+                                                        : invoice.status === "Approved"
+                                                            ? "secondary"
+                                                            : "outline"
+                                                }
+                                            >
+                                                {invoice.status}
+                                            </Badge>
+                                        </TableCell>
+                                    </TableRow>
+                                );
+                            })}
                         </TableBody>
                     </Table>
-                    {invoices.length === 0 && (
+                    {(invoices || []).length === 0 && (
                         <div className="text-center py-6 text-muted-foreground">
                             No invoices generated yet.
                         </div>
@@ -336,7 +335,6 @@ export default function BillingPage() {
                         </div>
                     </CardContent>
                 </Card>
-
 
                 {/* Billing Forecast */}
                 <Card className="h-[350px]">
@@ -370,7 +368,26 @@ export default function BillingPage() {
                     </DialogHeader>
                     <div className="grid gap-4 py-4">
                         <div>
-                            <Label>Milestone Name</Label>
+                            <Label>Project *</Label>
+                            <Select
+                                value={form.projectId || ""}
+                                onValueChange={(val) => setForm({ ...form, projectId: val })}
+                                disabled={!!editing} // Disable for edit to preserve
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select Project" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {(projects || []).map((p: Project) => (
+                                        <SelectItem key={p._id} value={p._id}>
+                                            {p.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div>
+                            <Label>Milestone Name *</Label>
                             <Input
                                 value={form.name || ""}
                                 onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -387,7 +404,7 @@ export default function BillingPage() {
                             />
                         </div>
                         <div>
-                            <Label>Value (₹)</Label>
+                            <Label>Value (₹) *</Label>
                             <Input
                                 type="number"
                                 value={form.value ?? 0}
@@ -420,17 +437,3 @@ export default function BillingPage() {
         </div>
     );
 }
-
-/*
-Notes:
-- Relies on localStorage helpers: getFromStorage, saveToStorage, generateId, STORAGE_KEYS.
-  STORAGE_KEYS should include:
-  {
-    MILESTONES: "milestones",
-    INVOICES: "invoices"
-  }
-- "Generate Invoice" simulates pulling data from Finance and marks milestone as billed.
-- You can expand Invoice status change (approve/pay) with a small action button if needed.
-- Install Recharts: `npm i recharts`.
-- Styling uses ShadCN UI components.
-*/

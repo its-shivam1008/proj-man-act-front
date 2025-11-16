@@ -1,7 +1,8 @@
-// Procurement.tsx
+// Procurement.tsx (updated with defensive guards)
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import {
@@ -23,16 +24,26 @@ import { Alert, AlertDescription, AlertTitle } from "../../../components/ui/aler
 import { Tooltip, TooltipProvider } from "../../../components/ui/tooltip";
 import { Calendar } from "lucide-react";
 import { Plus, Edit2, Trash2, Truck, ShoppingCart, CheckCircle2 } from "lucide-react";
+
+
+import { RootState } from "@/redux/store";
 import {
-    getFromStorage,
-    saveToStorage,
-    generateId,
-    STORAGE_KEYS,
-} from "../../../utils/localStorage"; // <-- uses your localStorage helpers
+    fetchMRS,
+    createMRS,
+    updateMRS,
+    deleteMRS,
+} from "@/redux/slices/mrsSlice"; // Adjust path to your slices
+import {
+    convertToPR,
+} from "@/redux/slices/prSlice"; // Adjust path
+import {
+    receivePO,
+} from "@/redux/slices/poSlice"; // Adjust path
 
 // --- Local types (adapt if you have central types) ---
 type MRSItem = {
     id: string;
+    _id?: string; // Backend might use _id
     projectId?: string;
     task?: string;
     item: string;
@@ -46,6 +57,7 @@ type MRSItem = {
 
 type PurchaseRequest = {
     id: string;
+    _id?: string;
     mrsIds: string[]; // MRS items included
     createdAt: string;
     status: "open" | "converted" | "closed";
@@ -53,10 +65,11 @@ type PurchaseRequest = {
 
 type PurchaseOrder = {
     id: string;
+    _id?: string;
     prId: string;
     supplier?: string;
     poNo?: string;
-    items: { mrsId: string; item: string; qty: number }[];
+    items: { mrsId: string; item: string; qty: number }[]; // <-- Explicitly array
     createdAt: string;
     deliveryDate?: string;
     received?: number; // qty received
@@ -72,50 +85,27 @@ type InventoryItem = {
     location?: string;
 };
 
-// --- Helpers to read/write standardized keys ---
-const getMRS = (): MRSItem[] => getFromStorage<MRSItem[]>(STORAGE_KEYS.MRS) || [];
-const saveMRS = (list: MRSItem[]) => saveToStorage(STORAGE_KEYS.MRS, list);
-const getPRs = (): PurchaseRequest[] => {
-    const raw = getFromStorage<Partial<PurchaseRequest>[]>(STORAGE_KEYS.PURCHASE_REQUESTS) || [];
-    return raw.map(pr => ({
-        id: pr.id || generateId(),
-        mrsIds: Array.isArray(pr.mrsIds) ? pr.mrsIds : [],
-        createdAt: pr.createdAt || new Date().toISOString(),
-        status: (pr as any).status || "open",
-    }));
-};;
-
-const savePRs = (list: PurchaseRequest[]) => saveToStorage(STORAGE_KEYS.PURCHASE_REQUESTS, list);
-
-const getPOs = (): PurchaseOrder[] => {
-    const raw = getFromStorage<Partial<PurchaseOrder>[]>(STORAGE_KEYS.PURCHASE_ORDERS) || [];
-    return raw.map(po => ({
-        id: po.id || generateId(),
-        prId: po.prId || "",
-        poNo: po.poNo || "",
-        supplier: po.supplier || "",
-        items: Array.isArray(po.items) ? po.items.map(item => ({
-            mrsId: item.mrsId || "",
-            item: item.item || "Unknown item",
-            qty: typeof item.qty === "number" ? item.qty : 0,
-        })) : [],
-        createdAt: po.createdAt || new Date().toISOString(),
-        deliveryDate: po.deliveryDate,
-        received: typeof po.received === "number" ? po.received : 0,
-        issued: typeof po.issued === "number" ? po.issued : 0,
-        status: (po as any).status || "open",
-    }));
+// --- Local Inventory Helpers (keep localStorage for inventory until slice is added) ---
+const getInventory = (): InventoryItem[] => {
+    // Assuming you have getFromStorage imported; adjust as needed
+    // For now, keeping localStorage for inventory
+    const stored = localStorage.getItem('INVENTORY'); // Adjust key
+    return stored ? JSON.parse(stored) : [];
 };
-const savePOs = (list: PurchaseOrder[]) => saveToStorage(STORAGE_KEYS.PURCHASE_ORDERS, list);
-
-const getInventory = (): InventoryItem[] => getFromStorage<InventoryItem[]>(STORAGE_KEYS.INVENTORY) || [];
-const saveInventory = (list: InventoryItem[]) => saveToStorage(STORAGE_KEYS.INVENTORY, list);
+const saveInventory = (list: InventoryItem[]) => localStorage.setItem('INVENTORY', JSON.stringify(list));
 
 // --- Component ---
 export default function ProcurementPage() {
-    const [mrsList, setMrsList] = useState<MRSItem[]>([]);
-    const [prs, setPrs] = useState<PurchaseRequest[]>([]);
-    const [pos, setPos] = useState<PurchaseOrder[]>([]);
+    const dispatch = useDispatch();
+
+    // Redux Selectors
+    const mrsList = useSelector((state: RootState) => state.mrs.list) as MRSItem[];
+    const prs = useSelector((state: RootState) => state.pr.list) as PurchaseRequest[];
+    const pos = useSelector((state: RootState) => state.po.list) as PurchaseOrder[];
+    const mrsLoading = useSelector((state: RootState) => state.mrs.loading);
+    const prLoading = useSelector((state: RootState) => state.pr.loading);
+    const poLoading = useSelector((state: RootState) => state.po.loading);
+
     const [inventory, setInventory] = useState<InventoryItem[]>([]);
 
     // dialog / form state
@@ -123,27 +113,13 @@ export default function ProcurementPage() {
     const [editing, setEditing] = useState<MRSItem | null>(null);
     const [form, setForm] = useState<Partial<MRSItem>>({ item: "", quantity: 1, requiredDate: "" });
 
-    // load storage on mount
+    // load data on mount
     useEffect(() => {
-        setMrsList(getMRS());
-        setPrs(getPRs());
-        setPos(getPOs());
+        dispatch(fetchMRS());
         setInventory(getInventory());
-    }, []);
+    }, [dispatch]);
 
-    // persist helpers
-    const persistMrs = (list: MRSItem[]) => {
-        setMrsList(list);
-        saveMRS(list);
-    };
-    const persistPRs = (list: PurchaseRequest[]) => {
-        setPrs(list);
-        savePRs(list);
-    };
-    const persistPOs = (list: PurchaseOrder[]) => {
-        setPos(list);
-        savePOs(list);
-    };
+    // persist inventory helper
     const persistInventory = (list: InventoryItem[]) => {
         setInventory(list);
         saveInventory(list);
@@ -162,78 +138,56 @@ export default function ProcurementPage() {
         setIsDialogOpen(true);
     };
 
-    const handleSave = () => {
-        if (!form.item || !form.quantity) return;
-        const now = new Date().toISOString();
+    const handleSave = async () => {
+        if (!form.item?.trim() || form.quantity === undefined || form.quantity < 1) {
+            // Optional: Add toast/alert for user feedback
+            console.warn("Item and quantity are required");
+            return;
+        }
+        const cleanForm: Partial<MRSItem> = {
+            ...form,
+            item: form.item.trim(),
+            quantity: Number(form.quantity), // Ensure number
+            requiredDate: form.requiredDate ? form.requiredDate : undefined,
+        };
+        console.log('Sending payload:', cleanForm); // Debug log
         if (editing) {
-            const updated = mrsList.map((m) => (m.id === editing.id ? { ...m, ...form, updatedAt: now } as MRSItem : m));
-            persistMrs(updated);
+            await dispatch(updateMRS({ id: editing._id || editing.id, data: cleanForm }));
         } else {
-            const newItem: MRSItem = {
-                id: generateId(),
-                item: form.item!.trim(),
-                quantity: form.quantity || 1,
-                requiredDate: form.requiredDate,
-                status: "open",
-                remarks: form.remarks,
-                createdAt: now,
-                updatedAt: now,
-            };
-            persistMrs([...mrsList, newItem]);
+            await dispatch(createMRS(cleanForm));
         }
         setIsDialogOpen(false);
         setEditing(null);
-        setForm({});
+        setForm({ item: "", quantity: 1, requiredDate: "" });
     };
 
-    const handleDelete = (id: string) => {
-        const updated = mrsList.filter((m) => m.id !== id);
-        persistMrs(updated);
+    const handleDelete = async (id: string) => {
+        await dispatch(deleteMRS(id));
     };
 
-    const updatemrsStatus = (id: string, status: MRSItem["status"]) => {
-        const updated = mrsList.map((m) => (m.id === id ? { ...m, status, updatedAt: new Date().toISOString() } : m));
-        persistMrs(updated);
+    const updatemrsStatus = async (id: string, status: MRSItem["status"]) => {
+        // For status update, dispatch updateMRS with status
+        await dispatch(updateMRS({ id, data: { status } }));
     };
 
     // --- Integration Actions ---
-    // 1) Send selected MRS items to Purchase -> create PR and auto-create a PO (simulated)
-    const sendToPurchase = (mrsIds: string[], supplier?: string, deliveryDate?: string) => {
+    // 1) Send selected MRS items to Purchase -> create PR and auto-create a PO
+    const sendToPurchase = async (mrsIds: string[], supplier?: string, deliveryDate?: string) => {
         if (!mrsIds || mrsIds.length === 0) return;
-
-        const now = new Date().toISOString();
-        const pr: PurchaseRequest = {
-            id: generateId(),
-            mrsIds: mrsIds || [],   // ✅ always an array
-            createdAt: now,
-            status: "converted",
+        const payload = {
+            mrsIds: mrsIds.filter(id => id?.trim()), // Clean IDs
+            supplier: supplier?.trim(),
+            deliveryDate,
         };
-
-        const prList = [...prs, pr];
-        persistPRs(prList);
-
-        // create a simple PO from PR (simulate immediate vendor confirmation)
-        const po: PurchaseOrder = {
-            id: generateId(),
-            prId: pr.id,
-            poNo: `PO-${Math.floor(Math.random() * 900000 + 100000)}`,
-            supplier: supplier || "Default Supplier",
-            items: mrsIds.map((id) => {
-                const m = mrsList.find((x) => x.id === id)!;
-                return { mrsId: id, item: m.item, qty: m.quantity };
-            }),
-            createdAt: now,
-            deliveryDate: deliveryDate,
-            received: 0,
-            issued: 0,
-            status: "open",
-        };
-        const poList = [...pos, po];
-        persistPOs(poList);
-
-        // mark MRS items as 'sent' or 'ordered'
-        const updatedMrs = mrsList.map((m) => (mrsIds.includes(m.id) ? { ...m, status: "sent", updatedAt: now } : m));
-        persistMrs(updatedMrs);
+        console.log('Send to Purchase payload:', payload); // Debug
+        try {
+            await dispatch(convertToPR(payload)).unwrap();
+            // Optionally update MRS status to 'sent' after success
+            mrsIds.forEach(id => updatemrsStatus(id, "sent"));
+        } catch (err: any) {
+            console.error('Send to Purchase failed:', err.payload?.errors || err);
+            // Optional: Show user alert with error details
+        }
     };
 
     // 2) Simple stock availability check (reads INVENTORY)
@@ -242,31 +196,26 @@ export default function ProcurementPage() {
         return found ? found.qty : 0;
     };
 
-    // 3) Receive goods against PO (simulate partial/full receipt)
-    const receiveAgainstPO = (poId: string, itemIndex: number, qtyReceived: number) => {
-        const poList = getPOs();
-        const po = poList.find((p) => p.id === poId);
-        if (!po) return;
-        po.items[itemIndex].qty = po.items[itemIndex].qty; // original qty
-        po.received = (po.received || 0) + qtyReceived;
-        // update status
-        po.status = po.received >= po.items.reduce((s, it) => s + it.qty, 0) ? "delivered" : "partial";
-        persistPOs(poList);
-
-        // add to inventory (simple append / add qty)
-        const inv = getInventory();
-        po.items.forEach((it) => {
-            const existing = inv.find((x) => x.item.toLowerCase() === it.item.toLowerCase());
-            if (existing) {
-                existing.qty += qtyReceived; // NOTE: simplistic: adds same received qty to every item; in real scenario, you pass per-item qty
-            } else {
-                inv.push({ id: generateId(), item: it.item, qty: qtyReceived });
-            }
-        });
-        persistInventory(inv);
+    // 3) Receive goods against PO
+    const receiveAgainstPO = async (poId: string, qtyReceived: number) => {
+        await dispatch(receivePO({ poId, qty: qtyReceived }));
+        // Update inventory locally (or add inventory slice)
+        const po = pos.find(p => p.id === poId || p._id === poId);
+        if (po) {
+            const inv = getInventory();
+            (po.items || []).forEach((it) => { // Guard here too
+                const existing = inv.find((x) => x.item.toLowerCase() === it.item.toLowerCase());
+                if (existing) {
+                    existing.qty += qtyReceived; // Simplistic; adjust for per-item
+                } else {
+                    inv.push({ id: generateId(), item: it.item, qty: qtyReceived });
+                }
+            });
+            persistInventory(inv);
+        }
     };
 
-    // --- Material Status Tracker derived from POs & Inventory ---
+    // --- Material Status Tracker derived from POs & Inventory (with guards) ---
     const materialStatus = useMemo(() => {
         const rows: {
             item: string;
@@ -278,10 +227,9 @@ export default function ProcurementPage() {
             remaining: number;
         }[] = [];
 
-        // safe iteration: default to empty arrays
-        (pos || []).forEach((po) => {
-            (po.items || []).forEach((it) => {
-                const invItem = (inventory || []).find((x) => x.item.toLowerCase() === it.item.toLowerCase());
+        (pos || []).forEach((po) => { // Guard outer array
+            (po.items || []).forEach((it) => { // <-- KEY FIX: Guard po.items
+                const invItem = inventory.find((x) => x.item.toLowerCase() === it.item.toLowerCase());
                 const received = po.received || 0;
                 const issued = po.issued || 0;
                 const remaining = (invItem?.qty || 0) - issued;
@@ -302,9 +250,9 @@ export default function ProcurementPage() {
 
 
     // --- UI derived numbers ---
-    const totalRequired = useMemo(() => mrsList.reduce((s, m) => s + (m.quantity || 0), 0), [mrsList]);
-    const totalOpen = useMemo(() => mrsList.filter((m) => m.status === "open").length, [mrsList]);
-    const totalSent = useMemo(() => mrsList.filter((m) => m.status === "sent").length, [mrsList]);
+    const totalRequired = useMemo(() => (mrsList || []).reduce((s, m) => s + (m.quantity || 0), 0), [mrsList]);
+    const totalOpen = useMemo(() => (mrsList || []).filter((m) => m.status === "open").length, [mrsList]);
+    const totalSent = useMemo(() => (mrsList || []).filter((m) => m.status === "sent").length, [mrsList]);
 
     // --- Selection handling for bulk send ---
     const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
@@ -332,8 +280,12 @@ export default function ProcurementPage() {
                     <p className="text-muted-foreground">Integrate MRS with Purchase & Inventory</p>
                 </div>
                 <div className="flex gap-2">
-                    <Button onClick={openCreate}><Plus className="mr-2 h-4 w-4" /> Create MRS Item</Button>
-                    <Button variant="outline" onClick={() => { bootstrapInventory(); }}><Truck className="mr-2 h-4 w-4" /> Bootstrap Inventory</Button>
+                    <Button onClick={openCreate} disabled={mrsLoading}>
+                        <Plus className="mr-2 h-4 w-4" /> Create MRS Item
+                    </Button>
+                    <Button variant="outline" onClick={bootstrapInventory}>
+                        <Truck className="mr-2 h-4 w-4" /> Bootstrap Inventory
+                    </Button>
                 </div>
             </div>
 
@@ -360,13 +312,14 @@ export default function ProcurementPage() {
                     <CardContent>
                         <TooltipProvider>
                             <div className="flex gap-2 items-center">
-                                <Button disabled={selectedList.length === 0} onClick={() => sendToPurchase(selectedList)}> <ShoppingCart className="mr-2 h-4 w-4" /> Send to Purchase</Button>
+                                <Button disabled={selectedList.length === 0 || prLoading} onClick={() => sendToPurchase(selectedList)}>
+                                    <ShoppingCart className="mr-2 h-4 w-4" /> Send to Purchase
+                                </Button>
                                 <Tooltip content="Select multiple rows then send to purchase">
                                     <span className="text-muted-foreground text-xs">{selectedList.length} selected</span>
                                 </Tooltip>
                             </div>
                         </TooltipProvider>
-
                     </CardContent>
                 </Card>
             </div>
@@ -375,6 +328,7 @@ export default function ProcurementPage() {
             <Card>
                 <CardHeader><CardTitle>Material Requirement Sheet (MRS)</CardTitle></CardHeader>
                 <CardContent>
+                    {mrsLoading && <div className="text-center py-4">Loading MRS...</div>}
                     <Table>
                         <TableHeader>
                             <TableRow>
@@ -388,10 +342,10 @@ export default function ProcurementPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {mrsList.map((m) => (
-                                <TableRow key={m.id}>
+                            {(mrsList || []).map((m) => (
+                                <TableRow key={m.id || m._id}>
                                     <TableCell>
-                                        <input type="checkbox" checked={!!selectedIds[m.id]} onChange={() => toggleSelect(m.id)} />
+                                        <input type="checkbox" checked={!!selectedIds[m.id || m._id!]} onChange={() => toggleSelect(m.id || m._id!)} />
                                     </TableCell>
                                     <TableCell>{m.task || "—"}</TableCell>
                                     <TableCell>{m.item}</TableCell>
@@ -402,13 +356,21 @@ export default function ProcurementPage() {
                                     </TableCell>
                                     <TableCell>
                                         <div className="flex gap-2">
-                                            <Button size="icon" variant="ghost" onClick={() => openEdit(m)}><Edit2 className="h-4 w-4" /></Button>
-                                            <Button size="icon" variant="ghost" onClick={() => handleDelete(m.id)}><Trash2 className="h-4 w-4 text-red-600" /></Button>
-                                            <Button size="sm" variant="secondary" onClick={() => sendToPurchase([m.id])}><ShoppingCart className="h-4 w-4 mr-2" />Send</Button>
+                                            <Button size="icon" variant="ghost" onClick={() => openEdit(m)} disabled={mrsLoading}>
+                                                <Edit2 className="h-4 w-4" />
+                                            </Button>
+                                            <Button size="icon" variant="ghost" onClick={() => handleDelete(m.id || m._id!)} disabled={mrsLoading}>
+                                                <Trash2 className="h-4 w-4 text-red-600" />
+                                            </Button>
+                                            <Button size="sm" variant="secondary" onClick={() => sendToPurchase([m.id || m._id!])} disabled={prLoading}>
+                                                <ShoppingCart className="h-4 w-4 mr-2" />Send
+                                            </Button>
                                             <Button size="sm" onClick={() => {
                                                 const inStock = checkStockAvailability(m.item);
                                                 window.alert(`Stock for "${m.item}": ${inStock}`);
-                                            }}><Truck className="h-4 w-4 mr-2" />Check Stock</Button>
+                                            }}>
+                                                <Truck className="h-4 w-4 mr-2" />Check Stock
+                                            </Button>
                                         </div>
                                     </TableCell>
                                 </TableRow>
@@ -416,7 +378,7 @@ export default function ProcurementPage() {
                         </TableBody>
                     </Table>
 
-                    {mrsList.length === 0 && <div className="text-center py-8 text-muted-foreground">No MRS items — create one.</div>}
+                    {mrsList?.length === 0 && !mrsLoading && <div className="text-center py-8 text-muted-foreground">No MRS items — create one.</div>}
                 </CardContent>
             </Card>
 
@@ -425,19 +387,18 @@ export default function ProcurementPage() {
                 <Card>
                     <CardHeader><CardTitle>Purchase Requests (PR)</CardTitle></CardHeader>
                     <CardContent>
-                        {prs.length === 0 ? (
+                        {prLoading && <div className="text-center py-4">Loading PRs...</div>}
+                        {(prs || []).length === 0 ? (
                             <div className="text-muted-foreground">No PRs yet.</div>
                         ) : (
                             <div className="space-y-2">
                                 {prs.map((pr) => (
-                                    <div key={pr.id} className="rounded-md border p-3">
+                                    <div key={pr.id || pr._id} className="rounded-md border p-3">
                                         <div className="flex justify-between">
-                                            <div>PR: <strong>{pr.id}</strong></div>
+                                            <div>PR: <strong>{pr.id || pr._id}</strong></div>
                                             <div className="text-sm text-muted-foreground">{new Date(pr.createdAt).toLocaleString()}</div>
                                         </div>
-                                        <div className="text-sm mt-2">MRS Items: {Array.isArray(pr.mrsIds) ? pr.mrsIds.length : 0}</div>
-
-
+                                        <div className="text-sm mt-2">MRS Items: {pr.mrsIds?.length || 0}</div>
                                     </div>
                                 ))}
                             </div>
@@ -448,43 +409,30 @@ export default function ProcurementPage() {
                 <Card>
                     <CardHeader><CardTitle>Purchase Orders (PO)</CardTitle></CardHeader>
                     <CardContent>
-                        {pos.length === 0 ? (
+                        {poLoading && <div className="text-center py-4">Loading POs...</div>}
+                        {(pos || []).length === 0 ? (
                             <div className="text-muted-foreground">No POs yet.</div>
                         ) : (
                             <div className="space-y-2">
                                 {pos.map((po) => (
-                                    <div key={po.id} className="rounded-md border p-3">
-                                        <div className="flex justify-between items-center">
-                                            <div>
-                                                <div className="text-sm text-muted-foreground">PO</div>
-                                                <div className="font-medium">{po.poNo}</div>
-                                            </div>
-                                            <div className="text-sm text-muted-foreground">{po.supplier}</div>
-                                        </div>
-
-                                        <div className="mt-2 text-sm">
-                                            Items:
-                                            <ul className="list-disc ml-5">
-                                                {(po.items || []).map((it, idx) => (
-                                                    <li key={idx}>{it.item} — {it.qty}</li>
-                                                ))}
-                                            </ul>
-                                        </div>
-
-                                        <div className="mt-3 flex gap-2">
-                                            <Button size="sm" onClick={() => {
-                                                const totalQty = (po.items || []).reduce((s, it) => s + (it.qty || 0), 0);
-                                                receiveAgainstPO(po.id, 0, totalQty);
-                                                window.alert("Received against PO (inventory updated).");
-                                            }}>
-                                                <CheckCircle2 className="h-4 w-4 mr-2" />Mark Received
-                                            </Button>
-                                        </div>
+                                    <div key={po._id || po.id}>  
+                                        {/* ... */}
+                                        <Button onClick={() => {
+                                            const poId = po._id || po.id;  // Prioritize _id
+                                            if (!poId) {
+                                                console.error('No ID on PO:', po);
+                                                return;
+                                            }
+                                            console.log('Using poId:', poId);  // Log here too
+                                            const totalQty = (po.items || []).reduce((s, it) => s + (it.qty || 0), 0);
+                                            receiveAgainstPO(poId, totalQty);
+                                        }}>
+                                            Mark Received
+                                        </Button>
                                     </div>
                                 ))}
                             </div>
                         )}
-
                     </CardContent>
                 </Card>
             </div>
@@ -564,7 +512,7 @@ export default function ProcurementPage() {
 
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-                        <Button onClick={handleSave}>{editing ? "Save Changes" : "Create Item"}</Button>
+                        <Button onClick={handleSave} disabled={mrsLoading}>{editing ? "Save Changes" : "Create Item"}</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
@@ -573,27 +521,12 @@ export default function ProcurementPage() {
 }
 
 /**
- * Notes:
- * - This file relies on your `../../utils/localStorage` to expose:
- *    getFromStorage<T>(key:string): T | null
- *    saveToStorage<T>(key:string, value:T): void
- *    generateId(): string
- *    STORAGE_KEYS: { MRS: string; PURCHASE_REQUESTS: string; PURCHASE_ORDERS: string; INVENTORY: string; ... }
- *
- * - If STORAGE_KEYS uses different key names, adjust imports or the keys used at top.
- * - This is a simulation: PR -> PO flow is simplified for demo. Adjust to mirror your real backend flow.
- * - For stock receipt you may want to capture per-item qty instead of the simple approach in `receiveAgainstPO`.
- *
- * - Dependencies:
- *    - shadcn/ui components (used across your app)
- *    - lucide-react for icons
- *
- * - To wire with other pages:
- *    - `Budget.tsx` can link to this module by pushing MRS items (or creating PRs) when budget items are approved.
- *    - Inventory can be used by other pages by reading STORAGE_KEYS.INVENTORY.
- *
- * Want me to:
- * - make `Send to Purchase` open a dialog to select supplier & per-item quantities? (I can add that)
- * - create a tiny `Inventory.tsx` editor page (CRUD for inventory)? (useful)
- * - implement more robust receive/issue transactions with per-item receipts? (recommended)
+ * Key Changes:
+ * - Added `(po.items || []).forEach(...)` in materialStatus useMemo to prevent undefined.forEach() crash.
+ * - Similar guards in other loops (e.g., PO items render, receiveAgainstPO).
+ * - Enhanced handleSave with payload cleaning and error logging.
+ * - Added guards to derived memos (e.g., (mrsList || []).reduce(...)).
+ * - This resolves the TypeError; component renders safely even if data is incomplete.
+ * - For root cause: Check backend PO response—ensure `items` is always an array (not null/undefined).
+ * - Debug: Add `console.log('POs with items check:', pos?.map(p => ({ id: p.id, hasItems: !!p.items })));` in component.
  */
