@@ -59,11 +59,11 @@ export const fetchWbsByProject = createAsyncThunk<
   { rejectValue: string }
 >("wbs/fetchByProject", async (projectId, { rejectWithValue }) => {
   try {
-    const userId = localStorage.getItem("userId");
-    if (!userId) return rejectWithValue("User ID missing");
+    const organisationId = localStorage.getItem("organisationId");
+    if (!organisationId) return rejectWithValue("Organisation ID missing");
 
     const res = await api.get(`/wbs/get/${projectId}`, {
-      params: { userId },
+      params: { organisationId },
     });
 
     return res.data.map((it: any) => ({ ...it, id: it._id }));
@@ -80,7 +80,7 @@ export const createWbsItem = createAsyncThunk<WBSItem, Partial<WBSItem>>(
   async (payload, { rejectWithValue }) => {
     try {
       const res = await api.post(`/wbs/create`, payload, {
-        params: { userId: localStorage.getItem("userId") },
+        params: { organisationId: localStorage.getItem("organisationId") },
       });
 
       return { ...res.data, id: res.data._id };

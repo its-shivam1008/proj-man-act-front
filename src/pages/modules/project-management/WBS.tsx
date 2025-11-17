@@ -37,11 +37,26 @@ import {
   ChevronRight,
   Package,
   Users,
+  ChevronsUpDown, // Add this
+  Check, // Add this
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { fetchProjects } from "@/redux/slices/projectSlice";
-
+import { useDebounce } from "@/hooks/useDebounce"; // Add this
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandGroup, // Optional, but good for structure
+} from "@/components/ui/command";
 
 
 type WBSItemType = "phase" | "activity" | "task" | "subtask";
@@ -219,13 +234,13 @@ const WBSNode: React.FC<WBSNodeProps> = ({
 };
 
 export default function WBS() {
-  const userId = localStorage.getItem('userId');
+  const organisationId = localStorage.getItem('organisationId');
   const dispatch = useDispatch<AppDispatch>();
   const { wbs, loading } = useSelector((state: RootState) => state.wbs);
 
-  useEffect(() => {
-    dispatch(fetchProjects());
-  }, []);
+  // useEffect(() => {
+  //   dispatch(fetchProjects());
+  // }, []);
 
 
   const { projects, loading: projectLoading } = useSelector(
@@ -238,7 +253,26 @@ export default function WBS() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<WBSItem | null>(null);
   const [formData, setFormData] = useState<Partial<WBSItem>>({});
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearchTerm = useDebounce(searchTerm, 500); // 500ms delay
+
   const { toast } = useToast();
+
+  // Find the selected project from the list for display
+  const selectedProject = projects.find((p) => p._id === selectedProjectId);
+
+
+  useEffect(() => {
+
+    dispatch(
+      fetchProjects({
+        search: debouncedSearchTerm,
+        page: 1,
+        limit: 10,
+      })
+    );
+  }, [debouncedSearchTerm]);
 
 
   const handleSave = () => {
@@ -312,7 +346,7 @@ export default function WBS() {
       });
     });
 
-    setwbs(updatedItems);
+    // setwbs(updatedItems);
     toast({
       title: "Success",
       description: "WBS item deleted successfully",
@@ -398,7 +432,7 @@ export default function WBS() {
           </p>
         </div>
         <div className="flex w-full md:w-auto gap-4">
-          <Select
+          {/* <Select
             value={selectedProjectId || ""}
             onValueChange={setSelectedProjectId}
           >
@@ -418,8 +452,71 @@ export default function WBS() {
                 </div>
               )}
             </SelectContent>
-          </Select>
-
+          </Select> */}
+          <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                aria-expanded={popoverOpen}
+                className="w-full md:w-64 justify-between"
+              >
+                {selectedProject ? (
+                  <span className="truncate">
+                    {selectedProject.code} - {selectedProject.name}
+                  </span>
+                ) : (
+                  "Select a Project"
+                )}
+                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+              <Command>
+                <CommandInput
+                  placeholder="Search projects..."
+                  value={searchTerm}
+                  onValueChange={setSearchTerm}
+                />
+                <CommandList>
+                  {projectLoading && (
+                    <div className="p-4 text-center text-sm">Loading...</div>
+                  )}
+                  <CommandEmpty>
+                    {!projectLoading && "No projects found."}
+                  </CommandEmpty>
+                  <CommandGroup>
+                    {!projectLoading &&
+                      projects.map((project) => (
+                        <CommandItem
+                          key={project._id}
+                          value={`${project.code} ${project.name} ${project.clientOrDepartment || ''}`}
+                          onSelect={() => {
+                            setSelectedProjectId(project._id);
+                            setPopoverOpen(false);
+                          }}
+                        >
+                          <Check
+                            className={`mr-2 h-4 w-4 ${selectedProjectId === project._id
+                                ? "opacity-100"
+                                : "opacity-0"
+                              }`}
+                          />
+                          <div className="flex flex-col">
+                            <span className="font-medium">
+                              {project.code} - {project.name}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {project.clientOrDepartment}
+                            </span>
+                          </div>
+                        </CommandItem>
+                      ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
 
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
