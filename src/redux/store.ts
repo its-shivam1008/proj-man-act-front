@@ -6,12 +6,13 @@ import resourceReducer from "./slices/resourceSlice";
 import manpowerReducer from "./slices/manpowerSlice";
 import materialReducer from "./slices/materialSlice";
 import equipmentReducer from "./slices/equipmentSlice";
-import budgetReducer from './slices/budgetSlice'
-import mrsReducer from './slices/mrsSlice';
-import prReducer from './slices/prSlice';
-import poReducer from './slices/prSlice';
-import billingReducer from './slices/billingSlice'
-import dailyProgressReducer from './slices/dailyProgressSlice';
+import budgetReducer from "./slices/budgetSlice";
+import mrsReducer from "./slices/mrsSlice";
+import prReducer from "./slices/prSlice";
+import poReducer from "./slices/prSlice";
+import billingReducer from "./slices/billingSlice";
+import dailyProgressReducer from "./slices/dailyProgressSlice";
+import warehouseReducer from "./slices/warehouseSlice";
 export const store = configureStore({
   reducer: {
     auth: authReducer,
@@ -27,6 +28,7 @@ export const store = configureStore({
     po: poReducer,
     dailyProgress: dailyProgressReducer,
     billing: billingReducer,
+    warehouse: warehouseReducer,
   },
 });
 

@@ -48,10 +48,9 @@ export default function DailyProgressPage() {
   const [editing, setEditing] = useState<DailyProgressItem | null>(null);
   const [form, setForm] = useState<Partial<DailyProgressItem>>({ date: new Date().toISOString().slice(0, 10), percentComplete: 0 });
   useEffect(() => {
-    const orgId = localStorage.getItem("organisationId");
-    if (orgId) {
-      dispatch(fetchDailyProgress(orgId) as any);
-    }
+
+    dispatch(fetchDailyProgress());
+
     setGantt(getGantt());
   }, [dispatch]);
 
