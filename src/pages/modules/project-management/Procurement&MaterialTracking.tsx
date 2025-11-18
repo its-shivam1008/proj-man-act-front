@@ -152,9 +152,10 @@ export default function ProcurementPage() {
         };
         console.log('Sending payload:', cleanForm); // Debug log
         if (editing) {
+            // Assuming your updateMRS expects data directly (which is common)
             await dispatch(updateMRS({ id: editing._id || editing.id, data: cleanForm }));
         } else {
-            await dispatch(createMRS(cleanForm));
+           await dispatch(createMRS(cleanForm));
         }
         setIsDialogOpen(false);
         setEditing(null);
@@ -415,7 +416,7 @@ export default function ProcurementPage() {
                         ) : (
                             <div className="space-y-2">
                                 {pos.map((po) => (
-                                    <div key={po._id || po.id}>  
+                                    <div key={po._id || po.id}>
                                         {/* ... */}
                                         <Button onClick={() => {
                                             const poId = po._id || po.id;  // Prioritize _id

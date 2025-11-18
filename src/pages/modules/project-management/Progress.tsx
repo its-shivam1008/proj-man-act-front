@@ -29,7 +29,7 @@ import {
   addDailyProgress,
   editDailyProgress,
   removeDailyProgress,
-} from "@/redux/slices/dailyProgressSlice"; 
+} from "@/redux/slices/dailyProgressSlice";
 
 // Gantt storage (kept local as no Redux slice for it)
 const getGantt = () =>
@@ -47,11 +47,14 @@ export default function DailyProgressPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editing, setEditing] = useState<DailyProgressItem | null>(null);
   const [form, setForm] = useState<Partial<DailyProgressItem>>({ date: new Date().toISOString().slice(0, 10), percentComplete: 0 });
-  const userId = localStorage.getItem('userId')
   useEffect(() => {
-    dispatch(fetchDailyProgress());
+    const orgId = localStorage.getItem("organisationId");
+    if (orgId) {
+      dispatch(fetchDailyProgress(orgId) as any);
+    }
     setGantt(getGantt());
   }, [dispatch]);
+
 
   const persistGantt = (list: { date: string; planned: number }[]) => {
     setGantt(list);
@@ -82,8 +85,8 @@ export default function DailyProgressPage() {
         })
       );
     } else {
-      const newItem: Omit<DailyProgressItem, "_id" | "createdAt" | "updatedAt"> & { createdAt: string; updatedAt: string } = {
-        userId,
+      const newItem = {
+        organisationId: localStorage.getItem("organisationId"),
         date: form.date!,
         task: form.task || "",
         percentComplete: form.percentComplete || 0,
@@ -96,6 +99,7 @@ export default function DailyProgressPage() {
         createdAt: now,
         updatedAt: now,
       };
+
       await dispatch(addDailyProgress(newItem));
     }
     setIsDialogOpen(false);
@@ -377,8 +381,7 @@ export default function DailyProgressPage() {
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <MapPin className="h-4 w-4" /> GPS:{" "}
               {((form.photos || []).find((p) => p.gps)?.gps &&
-                `${(form.photos || []).find((p) => p.gps)!.gps!.lat.toFixed(4)}, ${
-                  (form.photos || []).find((p) => p.gps)!.gps!.lng.toFixed(4)
+                `${(form.photos || []).find((p) => p.gps)!.gps!.lat.toFixed(4)}, ${(form.photos || []).find((p) => p.gps)!.gps!.lng.toFixed(4)
                 }`) ||
                 "No GPS recorded"}
             </div>

@@ -1,6 +1,4 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import axios from "axios";
-import { BASE_URL } from "@/utils/constants";
 import { removeBearerTokenForEveryAxiosCall, setBearerTokenForEveryAxiosCall } from "@/utils/axiosApi";
 import api from "@/utils/axiosApi";
 

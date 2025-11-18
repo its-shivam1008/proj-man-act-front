@@ -86,10 +86,12 @@ type BudgetWithApproval = Budget & {
 export default function BudgetPage() {
   const dispatch = useDispatch();
   const { budgets, loading } = useSelector((state: RootState) => state.budget);
-  const userId = localStorage.getItem('userId')
+  const organisationId = localStorage.getItem("organisationId") || "";
+
 
 
   const { projects } = useSelector((state: RootState) => state.projects);
+  console.log("projects fetching are ", projects.length)
 
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
 
@@ -99,8 +101,15 @@ export default function BudgetPage() {
 
   const { toast } = useToast();
   useEffect(() => {
-    dispatch(fetchProjects() as any);
-  }, []);
+    console.log("Running fetchProjects useEffect...");
+    console.log("organisationId = ", organisationId);
+
+    if (organisationId) {
+      console.log("Dispatching fetchProjects...");
+      dispatch(fetchProjects({ page: 1, limit: 20 }) as any);
+    }
+  }, [organisationId, dispatch]);
+
   useEffect(() => {
     if (!selectedProjectId && projects.length > 0) {
       setSelectedProjectId(projects[0]._id);
@@ -125,19 +134,36 @@ export default function BudgetPage() {
     const planned = Number(formData.plannedAmount || 0);
     const actual = Number(formData.actualAmount || 0);
 
-    const payload = {
-      ...formData,
-      plannedAmount: planned,
-      actualAmount: actual,
-      userId: userId,
-      projectName: projects.find(p => p._id === formData.projectId)?.name || "",
-    };
-
     if (editingBudget) {
-      dispatch(updateBudget({ id: editingBudget._id, data: payload }) as any);
+      // --- UPDATE PAYLOAD ---
+      // This matches your updateBudgetSchema (no projectId, no orgId)
+      const updatePayload = {
+        category: formData.category,
+        description: formData.description,
+        plannedAmount: planned,
+        actualAmount: actual,
+        notes: formData.notes,
+        approvalStatus: formData.approvalStatus,
+        status: formData.status,
+      };
+
+      dispatch(updateBudget({ id: editingBudget._id, data: updatePayload }) as any);
       toast({ title: "Success", description: "Budget updated successfully" });
+
     } else {
-      dispatch(createBudget(payload) as any);
+      // --- CREATE PAYLOAD ---
+      // This matches your new, correct createBudgetSchema
+      const createPayload = {
+        projectId: formData.projectId,
+        // (organisationId is removed - server adds it from auth)
+        category: formData.category,
+        description: formData.description,
+        plannedAmount: planned,
+        actualAmount: actual,
+        notes: formData.notes,
+      };
+
+      dispatch(createBudget(createPayload) as any);
       toast({ title: "Success", description: "Budget created successfully" });
     }
 

@@ -64,9 +64,7 @@ interface WBSItem {
   startDate?: string;
   endDate?: string;
   plannedCost?: number;
-  actualCost: number; // We will update this
-  // ... other wbs fields
-}
+  actualCost: number; }
 
 // Master Resource Types
 interface Manpower {

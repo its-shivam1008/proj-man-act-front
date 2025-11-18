@@ -58,15 +58,14 @@ export default function BillingPage() {
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editing, setEditing] = useState<Milestone | null>(null);
     const [form, setForm] = useState<Partial<Milestone & { projectId: string }>>({ percent: 0, value: 0 });
-    const userId = localStorage.getItem('userId') 
-    useEffect(() => {
-        if(userId){
-            dispatch(fetchProjects()); // Removed userId arg; thunk handles localStorage internally
-        }
+    const organisationId = localStorage.getItem('organisationId') 
+    useEffect(() =>{ 
+        if(organisationId){
+            dispatch(fetchProjects((organisationId) as string));
         dispatch(fetchMilestones());
         dispatch(fetchInvoices());
-        
-    }, [dispatch , userId]);
+        }
+    }, [dispatch , organisationId])
 
     // CRUD for milestones
     const openCreate = () => {
@@ -179,9 +178,9 @@ export default function BillingPage() {
         );
     }
 
-    if (!userId || userId.trim() === '') {
-        return <div className="text-center py-8 text-destructive">Please log in to access Billing.</div>;
-    }
+    // if (!userId || userId.trim() === '') {
+    //     return <div className="text-center py-8 text-destructive">Please log in to access Billing.</div>;
+    // }
 
     const safeMilestones = (milestones || []).filter(Boolean);
 
