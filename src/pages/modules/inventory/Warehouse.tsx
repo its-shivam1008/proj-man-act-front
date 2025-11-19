@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Warehouse, Plus, Package, MapPin, Edit, Trash2, XCircle, Badge } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
-import { storage, STORAGE_KEYS } from '@/lib/storage';
 import { useDispatch, useSelector } from "react-redux";
 import {
     fetchWarehouses,
@@ -10,7 +9,7 @@ import {
     updateWarehouse,
     deleteWarehouse,
 } from "@/redux/slices/warehouseSlice";
-
+import { toast } from "sonner";
 // Define proper TypeScript interface
 interface WarehouseData {
     id: string;
@@ -87,70 +86,49 @@ const WarehouseManagement: React.FC = () => {
     const [editingWarehouseId, setEditingWarehouseId] = useState<string | null>(null);
 
     useEffect(() => {
-        dispatch(fetchWarehouses({ page: 1, limit: 20 }));
+        dispatch(fetchWarehouses({ page: 1, limit: 20 }))
+            .unwrap()
+            .then((res) => {
+                if (res.length === 0) {
+                    // fallback to local mock data
+                    console.warn("No warehouse found, loading mock data.");
+                    dispatch(addWarehouse(initialWarehouseData[0]));
+                    dispatch(addWarehouse(initialWarehouseData[1]));
+                }
+            })
+            .catch(() => {
+                // backend error fallback
+                dispatch(addWarehouse(initialWarehouseData[0]));
+                dispatch(addWarehouse(initialWarehouseData[1]));
+            });
     }, []);
+
 
 
     const handleAdd = () => {
         setEditingWarehouseId(null);
         setShowWarehouseForm(true);
+        // Optional subtle feedback when opening the form
+        toast.info("Fill the form to add a new warehouse");
     };
 
     const handleEdit = (id: string) => {
         setEditingWarehouseId(id);
         setShowWarehouseForm(true);
     };
-
     const handleDelete = (id: string) => {
-        if (window.confirm("Are you sure you want to delete this warehouse?")) {
-            dispatch(deleteWarehouse(id));
-
-        }
+        dispatch(deleteWarehouse(id))
+            .unwrap()
+            .then(() => toast.success("Warehouse deleted"))
+            .catch(() => toast.error("Delete failed"));
     };
+
 
     const handleCloseForm = () => {
         setShowWarehouseForm(false);
         setEditingWarehouseId(null);
     };
 
-    const handleSubmit = (formData: any) => {
-        const payload = {
-            name: formData.name,
-            type: formData.type,
-            location: formData.location,
-            capacity: Number(formData.capacity),
-            totalItems: Number(formData.totalItems),
-            categories: {
-                raw: Number(formData.raw),
-                finished: Number(formData.finished),
-                consumables: Number(formData.consumables),
-            },
-            lastGRN: formData.lastGRN?.date
-                ? { ...formData.lastGRN, qty: Number(formData.lastGRN.qty) }
-                : null,
-            lastIssue: formData.lastIssue?.date
-                ? { ...formData.lastIssue, qty: Number(formData.lastIssue.qty) }
-                : null,
-            ageing: {
-                "0-30 Days": Number(formData.ageing30),
-                "31-90 Days": Number(formData.ageing90),
-                "90+ Days": Number(formData.ageingPlus),
-            },
-            inTransit: Number(formData.inTransit),
-            reorderAlerts: formData.reorderAlerts
-                .split(",")
-                .map((s: string) => s.trim()),
-            bins: formData.bins.split(",").map((s: string) => s.trim()),
-        };
-
-        if (editingWarehouseId) {
-            dispatch(updateWarehouse({ id: editingWarehouseId, data: payload }));
-        } else {
-            dispatch(addWarehouse(payload));
-        }
-
-        handleCloseForm();
-    };
 
     const WarehouseForm = ({ initialData }: { initialData?: WarehouseData }) => {
         const [formData, setFormData] = useState({
@@ -180,6 +158,52 @@ const WarehouseManagement: React.FC = () => {
             bins: initialData?.bins?.join(', ') || '',
         });
 
+        const handleSubmit = async (formData: any) => {
+            try {
+                const payload = {
+                    name: formData.name,
+                    type: formData.type,
+                    location: formData.location,
+                    capacity: Number(formData.capacity),
+                    totalItems: Number(formData.totalItems || 0),
+                    categories: {
+                        raw: Number(formData.raw || 0),
+                        finished: Number(formData.finished || 0),
+                        consumables: Number(formData.consumables || 0),
+                    },
+                    lastGRN: formData.lastGRN.date ? {
+                        date: formData.lastGRN.date,
+                        qty: Number(formData.lastGRN.qty || 0),
+                        po: formData.lastGRN.po,
+                    } : null,
+                    lastIssue: formData.lastIssue.date ? {
+                        date: formData.lastIssue.date,
+                        qty: Number(formData.lastIssue.qty || 0),
+                        dept: formData.lastIssue.dept,
+                    } : null,
+                    ageing: {
+                        "0-30 Days": Number(formData.ageing30 || 0),
+                        "31-90 Days": Number(formData.ageing90 || 0),
+                        "90+ Days": Number(formData.ageingPlus || 0),
+                    },
+                    inTransit: Number(formData.inTransit || 0),
+                    reorderAlerts: formData.reorderAlerts.split(',').map((s: string) => s.trim()).filter(Boolean),
+                    bins: formData.bins.split(',').map((s: string) => s.trim()).filter(Boolean),
+                };
+
+                if (editingWarehouseId) {
+                    await dispatch(updateWarehouse({ id: editingWarehouseId, data: payload })).unwrap();
+                    toast.success("Warehouse updated successfully!");
+                } else {
+                    await dispatch(addWarehouse(payload)).unwrap();
+                    toast.success("Warehouse added successfully!");
+                }
+
+                handleCloseForm();
+            } catch (err) {
+                toast.error(editingWarehouseId ? "Failed to update warehouse" : "Failed to add warehouse");
+            }
+        };
         const handleChange = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
             setFormData(prev => ({ ...prev, [field]: e.target.value }));
         };
@@ -297,12 +321,12 @@ const WarehouseManagement: React.FC = () => {
             </div>
 
             {showWarehouseForm && (
-                <WarehouseForm initialData={editingWarehouseId ? warehouses.find(w => w.id === editingWarehouseId) : undefined} />
+                <WarehouseForm initialData={editingWarehouseId ? warehouses.find(w => w._id === editingWarehouseId) : undefined} />
             )}
 
             <Accordion type="single" collapsible className="space-y-4">
                 {warehouses.map((w) => (
-                    <AccordionItem key={w.id} value={w.id} className="border rounded-xl shadow-md overflow-hidden">
+                    <AccordionItem key={w._id} value={w._id} className="border rounded-xl shadow-md overflow-hidden">
                         <AccordionTrigger className="px-6 py-4 hover:bg-gray-50">
                             <div className="grid grid-cols-12 w-full items-center text-left gap-4">
                                 <div className="col-span-4 font-semibold flex items-center gap-3">
@@ -324,10 +348,10 @@ const WarehouseManagement: React.FC = () => {
 
                         <AccordionContent className="bg-gray-50 px-6 py-6 border-t">
                             <div className="flex justify-end gap-4 mb-6">
-                                <Button size="sm" variant="outline" onClick={() => handleEdit(w.id)}>
+                                <Button size="sm" variant="outline" onClick={() => handleEdit(w._id)}>
                                     <Edit className="w-4 h-4 mr-2" /> Edit
                                 </Button>
-                                <Button size="sm" variant="destructive" onClick={() => handleDelete(w.id)}>
+                                <Button size="sm" variant="destructive" onClick={() => handleDelete(w._id)}>
                                     <Trash2 className="w-4 h-4 mr-2" /> Delete
                                 </Button>
                             </div>

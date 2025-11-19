@@ -110,7 +110,11 @@ const warehouseSlice = createSlice({
         state.loading = true;
       })
       .addCase(fetchWarehouses.fulfilled, (state, action) => {
-        state.warehouses = action.payload.warehouses || [];
+        state.warehouses = (action.payload.warehouses || []).map((w: any) => ({
+    id: w._id,
+    ...w,
+}));
+
         state.currentPage = action.payload.currentPage;
         state.totalPages = action.payload.totalPages;
         state.totalWarehouses = action.payload.totalWarehouses;

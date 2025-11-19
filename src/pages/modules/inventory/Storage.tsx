@@ -1,22 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { Store, Plus, TrendingUp, Package, Users, AlertCircle, Edit, Trash2, XCircle } from 'lucide-react';
+import { Store, Plus, TrendingUp, Package, AlertCircle, Edit, Trash2, XCircle } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { storage, STORAGE_KEYS } from '@/lib/storage';
+import {
+  fetchStores,
+  addStore,
+  updateStore,
+  deleteStore,
+} from "@/redux/slices/storageSlice";
+import { useDispatch, useSelector } from "react-redux";
+import { AppDispatch, RootState } from "@/redux/store";
 
-// TypeScript Interface
 interface StoreData {
-  id: string;
+  _id?: string;
   name: string;
   location: string;
   dailySales: number;
   stock: number;
-  categories: {
-    fashion: number;
-    electronics: number;
-    grocery: number;
-  };
   last7DaysSales: number[];
   fastMoving: string[];
   slowMoving: string[];
@@ -27,63 +28,15 @@ interface StoreData {
   lowStockAlerts: string[];
 }
 
-// Initial mock data
-const initialStoreData: StoreData[] = [
-  {
-    id: "1",
-    name: "Downtown Store",
-    location: "City Center – Block A",
-    dailySales: 9500,
-    stock: 120,
-    categories: { fashion: 40, electronics: 30, grocery: 50 },
-    last7DaysSales: [12000, 11300, 9800, 10500, 10200, 9600, 9500],
-    fastMoving: ["Mobile Charger", "T-Shirts Pack", "Milk 1L"],
-    slowMoving: ["Winter Jacket XL", "Old Electronics"],
-    returns: 4,
-    scrap: 2,
-    manager: "Amit Sharma",
-    transferHistory: [
-      { date: "10 Jan 2025", qty: 20, from: "Main Warehouse" },
-      { date: "07 Jan 2025", qty: 15, from: "Backup Warehouse" },
-    ],
-    lowStockAlerts: ["Sugar 5kg", "LED Bulb 9W"],
-  },
-  {
-    id: "2",
-    name: "Mall Branch",
-    location: "Galleria Mall – 2nd Floor",
-    dailySales: 7200,
-    stock: 110,
-    categories: { fashion: 60, electronics: 20, grocery: 30 },
-    last7DaysSales: [9000, 8400, 7900, 7800, 7600, 7400, 7200],
-    fastMoving: ["Perfume Mini", "Earphones"],
-    slowMoving: ["Winter Boots", "Formal Blazers"],
-    returns: 3,
-    scrap: 1,
-    manager: "Rohit Verma",
-    transferHistory: [
-      { date: "09 Jan 2025", qty: 25, from: "Main Warehouse" },
-    ],
-    lowStockAlerts: ["Face Wash – Herbal", "USB Cable"],
-  },
-];
-
 const StoresManagement: React.FC = () => {
   const [showStoreForm, setShowStoreForm] = useState(false);
   const [editingStoreId, setEditingStoreId] = useState<string | null>(null);
-  const [stores, setStores] = useState<StoreData[]>([]);
 
-  // Load from storage
+  const dispatch = useDispatch<AppDispatch>();
+  const { stores, loading } = useSelector((state: RootState) => state.storages);
   useEffect(() => {
-    const init = () => {
-      if (!storage.has(STORAGE_KEYS.STORES)) {
-        storage.set(STORAGE_KEYS.STORES, initialStoreData);
-      }
-      const data = storage.get<StoreData[]>(STORAGE_KEYS.STORES, []);
-      setStores(Array.isArray(data) ? data : initialStoreData);
-    };
-    init();
-  }, []);
+    dispatch(fetchStores({ page: 1, limit: 100 }));
+  }, [dispatch]);
 
   const handleAdd = () => {
     setEditingStoreId(null);
@@ -97,8 +50,7 @@ const StoresManagement: React.FC = () => {
 
   const handleDelete = (id: string) => {
     if (window.confirm("Are you sure you want to delete this store?")) {
-      storage.deleteById(STORAGE_KEYS.STORES, id);
-      setStores(storage.get<StoreData[]>(STORAGE_KEYS.STORES, []));
+      dispatch(deleteStore(id));
     }
   };
 
@@ -108,17 +60,11 @@ const StoresManagement: React.FC = () => {
   };
 
   const handleSubmit = (formData: any) => {
-    const payload: StoreData = {
-      id: editingStoreId || Date.now().toString(),
+    const payload: Partial<StoreData> = {
       name: formData.name || "New Store",
       location: formData.location || "N/A",
       dailySales: Number(formData.dailySales) || 0,
       stock: Number(formData.stock) || 0,
-      categories: {
-        fashion: Number(formData.fashion) || 0,
-        electronics: Number(formData.electronics) || 0,
-        grocery: Number(formData.grocery) || 0,
-      },
       last7DaysSales: formData.last7DaysSales
         ? formData.last7DaysSales.split(',').map((v: string) => Number(v.trim())).filter(Boolean)
         : [0, 0, 0, 0, 0, 0, 0],
@@ -127,19 +73,15 @@ const StoresManagement: React.FC = () => {
       returns: Number(formData.returns) || 0,
       scrap: Number(formData.scrap) || 0,
       manager: formData.manager || "Unassigned",
-      transferHistory: formData.transferHistory
-        ? JSON.parse(formData.transferHistory || "[]")
-        : [],
+      transferHistory: formData.transferHistory ? JSON.parse(formData.transferHistory || "[]") : [],
       lowStockAlerts: formData.lowStockAlerts?.split(',').map((s: string) => s.trim()).filter(Boolean) || [],
     };
 
     if (editingStoreId) {
-      storage.updateById(STORAGE_KEYS.STORES, editingStoreId, payload);
+      dispatch(updateStore({ id: editingStoreId, data: payload }));
     } else {
-      storage.push(STORAGE_KEYS.STORES, payload);
+      dispatch(addStore(payload));
     }
-
-    setStores(storage.get<StoreData[]>(STORAGE_KEYS.STORES, []));
     handleCloseForm();
   };
 
@@ -148,10 +90,7 @@ const StoresManagement: React.FC = () => {
       name: initialData?.name || '',
       location: initialData?.location || '',
       dailySales: initialData?.dailySales?.toString() || '0',
-      stock: initialData?.stock?.toString() || '0',
-      fashion: initialData?.categories?.fashion?.toString() || '0',
-      electronics: initialData?.categories?.electronics?.toString() || '0',
-      grocery: initialData?.categories?.grocery?.toString() || '0',
+      stock: initialData?.stock?.toString() || '',
       last7DaysSales: initialData?.last7DaysSales?.join(', ') || '',
       fastMoving: initialData?.fastMoving?.join(', ') || '',
       slowMoving: initialData?.slowMoving?.join(', ') || '',
@@ -196,15 +135,6 @@ const StoresManagement: React.FC = () => {
               </div>
             </div>
 
-            <div>
-              <h3 className="font-semibold mb-3">Category-wise Stock</h3>
-              <div className="grid grid-cols-3 gap-4">
-                <input placeholder="Fashion" type="number" value={formData.fashion} onChange={handleChange('fashion')} className="px-4 py-3 border rounded-lg" />
-                <input placeholder="Electronics" type="number" value={formData.electronics} onChange={handleChange('electronics')} className="px-4 py-3 border rounded-lg" />
-                <input placeholder="Grocery" type="number" value={formData.grocery} onChange={handleChange('grocery')} className="px-4 py-3 border rounded-lg" />
-              </div>
-            </div>
-
             <div className="grid md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium mb-2">Fast Moving Items (comma separated)</label>
@@ -242,7 +172,7 @@ const StoresManagement: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">Transfer History (JSON format - optional)</label>
+              <label className="block text-sm font-medium mb-2">Transfer History (JSON - optional)</label>
               <textarea rows={4} value={formData.transferHistory} onChange={handleChange('transferHistory')} className="w-full px-4 py-3 border rounded-lg font-mono text-xs" placeholder='[{"date": "10 Jan 2025", "qty": 20, "from": "Main Warehouse"}]' />
             </div>
 
@@ -265,18 +195,20 @@ const StoresManagement: React.FC = () => {
           <Store className="text-green-600" />
           Retail Stores & Branches
         </h1>
-        <Button onClick={handleAdd} className="bg-green-600 hover:bg-green-700 flex items-center gap-2">
+        <Button onClick={handleAdd} className=" flex items-center gap-2">
           <Plus className="w-5 h-5" /> Add Store
         </Button>
       </div>
 
       {showStoreForm && (
-        <StoreForm initialData={editingStoreId ? stores.find(s => s.id === editingStoreId) : undefined} />
+        <StoreForm initialData={stores.find(s => s._id === editingStoreId)} />
       )}
+
+      {loading && <p className="text-center py-10">Loading stores...</p>}
 
       <Accordion type="single" collapsible className="space-y-6">
         {stores.map((store) => (
-          <AccordionItem key={store.id} value={store.id} className="border rounded-xl shadow-lg overflow-hidden bg-white">
+          <AccordionItem key={store._id} value={store._id} className="border rounded-xl shadow-lg overflow-hidden bg-white">
             <AccordionTrigger className="px-8 py-6 hover:bg-green-50 transition-colors">
               <div className="grid grid-cols-12 w-full items-center text-left gap-6">
                 <div className="col-span-4 font-bold text-lg flex items-center gap-3">
@@ -304,10 +236,10 @@ const StoresManagement: React.FC = () => {
 
             <AccordionContent className="px-8 py-8 bg-gradient-to-b from-green-50 to-white border-t">
               <div className="flex justify-end gap-3 mb-6">
-                <Button size="sm" variant="outline" onClick={() => handleEdit(store.id)}>
+                <Button size="sm" variant="outline" onClick={() => handleEdit(store._id)}>
                   <Edit className="w-4 h-4 mr-2" /> Edit
                 </Button>
-                <Button size="sm" variant="destructive" onClick={() => handleDelete(store.id)}>
+                <Button size="sm" variant="destructive" onClick={() => handleDelete(store._id)}>
                   <Trash2 className="w-4 h-4 mr-2" /> Delete
                 </Button>
               </div>

@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
-import { 
-  Package, 
-  Plus, 
-  Search, 
+import {
+  Package,
+  Plus,
+  Search,
   Upload,
   Download,
   Tag,
@@ -17,85 +16,29 @@ import {
   Minus,
   X
 } from 'lucide-react';
+import { useEffect, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import {
+  fetchProducts,
+  addProduct,
+  updateProduct,
+  deleteProduct,
+} from "@/redux/slices/productSlice";
+import { fetchWarehouses } from "@/redux/slices/warehouseSlice";
 
-// Mock data for demonstration
-const mockProducts = [
-  {
-    id: 'PRD-001',
-    name: 'Premium Steel Pipes',
-    category: 'Raw Materials',
-    sku: 'SKU-SP-001',
-    unitCost: 245.50,
-    quantity: 150,
-    minStock: 50,
-    location: 'Warehouse A',
-    status: 'in-stock',
-    lastUpdated: '2024-11-08'
-  },
-  {
-    id: 'PRD-002',
-    name: 'Industrial Bolts M10',
-    category: 'Components',
-    sku: 'SKU-BT-002',
-    unitCost: 0.85,
-    quantity: 25,
-    minStock: 100,
-    location: 'Warehouse B',
-    status: 'low-stock',
-    lastUpdated: '2024-11-05'
-  },
-  {
-    id: 'PRD-003',
-    name: 'Hydraulic Oil 5L',
-    category: 'Raw Materials',
-    sku: 'SKU-HO-003',
-    unitCost: 32.99,
-    quantity: 0,
-    minStock: 20,
-    location: 'Warehouse A',
-    status: 'out-of-stock',
-    lastUpdated: '2024-11-01'
-  },
-  {
-    id: 'PRD-004',
-    name: 'Safety Helmets',
-    category: 'Finished Goods',
-    sku: 'SKU-SH-004',
-    unitCost: 24.99,
-    quantity: 200,
-    minStock: 30,
-    location: 'Warehouse C',
-    status: 'in-stock',
-    lastUpdated: '2024-11-09'
-  },
-  {
-    id: 'PRD-005',
-    name: 'Circuit Breakers 20A',
-    category: 'Components',
-    sku: 'SKU-CB-005',
-    unitCost: 15.75,
-    quantity: 45,
-    minStock: 50,
-    location: 'Warehouse B',
-    status: 'low-stock',
-    lastUpdated: '2024-11-07'
-  },
-  {
-    id: 'PRD-006',
-    name: 'Welding Rods',
-    category: 'Raw Materials',
-    sku: 'SKU-WR-006',
-    unitCost: 8.50,
-    quantity: 500,
-    minStock: 100,
-    location: 'Warehouse A',
-    status: 'in-stock',
-    lastUpdated: '2024-11-10'
-  }
-];
+import { RootState, AppDispatch } from "@/redux/store";
+import { toast } from "sonner";
+
+
+
 
 const Products: React.FC = () => {
-  const [products] = useState(mockProducts);
+  const dispatch = useDispatch<AppDispatch>();
+
+  const { products, loading } = useSelector(
+    (state: RootState) => state.products
+  );
+
   const [statusFilter, setStatusFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('this-month');
@@ -105,16 +48,26 @@ const Products: React.FC = () => {
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editFormData, setEditFormData] = useState<any>(null);
+  const [addFormData, setAddFormData] = useState<any>({});
+
 
   const filteredInventory = products.filter(item => {
-    const matchesSearch = 
+    const matchesSearch =
       item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.id.toLowerCase().includes(searchTerm.toLowerCase());
+      item._id.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
     const matchesCategory = categoryFilter === 'all' || item.category === categoryFilter;
     return matchesSearch && matchesStatus && matchesCategory;
   });
+  const { warehouses } = useSelector((state: RootState) => state.warehouse);
+
+  useEffect(() => {
+    dispatch(fetchProducts());
+    dispatch(fetchWarehouses());
+  }, [dispatch]);
+
+
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -150,10 +103,23 @@ const Products: React.FC = () => {
     console.log('Export products');
   };
 
-  const handleAddProduct = () => {
-    console.log('Adding product...');
-    setShowAddProductForm(false);
+  const handleAddProduct = (form: any) => {
+    const organisationId = localStorage.getItem("organisationId");
+
+    dispatch(
+      addProduct({
+        ...form,
+        organisationId,
+      })
+    ).then((res: any) => {
+      if (!res.error) {
+        toast.success("Product added");
+        setShowAddProductForm(false);
+        dispatch(fetchProducts());
+      }
+    });
   };
+
 
   const handleViewProduct = (product: any) => {
     setSelectedProduct(product);
@@ -168,10 +134,19 @@ const Products: React.FC = () => {
   };
 
   const handleUpdateProduct = () => {
-    console.log('Updating product:', editFormData);
-    // Here you would update the product in your state/backend
-    setShowEditModal(false);
-    setEditFormData(null);
+    dispatch(
+      updateProduct({
+        id: editFormData._id || editFormData.id,
+        data: editFormData,
+      })
+    ).then((res: any) => {
+      if (!res.error) {
+        toast.success("Product updated");
+        setShowEditModal(false);
+        setEditFormData(null);
+        dispatch(fetchProducts());
+      }
+    });
   };
 
   const handleEditInputChange = (field: string, value: any) => {
@@ -197,7 +172,7 @@ const Products: React.FC = () => {
                 <X className="h-6 w-6" />
               </button>
             </div>
-            
+
             <div className="space-y-6">
               {/* Product Header */}
               <div className="flex items-start space-x-4 pb-6 border-b border-gray-200">
@@ -389,7 +364,7 @@ const Products: React.FC = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Category
                     </label>
-                    <select 
+                    <select
                       value={editFormData.category}
                       onChange={(e) => handleEditInputChange('category', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -457,7 +432,7 @@ const Products: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Status
                   </label>
-                  <select 
+                  <select
                     value={editFormData.status}
                     onChange={(e) => handleEditInputChange('status', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -527,7 +502,7 @@ const Products: React.FC = () => {
               <X className="h-6 w-6" />
             </button>
           </div>
-          
+
           <div className="space-y-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
@@ -618,11 +593,12 @@ const Products: React.FC = () => {
                 Cancel
               </button>
               <button
-                onClick={handleAddProduct}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                onClick={() => handleAddProduct(addFormData)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg"
               >
                 Add Product
               </button>
+
             </div>
           </div>
         </div>
@@ -652,21 +628,21 @@ const Products: React.FC = () => {
       {/* Product Actions */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
-          <button 
+          <button
             onClick={() => setShowAddProductForm(true)}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
           >
             <Plus className="h-4 w-4 mr-2" />
             Add Product
           </button>
-          <button 
+          <button
             onClick={handleImport}
             className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center"
           >
             <Upload className="h-4 w-4 mr-2" />
             Import
           </button>
-          <button 
+          <button
             onClick={handleExport}
             className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors flex items-center"
           >
@@ -724,100 +700,112 @@ const Products: React.FC = () => {
 
       {/* Products Table */}
       <div className="bg-white shadow rounded-lg overflow-hidden w-full">
-  <div className="overflow-x-auto w-full">
-    <table className="min-w-full divide-y divide-gray-200 table-auto">
+        <div className="overflow-x-auto w-full">
+          <table className="min-w-full divide-y divide-gray-200 table-auto">
 
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Product
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                SKU
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Category
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Location
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Quantity
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Unit Cost
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Total Value
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Status
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {filteredInventory.map((item) => (
-              <tr key={item.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="flex items-center">
-                    {getStatusIcon(item.status)}
-                    <div className="ml-4">
-                      <div className="text-sm font-medium text-gray-900">{item.name}</div>
-                      <div className="text-sm text-gray-500">Last updated: {item.lastUpdated}</div>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {item.sku}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {item.category}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  <div className="flex items-center">
-                    <MapPin className="h-4 w-4 text-gray-400 mr-1" />
-                    {item.location}
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  <div>
-                    <span className="font-medium">{item.quantity}</span>
-                    <span className="text-gray-500 ml-1">/ {item.minStock} min</span>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  ${item.unitCost.toFixed(2)}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  ${(item.quantity * item.unitCost).toLocaleString()}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(item.status)}`}>
-                    {item.status.replace('-', ' ')}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                  <button 
-                    onClick={() => handleViewProduct(item)}
-                    className="text-blue-600 hover:text-blue-900 mr-3"
-                    title="View Details"
-                  >
-                    <Eye className="h-4 w-4" />
-                  </button>
-                  <button className="text-green-600 hover:text-green-900 mr-3" title="Edit">
-                    <Edit className="h-4 w-4" />
-                  </button>
-                  <button className="text-red-600 hover:text-red-900" title="Delete">
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </td>
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Product
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  SKU
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Category
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Location
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Quantity
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Unit Cost
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Total Value
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredInventory.map((item) => (
+                <tr key={item.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center">
+                      {getStatusIcon(item.status)}
+                      <div className="ml-4">
+                        <div className="text-sm font-medium text-gray-900">{item.name}</div>
+                        <div className="text-sm text-gray-500">Last updated: {item.lastUpdated}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {item.sku}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {item.category}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <div className="flex items-center">
+                      <MapPin className="h-4 w-4 text-gray-400 mr-1" />
+                      {item.location}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <div>
+                      <span className="font-medium">{item.quantity}</span>
+                      <span className="text-gray-500 ml-1">/ {item.minStock} min</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    ${item.unitCost.toFixed(2)}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    ${(item.quantity * item.unitCost).toLocaleString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(item.status)}`}>
+                      {item.status.replace('-', ' ')}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <button
+                      onClick={() => handleViewProduct(item)}
+                      className="text-blue-600 hover:text-blue-900 mr-3"
+                      title="View Details"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </button>
+                    <button className="text-green-600 hover:text-green-900 mr-3" title="Edit">
+                      <Edit className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        dispatch(deleteProduct(item._id || item.id)).then((res: any) => {
+                          if (!res.error) {
+                            toast.success("Product deleted");
+                            dispatch(fetchProducts());
+                          }
+                        });
+                      }}
+                      className="text-red-600 hover:text-red-900"
+                      title="Delete"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

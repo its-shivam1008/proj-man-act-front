@@ -13,6 +13,8 @@ import poReducer from "./slices/prSlice";
 import billingReducer from "./slices/billingSlice";
 import dailyProgressReducer from "./slices/dailyProgressSlice";
 import warehouseReducer from "./slices/warehouseSlice";
+import storageReducer from "./slices/storageSlice";
+import productsReducer from "./slices/productSlice";
 export const store = configureStore({
   reducer: {
     auth: authReducer,
@@ -29,6 +31,8 @@ export const store = configureStore({
     dailyProgress: dailyProgressReducer,
     billing: billingReducer,
     warehouse: warehouseReducer,
+    storages: storageReducer,
+    products: productsReducer,
   },
 });
 
