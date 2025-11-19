@@ -1,6 +1,14 @@
-import { useState, useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
 import { Button } from "@/components/ui/button";
+import { RootState, AppDispatch } from "@/redux/store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  fetchProjects,
+  addProject,
+  updateProject,
+  deleteProject,
+} from "@/redux/slices/projectSlice";
 import {
   Dialog,
   DialogContent,
@@ -19,7 +27,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -28,14 +35,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Pencil, Trash2, DollarSign, AlertTriangle } from "lucide-react";
-import {
-  getFromStorage,
-  saveToStorage,
-  generateId,
-  STORAGE_KEYS,
-} from "@/utils/localStorage"; // Corrected import path
+import { AlertTriangle, DollarSign, Pencil, Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { fetchWbsByProject } from "@/redux/slices/wbsSlice";
+import {
+  fetchResources,
+  addResource,
+  updateResource,
+  deleteResource,
+} from "@/redux/slices/resourceSlice";
 
 // --- Mock Master Data Keys ---
 // These simulate data from other modules
@@ -64,7 +72,9 @@ interface WBSItem {
   startDate?: string;
   endDate?: string;
   plannedCost?: number;
-  actualCost: number; }
+  actualCost: number; // We will update this
+  // ... other wbs fields
+}
 
 // Master Resource Types
 interface Manpower {
@@ -96,445 +106,346 @@ interface ResourceAllocation {
   id: string;
   projectId: string;
   wbsId: string;
-  resourceType: "manpower" | "material" | "equipment";
-  resourceId: string; // ID from one of the master lists
-  resourceName: string; // Denormalized for display
-  wbsName: string; // Denormalized for display
-  quantity: number;
-  rate: number;
+  resourceType: ResourceAllocation["resourceType"] | "";
+  resourceName: string;
+  resourceId: string;
+  quantity: string;
+  rate: string;
   unit: string;
-  duration: number; // In hours or units depending on resource
-  durationUnit: string; // 'hours', 'days', or the material unit
-  totalCost: number;
-  startDate: string; // Copied from WBS item for overlap checks
-  endDate: string; // Copied from WBS item for overlap checks
-  createdAt: string;
-}
-
-// --- Helper Function to Setup Mock Data ---
-const setupMockData = () => {
-  // 1. Manpower (from HR Module)
-  if (getFromStorage(MOCK_DATA_KEYS.HR_MANPOWER).length === 0) {
-    const mockManpower: Manpower[] = [
-      { id: generateId(), name: "John Doe", skill: "Civil Engineer", rate: 100, unit: "hour" },
-      { id: generateId(), name: "Jane Smith", skill: "Site Supervisor", rate: 80, unit: "hour" },
-      { id: generateId(), name: "Bob Johnson", skill: "Skilled Laborer", rate: 40, unit: "hour" },
-      { id: generateId(), name: "Alice Brown", skill: "Electrician", rate: 70, unit: "hour" },
-    ];
-    saveToStorage(MOCK_DATA_KEYS.HR_MANPOWER, mockManpower);
-  }
-
-  // 2. Materials (from Inventory Module)
-  if (getFromStorage(MOCK_DATA_KEYS.INVENTORY_ITEMS).length === 0) {
-    const mockMaterials: Material[] = [
-      { id: generateId(), name: "Cement (50kg Bag)", rate: 350, unit: "bag", inStock: 1000 },
-      { id: generateId(), name: "TMT Steel (Ton)", rate: 45000, unit: "ton", inStock: 50 },
-      { id: generateId(), name: "Sand (Cubic Meter)", rate: 1200, unit: "m³", inStock: 200 },
-      { id: generateId(), name: "Bricks (per 1000)", rate: 5000, unit: "1000 units", inStock: 100 },
-    ];
-    saveToStorage(MOCK_DATA_KEYS.INVENTORY_ITEMS, mockMaterials);
-  }
-
-  // 3. Equipment (from Asset Module)
-  if (getFromStorage(MOCK_DATA_KEYS.ASSETS_EQUIPMENT).length === 0) {
-    const mockEquipment: Equipment[] = [
-      { id: generateId(), name: "Excavator-01", rate: 2500, unit: "hour", status: "available" },
-      { id: generateId(), name: "Concrete Mixer-01", rate: 800, unit: "hour", status: "available" },
-      { id: generateId(), name: "Dump Truck-01", rate: 1500, unit: "hour", status: "available" },
-      { id: generateId(), name: "Crane-01", rate: 4000, unit: "hour", status: "maintenance" },
-    ];
-    saveToStorage(MOCK_DATA_KEYS.ASSETS_EQUIPMENT, mockEquipment);
-  }
+  duration: string;
+  durationUnit: string;
 };
 
-// --- Main Component ---
-export default function Resources() {
-  // State for this page's data
-  const [allocations, setAllocations] = useState<ResourceAllocation[]>([]);
-  
-  // State for data from other "modules"
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [wbsItems, setWbsItems] = useState<WBSItem[]>([]);
-  const [manpower, setManpower] = useState<Manpower[]>([]);
-  const [materials, setMaterials] = useState<Material[]>([]);
-  const [equipment, setEquipment] = useState<Equipment[]>([]);
+const EMPTY_FORM: AllocationFormState = {
+  wbsId: "",
+  resourceType: "",
+  resourceName: "",
+  resourceId: "",
+  quantity: "",
+  rate: "",
+  unit: "",
+  duration: "",
+  durationUnit: "hours",
+};
 
-  // UI State
-  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingAllocation, setEditingAllocation] = useState<ResourceAllocation | null>(null);
-  const [formData, setFormData] = useState<Partial<ResourceAllocation>>({});
-  
+const DEFAULT_PROJECT_QUERY = {
+  page: 1,
+  limit: 50,
+  status: "all",
+  search: "",
+};
+
+export default function Resources() {
+  const dispatch = useDispatch<AppDispatch>();
   const { toast } = useToast();
 
-  // Load all data on component mount
+  const { projects } = useSelector((state: RootState) => state.projects);
+  const { wbs, loading: wbsLoading } = useSelector((state: RootState) => state.wbs);
+  const {
+    resources,
+    loading: resourcesLoading,
+  } = useSelector((state: RootState) => state.resources);
+
+  const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingAllocation, setEditingAllocation] = useState<ResourceAllocation | null>(null);
+  const [formData, setFormData] = useState<AllocationFormState>(EMPTY_FORM);
+  const [submitting, setSubmitting] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const PAGE_SIZE = 10;
+
   useEffect(() => {
-    setupMockData(); // Ensure mock data exists
-    loadData();
-  }, []);
-
-  const loadData = () => {
-    setProjects(getFromStorage<Project>(STORAGE_KEYS.PROJECTS));
-    setWbsItems(getFromStorage<WBSItem>(STORAGE_KEYS.WBS_ITEMS));
-    setAllocations(getFromStorage<ResourceAllocation>(STORAGE_KEYS.RESOURCES)); // This page now owns the 'RESOURCES' key
-    setManpower(getFromStorage<Manpower>(MOCK_DATA_KEYS.HR_MANPOWER));
-    setMaterials(getFromStorage<Material>(MOCK_DATA_KEYS.INVENTORY_ITEMS));
-    setEquipment(getFromStorage<Equipment>(MOCK_DATA_KEYS.ASSETS_EQUIPMENT));
-  };
-
-  // --- Date Overlap Helper ---
-  const isDateOverlap = (start1: string, end1: string, start2: string, end2: string): boolean => {
-    if (!start1 || !end1 || !start2 || !end2) return false; // Can't check if dates are missing
-    const s1 = new Date(start1).getTime();
-    const e1 = new Date(end1).getTime();
-    const s2 = new Date(start2).getTime();
-    const e2 = new Date(end2).getTime();
-    return (s1 < e2 && e1 > s2);
-  };
-
-  // --- Cost Update Helper (Integration) ---
-  const updateProjectAndWBSCosts = (projectId: string, currentAllocations: ResourceAllocation[]) => {
-    let allProjects = getFromStorage<Project>(STORAGE_KEYS.PROJECTS);
-    let allWbsItems = getFromStorage<WBSItem>(STORAGE_KEYS.WBS_ITEMS);
-
-    // 1. Update WBS Items
-    allWbsItems = allWbsItems.map(wbs => {
-      if (wbs.projectId === projectId) {
-        const wbsAllocations = currentAllocations.filter(a => a.wbsId === wbs.id);
-        const newActualCost = wbsAllocations.reduce((sum, a) => sum + a.totalCost, 0);
-        return { ...wbs, actualCost: newActualCost };
-      }
-      return wbs;
-    });
-
-    // 2. Update Project
-    allProjects = allProjects.map(proj => {
-      if (proj.id === projectId) {
-        const projectAllocations = currentAllocations.filter(a => a.projectId === proj.id);
-        const newActualCost = projectAllocations.reduce((sum, a) => sum + a.totalCost, 0);
-        return { ...proj, actualCost: newActualCost };
-      }
-      return proj;
-    });
-
-    // 3. Save updated data
-    saveToStorage(STORAGE_KEYS.WBS_ITEMS, allWbsItems);
-    saveToStorage(STORAGE_KEYS.PROJECTS, allProjects);
-
-    // 4. Refresh local state
-    setProjects(allProjects);
-    setWbsItems(allWbsItems);
-  };
-
-  // --- Main Save Handler ---
-  const handleSave = () => {
-    if (!formData.projectId || !formData.wbsId || !formData.resourceType || !formData.resourceId || !formData.quantity || !formData.duration) {
-      toast({
-        title: "Validation Error",
-        description: "Please fill in all required fields.",
-        variant: "destructive",
-      });
-      return;
+    if (!projects.length) {
+      dispatch(fetchProjects(DEFAULT_PROJECT_QUERY as any));
     }
+  }, [dispatch, projects.length]);
 
-    const selectedWBS = wbsItems.find(w => w.id === formData.wbsId);
-    if (!selectedWBS) {
-      toast({ title: "Error", description: "WBS Item not found.", variant: "destructive" });
-      return;
+  useEffect(() => {
+    if (!selectedProjectId && projects.length) {
+      setSelectedProjectId(projects[0]._id ?? projects[0].id);
     }
+  }, [projects, selectedProjectId]);
 
-    const wbsStartDate = selectedWBS.startDate || "";
-    const wbsEndDate = selectedWBS.endDate || "";
-
-    // --- Double-Booking & Inventory Checks ---
-    if (formData.resourceType === "manpower" || formData.resourceType === "equipment") {
-      const otherAllocations = allocations.filter(
-        a => a.resourceId === formData.resourceId && a.id !== editingAllocation?.id
-      );
-      
-      for (const other of otherAllocations) {
-        if (isDateOverlap(wbsStartDate, wbsEndDate, other.startDate, other.endDate)) {
-          toast({
-            title: "Booking Conflict",
-            description: `${formData.resourceName} is already booked for WBS task "${other.wbsName}" during this time.`,
-            variant: "destructive",
-          });
-          return;
-        }
-      }
-    } else if (formData.resourceType === "material") {
-      const material = materials.find(m => m.id === formData.resourceId);
-      const originalQty = editingAllocation ? editingAllocation.quantity : 0;
-      const netChange = formData.quantity - originalQty;
-
-      if (material && material.inStock < netChange) {
-        toast({
-          title: "Inventory Check Failed",
-          description: `Only ${material.inStock} ${material.unit}(s) of ${material.name} available.`,
-          variant: "destructive",
-        });
-        return;
-      }
+  useEffect(() => {
+    if (selectedProjectId) {
+      dispatch(fetchWbsByProject(selectedProjectId));
+      dispatch(fetchResources(selectedProjectId));
     }
-    // --- End Checks ---
+  }, [dispatch, selectedProjectId]);
 
-    const totalCost = (formData.quantity || 0) * (formData.rate || 0) * (formData.duration || 0);
+  const selectedProject = useMemo(() => {
+    return projects.find((p: any) => (p._id ?? p.id) === selectedProjectId);
+  }, [projects, selectedProjectId]);
 
-    let updatedAllocations: ResourceAllocation[];
-    const now = new Date().toISOString();
+  const projectWBSItems = useMemo(() => {
+    if (!selectedProjectId) return [];
+    return wbs.filter((item) => item.projectId === selectedProjectId);
+  }, [wbs, selectedProjectId]);
 
-    let updatedMaterials = [...materials]; // For stock updates
+  const calculatedTotalCost = useMemo(() => {
+    const quantity = Number(formData.quantity) || 0;
+    const rate = Number(formData.rate) || 0;
+    const duration = Number(formData.duration) || 0;
 
-    if (editingAllocation) {
-      // Handle inventory change on edit
-      if (formData.resourceType === 'material') {
-        const original = allocations.find(a => a.id === editingAllocation.id);
-        if (original && original.resourceId === formData.resourceId) {
-          const qtyChange = formData.quantity - original.quantity;
-          updatedMaterials = updatedMaterials.map(m => 
-            m.id === formData.resourceId ? { ...m, inStock: m.inStock - qtyChange } : m
-          );
-        } else {
-          // Resource changed, TODO: more complex logic to revert old and apply new
-          toast({ title: "Warning", description: "Changing material type on edit is complex. Re-add if needed."});
-        }
-      }
-      
-      updatedAllocations = allocations.map((r) =>
-        r.id === editingAllocation.id
-          ? { ...editingAllocation, ...formData, totalCost, startDate: wbsStartDate, endDate: wbsEndDate } as ResourceAllocation
-          : r
-      );
-      toast({ title: "Success", description: "Allocation updated successfully" });
-    } else {
-      // Handle inventory change on create
-      if (formData.resourceType === 'material') {
-        updatedMaterials = updatedMaterials.map(m => 
-          m.id === formData.resourceId ? { ...m, inStock: m.inStock - formData.quantity! } : m
-        );
-      }
+    return quantity * rate * duration;
+  }, [formData]);
 
-      const newAllocation: ResourceAllocation = {
-        ...formData,
-        id: generateId(),
-        totalCost,
-        startDate: wbsStartDate,
-        endDate: wbsEndDate,
-        createdAt: now,
-      } as ResourceAllocation;
-      updatedAllocations = [...allocations, newAllocation];
-      toast({ title: "Success", description: "Resource allocated successfully" });
-    }
-
-    // Save all changes
-    saveToStorage(STORAGE_KEYS.RESOURCES, updatedAllocations);
-    setAllocations(updatedAllocations);
-
-    if (formData.resourceType === 'material') {
-      saveToStorage(MOCK_DATA_KEYS.INVENTORY_ITEMS, updatedMaterials);
-      setMaterials(updatedMaterials);
-    }
-    
-    // This is the integration step
-    updateProjectAndWBSCosts(formData.projectId, updatedAllocations);
-
-    setIsDialogOpen(false);
-    resetForm();
-  };
-
-  const handleDelete = (id: string) => {
-    const allocation = allocations.find(a => a.id === id);
-    if (!allocation) return;
-
-    let updatedAllocations = allocations.filter((r) => r.id !== id);
-    let updatedMaterials = [...materials];
-
-    // Restore stock on delete
-    if (allocation.resourceType === 'material') {
-      updatedMaterials = updatedMaterials.map(m => 
-        m.id === allocation.resourceId ? { ...m, inStock: m.inStock + allocation.quantity } : m
-      );
-      saveToStorage(MOCK_DATA_KEYS.INVENTORY_ITEMS, updatedMaterials);
-      setMaterials(updatedMaterials);
-    }
-
-    saveToStorage(STORAGE_KEYS.RESOURCES, updatedAllocations);
-    setAllocations(updatedAllocations);
-
-    // Re-run cost calculation
-    updateProjectAndWBSCosts(allocation.projectId, updatedAllocations);
-    
-    toast({ title: "Success", description: "Allocation removed successfully" });
-  };
-
-  const openEditDialog = (allocation: ResourceAllocation) => {
-    setEditingAllocation(allocation);
-    setFormData(allocation);
-    setIsDialogOpen(true);
+  const resetForm = () => {
+    setEditingAllocation(null);
+    setFormData(EMPTY_FORM);
+    setSubmitting(false);
   };
 
   const openCreateDialog = () => {
     if (!selectedProjectId) return;
     resetForm();
-    setFormData({ projectId: selectedProjectId });
     setIsDialogOpen(true);
   };
 
-  const resetForm = () => {
-    setEditingAllocation(null);
-    setFormData({});
+  const openEditDialog = (allocation: ResourceAllocation) => {
+    setEditingAllocation(allocation);
+    setFormData({
+      wbsId: allocation.wbsId,
+      resourceType: allocation.resourceType,
+      resourceId: allocation.resourceId,
+      resourceName: allocation.resourceName,
+      quantity: allocation.quantity.toString(),
+      rate: allocation.rate.toString(),
+      unit: allocation.unit,
+      duration: allocation.duration.toString(),
+      durationUnit: allocation.durationUnit,
+    });
+    setIsDialogOpen(true);
   };
 
-  // --- Dynamic Form Handlers ---
-  const handleWBSSelect = (wbsId: string) => {
-    const wbs = wbsItems.find(w => w.id === wbsId);
-    if (wbs) {
-      setFormData(prev => ({ ...prev, wbsId, wbsName: wbs.name }));
+  const handleSave = async () => {
+    if (!selectedProjectId) return;
+
+    if (
+      !formData.wbsId ||
+      !formData.resourceType ||
+      !formData.resourceName.trim() ||
+      !formData.resourceId.trim() ||
+      !formData.unit.trim() ||
+      !formData.quantity ||
+      !formData.rate ||
+      !formData.duration
+    ) {
+      toast({
+        title: "Validation error",
+        description: "Please fill every required field.",
+        variant: "destructive",
+      });
+      return;
     }
-  };
 
-  const handleResourceTypeSelect = (type: ResourceAllocation["resourceType"]) => {
-    setFormData(prev => ({
-      ...prev,
-      resourceType: type,
-      resourceId: undefined,
-      resourceName: undefined,
-      rate: undefined,
-      unit: undefined,
-      durationUnit: type === 'material' ? 'units' : 'hours'
-    }));
-  };
-
-  const handleResourceSelect = (resourceId: string) => {
-    let resource: Manpower | Material | Equipment | undefined;
-    let name: string = "";
-    let rate: number = 0;
-    let unit: string = "";
-
-    if (formData.resourceType === "manpower") {
-      resource = manpower.find(r => r.id === resourceId);
-      if (resource) {
-        name = resource.name;
-        rate = resource.rate;
-        unit = resource.unit;
-      }
-    } else if (formData.resourceType === "material") {
-      resource = materials.find(r => r.id === resourceId);
-      if (resource) {
-        name = resource.name;
-        rate = resource.rate;
-        unit = resource.unit;
-      }
-    } else if (formData.resourceType === "equipment") {
-      resource = equipment.find(r => r.id === resourceId);
-      if (resource) {
-        name = resource.name;
-        rate = resource.rate;
-        unit = resource.unit;
-      }
+    const wbsItem = projectWBSItems.find((item) => item.id === formData.wbsId || item._id === formData.wbsId);
+    if (!wbsItem) {
+      toast({
+        title: "Invalid WBS",
+        description: "Selected WBS item is not available.",
+        variant: "destructive",
+      });
+      return;
     }
-    
-    setFormData(prev => ({
-      ...prev,
-      resourceId,
-      resourceName: name,
+
+    const quantity = Number(formData.quantity);
+    const rate = Number(formData.rate);
+    const duration = Number(formData.duration);
+
+    if (Number.isNaN(quantity) || Number.isNaN(rate) || Number.isNaN(duration)) {
+      toast({
+        title: "Validation error",
+        description: "Quantity, rate and duration must be numeric.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const payload = {
+      projectId: selectedProjectId,
+      wbsId: wbsItem.id ?? wbsItem._id,
+      wbsName: wbsItem.name,
+      resourceType: formData.resourceType,
+      resourceName: formData.resourceName.trim(),
+      resourceId: formData.resourceId.trim(),
+      quantity,
       rate,
-      unit,
-      durationUnit: formData.resourceType === 'material' ? unit : 'hours'
+      unit: formData.unit.trim(),
+      duration,
+      durationUnit: formData.durationUnit.trim() || (formData.resourceType === "material" ? formData.unit : "hours"),
+      totalCost: quantity * rate * duration,
+      startDate: wbsItem.startDate,
+      endDate: wbsItem.endDate,
+      createdAt: editingAllocation?.createdAt ?? new Date().toISOString(),
+    };
+
+    setSubmitting(true);
+    try {
+      if (editingAllocation) {
+        await dispatch(
+          updateResource({ id: editingAllocation._id, data: payload })
+        ).unwrap();
+        toast({ title: "Success", description: "Allocation updated successfully." });
+      } else {
+        await dispatch(addResource(payload)).unwrap();
+        toast({ title: "Success", description: "Allocation created successfully." });
+      }
+      setIsDialogOpen(false);
+      resetForm();
+    } catch (err: any) {
+      toast({
+        title: "Request failed",
+        description: err ?? "Please try again later.",
+        variant: "destructive",
+      });
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this allocation?")) return;
+    try {
+      await dispatch(deleteResource(id)).unwrap();
+      toast({ title: "Deleted", description: "Allocation deleted." });
+    } catch (err: any) {
+      toast({
+        title: "Delete failed",
+        description: err ?? "Unable to delete allocation.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleResourceTypeChange = (value: ResourceAllocation["resourceType"]) => {
+    setFormData((prev) => ({
+      ...prev,
+      resourceType: value,
+      durationUnit: value === "material" ? prev.unit || "units" : "hours",
     }));
   };
 
-  // --- Memoized Values for Performance ---
-  const selectedProject = useMemo(() => {
-    return projects.find(p => p.id === selectedProjectId);
-  }, [projects, selectedProjectId]);
+  const handleProjectChange = (projectId: string) => {
+    setSelectedProjectId(projectId);
+    resetForm();
+  };
 
-  const projectWBSItems = useMemo(() => {
-    if (!selectedProjectId) return [];
-    // Only allow allocating to tasks and subtasks
-    return wbsItems.filter(w => w.projectId === selectedProjectId && (w.type === 'task' || w.type === 'subtask'));
-  }, [wbsItems, selectedProjectId]);
+  const allocationsForView = selectedProjectId ? resources : [];
 
-  const projectAllocations = useMemo(() => {
-    if (!selectedProjectId) return [];
-    return allocations.filter(a => a.projectId === selectedProjectId);
-  }, [allocations, selectedProjectId]);
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedProjectId, resources.length]);
 
-  const dynamicResourceList = useMemo(() => {
-    switch (formData.resourceType) {
-      case "manpower": return manpower;
-      case "material": return materials;
-      case "equipment": return equipment.filter(e => e.status !== 'maintenance'); // Can book available/booked (for check)
-      default: return [];
-    }
-  }, [formData.resourceType, manpower, materials, equipment]);
+  const totalPages = Math.max(1, Math.ceil(allocationsForView.length / PAGE_SIZE));
 
-  const calculatedTotalCost = (formData.quantity || 0) * (formData.rate || 0) * (formData.duration || 0);
+  const paginatedAllocations = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return allocationsForView.slice(start, start + PAGE_SIZE);
+  }, [allocationsForView, currentPage]);
+
+  const pageNumbers = useMemo(
+    () => Array.from({ length: totalPages }, (_, index) => index + 1),
+    [totalPages]
+  );
+
+  const handlePageChange = (direction: "prev" | "next") => {
+    setCurrentPage((prev) => {
+      if (direction === "prev") return Math.max(1, prev - 1);
+      return Math.min(totalPages, prev + 1);
+    });
+  };
 
   return (
     <div className="space-y-6 p-4 md:p-6">
-      {/* Header */}
       <div className="flex flex-col md:flex-row items-center justify-between space-y-4 md:space-y-0">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-foreground">
             Resource Planning & Allocation
           </h2>
           <p className="text-muted-foreground">
-            Assign manpower, materials, and equipment to WBS tasks.
+            Create, update and delete allocations backed by the API.
           </p>
         </div>
         <div className="flex w-full md:w-auto gap-4">
           <Select
-            value={selectedProjectId}
-            onValueChange={setSelectedProjectId}
+            value={selectedProjectId || undefined}
+            onValueChange={handleProjectChange}
+            disabled={!projects.length}
           >
             <SelectTrigger className="w-full md:w-64">
-              <SelectValue placeholder="Select a Project" />
+              <SelectValue placeholder="Select a project" />
             </SelectTrigger>
             <SelectContent>
-              {projects.map((project) => (
-                <SelectItem key={project.id} value={project.id}>
-                  {project.name}
-                </SelectItem>
-              ))}
+              {projects.map((project: any) => {
+                const value = project._id ?? project.id;
+                return (
+                  <SelectItem key={value} value={value}>
+                    {project.name}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
 
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
-              <Button onClick={openCreateDialog} disabled={!selectedProjectId} className="w-full md:w-auto">
+              <Button
+                onClick={openCreateDialog}
+                disabled={!selectedProjectId || !projectWBSItems.length}
+                className="w-full md:w-auto"
+              >
                 <Plus className="mr-2 h-4 w-4" />
                 New Allocation
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>{editingAllocation ? "Edit Allocation" : "Create New Allocation"}</DialogTitle>
-                <DialogDescription>Assign a resource to a specific WBS task.</DialogDescription>
+                <DialogTitle>
+                  {editingAllocation ? "Edit allocation" : "Create allocation"}
+                </DialogTitle>
+                <DialogDescription>
+                  Assign resources to a specific WBS task.
+                </DialogDescription>
               </DialogHeader>
+
               <div className="grid gap-4 py-4">
-                {/* WBS and Resource Type */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="wbsId">WBS Task *</Label>
-                    <Select onValueChange={handleWBSSelect} value={formData.wbsId}>
+                    <Label>WBS Task *</Label>
+                    <Select
+                      value={formData.wbsId || undefined}
+                      onValueChange={(value) =>
+                        setFormData((prev) => ({ ...prev, wbsId: value }))
+                      }
+                      disabled={!projectWBSItems.length || wbsLoading}
+                    >
                       <SelectTrigger>
-                        <SelectValue placeholder="Select a WBS task" />
+                        <SelectValue placeholder={wbsLoading ? "Loading..." : "Select WBS"} />
                       </SelectTrigger>
                       <SelectContent>
-                        {projectWBSItems.length > 0 ? projectWBSItems.map((wbs) => (
-                          <SelectItem key={wbs.id} value={wbs.id}>
-                            {wbs.name} ({wbs.type})
-                          </SelectItem>
-                        )) : <div className="p-4 text-sm text-muted-foreground">No tasks for this project.</div>}
+                        {projectWBSItems.length ? (
+                          projectWBSItems.map((item) => (
+                            <SelectItem key={item.id} value={item.id}>
+                              {item.name}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <div className="p-3 text-sm text-muted-foreground">
+                            No WBS items available for this project.
+                          </div>
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="resourceType">Resource Type *</Label>
-                    <Select onValueChange={handleResourceTypeSelect} value={formData.resourceType}>
+                    <Label>Resource Type *</Label>
+                    <Select
+                      value={formData.resourceType || undefined}
+                      onValueChange={(value: any) => handleResourceTypeChange(value)}
+                    >
                       <SelectTrigger>
-                        <SelectValue placeholder="Select resource type" />
+                        <SelectValue placeholder="Choose type" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="manpower">Manpower</SelectItem>
@@ -545,74 +456,113 @@ export default function Resources() {
                   </div>
                 </div>
 
-                {/* Resource Selection */}
-                <div className="space-y-2">
-                  <Label htmlFor="resourceId">Resource *</Label>
-                  <Select onValueChange={handleResourceSelect} value={formData.resourceId} disabled={!formData.resourceType}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a resource" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {dynamicResourceList.map((r: any) => (
-                        <SelectItem key={r.id} value={r.id}>
-                          {r.name} 
-                          {r.skill ? ` (${r.skill})` : ''}
-                          {r.inStock !== undefined ? ` (In Stock: ${r.inStock})` : ''}
-                          {r.status ? ` (${r.status})` : ''}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Resource Name *</Label>
+                    <Input
+                      value={formData.resourceName}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, resourceName: e.target.value }))
+                      }
+                      placeholder="e.g. Crane - 1"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Resource Code / ID *</Label>
+                    <Input
+                      value={formData.resourceId}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, resourceId: e.target.value }))
+                      }
+                      placeholder="Unique identifier"
+                    />
+                  </div>
                 </div>
 
-                {/* Quantity, Rate, Duration */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="quantity">Quantity *</Label>
-                    <Input id="quantity" type="number" value={formData.quantity || ""}
-                      onChange={(e) => setFormData({ ...formData, quantity: parseFloat(e.target.value) })}
-                      placeholder="e.g., 2" />
+                    <Label>Quantity *</Label>
+                    <Input
+                      type="number"
+                      value={formData.quantity}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, quantity: e.target.value }))
+                      }
+                      placeholder="2"
+                    />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="rate">Rate (₹) *</Label>
-                    <Input id="rate" type="number" value={formData.rate || ""}
-                      onChange={(e) => setFormData({ ...formData, rate: parseFloat(e.target.value) })}
-                      placeholder="e.g., 100" />
-                  </div>
-                   <div className="space-y-2">
-                    <Label htmlFor="duration">Usage/Duration *</Label>
-                    <Input id="duration" type="number" value={formData.duration || ""}
-                      onChange={(e) => setFormData({ ...formData, duration: parseFloat(e.target.value) })}
-                      placeholder="e.g., 40" />
+                    <Label>Rate (₹) *</Label>
+                    <Input
+                      type="number"
+                      value={formData.rate}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, rate: e.target.value }))
+                      }
+                      placeholder="1000"
+                    />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="durationUnit">Unit</Label>
-                    <Input id="durationUnit" value={formData.durationUnit || ""}
-                     onChange={(e) => setFormData({ ...formData, durationUnit: e.target.value })}
-                     placeholder={formData.resourceType === 'material' ? 'units' : 'hours'}/>
+                    <Label>Duration *</Label>
+                    <Input
+                      type="number"
+                      value={formData.duration}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, duration: e.target.value }))
+                      }
+                      placeholder="8"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Duration Unit *</Label>
+                    <Input
+                      value={formData.durationUnit}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, durationUnit: e.target.value }))
+                      }
+                      placeholder={formData.resourceType === "material" ? "units" : "hours"}
+                    />
                   </div>
                 </div>
 
-                {/* Total Cost */}
-                <div className="space-y-2">
-                  <Label>Total Cost</Label>
-                  <Input
-                    value={`₹ ${calculatedTotalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                    disabled
-                    className="font-bold text-lg"
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Unit *</Label>
+                    <Input
+                      value={formData.unit}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, unit: e.target.value }))
+                      }
+                      placeholder="hours / tons / bags"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Total Cost</Label>
+                    <Input
+                      value={`₹ ${calculatedTotalCost.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}`}
+                      disabled
+                      className="font-semibold"
+                    />
+                  </div>
                 </div>
               </div>
+
               <DialogFooter>
-                <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-                <Button onClick={handleSave}>Save Allocation</Button>
+                <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={submitting}>
+                  Cancel
+                </Button>
+                <Button onClick={handleSave} disabled={submitting}>
+                  {submitting ? "Saving..." : "Save Allocation"}
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
       </div>
 
-      {/* Project Summary Card */}
       {selectedProject && (
         <Card className="bg-gray-50">
           <CardHeader>
@@ -626,29 +576,41 @@ export default function Resources() {
               <div>
                 <Label className="text-sm">Original Budget</Label>
                 <p className="text-2xl font-bold">
-                  ₹ {selectedProject.budget.toLocaleString()}
+                  ₹ {(selectedProject.budget ?? 0).toLocaleString()}
                 </p>
               </div>
             </div>
-             <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-3">
               <div className="p-3 rounded-full bg-yellow-100 text-yellow-600">
                 <DollarSign className="h-6 w-6" />
               </div>
               <div>
                 <Label className="text-sm">Total Allocated Cost</Label>
                 <p className="text-2xl font-bold">
-                  ₹ {selectedProject.actualCost.toLocaleString()}
+                  ₹ {(selectedProject.actualCost ?? 0).toLocaleString()}
                 </p>
               </div>
             </div>
-             <div className="flex items-center space-x-3">
-              <div className={`p-3 rounded-full ${selectedProject.actualCost > selectedProject.budget ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
+            <div className="flex items-center space-x-3">
+              <div
+                className={`p-3 rounded-full ${
+                  (selectedProject.actualCost ?? 0) > (selectedProject.budget ?? 0)
+                    ? "bg-red-100 text-red-600"
+                    : "bg-green-100 text-green-600"
+                }`}
+              >
                 <AlertTriangle className="h-6 w-6" />
               </div>
               <div>
                 <Label className="text-sm">Remaining Budget</Label>
-                <p className={`text-2xl font-bold ${selectedProject.actualCost > selectedProject.budget ? 'text-red-600' : 'text-green-600'}`}>
-                  ₹ {(selectedProject.budget - selectedProject.actualCost).toLocaleString()}
+                <p
+                  className={`text-2xl font-bold ${
+                    (selectedProject.actualCost ?? 0) > (selectedProject.budget ?? 0)
+                      ? "text-red-600"
+                      : "text-green-600"
+                  }`}
+                >
+                  ₹ {((selectedProject.budget ?? 0) - (selectedProject.actualCost ?? 0)).toLocaleString()}
                 </p>
               </div>
             </div>
@@ -656,7 +618,6 @@ export default function Resources() {
         </Card>
       )}
 
-      {/* Allocations Table */}
       <Card>
         <CardHeader>
           <CardTitle>Resource Allocations</CardTitle>
@@ -679,31 +640,41 @@ export default function Resources() {
               {!selectedProjectId ? (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
-                    Please select a project to view allocations.
+                    Please select a project first.
                   </TableCell>
                 </TableRow>
-              ) : projectAllocations.length === 0 ? (
-                 <TableRow>
+              ) : resourcesLoading ? (
+                <TableRow>
                   <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
-                    No resources allocated yet for this project.
+                    Loading allocations...
+                  </TableCell>
+                </TableRow>
+              ) : !allocationsForView.length ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
+                    No allocations for this project yet.
                   </TableCell>
                 </TableRow>
               ) : (
-                projectAllocations.map((alloc) => (
-                  <TableRow key={alloc.id}>
+                paginatedAllocations.map((alloc) => (
+                  <TableRow key={alloc._id}>
                     <TableCell className="font-medium">{alloc.wbsName}</TableCell>
                     <TableCell>{alloc.resourceName}</TableCell>
                     <TableCell className="capitalize">{alloc.resourceType}</TableCell>
                     <TableCell>{alloc.quantity}</TableCell>
                     <TableCell>₹{alloc.rate.toLocaleString()}</TableCell>
-                    <TableCell>{alloc.duration} {alloc.durationUnit}</TableCell>
-                    <TableCell className="font-medium">₹{alloc.totalCost.toLocaleString()}</TableCell>
+                    <TableCell>
+                      {alloc.duration} {alloc.durationUnit}
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      ₹{alloc.totalCost.toLocaleString()}
+                    </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
                         <Button variant="ghost" size="icon" onClick={() => openEditDialog(alloc)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(alloc.id)}>
+                        <Button variant="ghost" size="icon" onClick={() => handleDelete(alloc._id)}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>
@@ -713,6 +684,41 @@ export default function Resources() {
               )}
             </TableBody>
           </Table>
+          {allocationsForView.length > PAGE_SIZE && (
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 pt-4">
+              <p className="text-sm text-muted-foreground">
+                Page {currentPage} of {totalPages}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange("prev")}
+                  disabled={currentPage === 1}
+                >
+                  Previous
+                </Button>
+                {pageNumbers.map((page) => (
+                  <Button
+                    key={page}
+                    variant={page === currentPage ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setCurrentPage(page)}
+                  >
+                    {page}
+                  </Button>
+                ))}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange("next")}
+                  disabled={currentPage === totalPages}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

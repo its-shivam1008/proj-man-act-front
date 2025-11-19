@@ -1,15 +1,26 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import axios from "axios";
 import api from "@/utils/axiosApi";
-const API = "http://localhost:4000/resources";
 
-// read userId from localStorage
-const getUserId = () => {
-  if (typeof window === "undefined") return null;
-  const raw = localStorage.getItem("user");
-  if (!raw) return null;
-  return JSON.parse(raw)._id;
-};
+export interface ResourceAllocation {
+  _id: string;
+  projectId: string;
+  wbsId: string;
+  wbsName: string;
+  resourceType: "manpower" | "material" | "equipment";
+  resourceId: string;
+  resourceName: string;
+  quantity: number;
+  rate: number;
+  unit: string;
+  duration: number;
+  durationUnit: string;
+  totalCost: number;
+  startDate?: string;
+  endDate?: string;
+  createdAt: string;
+}
+
+const RESOURCE_BASE = "/resource";
 
 // -------------------------
 //  FETCH ALL BY PROJECT
@@ -18,14 +29,8 @@ export const fetchResources = createAsyncThunk(
   "resources/fetchResources",
   async (projectId: string, { rejectWithValue }) => {
     try {
-      const userId = getUserId();
-      if (!userId) return rejectWithValue("User not logged in");
-
-      const res = await api.get(
-        `/project/${projectId}?userId=${userId}`
-      );
-
-      return res.data;
+      const res = await api.get(`${RESOURCE_BASE}/project/${projectId}`);
+      return res.data as ResourceAllocation[];
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message ?? err.message);
     }
@@ -37,10 +42,10 @@ export const fetchResources = createAsyncThunk(
 // -------------------------
 export const addResource = createAsyncThunk(
   "resources/addResource",
-  async (data: any, { rejectWithValue }) => {
+  async (data: Partial<ResourceAllocation>, { rejectWithValue }) => {
     try {
-      const res = await api.post(`/create`, data);
-      return res.data;
+      const res = await api.post(`${RESOURCE_BASE}/create`, data);
+      return res.data as ResourceAllocation;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message ?? err.message);
     }
@@ -53,12 +58,12 @@ export const addResource = createAsyncThunk(
 export const updateResource = createAsyncThunk(
   "resources/updateResource",
   async (
-    { id, data }: { id: string; data: any },
+    { id, data }: { id: string; data: Partial<ResourceAllocation> },
     { rejectWithValue }
   ) => {
     try {
-      const res = await api.put(`/update/${id}`, data);
-      return res.data;
+      const res = await api.put(`${RESOURCE_BASE}/update/${id}`, data);
+      return res.data as ResourceAllocation;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message ?? err.message);
     }
@@ -72,7 +77,7 @@ export const deleteResource = createAsyncThunk(
   "resources/deleteResource",
   async (id: string, { rejectWithValue }) => {
     try {
-      await api.delete(`/delete/${id}`);
+      await api.delete(`${RESOURCE_BASE}/delete/${id}`);
       return id;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message ?? err.message);
@@ -84,7 +89,7 @@ export const deleteResource = createAsyncThunk(
 //  SLICE
 // -------------------------
 interface ResourceState {
-  resources: any[];
+  resources: ResourceAllocation[];
   loading: boolean;
   error: string | null;
 }
@@ -115,45 +120,30 @@ const resourceSlice = createSlice({
     });
 
     // CREATE
-    builder.addCase(addResource.pending, (state) => {
-      state.loading = true;
-    });
     builder.addCase(addResource.fulfilled, (state, action) => {
-      state.loading = false;
       state.resources.unshift(action.payload);
     });
     builder.addCase(addResource.rejected, (state, action) => {
-      state.loading = false;
       state.error = action.payload as string;
     });
 
     // UPDATE
-    builder.addCase(updateResource.pending, (state) => {
-      state.loading = true;
-    });
     builder.addCase(updateResource.fulfilled, (state, action) => {
-      state.loading = false;
       state.resources = state.resources.map((item) =>
         item._id === action.payload._id ? action.payload : item
       );
     });
     builder.addCase(updateResource.rejected, (state, action) => {
-      state.loading = false;
       state.error = action.payload as string;
     });
 
     // DELETE
-    builder.addCase(deleteResource.pending, (state) => {
-      state.loading = true;
-    });
     builder.addCase(deleteResource.fulfilled, (state, action) => {
-      state.loading = false;
       state.resources = state.resources.filter(
         (item) => item._id !== action.payload
       );
     });
     builder.addCase(deleteResource.rejected, (state, action) => {
-      state.loading = false;
       state.error = action.payload as string;
     });
   },

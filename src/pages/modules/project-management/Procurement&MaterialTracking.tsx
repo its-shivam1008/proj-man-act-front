@@ -107,6 +107,10 @@ export default function ProcurementPage() {
     const poLoading = useSelector((state: RootState) => state.po.loading);
 
     const [inventory, setInventory] = useState<InventoryItem[]>([]);
+    const [mrsPage, setMrsPage] = useState(1);
+    const MRS_PAGE_SIZE = 10;
+    const [statusPage, setStatusPage] = useState(1);
+    const STATUS_PAGE_SIZE = 10;
 
     // dialog / form state
     const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -249,11 +253,31 @@ export default function ProcurementPage() {
         return rows;
     }, [pos, inventory]);
 
+    const statusTotalPages = Math.max(1, Math.ceil(materialStatus.length / STATUS_PAGE_SIZE));
+    const paginatedMaterialStatus = useMemo(() => {
+        const start = (statusPage - 1) * STATUS_PAGE_SIZE;
+        return materialStatus.slice(start, start + STATUS_PAGE_SIZE);
+    }, [materialStatus, statusPage]);
+
+    useEffect(() => {
+        setStatusPage(1);
+    }, [materialStatus.length]);
+
 
     // --- UI derived numbers ---
     const totalRequired = useMemo(() => (mrsList || []).reduce((s, m) => s + (m.quantity || 0), 0), [mrsList]);
     const totalOpen = useMemo(() => (mrsList || []).filter((m) => m.status === "open").length, [mrsList]);
     const totalSent = useMemo(() => (mrsList || []).filter((m) => m.status === "sent").length, [mrsList]);
+
+    const mrsTotalPages = Math.max(1, Math.ceil((mrsList?.length || 0) / MRS_PAGE_SIZE));
+    const paginatedMrsItems = useMemo(() => {
+        const start = (mrsPage - 1) * MRS_PAGE_SIZE;
+        return (mrsList || []).slice(start, start + MRS_PAGE_SIZE);
+    }, [mrsList, mrsPage]);
+
+    useEffect(() => {
+        setMrsPage(1);
+    }, [mrsList?.length]);
 
     // --- Selection handling for bulk send ---
     const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
@@ -343,7 +367,7 @@ export default function ProcurementPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {(mrsList || []).map((m) => (
+                            {paginatedMrsItems.map((m) => (
                                 <TableRow key={m.id || m._id}>
                                     <TableCell>
                                         <input type="checkbox" checked={!!selectedIds[m.id || m._id!]} onChange={() => toggleSelect(m.id || m._id!)} />
@@ -380,6 +404,41 @@ export default function ProcurementPage() {
                     </Table>
 
                     {mrsList?.length === 0 && !mrsLoading && <div className="text-center py-8 text-muted-foreground">No MRS items — create one.</div>}
+                    {mrsList && mrsList.length > MRS_PAGE_SIZE && (
+                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 pt-4">
+                            <p className="text-sm text-muted-foreground">
+                                Page {mrsPage} of {mrsTotalPages}
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setMrsPage((prev) => Math.max(1, prev - 1))}
+                                    disabled={mrsPage === 1}
+                                >
+                                    Previous
+                                </Button>
+                                {Array.from({ length: mrsTotalPages }, (_, idx) => idx + 1).map((pageNumber) => (
+                                    <Button
+                                        key={pageNumber}
+                                        variant={pageNumber === mrsPage ? "default" : "outline"}
+                                        size="sm"
+                                        onClick={() => setMrsPage(pageNumber)}
+                                    >
+                                        {pageNumber}
+                                    </Button>
+                                ))}
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setMrsPage((prev) => Math.min(mrsTotalPages, prev + 1))}
+                                    disabled={mrsPage === mrsTotalPages}
+                                >
+                                    Next
+                                </Button>
+                            </div>
+                        </div>
+                    )}
                 </CardContent>
             </Card>
 
@@ -455,7 +514,7 @@ export default function ProcurementPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {materialStatus.map((r, idx) => (
+                            {paginatedMaterialStatus.map((r, idx) => (
                                 <TableRow key={idx}>
                                     <TableCell>{r.item}</TableCell>
                                     <TableCell>{r.poNo}</TableCell>
@@ -470,6 +529,41 @@ export default function ProcurementPage() {
                     </Table>
 
                     {materialStatus.length === 0 && <div className="text-center py-8 text-muted-foreground">No material statuses yet.</div>}
+                    {materialStatus.length > STATUS_PAGE_SIZE && (
+                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 pt-4">
+                            <p className="text-sm text-muted-foreground">
+                                Page {statusPage} of {statusTotalPages}
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setStatusPage((prev) => Math.max(1, prev - 1))}
+                                    disabled={statusPage === 1}
+                                >
+                                    Previous
+                                </Button>
+                                {Array.from({ length: statusTotalPages }, (_, idx) => idx + 1).map((pageNumber) => (
+                                    <Button
+                                        key={pageNumber}
+                                        variant={pageNumber === statusPage ? "default" : "outline"}
+                                        size="sm"
+                                        onClick={() => setStatusPage(pageNumber)}
+                                    >
+                                        {pageNumber}
+                                    </Button>
+                                ))}
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setStatusPage((prev) => Math.min(statusTotalPages, prev + 1))}
+                                    disabled={statusPage === statusTotalPages}
+                                >
+                                    Next
+                                </Button>
+                            </div>
+                        </div>
+                    )}
                 </CardContent>
             </Card>
 
