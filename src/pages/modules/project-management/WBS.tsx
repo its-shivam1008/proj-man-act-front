@@ -37,13 +37,13 @@ import {
   ChevronRight,
   Package,
   Users,
-  ChevronsUpDown, // Add this
-  Check, // Add this
+  ChevronsUpDown,
+  Check,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { fetchProjects } from "@/redux/slices/projectSlice";
-import { useDebounce } from "@/hooks/useDebounce"; // Add this
+import { useDebounce } from "@/hooks/useDebounce";
 import {
   Popover,
   PopoverContent,
@@ -55,10 +55,13 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-  CommandGroup, // Optional, but good for structure
+  CommandGroup,
 } from "@/components/ui/command";
 
+// --- IMPORT THE SEPARATE MODAL COMPONENT ---
+import TeamSelectionDialog from "@/components/TeamSelectionDialog"; 
 
+// --- TYPES ---
 type WBSItemType = "phase" | "activity" | "task" | "subtask";
 type wbstatus = "not-started" | "in-progress" | "completed" | "delayed";
 
@@ -76,7 +79,7 @@ interface WBSItem {
   actualCost: number;
   manpowerRequirement?: string;
   materialRequirement?: string;
-  dependencies: string[]; // Storing IDs of other wbs
+  dependencies: string[];
   status: wbstatus;
   progress: number;
   createdAt: string;
@@ -95,13 +98,14 @@ const WBS_ITEM_STATUSES: wbstatus[] = [
   "delayed",
 ];
 
-// Recursive Node Component for the WBS Tree
+// --- WBS NODE COMPONENT ---
 interface WBSNodeProps {
   item: WBSItem;
   allwbs: WBSItem[];
   level: number;
   onEdit: (item: WBSItem) => void;
   onDelete: (id: string) => void;
+  onLinkTeam: (item: WBSItem) => void; // Prop to trigger modal
   onShowToast: (message: string) => void;
 }
 
@@ -111,10 +115,10 @@ const WBSNode: React.FC<WBSNodeProps> = ({
   level,
   onEdit,
   onDelete,
+  onLinkTeam,
   onShowToast,
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
-  const { toast } = useToast();
 
   const children = useMemo(
     () => allwbs.filter((i) => i.parentId === item.id),
@@ -132,10 +136,6 @@ const WBSNode: React.FC<WBSNodeProps> = ({
 
   const handleLinkMaterial = () => {
     onShowToast(`Link materials for ${item.name} (Not Implemented)`);
-  };
-
-  const handleLinkTeam = () => {
-    onShowToast(`Link team for ${item.name} (Not Implemented)`);
   };
 
   return (
@@ -160,7 +160,7 @@ const WBSNode: React.FC<WBSNodeProps> = ({
               )}
             </Button>
           ) : (
-            <div className="w-9 h-9 mr-1" /> // Placeholder for alignment
+            <div className="w-9 h-9 mr-1" /> 
           )}
           <span className="font-medium">{item.name}</span>
           <span className="text-xs capitalize text-muted-foreground ml-2">
@@ -194,7 +194,7 @@ const WBSNode: React.FC<WBSNodeProps> = ({
             variant="ghost"
             size="icon"
             title="Link Team"
-            onClick={handleLinkTeam}
+            onClick={() => onLinkTeam(item)} // Trigger Link Team
           >
             <Users className="h-4 w-4 text-green-600" />
           </Button>
@@ -226,6 +226,7 @@ const WBSNode: React.FC<WBSNodeProps> = ({
             level={level + 1}
             onEdit={onEdit}
             onDelete={onDelete}
+            onLinkTeam={onLinkTeam} // Pass down prop
             onShowToast={onShowToast}
           />
         ))}
@@ -233,15 +234,11 @@ const WBSNode: React.FC<WBSNodeProps> = ({
   );
 };
 
+// --- MAIN COMPONENT ---
 export default function WBS() {
   const organisationId = localStorage.getItem('organisationId');
   const dispatch = useDispatch<AppDispatch>();
   const { wbs, loading } = useSelector((state: RootState) => state.wbs);
-
-  // useEffect(() => {
-  //   dispatch(fetchProjects());
-  // }, []);
-
 
   const { projects, loading: projectLoading } = useSelector(
     (state: RootState) => state.projects
@@ -255,16 +252,16 @@ export default function WBS() {
   const [formData, setFormData] = useState<Partial<WBSItem>>({});
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const debouncedSearchTerm = useDebounce(searchTerm, 500); // 500ms delay
+  const debouncedSearchTerm = useDebounce(searchTerm, 500); 
+
+  // --- TEAM LINKING STATE ---
+  const [linkingItem, setLinkingItem] = useState<WBSItem | null>(null);
 
   const { toast } = useToast();
 
-  // Find the selected project from the list for display
   const selectedProject = projects.find((p) => p._id === selectedProjectId);
 
-
   useEffect(() => {
-
     dispatch(
       fetchProjects({
         search: debouncedSearchTerm,
@@ -273,7 +270,6 @@ export default function WBS() {
       })
     );
   }, [debouncedSearchTerm]);
-
 
   const handleSave = () => {
     if (!formData.name || !formData.projectId || !formData.type) {
@@ -285,7 +281,6 @@ export default function WBS() {
       return;
     }
 
-    // Handle hierarchy logic for parentId
     if (formData.type === "phase") {
       formData.parentId = null;
     } else if (!formData.parentId) {
@@ -297,9 +292,6 @@ export default function WBS() {
       return;
     }
 
-    // let updatedItems: WBSItem[];
-    // const now = new Date().toISOString();
-
     if (editingItem) {
       dispatch(updateWbsItem({ id: editingItem.id, data: formData }))
         .unwrap()
@@ -308,11 +300,6 @@ export default function WBS() {
           setIsDialogOpen(false);
           resetForm();
         });
-
-      toast({
-        title: "Success",
-        description: "WBS item updated successfully",
-      });
     } else {
       dispatch(createWbsItem(formData))
         .unwrap()
@@ -321,14 +308,10 @@ export default function WBS() {
           setIsDialogOpen(false);
           resetForm();
         });
-
     }
-    setIsDialogOpen(false);
-    resetForm();
   };
 
   const handleDelete = (id: string) => {
-    // Check if this item is a parent
     const hasChildren = wbs.some((item) => item.parentId === id);
     if (hasChildren) {
       toast({
@@ -344,12 +327,6 @@ export default function WBS() {
         title: "Success",
         description: "WBS item deleted successfully",
       });
-    });
-
-    // setwbs(updatedItems);
-    toast({
-      title: "Success",
-      description: "WBS item deleted successfully",
     });
   };
 
@@ -382,7 +359,11 @@ export default function WBS() {
     });
   };
 
-  // Get valid parent items for the dropdown
+  // Open Team Link Modal
+  const handleLinkTeam = (item: WBSItem) => {
+    setLinkingItem(item);
+  };
+
   const validParents = useMemo(() => {
     if (!selectedProjectId || !formData.type || formData.type === "phase") {
       return [];
@@ -422,6 +403,7 @@ export default function WBS() {
 
   return (
     <div className="space-y-6 p-4 md:p-6">
+      {/* --- HEADER SECTION --- */}
       <div className="flex flex-col md:flex-row items-center justify-between space-y-4 md:space-y-0">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-foreground">
@@ -432,27 +414,6 @@ export default function WBS() {
           </p>
         </div>
         <div className="flex w-full md:w-auto gap-4">
-          {/* <Select
-            value={selectedProjectId || ""}
-            onValueChange={setSelectedProjectId}
-          >
-            <SelectTrigger className="w-full md:w-64">
-              <SelectValue placeholder="Select a Project" />
-            </SelectTrigger>
-            <SelectContent>
-              {projects.length > 0 ? (
-                projects.map((project) => (
-                  <SelectItem key={project._id} value={project._id}>
-                    {project.code} - {project.name}
-                  </SelectItem>
-                ))
-              ) : (
-                <div className="p-4 text-sm text-muted-foreground">
-                  No projects found.
-                </div>
-              )}
-            </SelectContent>
-          </Select> */}
           <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
             <PopoverTrigger asChild>
               <Button
@@ -518,6 +479,7 @@ export default function WBS() {
             </PopoverContent>
           </Popover>
 
+          {/* CREATE/EDIT DIALOG */}
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
               <Button
@@ -541,6 +503,7 @@ export default function WBS() {
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
+                {/* ... (The content of your create/edit form remains unchanged) ... */}
                 <div className="space-y-2">
                   <Label>Project</Label>
                   <Input
@@ -559,7 +522,7 @@ export default function WBS() {
                       onValueChange={(value: WBSItemType) =>
                         setFormData({ ...formData, type: value, parentId: null })
                       }
-                      disabled={!!editingItem} // Don't allow changing type on edit
+                      disabled={!!editingItem} 
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Select type" />
@@ -750,12 +713,9 @@ export default function WBS() {
                   <Select
                     onValueChange={(value) => {
                       const newDeps = formData.dependencies ? [...formData.dependencies] : [];
-
-                      // Avoid duplicates
                       if (!newDeps.includes(value)) {
                         newDeps.push(value);
                       }
-
                       setFormData({ ...formData, dependencies: newDeps });
                     }}
                   >
@@ -765,7 +725,7 @@ export default function WBS() {
 
                     <SelectContent>
                       {wbs
-                        .filter((item) => item.id !== editingItem?.id) // ⛔ Cannot depend on itself
+                        .filter((item) => item.id !== editingItem?.id) 
                         .map((item) => (
                           <SelectItem key={item.id} value={item.id}>
                             {item.name} ({item.type})
@@ -774,7 +734,6 @@ export default function WBS() {
                     </SelectContent>
                   </Select>
 
-                  {/* SHOW SELECTED DEPENDENCIES */}
                   <div className="flex flex-wrap gap-2 mt-2">
                     {formData.dependencies?.map((dep) => (
                       <span
@@ -792,7 +751,6 @@ export default function WBS() {
                     ))}
                   </div>
                 </div>
-
               </div>
               <DialogFooter>
                 <Button
@@ -808,6 +766,7 @@ export default function WBS() {
         </div>
       </div>
 
+      {/* --- WBS TREE SECTION --- */}
       <Card>
         <CardHeader>
           <CardTitle>WBS Tree</CardTitle>
@@ -850,12 +809,22 @@ export default function WBS() {
                 level={0}
                 onEdit={openEditDialog}
                 onDelete={handleDelete}
+                onLinkTeam={handleLinkTeam} // Pass link handler
                 onShowToast={showToast}
               />
             ))
           )}
         </CardContent>
       </Card>
+
+      {/* --- TEAM LINKING MODAL --- */}
+      <TeamSelectionDialog 
+        isOpen={!!linkingItem}
+        onClose={() => setLinkingItem(null)}
+        wbsItem={linkingItem}
+        organisationId={'81b48a8b-f574-4562-be38-f480e99359c9'}
+      />
+
     </div>
   );
 }

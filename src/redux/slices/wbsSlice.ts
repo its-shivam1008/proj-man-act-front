@@ -90,6 +90,38 @@ export const createWbsItem = createAsyncThunk<WBSItem, Partial<WBSItem>>(
   }
 );
 
+export const assignPersonToWbs = createAsyncThunk(
+  "wbs/assignPerson",
+  async (data: { 
+      wbsId: string; 
+      resourceId: string; 
+      type: string; 
+      personalInfo: any; 
+      employment: any; 
+      financial: any; 
+  }, { rejectWithValue }) => {
+    try {
+      // Make sure the endpoint matches the route file
+      const response = await api.post("/wbs/assign-person", data);
+      return response.data;
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.message || "Failed to assign person");
+    }
+  }
+);
+
+export const removePersonFromWbs = createAsyncThunk(
+  "wbs/removePerson",
+  async (data: { wbsId: string; resourceId: string }, { rejectWithValue }) => {
+    try {
+      const response = await api.post("/wbs/remove-person", data);
+      return response.data; // Returns the updated WBS object
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.message || "Failed to remove person");
+    }
+  }
+);
+
 /* ----------------------------------------------------
    UPDATE ITEM
 ---------------------------------------------------- */
