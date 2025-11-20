@@ -40,6 +40,7 @@ import { storage, STORAGE_KEYS, ensureInitialized } from '@/lib/storage'; // Adj
 import WarehouseManagement from './inventory/Warehouse';
 import StoresManagement from './inventory/Storage';
 import Products from './inventory/Products';
+import RawMaterial from './inventory/Raw-Material';
 
 interface InventoryItem {
   id: string;
@@ -76,97 +77,7 @@ const Inventory: React.FC = () => {
   const [showAddProductForm, setShowAddProductForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const warehouseData = [
-    {
-      name: "Main Warehouse",
-      type: "General",
-      location: "Plant A – Sector 21",
-      capacity: 78,
-      totalItems: 420,
-      categories: {
-        raw: 120,
-        finished: 250,
-        consumables: 50,
-      },
-      lastGRN: { date: "12 Jan 2025", qty: 120, po: "PO-8745" },
-      lastIssue: { date: "10 Jan 2025", qty: 90, dept: "Production" },
-      ageing: { "0-30 Days": 200, "31-90 Days": 150, "90+ Days": 70 },
-      inTransit: 40,
-      reorderAlerts: ["Steel Rod 12mm", "Lubricant Oil - 5L"],
-      bins: ["Rack A1", "Rack B2", "Rack C3"],
-    },
-    {
-      name: "Cold Storage WH",
-      type: "Cold Storage",
-      location: "Plant B – Phase 3",
-      capacity: 62,
-      totalItems: 310,
-      categories: {
-        raw: 90,
-        finished: 160,
-        consumables: 60,
-      },
-      lastGRN: { date: "09 Jan 2025", qty: 200, po: "PO-8722" },
-      lastIssue: { date: "08 Jan 2025", qty: 50, dept: "Quality" },
-      ageing: { "0-30 Days": 150, "31-90 Days": 100, "90+ Days": 60 },
-      inTransit: 20,
-      reorderAlerts: ["Frozen Material - Type B"],
-      bins: ["Cold Rack 1", "Cold Rack 2"],
-    },
-  ];
 
-  const storeData = [
-{
-name: "Downtown Store",
-location: "City Center – Block A",
-dailySales: 9500,
-stock: 120,
-categories: {
-fashion: 40,
-electronics: 30,
-grocery: 50,
-},
-last7DaysSales: [12000, 11300, 9800, 10500, 10200, 9600, 9500],
-fastMoving: ["Mobile Charger", "T-Shirts Pack", "Milk 1L"],
-slowMoving: ["Winter Jacket XL", "Old Electronics"],
-returns: 4,
-scrap: 2,
-manager: "Amit Sharma",
-transferHistory: [
-{ date: "10 Jan 2025", qty: 20, from: "Main Warehouse" },
-{ date: "07 Jan 2025", qty: 15, from: "Backup Warehouse" },
-],
-lowStockAlerts: ["Sugar 5kg", "LED Bulb 9W"],
-},
-{
-name: "Mall Branch",
-location: "Galleria Mall – 2nd Floor",
-dailySales: 7200,
-stock: 110,
-categories: {
-fashion: 60,
-electronics: 20,
-grocery: 30,
-},
-last7DaysSales: [9000, 8400, 7900, 7800, 7600, 7400, 7200],
-fastMoving: ["Perfume Mini", "Earphones"],
-slowMoving: ["Winter Boots", "Formal Blazers"],
-returns: 3,
-scrap: 1,
-manager: "Rohit Verma",
-transferHistory: [
-{ date: "09 Jan 2025", qty: 25, from: "Main Warehouse" },
-],
-lowStockAlerts: ["Face Wash – Herbal", "USB Cable"],
-},
-];
-
-  const stores = [
-    { name: "Downtown Store", sales: 9500, stock: 120 },
-    { name: "Mall Branch", sales: 7200, stock: 110 },
-    { name: "Airport Outlet", sales: 6300, stock: 95 },
-    { name: "Online Fulfillment", sales: 12000, stock: 150 },
-  ];
   // Add these states after existing useState declarations
   const [showViewForm, setShowViewForm] = useState(false);
   const [viewingId, setViewingId] = useState<string | null>(null);
@@ -450,6 +361,7 @@ lowStockAlerts: ["Face Wash – Herbal", "USB Cable"],
       ]
     },
     { id: 'products', name: 'Products', icon: Package },
+    {id:"rawmaterials", name:"Raw Materials", icon:Warehouse},
     {
       id: 'reporting',
       name: 'Reporting',
@@ -640,111 +552,9 @@ lowStockAlerts: ["Face Wash – Herbal", "USB Cable"],
       </div>
     </div>
   );
-  // const ViewProductForm = ({ item }: { item: InventoryItem | undefined }) => {
-  //   if (!item) return null;
 
-  //   return (
-  //     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-  //       <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
-  //         <div className="mt-3">
-  //           <div className="flex items-center justify-between mb-4">
-  //             <h3 className="text-lg font-medium text-gray-900">View Product: {item.name}</h3>
-  //             <button onClick={() => { setShowViewForm(false); setViewingId(null); }} className="text-gray-400 hover:text-gray-600">
-  //               <XCircle className="h-6 w-6" />
-  //             </button>
-  //           </div>
-
-  //           <div className="space-y-4">
-  //             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-  //               <div>
-  //                 <label className="block text-sm font-medium text-gray-700 mb-1">Product Name</label>
-  //                 <input
-  //                   type="text"
-  //                   value={item.name}
-  //                   className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
-  //                   readOnly
-  //                 />
-  //               </div>
-  //               <div>
-  //                 <label className="block text-sm font-medium text-gray-700 mb-1">Product Type</label>
-  //                 <input
-  //                   type="text"
-  //                   value={item.type || ''}
-  //                   className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
-  //                   readOnly
-  //                 />
-  //               </div>
-  //             </div>
-
-  //             {/* Add similar read-only inputs for other fields */}
-  //             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-  //               <div>
-  //                 <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-  //                 <input
-  //                   type="text"
-  //                   value={item.category}
-  //                   className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
-  //                   readOnly
-  //                 />
-  //               </div>
-  //               <div>
-  //                 <label className="block text-sm font-medium text-gray-700 mb-1">Reference Code</label>
-  //                 <input
-  //                   type="text"
-  //                   value={item.referenceCode || ''}
-  //                   className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
-  //                   readOnly
-  //                 />
-  //               </div>
-  //             </div>
-
-  //             {/* Continue for other fields like quantity, status, etc. */}
-  //             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-  //               <div>
-  //                 <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
-  //                 <input
-  //                   type="number"
-  //                   value={item.quantity}
-  //                   className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
-  //                   readOnly
-  //                 />
-  //               </div>
-  //               <div>
-  //                 <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-  //                 <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(item.status)}`}>
-  //                   {item.status.replace('-', ' ')}
-  //                 </span>
-  //               </div>
-  //             </div>
-
-  //             {/* Description */}
-  //             <div>
-  //               <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-  //               <textarea
-  //                 rows={3}
-  //                 value={item.description || ''}
-  //                 className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
-  //                 readOnly
-  //               />
-  //             </div>
-
-  //             <div className="flex justify-end pt-4">
-  //               <button
-  //                 type="button"
-  //                 onClick={() => { setShowViewForm(false); setViewingId(null); }}
-  //                 className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
-  //               >
-  //                 Close
-  //               </button>
-  //             </div>
-  //           </div>
-  //         </div>
-  //       </div>
-  //     </div>
-  //   );
-  // };
   const renderProducts = () => <Products />;
-
+const renderRawMaterials = () => <RawMaterial/>;
 
   const renderReporting = () => (
     <div className="space-y-6">
@@ -1105,6 +915,8 @@ const renderStores = () => (
         return renderOperations();
       case 'products':
         return renderProducts();
+      case 'rawmaterials':
+        return renderRawMaterials();
       case 'reporting':
         return renderReporting();
       case 'settings':

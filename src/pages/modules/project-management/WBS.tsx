@@ -59,7 +59,8 @@ import {
 } from "@/components/ui/command";
 
 // --- IMPORT THE SEPARATE MODAL COMPONENT ---
-import TeamSelectionDialog from "@/components/TeamSelectionDialog"; 
+import TeamSelectionDialog from "@/components/TeamSelectionDialog";
+import MaterialSelectionDialog from "@/components/MaterialSelectionDialog";
 
 // --- TYPES ---
 type WBSItemType = "phase" | "activity" | "task" | "subtask";
@@ -85,12 +86,7 @@ interface WBSItem {
   createdAt: string;
 }
 
-const WBS_ITEM_TYPES: WBSItemType[] = [
-  "phase",
-  "activity",
-  "task",
-  "subtask",
-];
+const WBS_ITEM_TYPES: WBSItemType[] = ["phase", "activity", "task", "subtask"];
 const WBS_ITEM_STATUSES: wbstatus[] = [
   "not-started",
   "in-progress",
@@ -124,6 +120,9 @@ const WBSNode: React.FC<WBSNodeProps> = ({
     () => allwbs.filter((i) => i.parentId === item.id),
     [allwbs, item.id]
   );
+
+  const [linkingMaterialItem, setLinkingMaterialItem] = useState(null);
+
   const getStatusColor = (status: wbstatus) => {
     const colors: Record<wbstatus, string> = {
       "not-started": "bg-gray-100 text-gray-800 border-gray-200",
@@ -134,8 +133,8 @@ const WBSNode: React.FC<WBSNodeProps> = ({
     return colors[status];
   };
 
-  const handleLinkMaterial = () => {
-    onShowToast(`Link materials for ${item.name} (Not Implemented)`);
+  const handleLinkMaterial = (item) => {
+    setLinkingMaterialItem(item);
   };
 
   return (
@@ -160,7 +159,7 @@ const WBSNode: React.FC<WBSNodeProps> = ({
               )}
             </Button>
           ) : (
-            <div className="w-9 h-9 mr-1" /> 
+            <div className="w-9 h-9 mr-1" />
           )}
           <span className="font-medium">{item.name}</span>
           <span className="text-xs capitalize text-muted-foreground ml-2">
@@ -168,10 +167,7 @@ const WBSNode: React.FC<WBSNodeProps> = ({
           </span>
         </div>
         <div className="w-24 text-center">
-          <Badge
-            className={getStatusColor(item.status)}
-            variant="outline"
-          >
+          <Badge className={getStatusColor(item.status)} variant="outline">
             {item.status.replace("-", " ")}
           </Badge>
         </div>
@@ -186,10 +182,16 @@ const WBSNode: React.FC<WBSNodeProps> = ({
             variant="ghost"
             size="icon"
             title="Link Materials"
-            onClick={handleLinkMaterial}
+            onClick={() => handleLinkMaterial(item)}
           >
             <Package className="h-4 w-4 text-blue-600" />
+            <MaterialSelectionDialog
+              isOpen={!!linkingMaterialItem}
+              onClose={() => setLinkingMaterialItem(null)}
+              wbsItem={linkingMaterialItem}
+            />
           </Button>
+
           <Button
             variant="ghost"
             size="icon"
@@ -236,7 +238,7 @@ const WBSNode: React.FC<WBSNodeProps> = ({
 
 // --- MAIN COMPONENT ---
 export default function WBS() {
-  const organisationId = localStorage.getItem('organisationId');
+  const organisationId = localStorage.getItem("organisationId");
   const dispatch = useDispatch<AppDispatch>();
   const { wbs, loading } = useSelector((state: RootState) => state.wbs);
 
@@ -252,7 +254,7 @@ export default function WBS() {
   const [formData, setFormData] = useState<Partial<WBSItem>>({});
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const debouncedSearchTerm = useDebounce(searchTerm, 500); 
+  const debouncedSearchTerm = useDebounce(searchTerm, 500);
 
   // --- TEAM LINKING STATE ---
   const [linkingItem, setLinkingItem] = useState<WBSItem | null>(null);
@@ -296,7 +298,10 @@ export default function WBS() {
       dispatch(updateWbsItem({ id: editingItem.id, data: formData }))
         .unwrap()
         .then(() => {
-          toast({ title: "Updated", description: "WBS item updated successfully" });
+          toast({
+            title: "Updated",
+            description: "WBS item updated successfully",
+          });
           setIsDialogOpen(false);
           resetForm();
         });
@@ -304,7 +309,10 @@ export default function WBS() {
       dispatch(createWbsItem(formData))
         .unwrap()
         .then(() => {
-          toast({ title: "Success", description: "WBS item created successfully" });
+          toast({
+            title: "Success",
+            description: "WBS item created successfully",
+          });
           setIsDialogOpen(false);
           resetForm();
         });
@@ -322,12 +330,14 @@ export default function WBS() {
       return;
     }
 
-    dispatch(deleteWbsItem(id)).unwrap().then(() => {
-      toast({
-        title: "Success",
-        description: "WBS item deleted successfully",
+    dispatch(deleteWbsItem(id))
+      .unwrap()
+      .then(() => {
+        toast({
+          title: "Success",
+          description: "WBS item deleted successfully",
+        });
       });
-    });
   };
 
   const openEditDialog = (item: WBSItem) => {
@@ -451,17 +461,20 @@ export default function WBS() {
                       projects.map((project) => (
                         <CommandItem
                           key={project._id}
-                          value={`${project.code} ${project.name} ${project.clientOrDepartment || ''}`}
+                          value={`${project.code} ${project.name} ${
+                            project.clientOrDepartment || ""
+                          }`}
                           onSelect={() => {
                             setSelectedProjectId(project._id);
                             setPopoverOpen(false);
                           }}
                         >
                           <Check
-                            className={`mr-2 h-4 w-4 ${selectedProjectId === project._id
+                            className={`mr-2 h-4 w-4 ${
+                              selectedProjectId === project._id
                                 ? "opacity-100"
                                 : "opacity-0"
-                              }`}
+                            }`}
                           />
                           <div className="flex flex-col">
                             <span className="font-medium">
@@ -509,7 +522,8 @@ export default function WBS() {
                   <Input
                     disabled
                     value={
-                      projects.find((p) => p._id === formData.projectId)?.name || ""
+                      projects.find((p) => p._id === formData.projectId)
+                        ?.name || ""
                     }
                   />
                 </div>
@@ -520,9 +534,13 @@ export default function WBS() {
                     <Select
                       value={formData.type}
                       onValueChange={(value: WBSItemType) =>
-                        setFormData({ ...formData, type: value, parentId: null })
+                        setFormData({
+                          ...formData,
+                          type: value,
+                          parentId: null,
+                        })
                       }
-                      disabled={!!editingItem} 
+                      disabled={!!editingItem}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Select type" />
@@ -712,7 +730,9 @@ export default function WBS() {
 
                   <Select
                     onValueChange={(value) => {
-                      const newDeps = formData.dependencies ? [...formData.dependencies] : [];
+                      const newDeps = formData.dependencies
+                        ? [...formData.dependencies]
+                        : [];
                       if (!newDeps.includes(value)) {
                         newDeps.push(value);
                       }
@@ -725,7 +745,7 @@ export default function WBS() {
 
                     <SelectContent>
                       {wbs
-                        .filter((item) => item.id !== editingItem?.id) 
+                        .filter((item) => item.id !== editingItem?.id)
                         .map((item) => (
                           <SelectItem key={item.id} value={item.id}>
                             {item.name} ({item.type})
@@ -742,7 +762,9 @@ export default function WBS() {
                         onClick={() =>
                           setFormData({
                             ...formData,
-                            dependencies: formData.dependencies!.filter((d) => d !== dep),
+                            dependencies: formData.dependencies!.filter(
+                              (d) => d !== dep
+                            ),
                           })
                         }
                       >
@@ -818,13 +840,12 @@ export default function WBS() {
       </Card>
 
       {/* --- TEAM LINKING MODAL --- */}
-      <TeamSelectionDialog 
+      <TeamSelectionDialog
         isOpen={!!linkingItem}
         onClose={() => setLinkingItem(null)}
         wbsItem={linkingItem}
-        organisationId={'81b48a8b-f574-4562-be38-f480e99359c9'}
+        organisationId={"81b48a8b-f574-4562-be38-f480e99359c9"}
       />
-
     </div>
   );
 }

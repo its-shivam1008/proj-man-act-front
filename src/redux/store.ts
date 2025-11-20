@@ -15,6 +15,7 @@ import dailyProgressReducer from "./slices/dailyProgressSlice";
 import warehouseReducer from "./slices/warehouseSlice";
 import storageReducer from "./slices/storageSlice";
 import productsReducer from "./slices/productSlice";
+import rawMaterialReducer from "./slices/rawmaterialSlice";
 export const store = configureStore({
   reducer: {
     auth: authReducer,
@@ -33,6 +34,7 @@ export const store = configureStore({
     warehouse: warehouseReducer,
     storages: storageReducer,
     products: productsReducer,
+    rawMaterials: rawMaterialReducer,
   },
 });
 
