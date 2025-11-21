@@ -76,6 +76,8 @@ import AssetDisposalTransferPage from './pages/modules/plant-machinery/AssetDisp
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import VerifyOtp from "./pages/VerifyOtp";
+import SchedulingPlaning from './pages/modules/project-management/SchedulingPlaning';
+import ProjectClosure from './pages/modules/project-management/ProjectClosure';
 function App() {
   useEffect(() => {
     ensureInitialized();
@@ -160,6 +162,9 @@ function App() {
               <Route path="/project-management/project-reports" element={<Reports />} />
               <Route path="/project-management/progress" element={<Progress />} />
               <Route path='/project-management/billing' element={<BillingPage />} />
+              <Route path='/project-management/planning' element={<SchedulingPlaning />} />
+              <Route path='/project-management/project-closure' element={<ProjectClosure />} />
+
               {/* <Route path="/project-management/milestones" element={<Milestones />} /> */}
 
               {/* Plant and Machinery */}
