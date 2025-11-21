@@ -16,6 +16,10 @@ import warehouseReducer from "./slices/warehouseSlice";
 import storageReducer from "./slices/storageSlice";
 import productsReducer from "./slices/productSlice";
 import rawMaterialReducer from "./slices/rawmaterialSlice";
+import receiptReducer from "./slices/receiptSlice";
+import deliveryReducer from "./slices/deliverySlice";
+import scrapOrderReducer from "./slices/scrapOrderSlice";
+import forecastReducer from "./slices/forecastSlice";
 export const store = configureStore({
   reducer: {
     auth: authReducer,
@@ -35,6 +39,10 @@ export const store = configureStore({
     storages: storageReducer,
     products: productsReducer,
     rawMaterials: rawMaterialReducer,
+    receipts: receiptReducer,
+    delivery: deliveryReducer,
+    scrap: scrapOrderReducer,
+    forecast: forecastReducer,
   },
 });
 
