@@ -1,7 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { useData } from '../../../../contexts/DataContext';
-import { storage, STORAGE_KEYS } from '@/lib/storage';
-import Layout from '../../../../components/Layout';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import { AppDispatch, RootState } from '../../../../redux/store';
+import { fetchProducts } from '../../../../redux/slices/productSlice';
+import {
+  fetchInventoryHistory,
+  addInventoryHistory,
+  updateInventoryHistory,
+  deleteInventoryHistory,
+  InventoryHistory as InventoryHistoryType,
+} from '../../../../redux/slices/inventoryHistorySlice';
 import {
   History,
   Plus,
@@ -17,23 +24,11 @@ import {
   X
 } from 'lucide-react';
 
-interface StockMove {
-  id: string;
-  date: string;
-  reference: string;
-  productId: string;
-  quantity: number;
-  fromLocation: string;
-  toLocation: string;
-  operationType: string;
-  status: string;
-}
-
 interface FormData {
   date: string;
   reference: string;
   productId: string;
-  quantity: number;
+  quantity: string | number;
   fromLocation: string;
   toLocation: string;
   operationType: string;
@@ -41,8 +36,9 @@ interface FormData {
 }
 
 const InventoryHistory: React.FC = () => {
-  const { inventory } = useData();
-  const [stockMoves, setStockMoves] = useState<StockMove[]>([]);
+  const dispatch = useDispatch<AppDispatch>();
+  const { products, loading: productsLoading } = useSelector((state: RootState) => state.products);
+  const { inventoryHistory, loading } = useSelector((state: RootState) => state.inventoryHistory);
   const [searchTerm, setSearchTerm] = useState('');
   const [productFilter, setProductFilter] = useState('all');
   const [locationFilter, setLocationFilter] = useState('all');
@@ -51,8 +47,8 @@ const InventoryHistory: React.FC = () => {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showUpdateForm, setShowUpdateForm] = useState(false);
   const [showViewForm, setShowViewForm] = useState(false);
-  const [selectedMove, setSelectedMove] = useState<StockMove | null>(null);
-  const [selectedViewMove, setSelectedViewMove] = useState<StockMove | null>(null);
+  const [selectedMove, setSelectedMove] = useState<InventoryHistoryType | null>(null);
+  const [selectedViewMove, setSelectedViewMove] = useState<InventoryHistoryType | null>(null);
   const defaultForm: FormData = {
     date: new Date().toISOString().split("T")[0],
     reference: "",
@@ -64,71 +60,37 @@ const InventoryHistory: React.FC = () => {
     status: "draft",
   };
 
-  const [createForm, setCreateForm] = useState<FormData>(defaultForm);
-
-  const [updateForm, setUpdateForm] = useState<FormData>(defaultForm);
+  // Form state moved inside form components - old state removed
 
 
   useEffect(() => {
-    const loadedMoves = storage.get<StockMove[]>(STORAGE_KEYS.STOCK_MOVES, []);
-    setStockMoves(Array.isArray(loadedMoves) ? loadedMoves : []);
-  }, []);
+    dispatch(fetchProducts());
+    dispatch(fetchInventoryHistory());
+  }, [dispatch]);
 
-  const refreshMoves = () => {
-    const loadedMoves = storage.get<StockMove[]>(STORAGE_KEYS.STOCK_MOVES, []);
-    setStockMoves(Array.isArray(loadedMoves) ? loadedMoves : []);
-  };
-
-  const handleCreateSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const newItem: StockMove = {
-      ...createForm,
-      id: Date.now().toString(),
-      quantity: Number(createForm.quantity), // convert here only
-    };
-
-    storage.push(STORAGE_KEYS.STOCK_MOVES, newItem);
-    refreshMoves();
-    setShowCreateForm(false);
-    setCreateForm(defaultForm);
-  };
-
-
-  const handleUpdateSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedMove) return;
-
-    const updatedData = {
-      ...updateForm,
-      quantity: Number(updateForm.quantity),
-    };
-
-    storage.updateById(STORAGE_KEYS.STOCK_MOVES, selectedMove.id, updatedData);
-    refreshMoves();
-
-    setShowUpdateForm(false);
-    setSelectedMove(null);
-    setUpdateForm(defaultForm);
-  };
-
-
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this transaction?')) return;
-    storage.deleteById(STORAGE_KEYS.STOCK_MOVES, id);
-    refreshMoves();
+    await dispatch(deleteInventoryHistory(id));
+    dispatch(fetchInventoryHistory());
   };
 
-  const handleView = (move: StockMove) => {
+  const handleView = (move: InventoryHistoryType) => {
     setSelectedViewMove(move);
     setShowViewForm(true);
   };
 
-  const filteredMoves = stockMoves.filter(move => {
-    const product = inventory.find(item => item.id === move.productId);
-    const matchesSearch = product?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+  // Form submit handlers moved inside form components - old handlers removed
+
+  const safeProducts = Array.isArray(products) ? products : [];
+  const safeInventoryHistory = Array.isArray(inventoryHistory) ? inventoryHistory : [];
+  
+  const filteredMoves = safeInventoryHistory.filter(move => {
+    const productId = typeof move.productId === 'string' ? move.productId : move.productId?._id || move.productId?.id || '';
+    const product = safeProducts.find(item => item._id === productId || item.id === productId);
+    const productName = product?.name || (typeof move.productId === 'object' && move.productId?.name) || '';
+    const matchesSearch = productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       move.reference.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesProduct = productFilter === 'all' || move.productId === productFilter;
+    const matchesProduct = productFilter === 'all' || productId === productFilter;
     const matchesLocation = locationFilter === 'all' ||
       move.fromLocation.includes(locationFilter) ||
       move.toLocation.includes(locationFilter);
@@ -138,21 +100,56 @@ const InventoryHistory: React.FC = () => {
     return matchesSearch && matchesProduct && matchesLocation && matchesOperation && matchesMonth;
   });
 
-  const CreateHistoryForm = () => (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
-        <div className="mt-3">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-medium text-gray-900">Add Transaction History</h3>
-            <button
-              onClick={() => setShowCreateForm(false)}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              <X className="h-6 w-6" />
-            </button>
-          </div>
+  const CreateHistoryForm = () => {
+    const [formData, setFormData] = useState<FormData>(defaultForm);
 
-          <form className="space-y-4" onSubmit={handleCreateSubmit}>
+    const handleFormSubmit = useCallback(async (e: React.FormEvent) => {
+      e.preventDefault();
+      const orgId = localStorage.getItem('organisationId');
+      if (!orgId) {
+        alert('No organisationId found');
+        return;
+      }
+
+      const newItem: Partial<InventoryHistoryType> = {
+        organisationId: orgId,
+        date: formData.date,
+        reference: formData.reference,
+        productId: formData.productId,
+        quantity: Number(formData.quantity) || 0,
+        fromLocation: formData.fromLocation,
+        toLocation: formData.toLocation,
+        operationType: formData.operationType,
+        status: formData.status,
+      };
+
+      await dispatch(addInventoryHistory(newItem as InventoryHistoryType));
+      dispatch(fetchInventoryHistory());
+      setShowCreateForm(false);
+      setFormData(defaultForm);
+    }, [formData, dispatch, defaultForm]);
+
+    const handleFieldChange = useCallback((field: keyof FormData) => (
+      e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+    ) => {
+      setFormData(prev => ({ ...prev, [field]: e.target.value }));
+    }, []);
+
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">Add Transaction History</h3>
+              <button
+                onClick={() => setShowCreateForm(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            <form className="space-y-4" onSubmit={handleFormSubmit}>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -160,8 +157,8 @@ const InventoryHistory: React.FC = () => {
                 </label>
                 <input
                   type="date"
-                  value={createForm.date}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, date: e.target.value }))}
+                  value={formData.date || ''}
+                  onChange={handleFieldChange('date')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 />
@@ -172,8 +169,8 @@ const InventoryHistory: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  value={createForm.reference}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, reference: e.target.value }))}
+                  value={formData.reference || ''}
+                  onChange={handleFieldChange('reference')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Enter reference number"
                   required
@@ -186,15 +183,23 @@ const InventoryHistory: React.FC = () => {
                   Product
                 </label>
                 <select
-                  value={createForm.productId}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, productId: e.target.value }))}
+                  value={formData.productId || ''}
+                  onChange={handleFieldChange('productId')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 >
                   <option value="">Select Product</option>
-                  {inventory.map(item => (
-                    <option key={item.id} value={item.id}>{item.name}</option>
-                  ))}
+                  {productsLoading ? (
+                    <option value="" disabled>Loading products...</option>
+                  ) : safeProducts.length === 0 ? (
+                    <option value="" disabled>No products available</option>
+                  ) : (
+                    safeProducts.map(product => (
+                      <option key={product._id || product.id} value={product._id || product.id}>
+                        {product.name}
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
               <div>
@@ -203,14 +208,11 @@ const InventoryHistory: React.FC = () => {
                 </label>
                 <input
                   type="number"
-                  value={createForm.quantity}
-                  onChange={(e) =>
-                    setCreateForm((prev) => ({
-                      ...prev,
-                      quantity: e.target.value, // keep as string
-                    }))
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  value={formData.quantity || ''}
+                  onChange={handleFieldChange('quantity')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  min="0"
+                  required
                 />
 
               </div>
@@ -222,8 +224,8 @@ const InventoryHistory: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  value={createForm.fromLocation}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, fromLocation: e.target.value }))}
+                  value={formData.fromLocation || ''}
+                  onChange={handleFieldChange('fromLocation')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Source location"
                   required
@@ -235,8 +237,8 @@ const InventoryHistory: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  value={createForm.toLocation}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, toLocation: e.target.value }))}
+                  value={formData.toLocation || ''}
+                  onChange={handleFieldChange('toLocation')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Destination location"
                   required
@@ -249,8 +251,8 @@ const InventoryHistory: React.FC = () => {
                   Operation Type
                 </label>
                 <select
-                  value={createForm.operationType}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, operationType: e.target.value }))}
+                  value={formData.operationType || ''}
+                  onChange={handleFieldChange('operationType')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 >
@@ -266,8 +268,8 @@ const InventoryHistory: React.FC = () => {
                   Status
                 </label>
                 <select
-                  value={createForm.status}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, status: e.target.value }))}
+                  value={formData.status || ''}
+                  onChange={handleFieldChange('status')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 >
@@ -297,9 +299,51 @@ const InventoryHistory: React.FC = () => {
         </div>
       </div>
     </div>
-  );
+    );
+  };
 
-  const UpdateHistoryForm = () => (
+  const UpdateHistoryForm = () => {
+    const productIdValue = selectedMove ? (typeof selectedMove.productId === 'string' ? selectedMove.productId : selectedMove.productId?._id || selectedMove.productId?.id || '') : '';
+    
+    const [formData, setFormData] = useState<FormData>({
+      date: selectedMove?.date || new Date().toISOString().split("T")[0],
+      reference: selectedMove?.reference || "",
+      productId: productIdValue,
+      quantity: selectedMove?.quantity ? String(selectedMove.quantity) : "",
+      fromLocation: selectedMove?.fromLocation || "",
+      toLocation: selectedMove?.toLocation || "",
+      operationType: selectedMove?.operationType || "receipt",
+      status: selectedMove?.status || "draft",
+    });
+
+    const handleFormSubmit = useCallback(async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!selectedMove) return;
+
+      const updatedData: Partial<InventoryHistoryType> = {
+        date: formData.date,
+        reference: formData.reference,
+        productId: formData.productId,
+        quantity: Number(formData.quantity) || 0,
+        fromLocation: formData.fromLocation,
+        toLocation: formData.toLocation,
+        operationType: formData.operationType,
+        status: formData.status,
+      };
+
+      await dispatch(updateInventoryHistory({ id: selectedMove._id || '', data: updatedData }));
+      dispatch(fetchInventoryHistory());
+      setShowUpdateForm(false);
+      setSelectedMove(null);
+    }, [selectedMove, formData, dispatch]);
+
+    const handleFieldChange = useCallback((field: keyof FormData) => (
+      e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+    ) => {
+      setFormData(prev => ({ ...prev, [field]: e.target.value }));
+    }, []);
+
+    return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
       <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
         <div className="mt-3">
@@ -309,7 +353,6 @@ const InventoryHistory: React.FC = () => {
               onClick={() => {
                 setShowUpdateForm(false);
                 setSelectedMove(null);
-                setUpdateForm({});
               }}
               className="text-gray-400 hover:text-gray-600"
             >
@@ -317,7 +360,7 @@ const InventoryHistory: React.FC = () => {
             </button>
           </div>
 
-          <form className="space-y-4" onSubmit={handleUpdateSubmit}>
+          <form className="space-y-4" onSubmit={handleFormSubmit}>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -325,8 +368,8 @@ const InventoryHistory: React.FC = () => {
                 </label>
                 <input
                   type="date"
-                  value={updateForm.date || ''}
-                  onChange={(e) => setUpdateForm(prev => ({ ...prev, date: e.target.value }))}
+                  value={formData.date || ''}
+                  onChange={handleFieldChange('date')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 />
@@ -337,8 +380,8 @@ const InventoryHistory: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  value={updateForm.reference || ''}
-                  onChange={(e) => setUpdateForm(prev => ({ ...prev, reference: e.target.value }))}
+                  value={formData.reference || ''}
+                  onChange={handleFieldChange('reference')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 />
@@ -350,15 +393,23 @@ const InventoryHistory: React.FC = () => {
                   Product
                 </label>
                 <select
-                  value={updateForm.productId || ''}
-                  onChange={(e) => setUpdateForm(prev => ({ ...prev, productId: e.target.value }))}
+                  value={formData.productId || ''}
+                  onChange={handleFieldChange('productId')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 >
                   <option value="">Select Product</option>
-                  {inventory.map(item => (
-                    <option key={item.id} value={item.id}>{item.name}</option>
-                  ))}
+                  {productsLoading ? (
+                    <option value="" disabled>Loading products...</option>
+                  ) : safeProducts.length === 0 ? (
+                    <option value="" disabled>No products available</option>
+                  ) : (
+                    safeProducts.map(product => (
+                      <option key={product._id || product.id} value={product._id || product.id}>
+                        {product.name}
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
               <div>
@@ -367,14 +418,11 @@ const InventoryHistory: React.FC = () => {
                 </label>
                 <input
                   type="number"
-                  value={updateForm.quantity}
-                  onChange={(e) =>
-                    setUpdateForm((prev) => ({
-                      ...prev,
-                      quantity: e.target.value,
-                    }))
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  value={formData.quantity || ''}
+                  onChange={handleFieldChange('quantity')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  min="0"
+                  required
                 />
 
               </div>
@@ -386,8 +434,8 @@ const InventoryHistory: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  value={updateForm.fromLocation || ''}
-                  onChange={(e) => setUpdateForm(prev => ({ ...prev, fromLocation: e.target.value }))}
+                  value={formData.fromLocation || ''}
+                  onChange={handleFieldChange('fromLocation')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 />
@@ -398,8 +446,8 @@ const InventoryHistory: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  value={updateForm.toLocation || ''}
-                  onChange={(e) => setUpdateForm(prev => ({ ...prev, toLocation: e.target.value }))}
+                  value={formData.toLocation || ''}
+                  onChange={handleFieldChange('toLocation')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 />
@@ -411,8 +459,8 @@ const InventoryHistory: React.FC = () => {
                   Operation Type
                 </label>
                 <select
-                  value={updateForm.operationType || ''}
-                  onChange={(e) => setUpdateForm(prev => ({ ...prev, operationType: e.target.value }))}
+                  value={formData.operationType || ''}
+                  onChange={handleFieldChange('operationType')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 >
@@ -428,8 +476,8 @@ const InventoryHistory: React.FC = () => {
                   Status
                 </label>
                 <select
-                  value={updateForm.status || ''}
-                  onChange={(e) => setUpdateForm(prev => ({ ...prev, status: e.target.value }))}
+                  value={formData.status || ''}
+                  onChange={handleFieldChange('status')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 >
@@ -446,7 +494,6 @@ const InventoryHistory: React.FC = () => {
                 onClick={() => {
                   setShowUpdateForm(false);
                   setSelectedMove(null);
-                  setUpdateForm({});
                 }}
                 className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
               >
@@ -463,11 +510,13 @@ const InventoryHistory: React.FC = () => {
         </div>
       </div>
     </div>
-  );
+    );
+  };
 
   const ViewHistoryForm = () => {
     if (!selectedViewMove) return null;
-    const product = inventory.find(item => item.id === selectedViewMove.productId);
+    const productId = typeof selectedViewMove.productId === 'string' ? selectedViewMove.productId : selectedViewMove.productId?._id || selectedViewMove.productId?.id || '';
+    const product = safeProducts.find(item => item._id === productId || item.id === productId);
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
         <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
@@ -516,7 +565,7 @@ const InventoryHistory: React.FC = () => {
                   </label>
                   <input
                     type="text"
-                    value={product?.name || 'Unknown Product'}
+                    value={product?.name || (typeof selectedViewMove.productId === 'object' && selectedViewMove.productId?.name) || 'Unknown Product'}
                     readOnly
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed"
                   />
@@ -661,7 +710,7 @@ const InventoryHistory: React.FC = () => {
               </div>
               <div className="ml-5">
                 <p className="text-sm font-medium text-gray-500">Total Transactions</p>
-                <p className="text-2xl font-semibold text-gray-900">{stockMoves.length}</p>
+                <p className="text-2xl font-semibold text-gray-900">{safeInventoryHistory.length}</p>
               </div>
             </div>
           </div>
@@ -675,7 +724,7 @@ const InventoryHistory: React.FC = () => {
               <div className="ml-5">
                 <p className="text-sm font-medium text-gray-500">Receipts</p>
                 <p className="text-2xl font-semibold text-gray-900">
-                  {stockMoves.filter(move => move.operationType === 'receipt').length}
+                  {safeInventoryHistory.filter(move => move.operationType === 'receipt').length}
                 </p>
               </div>
             </div>
@@ -690,7 +739,7 @@ const InventoryHistory: React.FC = () => {
               <div className="ml-5">
                 <p className="text-sm font-medium text-gray-500">Deliveries</p>
                 <p className="text-2xl font-semibold text-gray-900">
-                  {stockMoves.filter(move => move.operationType === 'delivery').length}
+                  {safeInventoryHistory.filter(move => move.operationType === 'delivery').length}
                 </p>
               </div>
             </div>
@@ -705,7 +754,7 @@ const InventoryHistory: React.FC = () => {
               <div className="ml-5">
                 <p className="text-sm font-medium text-gray-500">This Month</p>
                 <p className="text-2xl font-semibold text-gray-900">
-                  {stockMoves.filter(move => {
+                  {safeInventoryHistory.filter(move => {
                     // Simple this-month filter (adjust as needed)
                     const moveDate = new Date(move.date);
                     const now = new Date();
@@ -737,8 +786,10 @@ const InventoryHistory: React.FC = () => {
             className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
             <option value="all">All Products</option>
-            {inventory.map(item => (
-              <option key={item.id} value={item.id}>{item.name}</option>
+            {safeProducts.map(product => (
+              <option key={product._id || product.id} value={product._id || product.id}>
+                {product.name}
+              </option>
             ))}
           </select>
           <select
@@ -807,10 +858,24 @@ const InventoryHistory: React.FC = () => {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {filteredMoves.map((move) => {
-              const product = inventory.find(item => item.id === move.productId);
-              return (
-                <tr key={move.id} className="hover:bg-gray-50">
+            {loading ? (
+              <tr>
+                <td colSpan={8} className="px-6 py-4 text-center text-sm text-gray-500">
+                  Loading...
+                </td>
+              </tr>
+            ) : filteredMoves.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-6 py-4 text-center text-sm text-gray-500">
+                  No transactions found
+                </td>
+              </tr>
+            ) : (
+              filteredMoves.map((move) => {
+                const productId = typeof move.productId === 'string' ? move.productId : move.productId?._id || move.productId?.id || '';
+                const product = safeProducts.find(item => item._id === productId || item.id === productId);
+                return (
+                <tr key={move._id || move.productId} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     <div className="flex items-center">
                       <Calendar className="h-4 w-4 text-gray-400 mr-2" />
@@ -823,7 +888,7 @@ const InventoryHistory: React.FC = () => {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     <div className="flex items-center">
                       <Package className="h-4 w-4 text-gray-400 mr-2" />
-                      {product?.name || 'Unknown Product'}
+                      {product?.name || (typeof move.productId === 'object' && move.productId?.name) || 'Unknown Product'}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -857,11 +922,12 @@ const InventoryHistory: React.FC = () => {
                     <button
                       className="text-green-600 hover:text-green-900 mr-3"
                       onClick={() => {
+                        const productIdValue = typeof move.productId === 'string' ? move.productId : move.productId?._id || move.productId?.id || '';
                         setSelectedMove(move);
                         setUpdateForm({
                           date: move.date,
                           reference: move.reference,
-                          productId: move.productId,
+                          productId: productIdValue,
                           quantity: String(move.quantity),
                           fromLocation: move.fromLocation,
                           toLocation: move.toLocation,
@@ -876,14 +942,15 @@ const InventoryHistory: React.FC = () => {
                     </button>
                     <button
                       className="text-red-600 hover:text-red-900"
-                      onClick={() => handleDelete(move.id)}
+                      onClick={() => handleDelete(move._id || '')}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </td>
                 </tr>
-              );
-            })}
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>

@@ -1,7 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { useData } from '../../../../contexts/DataContext';
-import { storage, STORAGE_KEYS } from '@/lib/storage';
-import Layout from '../../../../components/Layout';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import { AppDispatch, RootState } from '../../../../redux/store';
+import { fetchProducts } from '../../../../redux/slices/productSlice';
+import {
+  fetchValuations,
+  addValuation,
+  updateValuation,
+  deleteValuation,
+  Valuation as ValuationType,
+} from '../../../../redux/slices/valuationSlice';
 import { 
   DollarSign, 
   Plus, 
@@ -17,22 +24,10 @@ import {
   X
 } from 'lucide-react';
 
-interface ValuationItem {
-  id: string;
-  date: string;
-  reference: string;
-  product: string;
-  quantity: number;
-  unitValue: number;
-  totalValue: number;
-  method: string;
-  notes?: string;
-}
-
 interface FormData {
   date: string;
   reference: string;
-  product: string;
+  productId: string;
   quantity: number;
   unitValue: number;
   method: string;
@@ -40,19 +35,20 @@ interface FormData {
 }
 
 const Valuation: React.FC = () => {
-  const { inventory } = useData();
-  const [valuationData, setValuationData] = useState<ValuationItem[]>([]);
+  const dispatch = useDispatch<AppDispatch>();
+  const { products, loading: productsLoading } = useSelector((state: RootState) => state.products);
+  const { valuations, loading } = useSelector((state: RootState) => state.valuations);
   const [searchTerm, setSearchTerm] = useState('');
   const [methodFilter, setMethodFilter] = useState('all');
   const [periodFilter, setPeriodFilter] = useState('this-month');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showViewForm, setShowViewForm] = useState(false);
   const [showUpdateForm, setShowUpdateForm] = useState(false);
-  const [selectedItem, setSelectedItem] = useState<ValuationItem | null>(null);
+  const [selectedItem, setSelectedItem] = useState<ValuationType | null>(null);
   const [createForm, setCreateForm] = useState<FormData>({
     date: new Date().toISOString().split('T')[0],
     reference: '',
-    product: '',
+    productId: '',
     quantity: 0,
     unitValue: 0,
     method: 'FIFO',
@@ -61,60 +57,83 @@ const Valuation: React.FC = () => {
   const [updateForm, setUpdateForm] = useState<FormData>({});
 
   useEffect(() => {
-    const loadedData = storage.get<ValuationItem[]>(STORAGE_KEYS.VALUATION, []);
-    setValuationData(Array.isArray(loadedData) ? loadedData : []);
+    dispatch(fetchProducts());
+    dispatch(fetchValuations());
+  }, [dispatch]);
+
+  // Form state moved inside form component - handlers removed
+
+  // Update form handlers
+  const handleUpdateDateChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setUpdateForm(prev => ({ ...prev, date: e.target.value }));
+  }, []);
+  
+  const handleUpdateReferenceChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setUpdateForm(prev => ({ ...prev, reference: e.target.value }));
+  }, []);
+  
+  const handleUpdateProductIdChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    setUpdateForm(prev => ({ ...prev, productId: e.target.value }));
+  }, []);
+  
+  const handleUpdateQuantityChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setUpdateForm(prev => ({ ...prev, quantity: parseInt(e.target.value, 10) || 0 }));
+  }, []);
+  
+  const handleUpdateUnitValueChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setUpdateForm(prev => ({ ...prev, unitValue: parseFloat(e.target.value) || 0 }));
+  }, []);
+  
+  const handleUpdateMethodChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    setUpdateForm(prev => ({ ...prev, method: e.target.value }));
+  }, []);
+  
+  const handleUpdateNotesChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setUpdateForm(prev => ({ ...prev, notes: e.target.value }));
   }, []);
 
-  const refreshData = () => {
-    const loadedData = storage.get<ValuationItem[]>(STORAGE_KEYS.VALUATION, []);
-    setValuationData(Array.isArray(loadedData) ? loadedData : []);
-  };
+  const safeProducts = Array.isArray(products) ? products : [];
+  const safeValuations = Array.isArray(valuations) ? valuations : [];
 
-  const handleCreateSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const totalValue = createForm.quantity * createForm.unitValue;
-    const newItem: ValuationItem = {
-      ...createForm,
-      id: `VAL-${Date.now().toString().slice(-6)}`,
-      totalValue
-    };
-    storage.push(STORAGE_KEYS.VALUATION, newItem);
-    refreshData();
-    setShowCreateForm(false);
-    setCreateForm({
-      date: new Date().toISOString().split('T')[0],
-      reference: '',
-      product: '',
-      quantity: 0,
-      unitValue: 0,
-      method: 'FIFO',
-      notes: ''
-    });
-  };
+  // Form submit handler moved inside form component
 
-  const handleUpdateSubmit = (e: React.FormEvent) => {
+  const handleUpdateSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedItem) return;
-    const totalValue = (updateForm.quantity || selectedItem.quantity) * (updateForm.unitValue || selectedItem.unitValue);
-    const updatedItem: Partial<ValuationItem> = {
-      ...updateForm,
-      totalValue
+    
+    const quantity = updateForm.quantity !== undefined ? updateForm.quantity : selectedItem.quantity;
+    const unitValue = updateForm.unitValue !== undefined ? updateForm.unitValue : selectedItem.unitValue;
+    const totalValue = quantity * unitValue;
+    
+    const updatedItem: Partial<ValuationType> = {
+      date: updateForm.date || selectedItem.date,
+      reference: updateForm.reference || selectedItem.reference,
+      productId: updateForm.productId || selectedItem.productId,
+      quantity: quantity,
+      unitValue: unitValue,
+      totalValue: totalValue,
+      method: updateForm.method || selectedItem.method,
+      notes: updateForm.notes !== undefined ? updateForm.notes : selectedItem.notes || '',
     };
-    storage.updateById(STORAGE_KEYS.VALUATION, selectedItem.id, updatedItem);
-    refreshData();
+
+    await dispatch(updateValuation({ id: selectedItem._id || '', data: updatedItem }));
+    dispatch(fetchValuations());
     setShowUpdateForm(false);
     setSelectedItem(null);
     setUpdateForm({});
-  };
+  }, [selectedItem, updateForm, dispatch]);
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this valuation?')) return;
-    storage.deleteById(STORAGE_KEYS.VALUATION, id);
-    refreshData();
+    await dispatch(deleteValuation(id));
+    dispatch(fetchValuations());
   };
 
-  const filteredValuation = valuationData.filter(item => {
-    const matchesSearch = item.product.toLowerCase().includes(searchTerm.toLowerCase()) ||
+  const filteredValuation = safeValuations.filter(item => {
+    const productId = typeof item.productId === 'string' ? item.productId : item.productId?._id || item.productId?.id || '';
+    const product = safeProducts.find(p => p._id === productId || p.id === productId);
+    const productName = product?.name || (typeof item.productId === 'object' && item.productId?.name) || '';
+    const matchesSearch = productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          item.reference.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesMethod = methodFilter === 'all' || item.method === methodFilter;
     // TODO: Implement period filter logic
@@ -122,147 +141,215 @@ const Valuation: React.FC = () => {
     return matchesSearch && matchesMethod && matchesPeriod;
   });
 
-  const CreateValuationForm = () => (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
-        <div className="mt-3">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-medium text-gray-900">Add New Valuation</h3>
-            <button
-              onClick={() => setShowCreateForm(false)}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              <X className="h-6 w-6" />
-            </button>
+  const handleCloseCreateForm = useCallback(() => {
+    setShowCreateForm(false);
+  }, []);
+
+  const CreateValuationForm = () => {
+    const [formData, setFormData] = useState<FormData>({
+      date: new Date().toISOString().split('T')[0],
+      reference: '',
+      productId: '',
+      quantity: 0,
+      unitValue: 0,
+      method: 'FIFO',
+      notes: ''
+    });
+
+    const handleFormSubmit = useCallback(async (e: React.FormEvent) => {
+      e.preventDefault();
+      const orgId = localStorage.getItem('organisationId');
+      if (!orgId) {
+        alert('No organisationId found');
+        return;
+      }
+
+      const totalValue = formData.quantity * formData.unitValue;
+      const newItem: Partial<ValuationType> = {
+        organisationId: orgId,
+        date: formData.date,
+        reference: formData.reference,
+        productId: formData.productId,
+        quantity: formData.quantity,
+        unitValue: formData.unitValue,
+        totalValue: totalValue,
+        method: formData.method,
+        notes: formData.notes || '',
+      };
+
+      await dispatch(addValuation(newItem as ValuationType));
+      dispatch(fetchValuations());
+      setShowCreateForm(false);
+      setFormData({
+        date: new Date().toISOString().split('T')[0],
+        reference: '',
+        productId: '',
+        quantity: 0,
+        unitValue: 0,
+        method: 'FIFO',
+        notes: ''
+      });
+    }, [formData, dispatch]);
+
+    const handleFieldChange = useCallback((field: keyof FormData) => (
+      e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
+    ) => {
+      const value = field === 'quantity' || field === 'unitValue' 
+        ? (e.target as HTMLInputElement).valueAsNumber || 0
+        : e.target.value;
+      setFormData(prev => ({ ...prev, [field]: value }));
+    }, []);
+
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">Add New Valuation</h3>
+              <button
+                onClick={handleCloseCreateForm}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <form className="space-y-4" onSubmit={handleFormSubmit}>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.date || ''}
+                    onChange={handleFieldChange('date')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Reference
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.reference || ''}
+                    onChange={handleFieldChange('reference')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter reference number"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Product
+                  </label>
+                  <select 
+                    value={formData.productId || ''}
+                    onChange={handleFieldChange('productId')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
+                    <option value="">Select Product</option>
+                    {productsLoading ? (
+                      <option value="" disabled>Loading products...</option>
+                    ) : safeProducts.length === 0 ? (
+                      <option value="" disabled>No products available</option>
+                    ) : (
+                      safeProducts.map(product => (
+                        <option key={product._id || product.id} value={product._id || product.id}>
+                          {product.name}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Quantity
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.quantity || ''}
+                    onChange={handleFieldChange('quantity')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter quantity (+ for in, - for out)"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Unit Value
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.unitValue || ''}
+                    onChange={handleFieldChange('unitValue')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter unit value"
+                    min="0"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Valuation Method
+                  </label>
+                  <select 
+                    value={formData.method || 'FIFO'}
+                    onChange={handleFieldChange('method')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
+                    <option value="FIFO">FIFO (First In, First Out)</option>
+                    <option value="LIFO">LIFO (Last In, First Out)</option>
+                    <option value="Average Cost">Average Cost</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Notes
+                </label>
+                <textarea
+                  rows={3}
+                  value={formData.notes || ''}
+                  onChange={handleFieldChange('notes')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Additional notes about this valuation..."
+                />
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={handleCloseCreateForm}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Add Valuation
+                </button>
+              </div>
+            </form>
           </div>
-          
-          <form className="space-y-4" onSubmit={handleCreateSubmit}>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Date
-                </label>
-                <input
-                  type="date"
-                  value={createForm.date}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, date: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Reference
-                </label>
-                <input
-                  type="text"
-                  value={createForm.reference}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, reference: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter reference number"
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Product
-                </label>
-                <select 
-                  value={createForm.product}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, product: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                >
-                  <option value="">Select Product</option>
-                  {inventory.map(item => (
-                    <option key={item.id} value={item.name}>{item.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Quantity
-                </label>
-                <input
-                  type="number"
-                  value={createForm.quantity}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, quantity: parseInt(e.target.value, 10) || 0 }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter quantity (+ for in, - for out)"
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Unit Value
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={createForm.unitValue}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, unitValue: parseFloat(e.target.value) || 0 }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter unit value"
-                  min="0"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Valuation Method
-                </label>
-                <select 
-                  value={createForm.method}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, method: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                >
-                  <option value="FIFO">FIFO (First In, First Out)</option>
-                  <option value="LIFO">LIFO (Last In, First Out)</option>
-                  <option value="Average Cost">Average Cost</option>
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Notes
-              </label>
-              <textarea
-                rows={3}
-                value={createForm.notes}
-                onChange={(e) => setCreateForm(prev => ({ ...prev, notes: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Additional notes about this valuation..."
-              />
-            </div>
-
-            <div className="flex justify-end space-x-3 pt-4">
-              <button
-                type="button"
-                onClick={() => setShowCreateForm(false)}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Add Valuation
-              </button>
-            </div>
-          </form>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const ViewValuationForm = () => {
     if (!selectedItem) return null;
@@ -287,7 +374,7 @@ const Valuation: React.FC = () => {
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">ID</label>
-                  <p className="text-sm text-gray-900">{selectedItem.id}</p>
+                  <p className="text-sm text-gray-900">{selectedItem._id || 'N/A'}</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
@@ -307,7 +394,13 @@ const Valuation: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Product</label>
                   <div className="flex items-center">
                     <Package className="h-4 w-4 text-gray-400 mr-2" />
-                    <p className="text-sm text-gray-900">{selectedItem.product}</p>
+                    {(() => {
+                      const productId = typeof selectedItem.productId === 'string' ? selectedItem.productId : selectedItem.productId?._id || selectedItem.productId?.id || '';
+                      const product = safeProducts.find(p => p._id === productId || p.id === productId);
+                      return (
+                        <p className="text-sm text-gray-900">{product?.name || (typeof selectedItem.productId === 'object' && selectedItem.productId?.name) || 'Unknown Product'}</p>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
@@ -394,8 +487,8 @@ const Valuation: React.FC = () => {
                   </label>
                   <input
                     type="date"
-                    value={updateForm.date || selectedItem.date}
-                    onChange={(e) => setUpdateForm(prev => ({ ...prev, date: e.target.value }))}
+                    value={updateForm.date !== undefined ? updateForm.date : (selectedItem?.date || '')}
+                    onChange={handleUpdateDateChange}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   />
@@ -406,8 +499,8 @@ const Valuation: React.FC = () => {
                   </label>
                   <input
                     type="text"
-                    value={updateForm.reference || selectedItem.reference}
-                    onChange={(e) => setUpdateForm(prev => ({ ...prev, reference: e.target.value }))}
+                    value={updateForm.reference !== undefined ? updateForm.reference : (selectedItem?.reference || '')}
+                    onChange={handleUpdateReferenceChange}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   />
@@ -420,15 +513,23 @@ const Valuation: React.FC = () => {
                     Product
                   </label>
                   <select 
-                    value={updateForm.product || selectedItem.product}
-                    onChange={(e) => setUpdateForm(prev => ({ ...prev, product: e.target.value }))}
+                    value={updateForm.productId !== undefined ? updateForm.productId : (typeof selectedItem?.productId === 'string' ? selectedItem.productId : selectedItem?.productId?._id || selectedItem?.productId?.id || '')}
+                    onChange={handleUpdateProductIdChange}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   >
                     <option value="">Select Product</option>
-                    {inventory.map(item => (
-                      <option key={item.id} value={item.name}>{item.name}</option>
-                    ))}
+                    {productsLoading ? (
+                      <option value="" disabled>Loading products...</option>
+                    ) : safeProducts.length === 0 ? (
+                      <option value="" disabled>No products available</option>
+                    ) : (
+                      safeProducts.map(product => (
+                        <option key={product._id || product.id} value={product._id || product.id}>
+                          {product.name}
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
                 <div>
@@ -437,8 +538,8 @@ const Valuation: React.FC = () => {
                   </label>
                   <input
                     type="number"
-                    value={updateForm.quantity || selectedItem.quantity}
-                    onChange={(e) => setUpdateForm(prev => ({ ...prev, quantity: parseInt(e.target.value, 10) || 0 }))}
+                    value={updateForm.quantity !== undefined ? updateForm.quantity : (selectedItem?.quantity || '')}
+                    onChange={handleUpdateQuantityChange}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   />
@@ -453,8 +554,8 @@ const Valuation: React.FC = () => {
                   <input
                     type="number"
                     step="0.01"
-                    value={updateForm.unitValue || selectedItem.unitValue}
-                    onChange={(e) => setUpdateForm(prev => ({ ...prev, unitValue: parseFloat(e.target.value) || 0 }))}
+                    value={updateForm.unitValue !== undefined ? updateForm.unitValue : (selectedItem?.unitValue || '')}
+                    onChange={handleUpdateUnitValueChange}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     min="0"
                     required
@@ -465,8 +566,8 @@ const Valuation: React.FC = () => {
                     Valuation Method
                   </label>
                   <select 
-                    value={updateForm.method || selectedItem.method}
-                    onChange={(e) => setUpdateForm(prev => ({ ...prev, method: e.target.value }))}
+                    value={updateForm.method || (selectedItem?.method || 'FIFO')}
+                    onChange={handleUpdateMethodChange}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   >
@@ -484,7 +585,7 @@ const Valuation: React.FC = () => {
                 <textarea
                   rows={3}
                   value={updateForm.notes || selectedItem.notes || ''}
-                  onChange={(e) => setUpdateForm(prev => ({ ...prev, notes: e.target.value }))}
+                  onChange={handleUpdateNotesChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
@@ -528,9 +629,9 @@ const Valuation: React.FC = () => {
     }
   };
 
-  const totalValuation = valuationData.reduce((sum, item) => sum + item.totalValue, 0);
-  const positiveValuation = valuationData.filter(item => item.totalValue > 0).reduce((sum, item) => sum + item.totalValue, 0);
-  const negativeValuation = Math.abs(valuationData.filter(item => item.totalValue < 0).reduce((sum, item) => sum + item.totalValue, 0));
+  const totalValuation = safeValuations.reduce((sum, item) => sum + item.totalValue, 0);
+  const positiveValuation = safeValuations.filter(item => item.totalValue > 0).reduce((sum, item) => sum + item.totalValue, 0);
+  const negativeValuation = Math.abs(safeValuations.filter(item => item.totalValue < 0).reduce((sum, item) => sum + item.totalValue, 0));
 
   return (
     // <Layout>
@@ -607,7 +708,7 @@ const Valuation: React.FC = () => {
                 </div>
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">Total Records</p>
-                  <p className="text-2xl font-semibold text-gray-900">{valuationData.length}</p>
+                  <p className="text-2xl font-semibold text-gray-900">{safeValuations.length}</p>
                 </div>
               </div>
             </div>
@@ -625,7 +726,7 @@ const Valuation: React.FC = () => {
                   <p className="text-xs text-green-600">First In, First Out</p>
                 </div>
                 <span className="text-lg font-bold text-green-600">
-                  {valuationData.filter(item => item.method === 'FIFO').length}
+                  {safeValuations.filter(item => item.method === 'FIFO').length}
                 </span>
               </div>
             </div>
@@ -636,7 +737,7 @@ const Valuation: React.FC = () => {
                   <p className="text-xs text-blue-600">Last In, First Out</p>
                 </div>
                 <span className="text-lg font-bold text-blue-600">
-                  {valuationData.filter(item => item.method === 'LIFO').length}
+                  {safeValuations.filter(item => item.method === 'LIFO').length}
                 </span>
               </div>
             </div>
@@ -647,7 +748,7 @@ const Valuation: React.FC = () => {
                   <p className="text-xs text-purple-600">Weighted Average</p>
                 </div>
                 <span className="text-lg font-bold text-purple-600">
-                  {valuationData.filter(item => item.method === 'Average Cost').length}
+                  {safeValuations.filter(item => item.method === 'Average Cost').length}
                 </span>
               </div>
             </div>
@@ -722,8 +823,25 @@ const Valuation: React.FC = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredValuation.map((item) => (
-                <tr key={item.id} className="hover:bg-gray-50">
+              {loading ? (
+                <tr>
+                  <td colSpan={8} className="px-6 py-4 text-center text-sm text-gray-500">
+                    Loading...
+                  </td>
+                </tr>
+              ) : filteredValuation.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-6 py-4 text-center text-sm text-gray-500">
+                    No valuations found
+                  </td>
+                </tr>
+              ) : (
+                filteredValuation.map((item) => {
+                  const productId = typeof item.productId === 'string' ? item.productId : item.productId?._id || item.productId?.id || '';
+                  const product = safeProducts.find(p => p._id === productId || p.id === productId);
+                  const productName = product?.name || (typeof item.productId === 'object' && item.productId?.name) || 'Unknown Product';
+                  return (
+                <tr key={item._id || productId} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     <div className="flex items-center">
                       <Calendar className="h-4 w-4 text-gray-400 mr-2" />
@@ -736,7 +854,7 @@ const Valuation: React.FC = () => {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     <div className="flex items-center">
                       <Package className="h-4 w-4 text-gray-400 mr-2" />
-                      {item.product}
+                      {productName}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -770,11 +888,12 @@ const Valuation: React.FC = () => {
                     <button 
                       className="text-green-600 hover:text-green-900 mr-3"
                       onClick={() => {
+                        const productIdValue = typeof item.productId === 'string' ? item.productId : item.productId?._id || item.productId?.id || '';
                         setSelectedItem(item);
                         setUpdateForm({
                           date: item.date,
                           reference: item.reference,
-                          product: item.product,
+                          productId: productIdValue,
                           quantity: item.quantity,
                           unitValue: item.unitValue,
                           method: item.method,
@@ -787,13 +906,15 @@ const Valuation: React.FC = () => {
                     </button>
                     <button 
                       className="text-red-600 hover:text-red-900"
-                      onClick={() => handleDelete(item.id)}
+                      onClick={() => handleDelete(item._id || '')}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </td>
                 </tr>
-              ))}
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>

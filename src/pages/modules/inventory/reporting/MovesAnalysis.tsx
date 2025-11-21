@@ -1,7 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { useData } from '../../../../contexts/DataContext';
-import { storage, STORAGE_KEYS } from '@/lib/storage';
-import Layout from '../../../../components/Layout';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import { AppDispatch, RootState } from '../../../../redux/store';
+import { fetchProducts } from '../../../../redux/slices/productSlice';
+import {
+  fetchMovesAnalysis,
+  addMovesAnalysis,
+  updateMovesAnalysis,
+  deleteMovesAnalysis,
+  MovesAnalysis as MovesAnalysisType,
+} from '../../../../redux/slices/movesAnalysisSlice';
 import { 
   BarChart3, 
   Plus, 
@@ -30,22 +37,8 @@ import {
   Line
 } from 'recharts';
 
-interface MovesAnalysisItem {
-  id: string;
-  product: string;
-  demand: number;
-  snLots: number;
-  packagingQty: number;
-  quantity: number;
-  realQuantity: number;
-  unitPrice: number;
-  inboundTrend: 'up' | 'down' | 'stable';
-  outboundTrend: 'up' | 'down' | 'stable';
-  turnoverRate: number;
-}
-
 interface FormData {
-  product: string;
+  productId: string;
   demand: number;
   snLots: number;
   packagingQty: number;
@@ -58,52 +51,127 @@ interface FormData {
 }
 
 const MovesAnalysis: React.FC = () => {
-  const { inventory } = useData();
-  const [movesAnalysisData, setMovesAnalysisData] = useState<MovesAnalysisItem[]>([]);
+  const dispatch = useDispatch<AppDispatch>();
+  const { products, loading: productsLoading } = useSelector((state: RootState) => state.products);
+  const { movesAnalysis, loading } = useSelector((state: RootState) => state.movesAnalysis);
   const [searchTerm, setSearchTerm] = useState('');
   const [analysisFilter, setAnalysisFilter] = useState('all');
   const [periodFilter, setPeriodFilter] = useState('this-month');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showViewForm, setShowViewForm] = useState(false);
   const [showUpdateForm, setShowUpdateForm] = useState(false);
-  const [selectedItem, setSelectedItem] = useState<MovesAnalysisItem | null>(null);
-  const [createForm, setCreateForm] = useState<FormData>({
-    product: '',
-    demand: 0,
-    snLots: 0,
-    packagingQty: 0,
-    quantity: 0,
-    realQuantity: 0,
-    unitPrice: 0,
-    inboundTrend: 'stable',
-    outboundTrend: 'stable',
-    turnoverRate: 0
-  });
-  const [updateForm, setUpdateForm] = useState<FormData>({});
+  const [selectedItem, setSelectedItem] = useState<MovesAnalysisType | null>(null);
+  // Form state moved inside form components - old state removed
 
   useEffect(() => {
-    const loadedData = storage.get<MovesAnalysisItem[]>(STORAGE_KEYS.MOVES_ANALYSIS, []);
-    setMovesAnalysisData(Array.isArray(loadedData) ? loadedData : []);
+    dispatch(fetchProducts());
+    dispatch(fetchMovesAnalysis());
+  }, [dispatch]);
+
+  // Stable handlers for form inputs
+  const handleProductIdChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    setCreateForm(prev => ({ ...prev, productId: e.target.value }));
+  }, []);
+  
+  const handleDemandChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setCreateForm(prev => ({ ...prev, demand: parseInt(e.target.value, 10) || 0 }));
+  }, []);
+  
+  const handleSnLotsChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setCreateForm(prev => ({ ...prev, snLots: parseInt(e.target.value, 10) || 0 }));
+  }, []);
+  
+  const handlePackagingQtyChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setCreateForm(prev => ({ ...prev, packagingQty: parseInt(e.target.value, 10) || 0 }));
+  }, []);
+  
+  const handleUnitPriceChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setCreateForm(prev => ({ ...prev, unitPrice: parseFloat(e.target.value) || 0 }));
+  }, []);
+  
+  const handleQuantityChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setCreateForm(prev => ({ ...prev, quantity: parseInt(e.target.value, 10) || 0 }));
+  }, []);
+  
+  const handleRealQuantityChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setCreateForm(prev => ({ ...prev, realQuantity: parseInt(e.target.value, 10) || 0 }));
+  }, []);
+  
+  const handleInboundTrendChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    setCreateForm(prev => ({ ...prev, inboundTrend: e.target.value as 'up' | 'down' | 'stable' }));
+  }, []);
+  
+  const handleOutboundTrendChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    setCreateForm(prev => ({ ...prev, outboundTrend: e.target.value as 'up' | 'down' | 'stable' }));
   }, []);
 
-  const refreshData = () => {
-    const loadedData = storage.get<MovesAnalysisItem[]>(STORAGE_KEYS.MOVES_ANALYSIS, []);
-    setMovesAnalysisData(Array.isArray(loadedData) ? loadedData : []);
-  };
+  // Update form handlers
+  const handleUpdateProductIdChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    setUpdateForm(prev => ({ ...prev, productId: e.target.value }));
+  }, []);
+  
+  const handleUpdateDemandChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setUpdateForm(prev => ({ ...prev, demand: parseInt(e.target.value, 10) || 0 }));
+  }, []);
+  
+  const handleUpdateSnLotsChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setUpdateForm(prev => ({ ...prev, snLots: parseInt(e.target.value, 10) || 0 }));
+  }, []);
+  
+  const handleUpdatePackagingQtyChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setUpdateForm(prev => ({ ...prev, packagingQty: parseInt(e.target.value, 10) || 0 }));
+  }, []);
+  
+  const handleUpdateUnitPriceChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setUpdateForm(prev => ({ ...prev, unitPrice: parseFloat(e.target.value) || 0 }));
+  }, []);
+  
+  const handleUpdateQuantityChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setUpdateForm(prev => ({ ...prev, quantity: parseInt(e.target.value, 10) || 0 }));
+  }, []);
+  
+  const handleUpdateRealQuantityChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setUpdateForm(prev => ({ ...prev, realQuantity: parseInt(e.target.value, 10) || 0 }));
+  }, []);
+  
+  const handleUpdateInboundTrendChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    setUpdateForm(prev => ({ ...prev, inboundTrend: e.target.value as 'up' | 'down' | 'stable' }));
+  }, []);
+  
+  const handleUpdateOutboundTrendChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    setUpdateForm(prev => ({ ...prev, outboundTrend: e.target.value as 'up' | 'down' | 'stable' }));
+  }, []);
 
-  const handleCreateSubmit = (e: React.FormEvent) => {
+  const safeProducts = Array.isArray(products) ? products : [];
+  const safeMovesAnalysis = Array.isArray(movesAnalysis) ? movesAnalysis : [];
+
+  const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newItem: MovesAnalysisItem = {
-      ...createForm,
-      id: `MA-${Date.now().toString().slice(-6)}`,
-      unitPrice: parseFloat(createForm.unitPrice.toString()),
-      turnoverRate: parseFloat(createForm.turnoverRate.toString())
+    const orgId = localStorage.getItem('organisationId');
+    if (!orgId) {
+      alert('No organisationId found');
+      return;
+    }
+
+    const newItem: Partial<MovesAnalysisType> = {
+      organisationId: orgId,
+      productId: createForm.productId,
+      demand: createForm.demand,
+      snLots: createForm.snLots,
+      packagingQty: createForm.packagingQty,
+      quantity: createForm.quantity,
+      realQuantity: createForm.realQuantity,
+      unitPrice: createForm.unitPrice,
+      inboundTrend: createForm.inboundTrend,
+      outboundTrend: createForm.outboundTrend,
+      turnoverRate: createForm.turnoverRate,
     };
-    storage.push(STORAGE_KEYS.MOVES_ANALYSIS, newItem);
-    refreshData();
+
+    await dispatch(addMovesAnalysis(newItem as MovesAnalysisType));
+    dispatch(fetchMovesAnalysis());
     setShowCreateForm(false);
     setCreateForm({
-      product: '',
+      productId: '',
       demand: 0,
       snLots: 0,
       packagingQty: 0,
@@ -116,29 +184,41 @@ const MovesAnalysis: React.FC = () => {
     });
   };
 
-  const handleUpdateSubmit = (e: React.FormEvent) => {
+  const handleUpdateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedItem) return;
-    const updatedItem: Partial<MovesAnalysisItem> = {
-      ...updateForm,
-      unitPrice: parseFloat(updateForm.unitPrice?.toString() || '0'),
-      turnoverRate: parseFloat(updateForm.turnoverRate?.toString() || '0')
+    
+    const updatedItem: Partial<MovesAnalysisType> = {
+      productId: updateForm.productId || selectedItem.productId,
+      demand: updateForm.demand !== undefined ? updateForm.demand : selectedItem.demand,
+      snLots: updateForm.snLots !== undefined ? updateForm.snLots : selectedItem.snLots,
+      packagingQty: updateForm.packagingQty !== undefined ? updateForm.packagingQty : selectedItem.packagingQty,
+      quantity: updateForm.quantity !== undefined ? updateForm.quantity : selectedItem.quantity,
+      realQuantity: updateForm.realQuantity !== undefined ? updateForm.realQuantity : selectedItem.realQuantity,
+      unitPrice: updateForm.unitPrice !== undefined ? updateForm.unitPrice : selectedItem.unitPrice,
+      inboundTrend: updateForm.inboundTrend || selectedItem.inboundTrend,
+      outboundTrend: updateForm.outboundTrend || selectedItem.outboundTrend,
+      turnoverRate: updateForm.turnoverRate !== undefined ? updateForm.turnoverRate : selectedItem.turnoverRate,
     };
-    storage.updateById(STORAGE_KEYS.MOVES_ANALYSIS, selectedItem.id, updatedItem);
-    refreshData();
+
+    await dispatch(updateMovesAnalysis({ id: selectedItem._id || '', data: updatedItem }));
+    dispatch(fetchMovesAnalysis());
     setShowUpdateForm(false);
     setSelectedItem(null);
     setUpdateForm({});
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this analysis item?')) return;
-    storage.deleteById(STORAGE_KEYS.MOVES_ANALYSIS, id);
-    refreshData();
+    await dispatch(deleteMovesAnalysis(id));
+    dispatch(fetchMovesAnalysis());
   };
 
-  const filteredAnalysis = movesAnalysisData.filter(item => {
-    const matchesSearch = item.product.toLowerCase().includes(searchTerm.toLowerCase());
+  const filteredAnalysis = safeMovesAnalysis.filter(item => {
+    const productId = typeof item.productId === 'string' ? item.productId : item.productId?._id || item.productId?.id || '';
+    const product = safeProducts.find(p => p._id === productId || p.id === productId);
+    const productName = product?.name || (typeof item.productId === 'object' && item.productId?.name) || '';
+    const matchesSearch = productName.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesAnalysis = analysisFilter === 'all' || 
                            (analysisFilter === 'high-demand' && item.demand > 100) ||
                            (analysisFilter === 'low-stock' && item.quantity < 50) ||
@@ -153,7 +233,7 @@ const MovesAnalysis: React.FC = () => {
     { name: 'Stable', Inbound: 0, Outbound: 0 }
   ];
 
-  movesAnalysisData.forEach(item => {
+  safeMovesAnalysis.forEach(item => {
     trendData.find(d => d.name === 'Up')!.Inbound += item.inboundTrend === 'up' ? 1 : 0;
     trendData.find(d => d.name === 'Up')!.Outbound += item.outboundTrend === 'up' ? 1 : 0;
     trendData.find(d => d.name === 'Down')!.Inbound += item.inboundTrend === 'down' ? 1 : 0;
@@ -162,41 +242,115 @@ const MovesAnalysis: React.FC = () => {
     trendData.find(d => d.name === 'Stable')!.Outbound += item.outboundTrend === 'stable' ? 1 : 0;
   });
 
-  const turnoverChartData = movesAnalysisData.map(item => ({
-    name: item.product,
-    turnover: item.turnoverRate
-  }));
+  const turnoverChartData = safeMovesAnalysis.map(item => {
+    const productId = typeof item.productId === 'string' ? item.productId : item.productId?._id || item.productId?.id || '';
+    const product = safeProducts.find(p => p._id === productId || p.id === productId);
+    return {
+      name: product?.name || (typeof item.productId === 'object' && item.productId?.name) || 'Unknown',
+      turnover: item.turnoverRate
+    };
+  });
 
-  const CreateAnalysisForm = () => (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
-        <div className="mt-3">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-medium text-gray-900">Add New Moves Analysis</h3>
-            <button
-              onClick={() => setShowCreateForm(false)}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              <X className="h-6 w-6" />
-            </button>
-          </div>
-          
-          <form className="space-y-4" onSubmit={handleCreateSubmit}>
+  const CreateAnalysisForm = () => {
+    const [formData, setFormData] = useState<FormData>({
+      productId: '',
+      demand: 0,
+      snLots: 0,
+      packagingQty: 0,
+      quantity: 0,
+      realQuantity: 0,
+      unitPrice: 0,
+      inboundTrend: 'stable',
+      outboundTrend: 'stable',
+      turnoverRate: 0
+    });
+
+    const handleFormSubmit = useCallback(async (e: React.FormEvent) => {
+      e.preventDefault();
+      const orgId = localStorage.getItem('organisationId');
+      if (!orgId) {
+        alert('No organisationId found');
+        return;
+      }
+
+      const newItem: Partial<MovesAnalysisType> = {
+        organisationId: orgId,
+        productId: formData.productId,
+        demand: formData.demand,
+        snLots: formData.snLots,
+        packagingQty: formData.packagingQty,
+        quantity: formData.quantity,
+        realQuantity: formData.realQuantity,
+        unitPrice: formData.unitPrice,
+        inboundTrend: formData.inboundTrend,
+        outboundTrend: formData.outboundTrend,
+        turnoverRate: formData.turnoverRate,
+      };
+
+      await dispatch(addMovesAnalysis(newItem as MovesAnalysisType));
+      dispatch(fetchMovesAnalysis());
+      setShowCreateForm(false);
+      setFormData({
+        productId: '',
+        demand: 0,
+        snLots: 0,
+        packagingQty: 0,
+        quantity: 0,
+        realQuantity: 0,
+        unitPrice: 0,
+        inboundTrend: 'stable',
+        outboundTrend: 'stable',
+        turnoverRate: 0
+      });
+    }, [formData, dispatch]);
+
+    const handleFieldChange = useCallback((field: keyof FormData) => (
+      e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+    ) => {
+      const value = ['demand', 'snLots', 'packagingQty', 'quantity', 'realQuantity', 'unitPrice', 'turnoverRate'].includes(field)
+        ? ((e.target as HTMLInputElement).valueAsNumber || 0)
+        : e.target.value;
+      setFormData(prev => ({ ...prev, [field]: value }));
+    }, []);
+
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">Add New Moves Analysis</h3>
+              <button
+                onClick={() => setShowCreateForm(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <form className="space-y-4" onSubmit={handleFormSubmit}>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Product
                 </label>
                 <select 
-                  value={createForm.product}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, product: e.target.value }))}
+                  value={formData.productId || ''}
+                  onChange={handleFieldChange('productId')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 >
                   <option value="">Select Product</option>
-                  {inventory.map(item => (
-                    <option key={item.id} value={item.name}>{item.name}</option>
-                  ))}
+                  {productsLoading ? (
+                    <option value="" disabled>Loading products...</option>
+                  ) : safeProducts.length === 0 ? (
+                    <option value="" disabled>No products available</option>
+                  ) : (
+                    safeProducts.map(product => (
+                      <option key={product._id || product.id} value={product._id || product.id}>
+                        {product.name}
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
               <div>
@@ -205,8 +359,8 @@ const MovesAnalysis: React.FC = () => {
                 </label>
                 <input
                   type="number"
-                  value={createForm.demand}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, demand: parseInt(e.target.value, 10) || 0 }))}
+                  value={formData.demand || ''}
+                  onChange={handleFieldChange('demand')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Enter demand quantity"
                   min="0"
@@ -222,8 +376,8 @@ const MovesAnalysis: React.FC = () => {
                 </label>
                 <input
                   type="number"
-                  value={createForm.snLots}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, snLots: parseInt(e.target.value, 10) || 0 }))}
+                  value={formData.snLots || ''}
+                  onChange={handleFieldChange('snLots')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Serial/Lot numbers"
                   min="0"
@@ -236,8 +390,8 @@ const MovesAnalysis: React.FC = () => {
                 </label>
                 <input
                   type="number"
-                  value={createForm.packagingQty}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, packagingQty: parseInt(e.target.value, 10) || 0 }))}
+                  value={formData.packagingQty || ''}
+                  onChange={handleFieldChange('packagingQty')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Package quantity"
                   min="0"
@@ -251,8 +405,8 @@ const MovesAnalysis: React.FC = () => {
                 <input
                   type="number"
                   step="0.01"
-                  value={createForm.unitPrice}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, unitPrice: parseFloat(e.target.value) || 0 }))}
+                  value={formData.unitPrice || ''}
+                  onChange={handleFieldChange('unitPrice')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Unit price"
                   min="0"
@@ -268,8 +422,8 @@ const MovesAnalysis: React.FC = () => {
                 </label>
                 <input
                   type="number"
-                  value={createForm.quantity}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, quantity: parseInt(e.target.value, 10) || 0 }))}
+                  value={formData.quantity || ''}
+                  onChange={handleFieldChange('quantity')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Current quantity"
                   min="0"
@@ -282,8 +436,8 @@ const MovesAnalysis: React.FC = () => {
                 </label>
                 <input
                   type="number"
-                  value={createForm.realQuantity}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, realQuantity: parseInt(e.target.value, 10) || 0 }))}
+                  value={formData.realQuantity || ''}
+                  onChange={handleFieldChange('realQuantity')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Actual quantity"
                   min="0"
@@ -298,8 +452,8 @@ const MovesAnalysis: React.FC = () => {
                   Inbound Trend
                 </label>
                 <select 
-                  value={createForm.inboundTrend}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, inboundTrend: e.target.value as 'up' | 'down' | 'stable' }))}
+                  value={formData.inboundTrend || 'stable'}
+                  onChange={handleFieldChange('inboundTrend')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 >
@@ -313,8 +467,8 @@ const MovesAnalysis: React.FC = () => {
                   Outbound Trend
                 </label>
                 <select 
-                  value={createForm.outboundTrend}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, outboundTrend: e.target.value as 'up' | 'down' | 'stable' }))}
+                  value={formData.outboundTrend || 'stable'}
+                  onChange={handleFieldChange('outboundTrend')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 >
@@ -344,7 +498,8 @@ const MovesAnalysis: React.FC = () => {
         </div>
       </div>
     </div>
-  );
+    );
+  };
 
   const ViewAnalysisForm = () => {
     if (!selectedItem) return null;
@@ -369,11 +524,17 @@ const MovesAnalysis: React.FC = () => {
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">ID</label>
-                  <p className="text-sm text-gray-900">{selectedItem.id}</p>
+                  <p className="text-sm text-gray-900">{selectedItem._id || 'N/A'}</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Product</label>
-                  <p className="text-sm text-gray-900">{selectedItem.product}</p>
+                  {(() => {
+                    const productId = typeof selectedItem.productId === 'string' ? selectedItem.productId : selectedItem.productId?._id || selectedItem.productId?.id || '';
+                    const product = safeProducts.find(p => p._id === productId || p.id === productId);
+                    return (
+                      <p className="text-sm text-gray-900">{product?.name || (typeof selectedItem.productId === 'object' && selectedItem.productId?.name) || 'Unknown Product'}</p>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -456,6 +617,54 @@ const MovesAnalysis: React.FC = () => {
 
   const UpdateAnalysisForm = () => {
     if (!selectedItem) return null;
+
+    const productIdValue = typeof selectedItem.productId === 'string' ? selectedItem.productId : selectedItem.productId?._id || selectedItem.productId?.id || '';
+    
+    const [formData, setFormData] = useState<FormData>({
+      productId: productIdValue,
+      demand: selectedItem.demand || 0,
+      snLots: selectedItem.snLots || 0,
+      packagingQty: selectedItem.packagingQty || 0,
+      quantity: selectedItem.quantity || 0,
+      realQuantity: selectedItem.realQuantity || 0,
+      unitPrice: selectedItem.unitPrice || 0,
+      inboundTrend: selectedItem.inboundTrend || 'stable',
+      outboundTrend: selectedItem.outboundTrend || 'stable',
+      turnoverRate: selectedItem.turnoverRate || 0,
+    });
+
+    const handleFormSubmit = useCallback(async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!selectedItem) return;
+      
+      const updatedItem: Partial<MovesAnalysisType> = {
+        productId: formData.productId,
+        demand: formData.demand,
+        snLots: formData.snLots,
+        packagingQty: formData.packagingQty,
+        quantity: formData.quantity,
+        realQuantity: formData.realQuantity,
+        unitPrice: formData.unitPrice,
+        inboundTrend: formData.inboundTrend,
+        outboundTrend: formData.outboundTrend,
+        turnoverRate: formData.turnoverRate,
+      };
+
+      await dispatch(updateMovesAnalysis({ id: selectedItem._id || '', data: updatedItem }));
+      dispatch(fetchMovesAnalysis());
+      setShowUpdateForm(false);
+      setSelectedItem(null);
+    }, [selectedItem, formData, dispatch]);
+
+    const handleFieldChange = useCallback((field: keyof FormData) => (
+      e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+    ) => {
+      const value = ['demand', 'snLots', 'packagingQty', 'quantity', 'realQuantity', 'unitPrice', 'turnoverRate'].includes(field)
+        ? ((e.target as HTMLInputElement).valueAsNumber || 0)
+        : e.target.value;
+      setFormData(prev => ({ ...prev, [field]: value }));
+    }, []);
+
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
         <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
@@ -466,7 +675,6 @@ const MovesAnalysis: React.FC = () => {
                 onClick={() => {
                   setShowUpdateForm(false);
                   setSelectedItem(null);
-                  setUpdateForm({});
                 }}
                 className="text-gray-400 hover:text-gray-600"
               >
@@ -474,22 +682,30 @@ const MovesAnalysis: React.FC = () => {
               </button>
             </div>
             
-            <form className="space-y-4" onSubmit={handleUpdateSubmit}>
+            <form className="space-y-4" onSubmit={handleFormSubmit}>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Product
                   </label>
                   <select 
-                    value={updateForm.product || selectedItem.product}
-                    onChange={(e) => setUpdateForm(prev => ({ ...prev, product: e.target.value }))}
+                    value={formData.productId || ''}
+                    onChange={handleFieldChange('productId')}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   >
                     <option value="">Select Product</option>
-                    {inventory.map(item => (
-                      <option key={item.id} value={item.name}>{item.name}</option>
-                    ))}
+                    {productsLoading ? (
+                      <option value="" disabled>Loading products...</option>
+                    ) : safeProducts.length === 0 ? (
+                      <option value="" disabled>No products available</option>
+                    ) : (
+                      safeProducts.map(product => (
+                        <option key={product._id || product.id} value={product._id || product.id}>
+                          {product.name}
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
                 <div>
@@ -498,8 +714,8 @@ const MovesAnalysis: React.FC = () => {
                   </label>
                   <input
                     type="number"
-                    value={updateForm.demand || selectedItem.demand}
-                    onChange={(e) => setUpdateForm(prev => ({ ...prev, demand: parseInt(e.target.value, 10) || 0 }))}
+                    value={formData.demand || ''}
+                    onChange={handleFieldChange('demand')}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     min="0"
                     required
@@ -514,8 +730,8 @@ const MovesAnalysis: React.FC = () => {
                   </label>
                   <input
                     type="number"
-                    value={updateForm.snLots || selectedItem.snLots}
-                    onChange={(e) => setUpdateForm(prev => ({ ...prev, snLots: parseInt(e.target.value, 10) || 0 }))}
+                    value={formData.snLots || ''}
+                    onChange={handleFieldChange('snLots')}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     min="0"
                     required
@@ -527,8 +743,8 @@ const MovesAnalysis: React.FC = () => {
                   </label>
                   <input
                     type="number"
-                    value={updateForm.packagingQty || selectedItem.packagingQty}
-                    onChange={(e) => setUpdateForm(prev => ({ ...prev, packagingQty: parseInt(e.target.value, 10) || 0 }))}
+                    value={formData.packagingQty || ''}
+                    onChange={handleFieldChange('packagingQty')}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     min="0"
                     required
@@ -541,8 +757,8 @@ const MovesAnalysis: React.FC = () => {
                   <input
                     type="number"
                     step="0.01"
-                    value={updateForm.unitPrice || selectedItem.unitPrice}
-                    onChange={(e) => setUpdateForm(prev => ({ ...prev, unitPrice: parseFloat(e.target.value) || 0 }))}
+                    value={formData.unitPrice || ''}
+                    onChange={handleFieldChange('unitPrice')}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     min="0"
                     required
@@ -557,8 +773,8 @@ const MovesAnalysis: React.FC = () => {
                   </label>
                   <input
                     type="number"
-                    value={updateForm.quantity || selectedItem.quantity}
-                    onChange={(e) => setUpdateForm(prev => ({ ...prev, quantity: parseInt(e.target.value, 10) || 0 }))}
+                    value={formData.quantity || ''}
+                    onChange={handleFieldChange('quantity')}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     min="0"
                     required
@@ -570,8 +786,8 @@ const MovesAnalysis: React.FC = () => {
                   </label>
                   <input
                     type="number"
-                    value={updateForm.realQuantity || selectedItem.realQuantity}
-                    onChange={(e) => setUpdateForm(prev => ({ ...prev, realQuantity: parseInt(e.target.value, 10) || 0 }))}
+                    value={formData.realQuantity || ''}
+                    onChange={handleFieldChange('realQuantity')}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     min="0"
                     required
@@ -585,8 +801,8 @@ const MovesAnalysis: React.FC = () => {
                     Inbound Trend
                   </label>
                   <select 
-                    value={updateForm.inboundTrend || selectedItem.inboundTrend}
-                    onChange={(e) => setUpdateForm(prev => ({ ...prev, inboundTrend: e.target.value as 'up' | 'down' | 'stable' }))}
+                    value={formData.inboundTrend || 'stable'}
+                    onChange={handleFieldChange('inboundTrend')}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   >
@@ -600,8 +816,8 @@ const MovesAnalysis: React.FC = () => {
                     Outbound Trend
                   </label>
                   <select 
-                    value={updateForm.outboundTrend || selectedItem.outboundTrend}
-                    onChange={(e) => setUpdateForm(prev => ({ ...prev, outboundTrend: e.target.value as 'up' | 'down' | 'stable' }))}
+                    value={formData.outboundTrend || 'stable'}
+                    onChange={handleFieldChange('outboundTrend')}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   >
@@ -615,11 +831,10 @@ const MovesAnalysis: React.FC = () => {
               <div className="flex justify-end space-x-3 pt-4">
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowUpdateForm(false);
-                    setSelectedItem(null);
-                    setUpdateForm({});
-                  }}
+                onClick={() => {
+                  setShowUpdateForm(false);
+                  setSelectedItem(null);
+                }}
                   className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
                 >
                   Cancel
@@ -694,7 +909,7 @@ const MovesAnalysis: React.FC = () => {
                 </div>
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">Total Analysis</p>
-                  <p className="text-2xl font-semibold text-gray-900">{movesAnalysisData.length}</p>
+                  <p className="text-2xl font-semibold text-gray-900">{safeMovesAnalysis.length}</p>
                 </div>
               </div>
             </div>
@@ -708,7 +923,7 @@ const MovesAnalysis: React.FC = () => {
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">High Demand Items</p>
                   <p className="text-2xl font-semibold text-gray-900">
-                    {movesAnalysisData.filter(item => item.demand > 100).length}
+                    {safeMovesAnalysis.filter(item => item.demand > 100).length}
                   </p>
                 </div>
               </div>
@@ -723,7 +938,7 @@ const MovesAnalysis: React.FC = () => {
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">Dead Stock</p>
                   <p className="text-2xl font-semibold text-gray-900">
-                    {movesAnalysisData.filter(item => item.turnoverRate === 0).length}
+                    {safeMovesAnalysis.filter(item => item.turnoverRate === 0).length}
                   </p>
                 </div>
               </div>
@@ -738,7 +953,7 @@ const MovesAnalysis: React.FC = () => {
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">Avg Turnover</p>
                   <p className="text-2xl font-semibold text-gray-900">
-                    {movesAnalysisData.length > 0 ? (movesAnalysisData.reduce((sum, item) => sum + item.turnoverRate, 0) / movesAnalysisData.length).toFixed(1) : '0'}
+                    {safeMovesAnalysis.length > 0 ? (safeMovesAnalysis.reduce((sum, item) => sum + item.turnoverRate, 0) / safeMovesAnalysis.length).toFixed(1) : '0'}
                   </p>
                 </div>
               </div>
@@ -851,12 +1066,29 @@ const MovesAnalysis: React.FC = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredAnalysis.map((item) => (
-                <tr key={item.id} className="hover:bg-gray-50">
+              {loading ? (
+                <tr>
+                  <td colSpan={10} className="px-6 py-4 text-center text-sm text-gray-500">
+                    Loading...
+                  </td>
+                </tr>
+              ) : filteredAnalysis.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="px-6 py-4 text-center text-sm text-gray-500">
+                    No analysis found
+                  </td>
+                </tr>
+              ) : (
+                filteredAnalysis.map((item) => {
+                  const productId = typeof item.productId === 'string' ? item.productId : item.productId?._id || item.productId?.id || '';
+                  const product = safeProducts.find(p => p._id === productId || p.id === productId);
+                  const productName = product?.name || (typeof item.productId === 'object' && item.productId?.name) || 'Unknown Product';
+                  return (
+                <tr key={item._id || productId} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       <Package className="h-4 w-4 text-gray-400 mr-2" />
-                      <div className="text-sm font-medium text-gray-900">{item.product}</div>
+                      <div className="text-sm font-medium text-gray-900">{productName}</div>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -909,18 +1141,6 @@ const MovesAnalysis: React.FC = () => {
                       className="text-green-600 hover:text-green-900 mr-3"
                       onClick={() => {
                         setSelectedItem(item);
-                        setUpdateForm({
-                          product: item.product,
-                          demand: item.demand,
-                          snLots: item.snLots,
-                          packagingQty: item.packagingQty,
-                          quantity: item.quantity,
-                          realQuantity: item.realQuantity,
-                          unitPrice: item.unitPrice,
-                          inboundTrend: item.inboundTrend,
-                          outboundTrend: item.outboundTrend,
-                          turnoverRate: item.turnoverRate
-                        });
                         setShowUpdateForm(true);
                       }}
                     >
@@ -928,13 +1148,15 @@ const MovesAnalysis: React.FC = () => {
                     </button>
                     <button 
                       className="text-red-600 hover:text-red-900"
-                      onClick={() => handleDelete(item.id)}
+                      onClick={() => handleDelete(item._id || '')}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </td>
                 </tr>
-              ))}
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
