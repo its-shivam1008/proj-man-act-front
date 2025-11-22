@@ -693,7 +693,7 @@ export default function WBS() {
                   </div>
                 </div>
 
-                <div className="space-y-2">
+                {/*<div className="space-y-2">
                   <Label htmlFor="manpowerRequirement">
                     Manpower Requirements
                   </Label>
@@ -724,7 +724,7 @@ export default function WBS() {
                     }
                     placeholder="e.g., 100 bags Cement, 2 tons Steel"
                   />
-                </div>
+                </div> */}
                 <div className="space-y-2">
                   <Label>Dependencies</Label>
 
