@@ -17,6 +17,7 @@ import {
   CheckCircle,
   FolderKanban
 } from 'lucide-react';
+import { BASE_URL } from '@/utils/constants';
 
 const Dashboard: React.FC = () => {
   const {
@@ -30,7 +31,7 @@ const Dashboard: React.FC = () => {
   } = useData();
 
   useEffect(() => {
-    fetch('http://localhost:4000/ok')
+    fetch(`${BASE_URL}/ok`)
     .then((res) => {
       if(!res.ok){
          throw new Error("CANNOT connect to BACKEND");

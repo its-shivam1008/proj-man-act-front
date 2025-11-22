@@ -15,7 +15,11 @@ import {
   Calendar,
   CheckSquare,
   List,
-  FileText
+  FileText,
+  Store,
+  Warehouse,
+  Package,
+  TrendingUp
 } from 'lucide-react';
 
 interface FormField {
@@ -36,61 +40,139 @@ const FormBuilder: React.FC = () => {
   const [showAddField, setShowAddField] = useState(false);
   const [editingField, setEditingField] = useState<string | null>(null);
 
+  // Configurations matching the exact fields in your provided page files
   const [formFields, setFormFields] = useState<Record<string, FormField[]>>({
     'add-product': [
-      { id: '1', name: 'productName', label: 'Product Name', type: 'text', required: true, visible: true, placeholder: 'Enter product name', order: 1 },
-      { id: '2', name: 'productType', label: 'Product Type', type: 'select', required: true, visible: true, options: ['Goods', 'Services', 'Combo'], order: 2 },
-      { id: '3', name: 'category', label: 'Category', type: 'select', required: true, visible: true, options: ['Raw Materials', 'Components', 'Finished Goods'], order: 3 },
-      { id: '4', name: 'salesPrice', label: 'Sales Price', type: 'number', required: false, visible: true, placeholder: '0.00', order: 4 },
-      { id: '5', name: 'costPrice', label: 'Cost Price', type: 'number', required: false, visible: true, placeholder: '0.00', order: 5 },
+      { id: 'p1', name: 'name', label: 'Product Name', type: 'text', required: true, visible: true, placeholder: 'e.g. Stainless Steel Rod', order: 1 },
+      { id: 'p2', name: 'type', label: 'Product Type', type: 'select', required: true, visible: true, options: ['goods', 'services', 'combo'], order: 2 },
+      { id: 'p3', name: 'category', label: 'Category', type: 'text', required: true, visible: true, placeholder: 'e.g. Raw Materials', order: 3 },
+      { id: 'p4', name: 'referenceCode', label: 'SKU / Reference', type: 'text', required: false, visible: true, placeholder: 'e.g. SKU-1001', order: 4 },
+      { id: 'p5', name: 'description', label: 'Description', type: 'textarea', required: false, visible: true, placeholder: 'Detailed product description...', order: 5 },
+      { id: 'p6', name: 'trackInventory', label: 'Track Inventory', type: 'checkbox', required: false, visible: true, placeholder: 'Enable tracking', order: 6 },
+      { id: 'p7', name: 'inventoryAvailable', label: 'Available Stock', type: 'number', required: false, visible: true, placeholder: '0', order: 7 },
+      { id: 'p8', name: 'minimumStockLevel', label: 'Min Stock Level', type: 'number', required: false, visible: true, placeholder: '0', order: 8 },
+      { id: 'p9', name: 'location', label: 'Location', type: 'text', required: false, visible: true, placeholder: 'e.g. Rack A-12', order: 9 },
+      { id: 'p10', name: 'barcode', label: 'Barcode', type: 'text', required: false, visible: true, placeholder: 'Scan barcode', order: 10 },
+      { id: 'p11', name: 'costPrice', label: 'Cost Price', type: 'number', required: true, visible: true, placeholder: '0.00', order: 11 },
+      { id: 'p12', name: 'salesPrice', label: 'Sales Price', type: 'number', required: false, visible: true, placeholder: '0.00', order: 12 },
+      { id: 'p13', name: 'salesTax', label: 'Sales Tax (%)', type: 'number', required: false, visible: true, placeholder: '0', order: 13 },
+      { id: 'p14', name: 'purchaseTax', label: 'Purchase Tax (%)', type: 'number', required: false, visible: true, placeholder: '0', order: 14 },
+      { id: 'p15', name: 'upsellSuggestion', label: 'Upsell Suggestion', type: 'text', required: false, visible: true, placeholder: 'e.g. Buy with Lubricant', order: 15 },
+      { id: 'p16', name: 'warehouseId', label: 'Default Warehouse', type: 'select', required: false, visible: true, options: ['Warehouse A', 'Warehouse B'], order: 16 },
+      { id: 'p17', name: 'storeId', label: 'Default Store', type: 'select', required: false, visible: true, options: ['Store A', 'Store B'], order: 17 },
     ],
     'receipt': [
-      { id: '1', name: 'receiveFrom', label: 'Receive From', type: 'text', required: true, visible: true, placeholder: 'Partner/Customer/Supplier', order: 1 },
-      { id: '2', name: 'operationType', label: 'Operation Type', type: 'select', required: true, visible: true, options: ['Purchase', 'Transfer', 'Return'], order: 2 },
-      { id: '3', name: 'product', label: 'Product', type: 'select', required: true, visible: true, options: [], order: 3 },
-      { id: '4', name: 'quantity', label: 'Quantity', type: 'number', required: true, visible: true, placeholder: 'Enter quantity', order: 4 },
+      { id: 'r1', name: 'receiveFrom', label: 'Receive From', type: 'text', required: true, visible: true, placeholder: 'Partner/Customer/Supplier', order: 1 },
+      { id: 'r2', name: 'operationType', label: 'Operation Type', type: 'select', required: true, visible: true, options: ['Purchase', 'Transfer', 'Return', 'Manufacturing'], order: 2 },
+      { id: 'r3', name: 'productId', label: 'Product', type: 'select', required: true, visible: true, options: [], order: 3 },
+      { id: 'r4', name: 'quantity', label: 'Quantity', type: 'number', required: true, visible: true, placeholder: 'Enter quantity', order: 4 },
+      { id: 'r5', name: 'warehouse', label: 'Warehouse/Location', type: 'select', required: true, visible: true, options: ['Warehouse A', 'Warehouse B', 'Warehouse C'], order: 5 },
+      { id: 'r6', name: 'scheduledDate', label: 'Scheduled Date', type: 'date', required: false, visible: true, order: 6 },
+      { id: 'r7', name: 'barcode', label: 'Barcode Scan', type: 'text', required: false, visible: true, placeholder: 'Scan or enter barcode', order: 7 },
     ],
     'delivery': [
-      { id: '1', name: 'deliverTo', label: 'Deliver To', type: 'text', required: true, visible: true, placeholder: 'Customer/Partner', order: 1 },
-      { id: '2', name: 'operationType', label: 'Operation Type', type: 'select', required: true, visible: true, options: ['Sale', 'Transfer', 'Return'], order: 2 },
-      { id: '3', name: 'shippingMethod', label: 'Shipping Method', type: 'select', required: false, visible: true, options: ['Standard', 'Express', 'Overnight'], order: 3 },
+      { id: 'd1', name: 'deliverTo', label: 'Deliver To', type: 'text', required: true, visible: true, placeholder: 'Customer/Partner', order: 1 },
+      { id: 'd2', name: 'operationType', label: 'Operation Type', type: 'select', required: true, visible: true, options: ['Sale', 'Transfer', 'Return', 'Sample'], order: 2 },
+      { id: 'd3', name: 'productId', label: 'Product', type: 'select', required: true, visible: true, options: [], order: 3 },
+      { id: 'd4', name: 'quantity', label: 'Quantity', type: 'number', required: true, visible: true, placeholder: 'Enter quantity', order: 4 },
+      { id: 'd5', name: 'shippingMethod', label: 'Shipping Method', type: 'select', required: true, visible: true, options: ['Standard', 'Express', 'Overnight', 'Ground'], order: 5 },
+      { id: 'd6', name: 'priority', label: 'Priority', type: 'select', required: true, visible: true, options: ['low', 'medium', 'high'], order: 6 },
+      { id: 'd7', name: 'scheduledDate', label: 'Scheduled Date', type: 'date', required: false, visible: true, order: 7 },
     ],
     'scrap-order': [
-      { id: '1', name: 'product', label: 'Product', type: 'select', required: true, visible: true, options: [], order: 1 },
-      { id: '2', name: 'quantity', label: 'Quantity', type: 'number', required: true, visible: true, placeholder: 'Enter quantity to scrap', order: 2 },
-      { id: '3', name: 'reason', label: 'Scrap Reason', type: 'select', required: true, visible: true, options: ['Damaged', 'Expired', 'Lost', 'Obsolete'], order: 3 },
+      { id: 'sc1', name: 'productId', label: 'Product Name', type: 'select', required: true, visible: true, options: [], order: 1 },
+      { id: 'sc2', name: 'quantity', label: 'Quantity', type: 'number', required: true, visible: true, placeholder: 'Enter quantity to scrap', order: 2 },
+      { id: 'sc3', name: 'reason', label: 'Scrap Reason', type: 'select', required: true, visible: true, options: ['damaged', 'expired', 'lost', 'obsolete'], order: 3 },
+      { id: 'sc4', name: 'scrapLocation', label: 'Scrap Location', type: 'select', required: true, visible: true, options: ['Scrap Yard A', 'Scrap Yard B', 'Disposal Center', 'Recycling Center'], order: 4 },
+      { id: 'sc5', name: 'remark', label: 'Remark', type: 'textarea', required: false, visible: true, placeholder: 'Enter detailed reason...', order: 5 },
+    ],
+    'forecasting': [
+      { id: 'f1', name: 'productId', label: 'Product', type: 'select', required: true, visible: true, options: [], order: 1 },
+      { id: 'f2', name: 'currentStock', label: 'Current Stock', type: 'number', required: true, visible: true, placeholder: '0', order: 2 },
+      { id: 'f3', name: 'demandForecast', label: 'Demand Forecast', type: 'number', required: true, visible: true, placeholder: '0', order: 3 },
+      { id: 'f4', name: 'suggestedReplenishment', label: 'Suggested Replenishment', type: 'number', required: true, visible: true, placeholder: '0', order: 4 },
+      { id: 'f5', name: 'leadTime', label: 'Lead Time (days)', type: 'number', required: true, visible: true, placeholder: '0', order: 5 },
+      { id: 'f6', name: 'priority', label: 'Priority', type: 'select', required: true, visible: true, options: ['low', 'medium', 'high', 'critical'], order: 6 },
+      { id: 'f7', name: 'replenishmentRule', label: 'Replenishment Rule', type: 'select', required: true, visible: true, options: ['automatic', 'manual'], order: 7 },
+    ],
+    'warehouse': [
+      { id: 'w1', name: 'name', label: 'Name', type: 'text', required: true, visible: true, placeholder: 'e.g. Main Warehouse', order: 1 },
+      { id: 'w2', name: 'type', label: 'Type', type: 'select', required: true, visible: true, options: ['General', 'Cold Storage', 'Bonded', 'Quarantine'], order: 2 },
+      { id: 'w3', name: 'location', label: 'Location', type: 'text', required: true, visible: true, placeholder: 'Address/Plant', order: 3 },
+      { id: 'w4', name: 'capacity', label: 'Capacity (%)', type: 'number', required: false, visible: true, placeholder: '0-100', order: 4 },
+      { id: 'w5', name: 'raw', label: 'Raw Materials Stock', type: 'number', required: false, visible: true, placeholder: '0', order: 5 },
+      { id: 'w6', name: 'finished', label: 'Finished Goods Stock', type: 'number', required: false, visible: true, placeholder: '0', order: 6 },
+      { id: 'w7', name: 'consumables', label: 'Consumables Stock', type: 'number', required: false, visible: true, placeholder: '0', order: 7 },
+      { id: 'w8', name: 'inTransit', label: 'In Transit', type: 'number', required: false, visible: true, placeholder: '0', order: 8 },
+      { id: 'w9', name: 'reorderAlerts', label: 'Reorder Alerts', type: 'text', required: false, visible: true, placeholder: 'Comma separated items', order: 9 },
+      { id: 'w10', name: 'bins', label: 'Bins/Racks', type: 'text', required: false, visible: true, placeholder: 'Comma separated locations', order: 10 },
+    ],
+    'store': [
+      { id: 's1', name: 'name', label: 'Store Name', type: 'text', required: true, visible: true, placeholder: 'Store Name', order: 1 },
+      { id: 's2', name: 'location', label: 'Location', type: 'text', required: true, visible: true, placeholder: 'Address', order: 2 },
+      { id: 's3', name: 'dailySales', label: 'Daily Sales (₹)', type: 'number', required: false, visible: true, placeholder: '0', order: 3 },
+      { id: 's4', name: 'stock', label: 'Current Stock (items)', type: 'number', required: false, visible: true, placeholder: '0', order: 4 },
+      { id: 's5', name: 'fastMoving', label: 'Fast Moving Items', type: 'textarea', required: false, visible: true, placeholder: 'Comma separated', order: 5 },
+      { id: 's6', name: 'slowMoving', label: 'Slow Moving Items', type: 'textarea', required: false, visible: true, placeholder: 'Comma separated', order: 6 },
+      { id: 's7', name: 'returns', label: 'Returns (30 days)', type: 'number', required: false, visible: true, placeholder: '0', order: 7 },
+      { id: 's8', name: 'scrap', label: 'Scrap Items', type: 'number', required: false, visible: true, placeholder: '0', order: 8 },
+      { id: 's9', name: 'manager', label: 'Store Manager', type: 'text', required: false, visible: true, placeholder: 'Name', order: 9 },
+      { id: 's10', name: 'last7DaysSales', label: 'Last 7 Days Sales', type: 'text', required: false, visible: true, placeholder: 'Comma separated numbers', order: 10 },
+      { id: 's11', name: 'lowStockAlerts', label: 'Low Stock Alerts', type: 'textarea', required: false, visible: true, placeholder: 'Comma separated items', order: 11 },
     ],
     'stock-report': [
-      { id: '1', name: 'itemName', label: 'Item Name', type: 'select', required: true, visible: true, options: [], order: 1 },
-      { id: '2', name: 'unitCost', label: 'Unit Cost', type: 'number', required: true, visible: true, placeholder: 'Enter unit cost', order: 2 },
-      { id: '3', name: 'incomingQty', label: 'Incoming Quantity', type: 'number', required: false, visible: true, placeholder: 'Enter incoming quantity', order: 3 },
+      { id: 'sr1', name: 'itemId', label: 'Item Name', type: 'select', required: true, visible: true, options: [], order: 1 },
+      { id: 'sr2', name: 'unitCost', label: 'Unit Cost', type: 'number', required: true, visible: true, placeholder: '0.00', order: 2 },
+      { id: 'sr3', name: 'incomingQuantity', label: 'Incoming Quantity', type: 'number', required: true, visible: true, placeholder: '0', order: 3 },
+      { id: 'sr4', name: 'outgoingQuantity', label: 'Outgoing Quantity', type: 'number', required: true, visible: true, placeholder: '0', order: 4 },
+      { id: 'sr5', name: 'category', label: 'Category', type: 'select', required: true, visible: true, options: ['Raw Materials', 'Components', 'Finished Goods'], order: 5 },
+      { id: 'sr6', name: 'warehouse', label: 'Warehouse', type: 'select', required: true, visible: true, options: ['Warehouse A', 'Warehouse B', 'Warehouse C'], order: 6 },
+      { id: 'sr7', name: 'productType', label: 'Product Type', type: 'select', required: true, visible: true, options: ['goods', 'services', 'combo'], order: 7 },
     ],
     'transaction-history': [
-      { id: '1', name: 'date', label: 'Date', type: 'date', required: true, visible: true, order: 1 },
-      { id: '2', name: 'reference', label: 'Reference', type: 'text', required: true, visible: true, placeholder: 'Enter reference number', order: 2 },
-      { id: '3', name: 'product', label: 'Product', type: 'select', required: true, visible: true, options: [], order: 3 },
+      { id: 'th1', name: 'date', label: 'Date', type: 'date', required: true, visible: true, order: 1 },
+      { id: 'th2', name: 'reference', label: 'Reference', type: 'text', required: true, visible: true, placeholder: 'Enter reference number', order: 2 },
+      { id: 'th3', name: 'productId', label: 'Product', type: 'select', required: true, visible: true, options: [], order: 3 },
+      { id: 'th4', name: 'quantity', label: 'Quantity', type: 'number', required: true, visible: true, placeholder: '0', order: 4 },
+      { id: 'th5', name: 'fromLocation', label: 'From Location', type: 'text', required: true, visible: true, placeholder: 'Source', order: 5 },
+      { id: 'th6', name: 'toLocation', label: 'To Location', type: 'text', required: true, visible: true, placeholder: 'Destination', order: 6 },
+      { id: 'th7', name: 'operationType', label: 'Operation Type', type: 'select', required: true, visible: true, options: ['receipt', 'delivery', 'internal', 'scrap', 'adjustment'], order: 7 },
+      { id: 'th8', name: 'status', label: 'Status', type: 'select', required: true, visible: true, options: ['draft', 'confirmed', 'done', 'cancelled'], order: 8 },
     ],
     'moves-analysis': [
-      { id: '1', name: 'product', label: 'Product', type: 'select', required: true, visible: true, options: [], order: 1 },
-      { id: '2', name: 'demand', label: 'Demand', type: 'number', required: true, visible: true, placeholder: 'Enter demand quantity', order: 2 },
-      { id: '3', name: 'snLots', label: 'Number of SN/Lots', type: 'number', required: false, visible: true, placeholder: 'Serial/Lot numbers', order: 3 },
+      { id: 'ma1', name: 'product', label: 'Product', type: 'select', required: true, visible: true, options: [], order: 1 },
+      { id: 'ma2', name: 'demand', label: 'Demand', type: 'number', required: true, visible: true, placeholder: '0', order: 2 },
+      { id: 'ma3', name: 'snLots', label: 'Number of SN/Lots', type: 'number', required: true, visible: true, placeholder: '0', order: 3 },
+      { id: 'ma4', name: 'packagingQty', label: 'Packaging Quantity', type: 'number', required: true, visible: true, placeholder: '0', order: 4 },
+      { id: 'ma5', name: 'quantity', label: 'Quantity', type: 'number', required: true, visible: true, placeholder: '0', order: 5 },
+      { id: 'ma6', name: 'realQuantity', label: 'Real Quantity', type: 'number', required: true, visible: true, placeholder: '0', order: 6 },
+      { id: 'ma7', name: 'unitPrice', label: 'Unit Price', type: 'number', required: true, visible: true, placeholder: '0.00', order: 7 },
+      { id: 'ma8', name: 'inboundTrend', label: 'Inbound Trend', type: 'select', required: true, visible: true, options: ['up', 'down', 'stable'], order: 8 },
+      { id: 'ma9', name: 'outboundTrend', label: 'Outbound Trend', type: 'select', required: true, visible: true, options: ['up', 'down', 'stable'], order: 9 },
     ],
     'valuation': [
-      { id: '1', name: 'date', label: 'Date', type: 'date', required: true, visible: true, order: 1 },
-      { id: '2', name: 'reference', label: 'Reference', type: 'text', required: true, visible: true, placeholder: 'Enter reference number', order: 2 },
-      { id: '3', name: 'product', label: 'Product', type: 'select', required: true, visible: true, options: [], order: 3 },
+      { id: 'v1', name: 'date', label: 'Date', type: 'date', required: true, visible: true, order: 1 },
+      { id: 'v2', name: 'reference', label: 'Reference', type: 'text', required: true, visible: true, placeholder: 'Enter reference', order: 2 },
+      { id: 'v3', name: 'product', label: 'Product', type: 'select', required: true, visible: true, options: [], order: 3 },
+      { id: 'v4', name: 'quantity', label: 'Quantity', type: 'number', required: true, visible: true, placeholder: '+ for in, - for out', order: 4 },
+      { id: 'v5', name: 'unitValue', label: 'Unit Value', type: 'number', required: true, visible: true, placeholder: '0.00', order: 5 },
+      { id: 'v6', name: 'method', label: 'Valuation Method', type: 'select', required: true, visible: true, options: ['FIFO', 'LIFO', 'Average Cost'], order: 6 },
+      { id: 'v7', name: 'notes', label: 'Notes', type: 'textarea', required: false, visible: true, placeholder: 'Additional notes...', order: 7 },
     ]
   });
 
   const formOptions = [
-    { id: 'add-product', name: 'Add Product Form' },
-    { id: 'receipt', name: 'Receipt Form' },
-    { id: 'delivery', name: 'Delivery Form' },
-    { id: 'scrap-order', name: 'Scrap Order Form' },
-    { id: 'stock-report', name: 'Stock Report Form' },
-    { id: 'transaction-history', name: 'Transaction History Form' },
-    { id: 'moves-analysis', name: 'Moves Analysis Form' },
-    { id: 'valuation', name: 'Valuation Form' }
+    { id: 'add-product', name: 'Product Form', icon: Package },
+    { id: 'warehouse', name: 'Warehouse Form', icon: Warehouse },
+    { id: 'store', name: 'Store Form', icon: Store },
+    { id: 'receipt', name: 'Receipt Form', icon: FileText },
+    { id: 'delivery', name: 'Delivery Form', icon: FileText },
+    { id: 'scrap-order', name: 'Scrap Order Form', icon: Trash2 },
+    { id: 'forecasting', name: 'Forecasting Rule', icon: TrendingUp },
+    { id: 'stock-report', name: 'Stock Report', icon: FileText },
+    { id: 'transaction-history', name: 'Transaction History', icon: FileText },
+    { id: 'moves-analysis', name: 'Moves Analysis', icon: FileText },
+    { id: 'valuation', name: 'Valuation Report', icon: FileText }
   ];
 
   const fieldTypes = [
@@ -174,7 +256,7 @@ const FormBuilder: React.FC = () => {
                 <input
                   type="text"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter field name"
+                  placeholder="Enter field name (camelCase)"
                 />
               </div>
               <div>
@@ -184,7 +266,7 @@ const FormBuilder: React.FC = () => {
                 <input
                   type="text"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter field label"
+                  placeholder="Enter display label"
                 />
               </div>
             </div>
@@ -254,7 +336,6 @@ const FormBuilder: React.FC = () => {
   );
 
   return (
-    // <Layout>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -277,22 +358,25 @@ const FormBuilder: React.FC = () => {
         <div className="bg-white shadow rounded-lg p-6">
           <h3 className="text-lg font-medium text-gray-900 mb-4">Select Form to Customize</h3>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {formOptions.map((form) => (
-              <button
-                key={form.id}
-                onClick={() => setSelectedForm(form.id)}
-                className={`p-3 text-left border rounded-lg transition-colors ${
-                  selectedForm === form.id
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-gray-300 hover:border-gray-400'
-                }`}
-              >
-                <div className="flex items-center">
-                  <Settings className="h-4 w-4 mr-2" />
-                  <span className="text-sm font-medium">{form.name}</span>
-                </div>
-              </button>
-            ))}
+            {formOptions.map((form) => {
+              const Icon = form.icon;
+              return (
+                <button
+                  key={form.id}
+                  onClick={() => setSelectedForm(form.id)}
+                  className={`p-3 text-left border rounded-lg transition-colors ${
+                    selectedForm === form.id
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-gray-300 hover:border-gray-400'
+                  }`}
+                >
+                  <div className="flex items-center">
+                    {Icon && <Icon className="h-4 w-4 mr-2" />}
+                    <span className="text-sm font-medium">{form.name}</span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -333,7 +417,7 @@ const FormBuilder: React.FC = () => {
                       <div>
                         <h4 className="text-sm font-medium text-gray-900">{field.label}</h4>
                         <p className="text-xs text-gray-500">
-                          Type: {field.type} • Name: {field.name}
+                          Type: {field.type} • Key: {field.name}
                         </p>
                       </div>
                     </div>
@@ -404,10 +488,12 @@ const FormBuilder: React.FC = () => {
         {/* Form Preview */}
         <div className="bg-white shadow rounded-lg">
           <div className="px-6 py-4 border-b border-gray-200">
-            <h3 className="text-lg font-medium text-gray-900">Form Preview</h3>
+            <h3 className="text-lg font-medium text-gray-900">
+              Preview: {formOptions.find(f => f.id === selectedForm)?.name}
+            </h3>
           </div>
           <div className="p-6">
-            <div className="max-w-2xl">
+            <div className="max-w-2xl mx-auto bg-gray-50 p-6 rounded-xl border border-gray-200">
               <div className="space-y-4">
                 {currentFields
                   .filter(field => field.visible)
@@ -420,7 +506,7 @@ const FormBuilder: React.FC = () => {
                       </label>
                       {field.type === 'select' ? (
                         <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                          <option value="">Select option</option>
+                          <option value="">Select {field.label}</option>
                           {field.options?.map((option, index) => (
                             <option key={index} value={option}>{option}</option>
                           ))}
@@ -432,12 +518,12 @@ const FormBuilder: React.FC = () => {
                           placeholder={field.placeholder}
                         />
                       ) : field.type === 'checkbox' ? (
-                        <div className="flex items-center">
+                        <div className="flex items-center h-10">
                           <input
                             type="checkbox"
-                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                           />
-                          <span className="ml-2 text-sm text-gray-700">{field.placeholder || 'Check this option'}</span>
+                          <span className="ml-2 text-sm text-gray-700">{field.placeholder || 'Enable this option'}</span>
                         </div>
                       ) : (
                         <input
@@ -448,6 +534,12 @@ const FormBuilder: React.FC = () => {
                       )}
                     </div>
                   ))}
+                
+                <div className="pt-4 flex justify-end">
+                    <button disabled className="px-4 py-2 bg-blue-600 text-white rounded-lg opacity-50 cursor-not-allowed">
+                        Submit (Preview)
+                    </button>
+                </div>
               </div>
               {currentFields.filter(field => field.visible).length === 0 && (
                 <p className="text-gray-500 text-center py-8">
@@ -461,7 +553,6 @@ const FormBuilder: React.FC = () => {
         {/* Add Field Modal */}
         {showAddField && <AddFieldForm />}
       </div>
-    // </Layout>
   );
 };
 

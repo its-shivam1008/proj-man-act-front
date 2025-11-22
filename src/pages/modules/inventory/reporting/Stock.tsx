@@ -1,6 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useData } from '../../../../contexts/DataContext';
-import Layout from '../../../../components/Layout';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import { AppDispatch, RootState } from '../../../../redux/store';
+import {
+  fetchStockReports,
+  addStockReport,
+  updateStockReport,
+  deleteStockReport,
+  StockReport,
+} from '../../../../redux/slices/stockReportSlice';
+import { fetchProducts } from '../../../../redux/slices/productSlice';
 import { 
   Package, 
   Plus, 
@@ -16,22 +24,10 @@ import {
   XCircle
 } from 'lucide-react';
 
-import { storage, STORAGE_KEYS } from '@/lib/storage'; // Adjust path as needed
-
-interface StockReportItem {
-  id: string;
-  itemId: string;
-  unitCost: number;
-  incomingQuantity: number;
-  outgoingQuantity: number;
-  category: string;
-  warehouse: string;
-  productType: string;
-}
-
 const Stock: React.FC = () => {
-  const { inventory } = useData();
-  const [stockReports, setStockReports] = useState<StockReportItem[]>([]);
+  const dispatch = useDispatch<AppDispatch>();
+  const { stockReports, loading } = useSelector((state: RootState) => state.stockReports);
+  const { products, loading: productsLoading } = useSelector((state: RootState) => state.products);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [monthFilter, setMonthFilter] = useState('this-month');
@@ -44,23 +40,18 @@ const Stock: React.FC = () => {
   const [viewingId, setViewingId] = useState<string | null>(null);
 
   useEffect(() => {
-    const initStockReports = () => {
-      if (!storage.has(STORAGE_KEYS.STOCK_REPORTS)) {
-        storage.set(STORAGE_KEYS.STOCK_REPORTS, []);
-      }
-    };
-    initStockReports();
-
-    const data = storage.get<StockReportItem[]>(STORAGE_KEYS.STOCK_REPORTS, []);
-    setStockReports(Array.isArray(data) ? data : []);
-  }, []);
+    dispatch(fetchStockReports());
+    dispatch(fetchProducts());
+  }, [dispatch]);
 
   const safeStockReports = Array.isArray(stockReports) ? stockReports : [];
-  const safeInventory = Array.isArray(inventory) ? inventory : [];
+  const safeProducts = Array.isArray(products) ? products : [];
 
   const filteredStockReports = safeStockReports.filter(report => {
-    const item = safeInventory.find(i => i.id === report.itemId);
-    const matchesSearch = item?.name.toLowerCase().includes(searchTerm.toLowerCase()) || false;
+    const itemId = typeof report.itemId === 'string' ? report.itemId : report.itemId?._id || report.itemId?.id || '';
+    const item = safeProducts.find(i => i._id === itemId || i.id === itemId);
+    const itemName = item?.name || (typeof report.itemId === 'object' && report.itemId?.name) || '';
+    const matchesSearch = itemName.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = categoryFilter === 'all' || report.category === categoryFilter;
     const matchesWarehouse = warehouseFilter === 'all' || report.warehouse === warehouseFilter;
     const matchesProductType = productTypeFilter === 'all' || report.productType === productTypeFilter;
@@ -75,8 +66,15 @@ const Stock: React.FC = () => {
     setViewingId(null);
   }, []);
 
-  const handleSubmit = useCallback((formData: any) => {
-    const commonData = {
+  const handleSubmit = useCallback(async (formData: any) => {
+    const orgId = localStorage.getItem('organisationId');
+    if (!orgId) {
+      alert('No organisationId found');
+      return;
+    }
+
+    const commonData: Partial<StockReport> = {
+      organisationId: orgId,
       itemId: formData.itemId,
       unitCost: Number(formData.unitCost) || 0,
       incomingQuantity: Number(formData.incomingQuantity) || 0,
@@ -86,21 +84,15 @@ const Stock: React.FC = () => {
       productType: formData.productType,
     };
 
-    const newReport: StockReportItem = {
-      ...commonData,
-      id: editingId || Date.now().toString(),
-    };
-
     if (editingId) {
-      storage.updateById(STORAGE_KEYS.STOCK_REPORTS, editingId, newReport);
+      await dispatch(updateStockReport({ id: editingId, data: commonData }));
     } else {
-      storage.push(STORAGE_KEYS.STOCK_REPORTS, newReport);
+      await dispatch(addStockReport(commonData as StockReport));
     }
 
-    const updatedStockReports = storage.get<StockReportItem[]>(STORAGE_KEYS.STOCK_REPORTS, []);
-    setStockReports(Array.isArray(updatedStockReports) ? updatedStockReports : []);
     handleCloseForms();
-  }, [editingId, handleCloseForms]);
+    dispatch(fetchStockReports());
+  }, [editingId, handleCloseForms, dispatch]);
 
   const handleEdit = useCallback((id: string) => {
     setEditingId(id);
@@ -112,33 +104,45 @@ const Stock: React.FC = () => {
     setShowViewForm(true);
   }, []);
 
-  const handleDelete = useCallback((id: string) => {
+  const handleDelete = useCallback(async (id: string) => {
     if (confirm('Are you sure you want to delete this stock report?')) {
-      storage.deleteById(STORAGE_KEYS.STOCK_REPORTS, id);
-      const updatedStockReports = storage.get<StockReportItem[]>(STORAGE_KEYS.STOCK_REPORTS, []);
-      setStockReports(Array.isArray(updatedStockReports) ? updatedStockReports : []);
+      await dispatch(deleteStockReport(id));
+      dispatch(fetchStockReports());
     }
-  }, []);
+  }, [dispatch]);
 
   const handleAddClick = useCallback(() => {
     setEditingId(null);
     setShowCreateForm(true);
   }, []);
 
-  const StockReportForm = ({ initialData }: { initialData?: Partial<StockReportItem> }) => {
+  const StockReportForm = ({ initialData }: { initialData?: Partial<StockReport> }) => {
+    const itemIdValue = typeof initialData?.itemId === 'string' 
+      ? initialData.itemId 
+      : initialData?.itemId?._id || initialData?.itemId?.id || '';
+    
     const [formData, setFormData] = useState({
-      itemId: initialData?.itemId || '',
-      unitCost: (initialData?.unitCost || 0).toString(),
-      incomingQuantity: (initialData?.incomingQuantity || 0).toString(),
-      outgoingQuantity: (initialData?.outgoingQuantity || 0).toString(),
+      itemId: itemIdValue || '',
+      unitCost: initialData?.unitCost ? initialData.unitCost.toString() : '',
+      incomingQuantity: initialData?.incomingQuantity ? initialData.incomingQuantity.toString() : '',
+      outgoingQuantity: initialData?.outgoingQuantity ? initialData.outgoingQuantity.toString() : '',
       category: initialData?.category || 'Raw Materials',
       warehouse: initialData?.warehouse || 'Warehouse A',
       productType: initialData?.productType || 'goods',
     });
 
-    const handleChange = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const handleChange = useCallback((field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       setFormData((prev) => ({ ...prev, [field]: e.target.value }));
-    };
+    }, []);
+    
+    // Stable handlers for each field
+    const handleItemIdChange = useMemo(() => handleChange('itemId'), [handleChange]);
+    const handleUnitCostChange = useMemo(() => handleChange('unitCost'), [handleChange]);
+    const handleIncomingQuantityChange = useMemo(() => handleChange('incomingQuantity'), [handleChange]);
+    const handleOutgoingQuantityChange = useMemo(() => handleChange('outgoingQuantity'), [handleChange]);
+    const handleCategoryChange = useMemo(() => handleChange('category'), [handleChange]);
+    const handleWarehouseChange = useMemo(() => handleChange('warehouse'), [handleChange]);
+    const handleProductTypeChange = useMemo(() => handleChange('productType'), [handleChange]);
 
     const handleFormSubmit = (e: React.FormEvent) => {
       e.preventDefault();
@@ -171,14 +175,22 @@ const Stock: React.FC = () => {
                   </label>
                   <select 
                     value={formData.itemId}
-                    onChange={handleChange('itemId')}
+                    onChange={handleItemIdChange}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   >
                     <option value="">Select Item</option>
-                    {safeInventory.map(item => (
-                      <option key={item.id} value={item.id}>{item.name}</option>
-                    ))}
+                    {productsLoading ? (
+                      <option value="" disabled>Loading products...</option>
+                    ) : safeProducts.length === 0 ? (
+                      <option value="" disabled>No products available</option>
+                    ) : (
+                      safeProducts.map(product => (
+                        <option key={product._id || product.id} value={product._id || product.id}>
+                          {product.name}
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
                 <div>
@@ -189,7 +201,7 @@ const Stock: React.FC = () => {
                     type="number"
                     step="0.01"
                     value={formData.unitCost}
-                    onChange={handleChange('unitCost')}
+                    onChange={handleUnitCostChange}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="Enter unit cost"
                     min="0"
@@ -206,7 +218,7 @@ const Stock: React.FC = () => {
                   <input
                     type="number"
                     value={formData.incomingQuantity}
-                    onChange={handleChange('incomingQuantity')}
+                    onChange={handleIncomingQuantityChange}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="Enter incoming quantity"
                     min="0"
@@ -220,7 +232,7 @@ const Stock: React.FC = () => {
                   <input
                     type="number"
                     value={formData.outgoingQuantity}
-                    onChange={handleChange('outgoingQuantity')}
+                    onChange={handleOutgoingQuantityChange}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="Enter outgoing quantity"
                     min="0"
@@ -236,7 +248,7 @@ const Stock: React.FC = () => {
                   </label>
                   <select 
                     value={formData.category}
-                    onChange={handleChange('category')}
+                    onChange={handleCategoryChange}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   >
@@ -251,7 +263,7 @@ const Stock: React.FC = () => {
                   </label>
                   <select 
                     value={formData.warehouse}
-                    onChange={handleChange('warehouse')}
+                    onChange={handleWarehouseChange}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   >
@@ -266,7 +278,7 @@ const Stock: React.FC = () => {
                   </label>
                   <select 
                     value={formData.productType}
-                    onChange={handleChange('productType')}
+                    onChange={handleProductTypeChange}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   >
@@ -299,16 +311,17 @@ const Stock: React.FC = () => {
     );
   };
 
-  const ViewStockReportForm = ({ item }: { item: StockReportItem | undefined }) => {
+  const ViewStockReportForm = ({ item }: { item: StockReport | undefined }) => {
     if (!item) return null;
-    const inventoryItem = safeInventory.find(i => i.id === item.itemId);
+    const itemId = typeof item.itemId === 'string' ? item.itemId : item.itemId?._id || item.itemId?.id || '';
+    const productItem = safeProducts.find(i => i._id === itemId || i.id === itemId);
 
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
         <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
           <div className="mt-3">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium text-gray-900">View Stock Report: {item.id}</h3>
+              <h3 className="text-lg font-medium text-gray-900">View Stock Report: {item._id || item.itemId}</h3>
               <button
                 onClick={handleCloseForms}
                 className="text-gray-400 hover:text-gray-600"
@@ -321,7 +334,7 @@ const Stock: React.FC = () => {
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Item Name</label>
-                  <p className="text-sm text-gray-900">{inventoryItem?.name || 'Unknown Item'}</p>
+                  <p className="text-sm text-gray-900">{productItem?.name || (typeof item.itemId === 'object' && item.itemId?.name) || 'Unknown Item'}</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Unit Cost</label>
@@ -411,7 +424,7 @@ const Stock: React.FC = () => {
                 </div>
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">Total Items</p>
-                  <p className="text-2xl font-semibold text-gray-900">{safeInventory.length}</p>
+                  <p className="text-2xl font-semibold text-gray-900">{safeProducts.length}</p>
                 </div>
               </div>
             </div>
@@ -425,7 +438,7 @@ const Stock: React.FC = () => {
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">Total Value</p>
                   <p className="text-2xl font-semibold text-gray-900">
-                    ${safeInventory.reduce((sum, item) => sum + (item.quantity * item.unitCost), 0).toLocaleString()}
+                    ${safeProducts.reduce((sum, product) => sum + ((product.quantity || 0) * (product.unitCost || 0)), 0).toLocaleString()}
                   </p>
                 </div>
               </div>
@@ -440,7 +453,7 @@ const Stock: React.FC = () => {
                 <div className="ml-5">
                   <p className="text-sm font-medium text-gray-500">Low Stock Items</p>
                   <p className="text-2xl font-semibold text-gray-900">
-                    {safeInventory.filter(item => item.status === 'low-stock').length}
+                    {safeProducts.filter(product => product.status === 'low-stock').length}
                   </p>
                 </div>
               </div>
@@ -546,14 +559,28 @@ const Stock: React.FC = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredStockReports.map((report) => {
-                const item = safeInventory.find(i => i.id === report.itemId);
-                const currentStock = (item?.quantity || 0) + report.incomingQuantity - report.outgoingQuantity;
-                const totalValue = currentStock * report.unitCost;
-                return (
-                  <tr key={report.id} className="hover:bg-gray-50">
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-4 text-center text-sm text-gray-500">
+                    Loading...
+                  </td>
+                </tr>
+              ) : filteredStockReports.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-4 text-center text-sm text-gray-500">
+                    No stock reports found
+                  </td>
+                </tr>
+              ) : (
+                filteredStockReports.map((report) => {
+                  const itemId = typeof report.itemId === 'string' ? report.itemId : report.itemId?._id || report.itemId?.id || '';
+                  const product = safeProducts.find(i => i._id === itemId || i.id === itemId);
+                  const currentStock = (product?.quantity || 0) + report.incomingQuantity - report.outgoingQuantity;
+                  const totalValue = currentStock * report.unitCost;
+                  return (
+                  <tr key={report._id || report.itemId} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {item?.name || 'Unknown Item'}
+                      {product?.name || (typeof report.itemId === 'object' && report.itemId?.name) || 'Unknown Item'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       ${report.unitCost.toFixed(2)}
@@ -573,34 +600,35 @@ const Stock: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <button 
                         className="text-blue-600 hover:text-blue-900 mr-3"
-                        onClick={() => handleView(report.id)}
+                        onClick={() => handleView(report._id || '')}
                       >
                         <Eye className="h-4 w-4" />
                       </button>
                       <button 
                         className="text-green-600 hover:text-green-900 mr-3"
-                        onClick={() => handleEdit(report.id)}
+                        onClick={() => handleEdit(report._id || '')}
                       >
                         <Edit className="h-4 w-4" />
                       </button>
                       <button 
                         className="text-red-600 hover:text-red-900"
-                        onClick={() => handleDelete(report.id)}
+                        onClick={() => handleDelete(report._id || '')}
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </td>
                   </tr>
-                );
-              })}
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
 
         {/* Forms Modals */}
         {showCreateForm && <StockReportForm initialData={undefined} />}
-        {showUpdateForm && editingId && <StockReportForm initialData={safeStockReports.find(r => r.id === editingId)} />}
-        {showViewForm && viewingId && <ViewStockReportForm item={safeStockReports.find(r => r.id === viewingId)} />}
+        {showUpdateForm && editingId && <StockReportForm initialData={safeStockReports.find(r => r._id === editingId)} />}
+        {showViewForm && viewingId && <ViewStockReportForm item={safeStockReports.find(r => r._id === viewingId)} />}
       </div>
     // </Layout>
   );

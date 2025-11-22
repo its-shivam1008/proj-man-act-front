@@ -83,6 +83,8 @@ import PurchaseAgreement from './pages/modules/purchase/PurchaseAgreement';
 import PurchaseVendors from './pages/modules/purchase/PurchaseVendors';
 import PurchaseReporting from './pages/modules/purchase/PurchaseReporting';
 import PurchaseSettings from './pages/modules/purchase/PurchaseSettings';
+import SchedulingPlaning from './pages/modules/project-management/SchedulingPlaning';
+import ProjectClosure from './pages/modules/project-management/ProjectClosure';
 function App() {
   useEffect(() => {
     ensureInitialized();
@@ -167,6 +169,9 @@ function App() {
               <Route path="/project-management/project-reports" element={<Reports />} />
               <Route path="/project-management/progress" element={<Progress />} />
               <Route path='/project-management/billing' element={<BillingPage />} />
+              <Route path='/project-management/planning' element={<SchedulingPlaning />} />
+              <Route path='/project-management/project-closure' element={<ProjectClosure />} />
+
               {/* <Route path="/project-management/milestones" element={<Milestones />} /> */}
 
               {/* Plant and Machinery */}

@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import axios from "axios";
+import api from "@/utils/axiosApi";
 
 interface DailyProgressState {
   items: any[];
@@ -13,16 +13,14 @@ const initialState: DailyProgressState = {
   error: null,
 };
 
-// -----------------------------
-// FETCH (no parameter required)
-// -----------------------------
+
 export const fetchDailyProgress = createAsyncThunk(
   "dailyProgress/fetch",
   async (_, { rejectWithValue }) => {
     try {
       const organisationId = localStorage.getItem("organisationId");
 
-      const res = await axios.get("/api/get/all/daily/progress", {
+      const res = await api.get("/get/all/daily/progress", {
         params: { organisationId },
       });
 
@@ -33,29 +31,27 @@ export const fetchDailyProgress = createAsyncThunk(
   }
 );
 
-// -----------------------------
-// ADD
-// -----------------------------
 export const addDailyProgress = createAsyncThunk(
   "dailyProgress/add",
   async (payload: any, { rejectWithValue }) => {
     try {
-      const res = await axios.post("/api/create/daily/progress", payload);
+      const res = await api.post("/create/daily/progress", payload);
       return res.data.data;
     } catch (err: any) {
+      console.error(err, "error");
       return rejectWithValue(err.response?.data || "Create failed");
     }
   }
 );
 
-// -----------------------------
-// EDIT
-// -----------------------------
 export const editDailyProgress = createAsyncThunk(
   "dailyProgress/edit",
-  async ({ id, payload }: { id: string; payload: any }, { rejectWithValue }) => {
+  async (
+    { id, payload }: { id: string; payload: any },
+    { rejectWithValue }
+  ) => {
     try {
-      const res = await axios.put(`/api/daily/progress/update/${id}`, payload);
+      const res = await api.put(`/daily/progress/update/${id}`, payload);
       return res.data.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data || "Update failed");
@@ -70,7 +66,7 @@ export const removeDailyProgress = createAsyncThunk(
   "dailyProgress/delete",
   async (id: string, { rejectWithValue }) => {
     try {
-      await axios.delete(`/api/daily/progress/delete/${id}`);
+      await api.delete(`/daily/progress/delete/${id}`);
       return id;
     } catch (err: any) {
       return rejectWithValue(err.response?.data || "Delete failed");

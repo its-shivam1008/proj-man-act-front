@@ -6,12 +6,24 @@ import resourceReducer from "./slices/resourceSlice";
 import manpowerReducer from "./slices/manpowerSlice";
 import materialReducer from "./slices/materialSlice";
 import equipmentReducer from "./slices/equipmentSlice";
-import budgetReducer from './slices/budgetSlice'
-import mrsReducer from './slices/mrsSlice';
-import prReducer from './slices/prSlice';
-import poReducer from './slices/prSlice';
-import billingReducer from './slices/billingSlice'
-import dailyProgressReducer from './slices/dailyProgressSlice';
+import budgetReducer from "./slices/budgetSlice";
+import mrsReducer from "./slices/mrsSlice";
+import prReducer from "./slices/prSlice";
+import poReducer from "./slices/prSlice";
+import billingReducer from "./slices/billingSlice";
+import dailyProgressReducer from "./slices/dailyProgressSlice";
+import warehouseReducer from "./slices/warehouseSlice";
+import storageReducer from "./slices/storageSlice";
+import productsReducer from "./slices/productSlice";
+import rawMaterialReducer from "./slices/rawmaterialSlice";
+import stockReportReducer from "./slices/stockReportSlice";
+import inventoryHistoryReducer from "./slices/inventoryHistorySlice";
+import movesAnalysisReducer from "./slices/movesAnalysisSlice";
+import valuationReducer from "./slices/valuationSlice";
+import receiptReducer from "./slices/receiptSlice";
+import deliveryReducer from "./slices/deliverySlice";
+import scrapOrderReducer from "./slices/scrapOrderSlice";
+import forecastReducer from "./slices/forecastSlice";
 export const store = configureStore({
   reducer: {
     auth: authReducer,
@@ -27,6 +39,18 @@ export const store = configureStore({
     po: poReducer,
     dailyProgress: dailyProgressReducer,
     billing: billingReducer,
+    warehouse: warehouseReducer,
+    storages: storageReducer,
+    products: productsReducer,
+    rawMaterials: rawMaterialReducer,
+    stockReports: stockReportReducer,
+    inventoryHistory: inventoryHistoryReducer,
+    movesAnalysis: movesAnalysisReducer,
+    valuations: valuationReducer,
+    receipts: receiptReducer,
+    delivery: deliveryReducer,
+    scrap: scrapOrderReducer,
+    forecast: forecastReducer,
   },
 });
 

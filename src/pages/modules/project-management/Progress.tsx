@@ -47,11 +47,12 @@ export default function DailyProgressPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editing, setEditing] = useState<DailyProgressItem | null>(null);
   const [form, setForm] = useState<Partial<DailyProgressItem>>({ date: new Date().toISOString().slice(0, 10), percentComplete: 0 });
+  const [progressPage, setProgressPage] = useState(1);
+  const PROGRESS_PAGE_SIZE = 10;
   useEffect(() => {
-    const orgId = localStorage.getItem("organisationId");
-    if (orgId) {
-      dispatch(fetchDailyProgress(orgId) as any);
-    }
+
+    dispatch(fetchDailyProgress());
+
     setGantt(getGantt());
   }, [dispatch]);
 
@@ -173,6 +174,16 @@ export default function DailyProgressPage() {
     }));
   }, [gantt, items]);
 
+  const progressTotalPages = Math.max(1, Math.ceil((items.length || 0) / PROGRESS_PAGE_SIZE));
+  const paginatedProgressItems = useMemo(() => {
+    const start = (progressPage - 1) * PROGRESS_PAGE_SIZE;
+    return items.slice(start, start + PROGRESS_PAGE_SIZE);
+  }, [items, progressPage]);
+
+  useEffect(() => {
+    setProgressPage(1);
+  }, [items.length]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -240,7 +251,7 @@ export default function DailyProgressPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {items.map((it) => (
+                  {paginatedProgressItems.map((it) => (
                     <TableRow key={it._id}>
                       <TableCell>{it.date}</TableCell>
                       <TableCell className="max-w-[200px] truncate">{it.task || "—"}</TableCell>
@@ -278,6 +289,41 @@ export default function DailyProgressPage() {
               {items.length === 0 && (
                 <div className="text-center py-8 text-muted-foreground">
                   No daily progress yet. Click “Add Daily Progress” to start.
+                </div>
+              )}
+              {items.length > PROGRESS_PAGE_SIZE && (
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 pt-4">
+                  <p className="text-sm text-muted-foreground">
+                    Page {progressPage} of {progressTotalPages}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setProgressPage((prev) => Math.max(1, prev - 1))}
+                      disabled={progressPage === 1}
+                    >
+                      Previous
+                    </Button>
+                    {Array.from({ length: progressTotalPages }, (_, idx) => idx + 1).map((pageNumber) => (
+                      <Button
+                        key={pageNumber}
+                        variant={pageNumber === progressPage ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setProgressPage(pageNumber)}
+                      >
+                        {pageNumber}
+                      </Button>
+                    ))}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setProgressPage((prev) => Math.min(progressTotalPages, prev + 1))}
+                      disabled={progressPage === progressTotalPages}
+                    >
+                      Next
+                    </Button>
+                  </div>
                 </div>
               )}
             </CardContent>

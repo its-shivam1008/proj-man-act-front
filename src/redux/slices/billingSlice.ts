@@ -1,31 +1,42 @@
-import { BASE_URL } from "./../../utils/constants";
 import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
-import axios from "axios";
-import { Milestone, Invoice } from "../../types/billing";
 import api from "@/utils/axiosApi";
+import { Milestone, Invoice } from "@/types/billing";
 
+/* ---------------------------------------------------
+   Helper: get organisationId from localStorage
+--------------------------------------------------- */
+const getOrg = () => localStorage.getItem("organisationId");
+
+/* ---------------------------------------------------
+   FETCH MILESTONES
+--------------------------------------------------- */
 export const fetchMilestones = createAsyncThunk(
   "billing/fetchMilestones",
   async () => {
-    const res = await api.get(`/get/milestone`);
+    const res = await api.get(`/get/milestone`, {
+      params: { organisationId: getOrg() },
+    });
     return res.data.data as Milestone[];
   }
 );
 
-// CREATE milestone
+/* ---------------------------------------------------
+   CREATE MILESTONE
+--------------------------------------------------- */
 export const createMilestone = createAsyncThunk(
   "billing/createMilestone",
   async (payload: Milestone) => {
-    try {
-      const res = await api.post(`/create/milestone`, payload);
-      return res.data.data as Milestone;
-    } catch (error) {
-      console.error(error);
-      console.log(error, "error");
-    }
+    const res = await api.post(`/create/milestone`, {
+      ...payload,
+      organisationId: getOrg(),
+    });
+    return res.data.data as Milestone;
   }
 );
 
+/* ---------------------------------------------------
+   UPDATE MILESTONE
+--------------------------------------------------- */
 export const updateMilestone = createAsyncThunk(
   "billing/updateMilestone",
   async ({ id, payload }: { id: string; payload: Partial<Milestone> }) => {
@@ -34,6 +45,9 @@ export const updateMilestone = createAsyncThunk(
   }
 );
 
+/* ---------------------------------------------------
+   DELETE MILESTONE
+--------------------------------------------------- */
 export const deleteMilestone = createAsyncThunk(
   "billing/deleteMilestone",
   async (id: string) => {
@@ -42,22 +56,36 @@ export const deleteMilestone = createAsyncThunk(
   }
 );
 
+/* ---------------------------------------------------
+   FETCH INVOICES
+--------------------------------------------------- */
 export const fetchInvoices = createAsyncThunk(
   "billing/fetchInvoices",
   async () => {
-    const res = await api.get(`/get/invoice`);
+    const res = await api.get(`/get/invoice`, {
+      params: { organisationId: getOrg() },
+    });
     return res.data.data as Invoice[];
   }
 );
 
+/* ---------------------------------------------------
+   CREATE INVOICE
+--------------------------------------------------- */
 export const createInvoice = createAsyncThunk(
   "billing/createInvoice",
   async (payload: Invoice) => {
-    const res = await api.post(`/create/invoice`, payload);
+    const res = await api.post(`/create/invoice`, {
+      ...payload,
+      organisationId: getOrg(),
+    });
     return res.data.data as Invoice;
   }
 );
 
+/* ---------------------------------------------------
+   UPDATE INVOICE
+--------------------------------------------------- */
 export const updateInvoice = createAsyncThunk(
   "billing/updateInvoice",
   async ({ id, payload }: { id: string; payload: Partial<Invoice> }) => {
@@ -66,6 +94,9 @@ export const updateInvoice = createAsyncThunk(
   }
 );
 
+/* ---------------------------------------------------
+   DELETE INVOICE
+--------------------------------------------------- */
 export const deleteInvoice = createAsyncThunk(
   "billing/deleteInvoice",
   async (id: string) => {
@@ -74,6 +105,9 @@ export const deleteInvoice = createAsyncThunk(
   }
 );
 
+/* ---------------------------------------------------
+   SLICE
+--------------------------------------------------- */
 interface BillingState {
   milestones: Milestone[];
   invoices: Invoice[];
@@ -93,19 +127,22 @@ const billingSlice = createSlice({
   extraReducers: (builder) => {
     builder
 
-      // ======= MILESTONES =======
+      /* ----------------- MILESTONES ----------------- */
+
       .addCase(
         fetchMilestones.fulfilled,
         (state, action: PayloadAction<Milestone[]>) => {
           state.milestones = action.payload;
         }
       )
+
       .addCase(
         createMilestone.fulfilled,
         (state, action: PayloadAction<Milestone>) => {
           state.milestones.push(action.payload);
         }
       )
+
       .addCase(
         updateMilestone.fulfilled,
         (state, action: PayloadAction<Milestone>) => {
@@ -115,6 +152,7 @@ const billingSlice = createSlice({
           if (idx !== -1) state.milestones[idx] = action.payload;
         }
       )
+
       .addCase(
         deleteMilestone.fulfilled,
         (state, action: PayloadAction<string>) => {
@@ -124,19 +162,22 @@ const billingSlice = createSlice({
         }
       )
 
-      // ======= INVOICES =======
+      /* ----------------- INVOICES ----------------- */
+
       .addCase(
         fetchInvoices.fulfilled,
         (state, action: PayloadAction<Invoice[]>) => {
           state.invoices = action.payload;
         }
       )
+
       .addCase(
         createInvoice.fulfilled,
         (state, action: PayloadAction<Invoice>) => {
           state.invoices.push(action.payload);
         }
       )
+
       .addCase(
         updateInvoice.fulfilled,
         (state, action: PayloadAction<Invoice>) => {
@@ -146,6 +187,7 @@ const billingSlice = createSlice({
           if (idx !== -1) state.invoices[idx] = action.payload;
         }
       )
+
       .addCase(
         deleteInvoice.fulfilled,
         (state, action: PayloadAction<string>) => {

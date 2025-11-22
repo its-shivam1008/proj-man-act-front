@@ -30,7 +30,9 @@ import {
   CircuitBoard,
   Users,
   PlaneTakeoff,
-  CassetteTape
+  CassetteTape,
+  PenTool,
+  FolderClosed
 } from 'lucide-react';
 
 // --- ADD these imports for shadcn/ui Accordion ---
@@ -124,6 +126,8 @@ const Layout: React.FC = () => {
     { name: 'Progress Updates', href: '/project-management/progress', icon: GitBranch },
     { name: 'Billings', href: '/project-management/billing', icon: ReceiptIndianRupee },
     { name: 'Projects Reports', href: '/project-management/project-reports', icon: FileText },
+    { name: 'Scheduling & Planning', href: '/project-management/planning', icon: PenTool },
+    { name: 'Project Closure', href: '/project-management/project-closure', icon: FolderClosed },
   ];
 
   // Links for the Plant & Machinery Module

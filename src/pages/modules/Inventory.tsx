@@ -2,12 +2,22 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useData } from '../../contexts/DataContext';
 import { Outlet } from "react-router-dom";
-
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import {
+  Accordion, AccordionContent, AccordionItem, AccordionTrigger,
+} from "@/components/ui/accordion";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ResponsiveContainer, BarChart, Bar, Tooltip, XAxis, YAxis, LineChart, Line } from "recharts";
+import { Warehouse, Package } from "lucide-react";
 // import Layout from '../../components/Layout';
 import {
-  Package,
   Search,
-  Filter,
+  Pencil,
+  Store,
+  // Filter,
   AlertTriangle,
   CheckCircle,
   XCircle,
@@ -27,6 +37,10 @@ import {
 } from 'lucide-react';
 
 import { storage, STORAGE_KEYS, ensureInitialized } from '@/lib/storage'; // Adjust path as needed
+import WarehouseManagement from './inventory/Warehouse';
+import StoresManagement from './inventory/Storage';
+import Products from './inventory/Products';
+import RawMaterial from './inventory/Raw-Material';
 
 interface InventoryItem {
   id: string;
@@ -62,6 +76,7 @@ const Inventory: React.FC = () => {
   const [showReportingDropdown, setShowReportingDropdown] = useState(false);
   const [showAddProductForm, setShowAddProductForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+
 
   // Add these states after existing useState declarations
   const [showViewForm, setShowViewForm] = useState(false);
@@ -185,372 +200,112 @@ const Inventory: React.FC = () => {
       handleSubmit(formData);
     };
 
-    const isEditing = !!initialData;
-    const ViewProductForm = ({ item }: { item: InventoryItem | undefined }) => {
-      if (!item) return null;
+    // const isEditing = !!initialData;
+    // const ViewProductForm = ({ item }: { item: InventoryItem | undefined }) => {
+    //   if (!item) return null;
 
-      return (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
-            <div className="mt-3">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-medium text-gray-900">View Product: {item.name}</h3>
-                <button onClick={() => { setShowViewForm(false); setViewingId(null); }} className="text-gray-400 hover:text-gray-600">
-                  <XCircle className="h-6 w-6" />
-                </button>
-              </div>
+    //   return (
+    //     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+    //       <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+    //         <div className="mt-3">
+    //           <div className="flex items-center justify-between mb-4">
+    //             <h3 className="text-lg font-medium text-gray-900">View Product: {item.name}</h3>
+    //             <button onClick={() => { setShowViewForm(false); setViewingId(null); }} className="text-gray-400 hover:text-gray-600">
+    //               <XCircle className="h-6 w-6" />
+    //             </button>
+    //           </div>
 
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Product Name</label>
-                    <input
-                      type="text"
-                      value={item.name}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
-                      readOnly
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Product Type</label>
-                    <input
-                      type="text"
-                      value={item.type || ''}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
-                      readOnly
-                    />
-                  </div>
-                </div>
+    //           <div className="space-y-4">
+    //             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+    //               <div>
+    //                 <label className="block text-sm font-medium text-gray-700 mb-1">Product Name</label>
+    //                 <input
+    //                   type="text"
+    //                   value={item.name}
+    //                   className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
+    //                   readOnly
+    //                 />
+    //               </div>
+    //               <div>
+    //                 <label className="block text-sm font-medium text-gray-700 mb-1">Product Type</label>
+    //                 <input
+    //                   type="text"
+    //                   value={item.type || ''}
+    //                   className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
+    //                   readOnly
+    //                 />
+    //               </div>
+    //             </div>
 
-                {/* Add similar read-only inputs for other fields */}
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                    <input
-                      type="text"
-                      value={item.category}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
-                      readOnly
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Reference Code</label>
-                    <input
-                      type="text"
-                      value={item.referenceCode || ''}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
-                      readOnly
-                    />
-                  </div>
-                </div>
+    //             {/* Add similar read-only inputs for other fields */}
+    //             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+    //               <div>
+    //                 <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+    //                 <input
+    //                   type="text"
+    //                   value={item.category}
+    //                   className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
+    //                   readOnly
+    //                 />
+    //               </div>
+    //               <div>
+    //                 <label className="block text-sm font-medium text-gray-700 mb-1">Reference Code</label>
+    //                 <input
+    //                   type="text"
+    //                   value={item.referenceCode || ''}
+    //                   className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
+    //                   readOnly
+    //                 />
+    //               </div>
+    //             </div>
 
-                {/* Continue for other fields like quantity, status, etc. */}
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
-                    <input
-                      type="number"
-                      value={item.quantity}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
-                      readOnly
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(item.status)}`}>
-                      {item.status.replace('-', ' ')}
-                    </span>
-                  </div>
-                </div>
+    //             {/* Continue for other fields like quantity, status, etc. */}
+    //             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+    //               <div>
+    //                 <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+    //                 <input
+    //                   type="number"
+    //                   value={item.quantity}
+    //                   className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
+    //                   readOnly
+    //                 />
+    //               </div>
+    //               <div>
+    //                 <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+    //                 <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(item.status)}`}>
+    //                   {item.status.replace('-', ' ')}
+    //                 </span>
+    //               </div>
+    //             </div>
 
-                {/* Description */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                  <textarea
-                    rows={3}
-                    value={item.description || ''}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
-                    readOnly
-                  />
-                </div>
+    //             {/* Description */}
+    //             <div>
+    //               <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+    //               <textarea
+    //                 rows={3}
+    //                 value={item.description || ''}
+    //                 className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
+    //                 readOnly
+    //               />
+    //             </div>
 
-                <div className="flex justify-end pt-4">
-                  <button
-                    type="button"
-                    onClick={() => { setShowViewForm(false); setViewingId(null); }}
-                    className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    };
+    //             <div className="flex justify-end pt-4">
+    //               <button
+    //                 type="button"
+    //                 onClick={() => { setShowViewForm(false); setViewingId(null); }}
+    //                 className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+    //               >
+    //                 Close
+    //               </button>
+    //             </div>
+    //           </div>
+    //         </div>
+    //       </div>
+    //     </div>
+    //   );
+    // };
     return (
-      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
-          <div className="mt-3">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium text-gray-900">
-                {isEditing ? 'Edit Product' : 'Add New Product'}
-              </h3>
-              <button onClick={handleClose} className="text-gray-400 hover:text-gray-600">
-                <XCircle className="h-6 w-6" />
-              </button>
-            </div>
-
-            <form onSubmit={handleFormSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Product Name *
-                  </label>
-                  <input
-                    type="text"
-                    name="name"
-                    value={formData.name}
-                    onChange={handleChange('name')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Enter product name"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Product Type *
-                  </label>
-                  <select
-                    name="type"
-                    value={formData.type}
-                    onChange={handleChange('type')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
-                  >
-                    <option value="">Select Type</option>
-                    <option value="goods">Goods</option>
-                    <option value="services">Services</option>
-                    <option value="combo">Combo</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Category *
-                  </label>
-                  <select
-                    name="category"
-                    value={formData.category}
-                    onChange={handleChange('category')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
-                  >
-                    <option value="">Select Category</option>
-                    <option value="Raw Materials">Raw Materials</option>
-                    <option value="Components">Components</option>
-                    <option value="Finished Goods">Finished Goods</option>
-                    <option value="Services">Services</option>
-                    <option value="Expenses">Expenses</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Reference Code
-                  </label>
-                  <input
-                    type="text"
-                    name="referenceCode"
-                    value={formData.referenceCode}
-                    onChange={handleChange('referenceCode')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Enter reference code"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="trackInventory"
-                  checked={formData.trackInventory}
-                  onChange={handleCheckboxChange}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <label htmlFor="trackInventory" className="ml-2 text-sm text-gray-700">
-                  Track Inventory
-                </label>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Inventory Available
-                  </label>
-                  <input
-                    type="number"
-                    name="inventoryAvailable"
-                    value={formData.inventoryAvailable}
-                    onChange={handleChange('inventoryAvailable')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Current stock quantity"
-                    min="0"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Minimum Stock Level
-                  </label>
-                  <input
-                    type="number"
-                    name="minimumStockLevel"
-                    value={formData.minimumStockLevel}
-                    onChange={handleChange('minimumStockLevel')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Minimum stock alert level"
-                    min="0"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Sales Price
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    name="salesPrice"
-                    value={formData.salesPrice}
-                    onChange={handleChange('salesPrice')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="0.00"
-                    min="0"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Sales Tax %
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    name="salesTax"
-                    value={formData.salesTax}
-                    onChange={handleChange('salesTax')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="0.00"
-                    min="0"
-                    max="100"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Cost Price
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    name="costPrice"
-                    value={formData.costPrice}
-                    onChange={handleChange('costPrice')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="0.00"
-                    min="0"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Purchase Tax %
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    name="purchaseTax"
-                    value={formData.purchaseTax}
-                    onChange={handleChange('purchaseTax')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="0.00"
-                    min="0"
-                    max="100"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Barcode
-                  </label>
-                  <input
-                    type="text"
-                    name="barcode"
-                    value={formData.barcode}
-                    onChange={handleChange('barcode')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Enter or scan barcode"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Upsell Suggestion
-                  </label>
-                  <select
-                    name="upsellSuggestion"
-                    value={formData.upsellSuggestion}
-                    onChange={handleChange('upsellSuggestion')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="">Select related product</option>
-                    {safeInventory.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Product Description
-                </label>
-                <textarea
-                  name="description"
-                  value={formData.description}
-                  onChange={handleChange('description')}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter product description..."
-                />
-              </div>
-
-              <div className="flex justify-end space-x-3 pt-4">
-                <button
-                  type="button"
-                  onClick={handleClose}
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  {isEditing ? 'Update Product' : 'Add Product'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      </div>
+      <Products/>
     );
   };
 
@@ -606,6 +361,7 @@ const Inventory: React.FC = () => {
       ]
     },
     { id: 'products', name: 'Products', icon: Package },
+    {id:"rawmaterials", name:"Raw Materials", icon:Warehouse},
     {
       id: 'reporting',
       name: 'Reporting',
@@ -617,6 +373,16 @@ const Inventory: React.FC = () => {
         { name: 'Moves Analysis', path: '/inventory/reporting/moves-analysis' },
         { name: 'Valuation', path: '/inventory/reporting/valuation' }
       ]
+    },
+    {
+      id: 'warehouses',
+      name: 'Warehouses',
+      icon: MapPin,
+    },
+    {
+      id: 'stores',
+      name: 'Stores',
+      icon: Package,
     },
     { id: 'settings', name: 'Settings', icon: Settings }
   ];
@@ -705,10 +471,10 @@ const Inventory: React.FC = () => {
             <Truck className="h-5 w-5 text-gray-400 mr-2" />
             <span className="text-sm font-medium text-gray-700">New Delivery</span>
           </button>
-          <button className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors" onClick={handleAddClick}>
+          {/* <button className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors" onClick={handleAddClick}>
             <Package className="h-5 w-5 text-gray-400 mr-2" />
             <span className="text-sm font-medium text-gray-700">Add Product</span>
-          </button>
+          </button> */}
           <button className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors" onClick={() => navigate('reporting/inventory-history')}>
             <BarChart3 className="h-5 w-5 text-gray-400 mr-2" />
             <span className="text-sm font-medium text-gray-700">View Reports</span>
@@ -786,291 +552,9 @@ const Inventory: React.FC = () => {
       </div>
     </div>
   );
-const ViewProductForm = ({ item }: { item: InventoryItem | undefined }) => {
-  if (!item) return null;
 
-  return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
-        <div className="mt-3">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-medium text-gray-900">View Product: {item.name}</h3>
-            <button onClick={() => { setShowViewForm(false); setViewingId(null); }} className="text-gray-400 hover:text-gray-600">
-              <XCircle className="h-6 w-6" />
-            </button>
-          </div>
-          
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Product Name</label>
-                <input
-                  type="text"
-                  value={item.name}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
-                  readOnly
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Product Type</label>
-                <input
-                  type="text"
-                  value={item.type || ''}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
-                  readOnly
-                />
-              </div>
-            </div>
-
-            {/* Add similar read-only inputs for other fields */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                <input
-                  type="text"
-                  value={item.category}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
-                  readOnly
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Reference Code</label>
-                <input
-                  type="text"
-                  value={item.referenceCode || ''}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
-                  readOnly
-                />
-              </div>
-            </div>
-
-            {/* Continue for other fields like quantity, status, etc. */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
-                <input
-                  type="number"
-                  value={item.quantity}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
-                  readOnly
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(item.status)}`}>
-                  {item.status.replace('-', ' ')}
-                </span>
-              </div>
-            </div>
-
-            {/* Description */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-              <textarea
-                rows={3}
-                value={item.description || ''}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
-                readOnly
-              />
-            </div>
-
-            <div className="flex justify-end pt-4">
-              <button
-                type="button"
-                onClick={() => { setShowViewForm(false); setViewingId(null); }}
-                className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-  const renderProducts = () => (
-    <div className="space-y-6">
-      {/* Add Product Form */}
-      {showAddProductForm && (
-        <AddProductForm
-          inventory={safeInventory}
-          initialData={editingId ? safeInventory.find((i) => i.id === editingId) : undefined}
-        />
-      )}
-
-      {/* Product Actions */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <button
-            onClick={handleAddClick}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Add Product
-          </button>
-          <button className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center">
-            <Upload className="h-4 w-4 mr-2" />
-            Import
-          </button>
-          <button className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors flex items-center">
-            <Download className="h-4 w-4 mr-2" />
-            Export
-          </button>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="bg-white shadow rounded-lg p-6">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search products..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option value="all">All Status</option>
-            <option value="in-stock">In Stock</option>
-            <option value="low-stock">Low Stock</option>
-            <option value="out-of-stock">Out of Stock</option>
-          </select>
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option value="all">All Categories</option>
-            <option value="Raw Materials">Raw Materials</option>
-            <option value="Components">Components</option>
-            <option value="Finished Goods">Finished Goods</option>
-          </select>
-          <select
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option value="this-month">This Month</option>
-            <option value="last-month">Last Month</option>
-            <option value="this-quarter">This Quarter</option>
-            <option value="custom">Custom Range</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Products Table */}
-      <div className="w-full overflow-x-auto overflow-y-auto max-h-[500px]">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Product
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                SKU
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Category
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Location
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Quantity
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Unit Cost
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Total Value
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Status
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {filteredInventory.map((item) => (
-              <tr key={item.id} className="hover:bg-gray-50 w-full overflow-x-scroll">
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="flex items-center">
-                    {getStatusIcon(item.status)}
-                    <div className="ml-4">
-                      <div className="text-sm font-medium text-gray-900">{item.name}</div>
-                      <div className="text-sm text-gray-500">Last updated: {item.lastUpdated}</div>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {item.sku}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {item.category}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  <div className="flex items-center">
-                    <MapPin className="h-4 w-4 text-gray-400 mr-1" />
-                    {item.location}
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  <div>
-                    <span className="font-medium">{item.quantity}</span>
-                    <span className="text-gray-500 ml-1">/ {item.minStock} min</span>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  ${item.unitCost.toFixed(2)}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  ${(item.quantity * item.unitCost).toLocaleString()}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(item.status)}`}>
-                    {item.status.replace('-', ' ')}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                  <button
-                    className="text-blue-600 hover:text-blue-900 mr-3"
-                    onClick={() => handleView(item.id)}
-                  >
-                    <Eye className="h-4 w-4" />
-                  </button>
-                  {showViewForm && (
-                    <ViewProductForm item={safeInventory.find((i) => i.id === viewingId)} />
-                  )}
-                  <button
-                    className="text-green-600 hover:text-green-900 mr-3"
-                    onClick={() => handleEdit(item.id)}
-                  >
-                    <Edit className="h-4 w-4" />
-                  </button>
-                  <button
-                    className="text-red-600 hover:text-red-900"
-                    onClick={() => handleDelete(item.id)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
+  const renderProducts = () => <Products />;
+const renderRawMaterials = () => <RawMaterial/>;
 
   const renderReporting = () => (
     <div className="space-y-6">
@@ -1415,6 +899,14 @@ const ViewProductForm = ({ item }: { item: InventoryItem | undefined }) => {
     </div>
   );
 
+  const renderWarehouses = () => (
+    <WarehouseManagement />
+  );
+const renderStores = () => (
+  <StoresManagement/>
+);
+
+
   const renderTabContent = () => {
     switch (activeTab) {
       case 'overview':
@@ -1423,10 +915,16 @@ const ViewProductForm = ({ item }: { item: InventoryItem | undefined }) => {
         return renderOperations();
       case 'products':
         return renderProducts();
+      case 'rawmaterials':
+        return renderRawMaterials();
       case 'reporting':
         return renderReporting();
       case 'settings':
         return renderSettings();
+      case 'warehouses':
+        return renderWarehouses();
+      case 'stores':
+        return renderStores();
       default:
         return renderOverview();
     }
