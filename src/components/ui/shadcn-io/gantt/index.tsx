@@ -9,11 +9,14 @@ import { useMouse, useThrottle, useWindowScroll } from '@uidotdev/usehooks';
 import {
   addDays,
   addMonths,
+  addWeeks,
   differenceInDays,
   differenceInHours,
   differenceInMonths,
+  differenceInWeeks,
   endOfDay,
   endOfMonth,
+  endOfWeek,
   format,
   formatDate,
   formatDistance,
@@ -22,6 +25,7 @@ import {
   isSameDay,
   startOfDay,
   startOfMonth,
+  startOfWeek,
 } from 'date-fns';
 import { atom, useAtom } from 'jotai';
 import throttle from 'lodash.throttle';
@@ -73,6 +77,10 @@ export type GanttFeature = {
   endAt: Date;
   status: GanttStatus;
   lane?: string; // Optional: features with the same lane will share a row
+  minDate?: Date | null; // Optional: minimum allowed date (e.g., parent start date)
+  maxDate?: Date | null; // Optional: maximum allowed date (e.g., parent end date)
+  originalStartDate?: Date; // Optional: original start date from source
+  originalEndDate?: Date; // Optional: original end date from source
 };
 
 export type GanttMarkerProps = {
@@ -81,7 +89,7 @@ export type GanttMarkerProps = {
   label: string;
 };
 
-export type Range = 'daily' | 'monthly' | 'quarterly';
+export type Range = 'daily' | 'weekly' | 'monthly' | 'quarterly';
 
 export type TimelineData = {
   year: number;
@@ -110,7 +118,9 @@ const getsDaysIn = (range: Range) => {
   // For when range is daily
   let fn = (_date: Date) => 1;
 
-  if (range === 'monthly' || range === 'quarterly') {
+  if (range === 'weekly') {
+    fn = (_date: Date) => 7;
+  } else if (range === 'monthly' || range === 'quarterly') {
     fn = getDaysInMonth;
   }
 
@@ -120,7 +130,9 @@ const getsDaysIn = (range: Range) => {
 const getDifferenceIn = (range: Range) => {
   let fn = differenceInDays;
 
-  if (range === 'monthly' || range === 'quarterly') {
+  if (range === 'weekly') {
+    fn = differenceInWeeks;
+  } else if (range === 'monthly' || range === 'quarterly') {
     fn = differenceInMonths;
   }
 
@@ -130,7 +142,7 @@ const getDifferenceIn = (range: Range) => {
 const getInnerDifferenceIn = (range: Range) => {
   let fn = differenceInHours;
 
-  if (range === 'monthly' || range === 'quarterly') {
+  if (range === 'weekly' || range === 'monthly' || range === 'quarterly') {
     fn = differenceInDays;
   }
 
@@ -140,7 +152,9 @@ const getInnerDifferenceIn = (range: Range) => {
 const getStartOf = (range: Range) => {
   let fn = startOfDay;
 
-  if (range === 'monthly' || range === 'quarterly') {
+  if (range === 'weekly') {
+    fn = startOfWeek;
+  } else if (range === 'monthly' || range === 'quarterly') {
     fn = startOfMonth;
   }
 
@@ -150,7 +164,9 @@ const getStartOf = (range: Range) => {
 const getEndOf = (range: Range) => {
   let fn = endOfDay;
 
-  if (range === 'monthly' || range === 'quarterly') {
+  if (range === 'weekly') {
+    fn = endOfWeek;
+  } else if (range === 'monthly' || range === 'quarterly') {
     fn = endOfMonth;
   }
 
@@ -160,7 +176,9 @@ const getEndOf = (range: Range) => {
 const getAddRange = (range: Range) => {
   let fn = addDays;
 
-  if (range === 'monthly' || range === 'quarterly') {
+  if (range === 'weekly') {
+    fn = addWeeks;
+  } else if (range === 'monthly' || range === 'quarterly') {
     fn = addMonths;
   }
 
@@ -219,6 +237,13 @@ const getOffset = (
     return parsedColumnWidth * fullColumns;
   }
 
+  if (context.range === 'weekly') {
+    const weekStart = startOfWeek(date);
+    const dayOfWeek = differenceInDays(date, weekStart);
+    const pixelsPerDay = parsedColumnWidth / 7;
+    return fullColumns * parsedColumnWidth + dayOfWeek * pixelsPerDay;
+  }
+
   const partialColumns = date.getDate();
   const daysInMonth = getDaysInMonth(date);
   const pixelsPerDay = parsedColumnWidth / daysInMonth;
@@ -243,6 +268,17 @@ const getWidth = (
     const delta = differenceIn(endAt, startAt);
 
     return parsedColumnWidth * (delta ? delta : 1);
+  }
+
+  if (context.range === 'weekly') {
+    const startWeek = startOfWeek(startAt);
+    const endWeek = startOfWeek(endAt);
+    const fullWeeks = differenceInWeeks(endWeek, startWeek);
+    const startDayOfWeek = differenceInDays(startAt, startWeek);
+    const endDayOfWeek = differenceInDays(endAt, endWeek);
+    const pixelsPerDay = parsedColumnWidth / 7;
+    
+    return fullWeeks * parsedColumnWidth + (7 - startDayOfWeek) * pixelsPerDay + (endDayOfWeek + 1) * pixelsPerDay;
   }
 
   const daysInStartMonth = getDaysInMonth(startAt);
@@ -387,6 +423,55 @@ const DailyHeader: FC = () => {
   );
 };
 
+const WeeklyHeader: FC = () => {
+  const gantt = useContext(GanttContext);
+
+  return gantt.timelineData.map((year) => {
+    const allMonths = year.quarters.flatMap((quarter) => quarter.months);
+    const weeksInYear: number[] = [];
+    
+    allMonths.forEach((month, monthIndex) => {
+      const monthDate = new Date(year.year, monthIndex, 1);
+      const daysInMonth = month.days;
+      const weeksInMonth = Math.ceil(daysInMonth / 7);
+      
+      for (let i = 0; i < weeksInMonth; i++) {
+        weeksInYear.push(i);
+      }
+    });
+
+    return (
+      <div className="relative flex flex-col" key={year.year}>
+        <GanttContentHeader
+          columns={weeksInYear.length}
+          renderHeaderItem={(item: number) => {
+            // Calculate which week this is
+            let weekCount = 0;
+            let currentMonth = 0;
+            for (let m = 0; m < allMonths.length; m++) {
+              const weeksInMonth = Math.ceil(allMonths[m].days / 7);
+              if (weekCount + weeksInMonth > item) {
+                currentMonth = m;
+                break;
+              }
+              weekCount += weeksInMonth;
+            }
+            const weekInMonth = item - weekCount;
+            const weekStartDate = addWeeks(startOfWeek(new Date(year.year, currentMonth, 1)), weekInMonth);
+            return (
+              <p className="text-xs">
+                {format(weekStartDate, 'MMM d')}
+              </p>
+            );
+          }}
+          title={`${year.year}`}
+        />
+        <GanttColumns columns={weeksInYear.length} />
+      </div>
+    );
+  });
+};
+
 const MonthlyHeader: FC = () => {
   const gantt = useContext(GanttContext);
 
@@ -432,6 +517,7 @@ const QuarterlyHeader: FC = () => {
 
 const headers: Record<Range, FC> = {
   daily: DailyHeader,
+  weekly: WeeklyHeader,
   monthly: MonthlyHeader,
   quarterly: QuarterlyHeader,
 };
@@ -889,12 +975,50 @@ export const GanttFeatureItem: FC<GanttFeatureItemProps> = ({
       gantt.range === 'daily'
         ? getDifferenceIn(gantt.range)(currentDate, originalDate)
         : getInnerDifferenceIn(gantt.range)(currentDate, originalDate);
-    const newStartDate = addDays(previousStartAt, delta);
-    const newEndDate = previousEndAt ? addDays(previousEndAt, delta) : null;
+    let newStartDate = addDays(previousStartAt, delta);
+    let newEndDate = previousEndAt ? addDays(previousEndAt, delta) : null;
+
+    // Apply constraints: don't allow moving beyond parent or original dates
+    const minDate = feature.minDate;
+    const maxDate = feature.maxDate;
+    const duration = previousEndAt ? differenceInDays(previousEndAt, previousStartAt) : 0;
+    
+    // Constrain start date
+    if (minDate && newStartDate < minDate) {
+      newStartDate = minDate;
+      if (newEndDate) {
+        newEndDate = addDays(newStartDate, duration);
+      }
+    }
+    
+    // Constrain end date
+    if (maxDate) {
+      if (newEndDate && newEndDate > maxDate) {
+        newEndDate = maxDate;
+        // Adjust start date if needed to maintain duration
+        if (duration > 0) {
+          newStartDate = addDays(newEndDate, -duration);
+          // If adjusted start is before min, clamp both
+          if (minDate && newStartDate < minDate) {
+            newStartDate = minDate;
+            newEndDate = addDays(newStartDate, duration);
+            // If end still exceeds max, reduce duration
+            if (newEndDate > maxDate) {
+              newEndDate = maxDate;
+            }
+          }
+        }
+      }
+    }
+    
+    // Ensure end date is after start date
+    if (newEndDate && newEndDate <= newStartDate) {
+      newEndDate = addDays(newStartDate, Math.max(1, duration));
+    }
 
     setStartAt(newStartDate);
     setEndAt(newEndDate);
-  }, [gantt, mousePosition.x, previousMouseX, previousStartAt, previousEndAt]);
+  }, [gantt, mousePosition.x, previousMouseX, previousStartAt, previousEndAt, feature]);
 
   const onDragEnd = useCallback(
     () => onMove?.(feature.id, startAt, endAt),
@@ -905,19 +1029,62 @@ export const GanttFeatureItem: FC<GanttFeatureItemProps> = ({
     const ganttRect = gantt.ref?.current?.getBoundingClientRect();
     const x =
       mousePosition.x - (ganttRect?.left ?? 0) + scrollX - gantt.sidebarWidth;
-    const newStartAt = getDateByMousePosition(gantt, x);
+    let newStartAt = getDateByMousePosition(gantt, x);
+
+    // Apply constraints
+    const minDate = feature.minDate;
+    const maxDate = feature.maxDate;
+    
+    if (minDate && newStartAt < minDate) {
+      newStartAt = minDate;
+    }
+    
+    // Ensure start date doesn't exceed max date constraint
+    if (maxDate && newStartAt > maxDate) {
+      newStartAt = maxDate;
+    }
+    
+    // Ensure start date doesn't go beyond end date
+    if (endAt && newStartAt >= endAt) {
+      newStartAt = addDays(endAt, -1);
+      // Re-apply min constraint if needed
+      if (minDate && newStartAt < minDate) {
+        newStartAt = minDate;
+      }
+    }
 
     setStartAt(newStartAt);
-  }, [gantt, mousePosition.x, scrollX]);
+  }, [gantt, mousePosition.x, scrollX, feature, endAt]);
 
   const handleRightDragMove = useCallback(() => {
     const ganttRect = gantt.ref?.current?.getBoundingClientRect();
     const x =
       mousePosition.x - (ganttRect?.left ?? 0) + scrollX - gantt.sidebarWidth;
-    const newEndAt = getDateByMousePosition(gantt, x);
+    let newEndAt = getDateByMousePosition(gantt, x);
+
+    // Apply constraints
+    const minDate = feature.minDate;
+    const maxDate = feature.maxDate;
+    
+    if (maxDate && newEndAt > maxDate) {
+      newEndAt = maxDate;
+    }
+    
+    if (minDate && newEndAt < minDate) {
+      newEndAt = minDate;
+    }
+    
+    // Ensure end date is after start date
+    if (newEndAt <= startAt) {
+      newEndAt = addDays(startAt, 1);
+      // Re-apply max constraint if needed
+      if (maxDate && newEndAt > maxDate) {
+        newEndAt = maxDate;
+      }
+    }
 
     setEndAt(newEndAt);
-  }, [gantt, mousePosition.x, scrollX]);
+  }, [gantt, mousePosition.x, scrollX, feature, startAt]);
 
   return (
     <div
@@ -1271,9 +1438,9 @@ export const GanttProvider: FC<GanttProviderProps> = ({
 
         setTimelineData(newTimelineData);
 
-        // Scroll a bit forward so it's not at the very start
-        scrollElement.scrollLeft = scrollElement.clientWidth;
-        setScrollX(scrollElement.scrollLeft);
+        // Keep scroll at 0 to prevent jumping forward when extending timeline to the past
+        scrollElement.scrollLeft = 0;
+        setScrollX(0);
       } else if (scrollLeft + clientWidth >= scrollWidth) {
         // Extend timelineData to the future
         const lastYear = timelineData.at(-1)?.year;

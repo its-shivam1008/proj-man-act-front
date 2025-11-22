@@ -6,6 +6,9 @@ import { FolderKanban, DollarSign, TrendingUp, AlertCircle } from "lucide-react"
 import { Badge } from "../../../components/ui/badge";
 import { Progress } from "../../../components/ui/progress";
 import { faker } from '@faker-js/faker'
+import { useDispatch, useSelector } from "react-redux";
+import { RootState, AppDispatch } from "../../../redux/store";
+import { fetchProjects } from "../../../redux/slices/projectSlice";
 import {
   GanttCreateMarkerTrigger,
   GanttFeatureItem,
@@ -224,19 +227,92 @@ const Timeline = () => {
 
 
 export default function ProjectManagementDashboard() {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [budgets, setBudgets] = useState<Budget[]>([]);
+  const dispatch = useDispatch<AppDispatch>();
+  const organisationId = localStorage.getItem('organisationId');
+  
+  // Get projects from Redux
+  const { projects = [], loading: projectsLoading } = useSelector((state: RootState) => state.projects);
+  
+  // Get budgets from Redux (if available)
+  const { budgets = [] } = useSelector((state: RootState) => state.budget);
+  
+  // Milestones still from localStorage for now
   const [milestones, setMilestones] = useState<Milestone[]>([]);
 
+  // Fetch projects from API
   useEffect(() => {
-    setProjects(getFromStorage<Project>(STORAGE_KEYS.PROJECTS));
-    setBudgets(getFromStorage<Budget>(STORAGE_KEYS.BUDGETS));
+    if (organisationId) {
+      dispatch(fetchProjects({ page: 1, limit: 100, status: "all", search: "" }));
+    }
+  }, [organisationId, dispatch]);
+
+  // Load milestones from localStorage
+  useEffect(() => {
     setMilestones(getFromStorage<Milestone>(STORAGE_KEYS.MILESTONES));
   }, []);
 
+  // --- Prevent slider from going backward when at the beginning ---
+  useEffect(() => {
+    let ganttContainer: HTMLElement | null = null;
+    let rafId: number | null = null;
+    let intervalId: NodeJS.Timeout | null = null;
+
+    const fixScroll = () => {
+      if (!ganttContainer) return;
+      if (ganttContainer.scrollLeft < 0) {
+        ganttContainer.scrollLeft = 0;
+      }
+    };
+
+    const handleScroll = () => {
+      fixScroll();
+      // Double-check in next frame
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(fixScroll);
+    };
+
+    const handleWheel = (e: WheelEvent) => {
+      if (!ganttContainer) return;
+      if (e.deltaX < 0 && ganttContainer.scrollLeft <= 5) {
+        e.preventDefault();
+        e.stopPropagation();
+        ganttContainer.scrollLeft = 0;
+      }
+    };
+
+    const setupListeners = () => {
+      ganttContainer = document.querySelector('.gantt.overflow-auto') as HTMLElement;
+      if (!ganttContainer) {
+        setTimeout(setupListeners, 100);
+        return;
+      }
+
+      ganttContainer.addEventListener('scroll', handleScroll, { passive: false });
+      ganttContainer.addEventListener('wheel', handleWheel, { passive: false, capture: true });
+      
+      // Also check periodically as backup
+      intervalId = setInterval(fixScroll, 50);
+      
+      // Initial check
+      fixScroll();
+    };
+
+    const timer = setTimeout(setupListeners, 200);
+
+    return () => {
+      clearTimeout(timer);
+      if (intervalId) clearInterval(intervalId);
+      if (rafId) cancelAnimationFrame(rafId);
+      if (ganttContainer) {
+        ganttContainer.removeEventListener('scroll', handleScroll);
+        ganttContainer.removeEventListener('wheel', handleWheel, { capture: true });
+      }
+    };
+  }, []);
+
   const activeProjects = projects.filter((p) => p.status === "active").length;
-  const totalBudget = projects.reduce((sum, p) => sum + p.budget, 0);
-  const totalActualCost = projects.reduce((sum, p) => sum + p.actualCost, 0);
+  const totalBudget = projects.reduce((sum, p) => sum + (p.budget || 0), 0);
+  const totalActualCost = projects.reduce((sum, p) => sum + (p.actualCost || 0), 0);
   const overBudgetCount = budgets.filter((b) => b.status === "over-budget").length;
 
   const getStatusColor = (status: Project["status"]) => {
@@ -293,7 +369,7 @@ export default function ProjectManagementDashboard() {
           <CardContent>
             <div className="text-2xl font-bold">₹{(totalActualCost / 1000000).toFixed(2)}M</div>
             <p className="text-xs text-muted-foreground">
-              {((totalActualCost / totalBudget) * 100).toFixed(1)}% of budget
+              {totalBudget > 0 ? ((totalActualCost / totalBudget) * 100).toFixed(1) : 0}% of budget
             </p>
           </CardContent>
         </Card>

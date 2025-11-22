@@ -9,6 +9,7 @@ import {
   StockReport,
 } from '../../../../redux/slices/stockReportSlice';
 import { fetchProducts } from '../../../../redux/slices/productSlice';
+import { fetchWarehouses } from '../../../../redux/slices/warehouseSlice';
 import { 
   Package, 
   Plus, 
@@ -28,6 +29,7 @@ const Stock: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const { stockReports, loading } = useSelector((state: RootState) => state.stockReports);
   const { products, loading: productsLoading } = useSelector((state: RootState) => state.products);
+  const { warehouses, loading: warehousesLoading } = useSelector((state: RootState) => state.warehouse);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [monthFilter, setMonthFilter] = useState('this-month');
@@ -42,10 +44,12 @@ const Stock: React.FC = () => {
   useEffect(() => {
     dispatch(fetchStockReports());
     dispatch(fetchProducts());
+    dispatch(fetchWarehouses({ page: 1, limit: 100 }));
   }, [dispatch]);
 
   const safeStockReports = Array.isArray(stockReports) ? stockReports : [];
   const safeProducts = Array.isArray(products) ? products : [];
+  const safeWarehouses = Array.isArray(warehouses) ? warehouses : [];
 
   const filteredStockReports = safeStockReports.filter(report => {
     const itemId = typeof report.itemId === 'string' ? report.itemId : report.itemId?._id || report.itemId?.id || '';
@@ -127,7 +131,7 @@ const Stock: React.FC = () => {
       incomingQuantity: initialData?.incomingQuantity ? initialData.incomingQuantity.toString() : '',
       outgoingQuantity: initialData?.outgoingQuantity ? initialData.outgoingQuantity.toString() : '',
       category: initialData?.category || 'Raw Materials',
-      warehouse: initialData?.warehouse || 'Warehouse A',
+      warehouse: initialData?.warehouse || '',
       productType: initialData?.productType || 'goods',
     });
 
@@ -267,9 +271,18 @@ const Stock: React.FC = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   >
-                    <option>Warehouse A</option>
-                    <option>Warehouse B</option>
-                    <option>Warehouse C</option>
+                    <option value="">Select Warehouse</option>
+                    {warehousesLoading ? (
+                      <option value="" disabled>Loading warehouses...</option>
+                    ) : safeWarehouses.length === 0 ? (
+                      <option value="" disabled>No warehouses available</option>
+                    ) : (
+                      safeWarehouses.map((warehouse: any) => (
+                        <option key={warehouse._id || warehouse.id} value={warehouse._id || warehouse.id}>
+                          {warehouse.name} {warehouse.location ? `- ${warehouse.location}` : ''}
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
                 <div>
@@ -513,9 +526,11 @@ const Stock: React.FC = () => {
               className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="all">All Warehouses</option>
-              <option value="Warehouse A">Warehouse A</option>
-              <option value="Warehouse B">Warehouse B</option>
-              <option value="Warehouse C">Warehouse C</option>
+              {safeWarehouses.map((warehouse: any) => (
+                <option key={warehouse._id || warehouse.id} value={warehouse._id || warehouse.id}>
+                  {warehouse.name}
+                </option>
+              ))}
             </select>
             <select
               value={productTypeFilter}
