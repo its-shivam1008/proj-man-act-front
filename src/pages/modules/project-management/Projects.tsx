@@ -2,8 +2,26 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import { getPublicEmployees } from "@/lib/hrmsIntegration";
+
 import { RootState, AppDispatch } from "@/redux/store";
-import { toast } from "sonner";  // <-- using Sonner only
+import { toast } from "sonner";
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandInput,
+  CommandList,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+} from "@/components/ui/command";
+import { Check, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
+
 import {
   fetchProjects,
   addProject,
@@ -99,7 +117,19 @@ const PROJECT_TYPES: ProjectType[] = [
 
 // ---------------- Component Start ----------------
 export default function Projects() {
-  const organisationId = localStorage.getItem('organisationId');
+  const [managerPopoverOpen, setManagerPopoverOpen] = useState(false);
+  const [employeePage, setEmployeePage] = useState(1);
+  const employeePageSize = 250; 
+  // const [empTotalCount, setEmpTotalCount] = useState(0);
+
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const debouncedEmployeeSearch = useDebounce(employeeSearch, 400);
+
+  const [employeeList, setEmployeeList] = useState([]);
+  const [employeeLoading, setEmployeeLoading] = useState(false);
+
+  const organisationId = localStorage.getItem("organisationId");
+
   const dispatch = useDispatch<AppDispatch>();
 
   // 1. get new state from redux
@@ -122,14 +152,15 @@ export default function Projects() {
 
   // 2. Setup state for filters and pagination
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] =
-    useState<ProjectStatus | "all">("all");
+  const [statusFilter, setStatusFilter] = useState<ProjectStatus | "all">(
+    "all"
+  );
   const [page, setPage] = useState(1); // Page state
   const [limit, setLimit] = useState(10); // Items per page
 
   // 3. Create debounced search term
   const debouncedSearch = useDebounce(searchTerm, 500);
-
+  const uuid = "81b48a8b-f574-4562-be38-f480e99359c9";
   // 4. Update the data-fetching useEffect
   useEffect(() => {
     if (organisationId) {
@@ -143,6 +174,35 @@ export default function Projects() {
       );
     }
   }, [organisationId, page, limit, statusFilter, debouncedSearch]);
+  useEffect(() => {
+  if (!uuid) return;
+
+  const fetchEmployees = async () => {
+    setEmployeeLoading(true);
+    try {
+      const res = await getPublicEmployees(
+        uuid,
+        employeePage,           // ← now uses current page
+        employeePageSize,       // ← 50 or 100
+        debouncedEmployeeSearch,
+        ""
+      );
+
+      if (res.data?.data) {
+        setEmployeeList(res.data.data);
+      } else {
+        setEmployeeList([]);
+      }
+    } catch (error) {
+      console.error("Failed to fetch employees:", error);
+      setEmployeeList([]);
+    } finally {
+      setEmployeeLoading(false);
+    }
+  };
+
+  fetchEmployees();
+}, [uuid, debouncedEmployeeSearch, employeePage]); // ← employeePage added here
 
   // 5. Handle filter/search changes (reset to page 1)
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -162,9 +222,8 @@ export default function Projects() {
   //   if(organisationId){
   //     dispatch(fetchProjects());
   //   }
-    
-  // }, [dispatch , organisationId]);
 
+  // }, [dispatch , organisationId]);
 
   const handleSave = async () => {
     if (
@@ -241,7 +300,6 @@ export default function Projects() {
   //     });
   // }, [projects, searchTerm, statusFilter]);
 
-  
   // 7. Pagination handlers
   const handleNextPage = () => {
     if (currentPage < totalPages) {
@@ -276,7 +334,10 @@ export default function Projects() {
           <p className="text-muted-foreground">Manage all company projects.</p>
         </div>
 
-        <Button onClick={() => setIsDialogOpen(true)} className="flex items-center gap-2">
+        <Button
+          onClick={() => setIsDialogOpen(true)}
+          className="flex items-center gap-2"
+        >
           <Plus size={16} />
           New Project
         </Button>
@@ -358,7 +419,10 @@ export default function Projects() {
                     <TableCell className="capitalize">{p.type}</TableCell>
 
                     <TableCell>
-                      <Badge className={getStatusBadge(p.status)} variant="outline">
+                      <Badge
+                        className={getStatusBadge(p.status)}
+                        variant="outline"
+                      >
                         {p.status}
                       </Badge>
                     </TableCell>
@@ -375,11 +439,19 @@ export default function Projects() {
                     </TableCell>
 
                     <TableCell className="text-right flex justify-end gap-2">
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(p)}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => openEditDialog(p)}
+                      >
                         <Pencil size={16} />
                       </Button>
 
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(p._id)}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDelete(p._id)}
+                      >
                         <Trash2 size={16} className="text-red-500" />
                       </Button>
                     </TableCell>
@@ -416,9 +488,13 @@ export default function Projects() {
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingProject ? "Edit Project" : "Create New Project"}</DialogTitle>
+            <DialogTitle>
+              {editingProject ? "Edit Project" : "Create New Project"}
+            </DialogTitle>
             <DialogDescription>
-              {editingProject ? "Modify project details." : "Fill project details."}
+              {editingProject
+                ? "Modify project details."
+                : "Fill project details."}
             </DialogDescription>
           </DialogHeader>
 
@@ -430,7 +506,9 @@ export default function Projects() {
                 <Label>Project Code *</Label>
                 <Input
                   value={formData.code || ""}
-                  onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, code: e.target.value })
+                  }
                 />
               </div>
 
@@ -438,7 +516,9 @@ export default function Projects() {
                 <Label>Project Name *</Label>
                 <Input
                   value={formData.name || ""}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, name: e.target.value })
+                  }
                 />
               </div>
             </div>
@@ -447,7 +527,9 @@ export default function Projects() {
               <Label>Description *</Label>
               <Textarea
                 value={formData.description || ""}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, description: e.target.value })
+                }
               />
             </div>
 
@@ -458,7 +540,10 @@ export default function Projects() {
                 <Input
                   value={formData.clientOrDepartment || ""}
                   onChange={(e) =>
-                    setFormData({ ...formData, clientOrDepartment: e.target.value })
+                    setFormData({
+                      ...formData,
+                      clientOrDepartment: e.target.value,
+                    })
                   }
                 />
               </div>
@@ -517,12 +602,140 @@ export default function Projects() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label>Project Manager</Label>
-                <Input
-                  value={formData.manager || ""}
-                  onChange={(e) =>
-                    setFormData({ ...formData, manager: e.target.value })
-                  }
-                />
+
+                <Popover
+                  open={managerPopoverOpen}
+                  onOpenChange={setManagerPopoverOpen}
+                >
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={managerPopoverOpen}
+                      className="w-full justify-between font-normal"
+                    >
+                      {formData.manager
+                        ? employeeList.find(
+                            (e: any) => e.id === formData.manager
+                          )
+                          ? `${
+                              employeeList.find(
+                                (e: any) => e.id === formData.manager
+                              )?.personalInfo?.firstName
+                            } ${
+                              employeeList.find(
+                                (e: any) => e.id === formData.manager
+                              )?.personalInfo?.lastName
+                            }`
+                          : "Select Project Manager"
+                        : "Select Project Manager"}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+
+                  <PopoverContent
+                    className="w-[--radix-popover-trigger-width] p-0"
+                    sideOffset={5}
+                    align="start"
+                    onOpenAutoFocus={(e) => e.preventDefault()}
+                    onInteractOutside={(e) => e.preventDefault()}
+                    style={{ zIndex: 9999 }}
+                  >
+                    <Command shouldFilter={false}>
+                      <CommandInput
+                        placeholder="Search employee..."
+                        value={employeeSearch}
+                        onValueChange={setEmployeeSearch}
+                      />
+
+                      <div className="max-h-80 overflow-y-auto">
+                        <CommandList>
+                          {employeeLoading ? (
+                            <CommandEmpty>
+                              <div className="py-6 text-center text-sm">
+                                Loading employees...
+                              </div>
+                            </CommandEmpty>
+                          ) : employeeList.length === 0 ? (
+                            <CommandEmpty>No employees found.</CommandEmpty>
+                          ) : (
+                            <CommandGroup>
+                              {employeeList.map((emp: any) => (
+                                <CommandItem
+                                  key={emp.id}
+                                  value={`${
+                                    emp.personalInfo?.firstName || ""
+                                  } ${emp.personalInfo?.lastName || ""} ${
+                                    emp.id
+                                  }`}
+                                  onSelect={() => {
+                                    setFormData((prev) => ({
+                                      ...prev,
+                                      manager: emp.id,
+                                    }));
+                                    setManagerPopoverOpen(false);
+                                  }}
+                                >
+                                  <Check
+                                    className={cn(
+                                      "mr-2 h-4 w-4",
+                                      formData.manager === emp.id
+                                        ? "opacity-100"
+                                        : "opacity-0"
+                                    )}
+                                  />
+                                  <div className="flex flex-col">
+                                    <span>
+                                      {emp.personalInfo?.firstName}{" "}
+                                      {emp.personalInfo?.lastName}
+                                    </span>
+                                    {emp.personalInfo?.email && (
+                                      <span className="text-xs text-muted-foreground">
+                                        {emp.personalInfo.email}
+                                      </span>
+                                    )}
+                                  </div>
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          )}
+                        </CommandList>
+                      </div>
+
+                      {/* Next / Previous Buttons */}
+                      <div className="flex items-center justify-between border-t p-2 bg-gray-50 dark:bg-gray-900">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            setEmployeePage((p) => Math.max(1, p - 1))
+                          }
+                          disabled={employeePage === 1 || employeeLoading}
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                          Previous
+                        </Button>
+
+                        <span className="text-xs text-muted-foreground">
+                          Page {employeePage}
+                        </span>
+
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEmployeePage((p) => p + 1)}
+                          disabled={
+                            employeeList.length < employeePageSize ||
+                            employeeLoading
+                          }
+                        >
+                          Next
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
 
               <div>
@@ -547,7 +760,7 @@ export default function Projects() {
               </div>
             </div>
 
-            <div>
+            {/* <div>
               <Label>Assigned Team</Label>
               <Textarea
                 value={formData.assignedTeam || ""}
@@ -555,11 +768,13 @@ export default function Projects() {
                   setFormData({ ...formData, assignedTeam: e.target.value })
                 }
               />
-            </div>
+            </div> */}
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+              Cancel
+            </Button>
             <Button onClick={handleSave}>
               {editingProject ? "Update Project" : "Save Project"}
             </Button>
