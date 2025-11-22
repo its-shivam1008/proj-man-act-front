@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { storage, STORAGE_KEYS } from '@/lib/storage';
+import { useDispatch, useSelector } from 'react-redux';
+import { AppDispatch, RootState } from '@/redux/store';
+import { fetchRFQs, createRFQ, updateRFQ, deleteRFQ } from '@/redux/slices/purchase/rfqSlice';
+import { fetchVendors } from '@/redux/slices/purchase/vendorSlice';
+import { RFQ, RFQProduct } from '@/types/purchase';
 import {
   Plus,
   Eye,
@@ -12,30 +16,16 @@ import {
   Clock,
   AlertTriangle,
   Search,
-  Filter
+  Filter,
+  Loader2
 } from 'lucide-react';
+import { toast } from 'sonner';
 
-interface RFQ {
-  id: string;
-  rfqNumber: string;
-  orderDate: string;
-  currency: string;
-  vendors: string[];
-  paymentTerms: string;
-  deliveryDate: string;
-  products: { name: string; quantity: number; uom: string; unitPrice: number; taxes: number }[];
-  notes: string;
-  status: string;
-}
-
-interface Vendor {
-  id: string;
-  vendorName: string;
-}
-
-const RFQ: React.FC = () => {
-  const [rfqs, setRfqs] = useState<RFQ[]>([]);
-  const [vendors, setVendors] = useState<Vendor[]>([]);
+const RFQComponent: React.FC = () => {
+  const dispatch = useDispatch<AppDispatch>();
+  const { rfqs, loading: rfqLoading, error } = useSelector((state: RootState) => state.rfqs);
+  const { vendors } = useSelector((state: RootState) => state.vendors);
+  
   const [showCreateRfq, setShowCreateRfq] = useState(false);
   const [showUpdateRfq, setShowUpdateRfq] = useState(false);
   const [showViewRfq, setShowViewRfq] = useState(false);
@@ -43,17 +33,18 @@ const RFQ: React.FC = () => {
   const [viewingRfq, setViewingRfq] = useState<RFQ | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    dispatch(fetchRFQs());
+    dispatch(fetchVendors());
+  }, [dispatch]);
 
-  const loadData = () => {
-    const loadedRFQs = storage.get<RFQ[]>(STORAGE_KEYS.RFQS, []);
-    setRfqs(Array.isArray(loadedRFQs) ? loadedRFQs : []);
-    const loadedVendors = storage.get<Vendor[]>(STORAGE_KEYS.VENDORS, []);
-    setVendors(Array.isArray(loadedVendors) ? loadedVendors : []);
-  };
+    useEffect(() => {
+    if (error) {
+        toast.error(error);
+    }
+  }, [error]);
 
   const generateRfqNumber = () => {
     const year = new Date().getFullYear();
@@ -61,12 +52,12 @@ const RFQ: React.FC = () => {
     return `RFQ-${year}-${String(count).padStart(4, '0')}`;
   };
 
-  const filteredRfqs = rfqs.filter(rfq => {
-    const matchesSearch = rfq.rfqNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      rfq.notes?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || rfq.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  // const filteredRfqs = rfqs.filter(rfq => {
+  //   const matchesSearch = rfq.rfqNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+  //     rfq.notes?.toLowerCase().includes(searchTerm.toLowerCase());
+  //   const matchesStatus = statusFilter === 'all' || rfq.status === statusFilter;
+  //   return matchesSearch && matchesStatus;
+  // });
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -102,15 +93,25 @@ const RFQ: React.FC = () => {
     }
   };
 
-  const handleSendRfq = (rfq: RFQ) => {
-    storage.updateById(STORAGE_KEYS.RFQS, rfq.id, { status: 'sent' });
-    loadData();
+  const handleSendRfq = async (rfq: RFQ) => {
+    try {
+        await dispatch(updateRFQ({ id: rfq.id, data: { status: 'sent' } })).unwrap();
+        toast.success("RFQ Sent to vendors");
+        dispatch(fetchRFQs());
+    } catch (e) {
+        toast.error("Failed to send RFQ");
+    }
   };
 
-  const handleDeleteRfq = (id: string) => {
+  const handleDeleteRfq = async (id: string) => {
     if (confirm('Are you sure you want to delete this RFQ?')) {
-      storage.deleteById(STORAGE_KEYS.RFQS, id);
-      loadData();
+        try {
+             await dispatch(deleteRFQ(id)).unwrap();
+             toast.success("RFQ deleted");
+             dispatch(fetchRFQs());
+        } catch (e) {
+            toast.error("Failed to delete RFQ");
+        }
     }
   };
 
@@ -119,28 +120,41 @@ const RFQ: React.FC = () => {
     const [formData, setFormData] = useState({
       rfqNumber: generateRfqNumber(),
       orderDate: new Date().toISOString().split('T')[0],
-      currency: 'USD',
+      currency: 'INR',
       vendors: [] as string[],
       paymentTerms: 'Net 30',
       deliveryDate: '',
-      products: [{ name: '', quantity: 0, uom: 'pieces', unitPrice: 0, taxes: 0 }],
+      products: [{ name: '', quantity: 0, uom: 'pieces', unitPrice: 0, taxes: 0 }] as RFQProduct[],
       notes: ''
     });
 
-    const handleSubmit = () => {
+    const handleSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      
       if (!formData.rfqNumber || !formData.orderDate || !formData.deliveryDate) {
-        alert('Please fill in all required fields');
+        toast.error('Please fill in all required fields');
         return;
       }
 
-      const newRfq: RFQ = {
-        ...formData,
-        id: Date.now().toString(),
-        status: 'draft'
-      };
-      storage.push(STORAGE_KEYS.RFQS, newRfq);
-      loadData();
-      setShowCreateRfq(false);
+      if (formData.vendors.length === 0) {
+          toast.error('Please select at least one vendor');
+          return;
+      }
+
+      setSubmitting(true);
+      try {
+          await dispatch(createRFQ({
+            ...formData,
+            status: 'draft'
+          })).unwrap();
+          toast.success("RFQ created successfully");
+          dispatch(fetchRFQs());
+          setShowCreateRfq(false);
+      } catch(e) {
+          // handled
+      } finally {
+          setSubmitting(false);
+      }
     };
 
     const addProduct = () => {
@@ -157,7 +171,7 @@ const RFQ: React.FC = () => {
       }
     };
 
-    const updateProduct = (index: number, field: string, value: any) => {
+    const updateProduct = (index: number, field: keyof RFQProduct, value: any) => {
       const newProducts = [...formData.products];
       (newProducts[index] as any)[field] = value;
       setFormData({ ...formData, products: newProducts });
@@ -182,7 +196,7 @@ const RFQ: React.FC = () => {
               </button>
             </div>
 
-            <div className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-6">
               {/* Basic Info */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div>
@@ -192,6 +206,7 @@ const RFQ: React.FC = () => {
                     value={formData.rfqNumber}
                     onChange={(e) => setFormData({ ...formData, rfqNumber: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
                   />
                 </div>
                 <div>
@@ -201,6 +216,7 @@ const RFQ: React.FC = () => {
                     value={formData.orderDate}
                     onChange={(e) => setFormData({ ...formData, orderDate: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
                   />
                 </div>
                 <div>
@@ -221,12 +237,13 @@ const RFQ: React.FC = () => {
               {/* Vendors and Payment */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Select Vendors</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Select Vendors *</label>
                   <select
                     multiple
                     value={formData.vendors}
                     onChange={(e) => setFormData({ ...formData, vendors: Array.from(e.target.selectedOptions, option => option.value) })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent h-24"
+                    required
                   >
                     {vendors.map(vendor => (
                       <option key={vendor.id} value={vendor.id}>{vendor.vendorName}</option>
@@ -257,6 +274,7 @@ const RFQ: React.FC = () => {
                       value={formData.deliveryDate}
                       onChange={(e) => setFormData({ ...formData, deliveryDate: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      required
                     />
                   </div>
                 </div>
@@ -288,6 +306,7 @@ const RFQ: React.FC = () => {
                               onChange={(e) => updateProduct(index, 'name', e.target.value)}
                               className="w-full px-2 py-1 border border-gray-300 rounded"
                               placeholder="Product name"
+                              required
                             />
                           </td>
                           <td className="py-2 pr-2">
@@ -297,6 +316,7 @@ const RFQ: React.FC = () => {
                               onChange={(e) => updateProduct(index, 'quantity', parseInt(e.target.value) || 0)}
                               className="w-20 px-2 py-1 border border-gray-300 rounded"
                               min="0"
+                              required
                             />
                           </td>
                           <td className="py-2 pr-2">
@@ -320,6 +340,7 @@ const RFQ: React.FC = () => {
                               onChange={(e) => updateProduct(index, 'unitPrice', parseFloat(e.target.value) || 0)}
                               className="w-24 px-2 py-1 border border-gray-300 rounded"
                               min="0"
+                              required
                             />
                           </td>
                           <td className="py-2 pr-2">
@@ -333,10 +354,11 @@ const RFQ: React.FC = () => {
                             />
                           </td>
                           <td className="py-2 pr-2 text-sm text-gray-900">
-                            ${((product.quantity * product.unitPrice) * (1 + product.taxes / 100)).toFixed(2)}
+                            ₹{((product.quantity * product.unitPrice) * (1 + product.taxes / 100)).toFixed(2)}
                           </td>
                           <td className="py-2">
                             <button
+                              type="button"
                               onClick={() => removeProduct(index)}
                               className="text-red-500 hover:text-red-700"
                               disabled={formData.products.length === 1}
@@ -350,6 +372,7 @@ const RFQ: React.FC = () => {
                   </table>
                   <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-200">
                     <button
+                      type="button"
                       onClick={addProduct}
                       className="text-blue-600 hover:text-blue-800 text-sm font-medium"
                     >
@@ -367,7 +390,7 @@ const RFQ: React.FC = () => {
 
               {/* Notes */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notes / Requirements</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
                 <textarea
                   rows={3}
                   value={formData.notes}
@@ -380,19 +403,22 @@ const RFQ: React.FC = () => {
               {/* Actions */}
               <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
                 <button
+                  type="button"
                   onClick={() => setShowCreateRfq(false)}
                   className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={handleSubmit}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  type="submit"
+                  disabled={submitting}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
                 >
-                  Create RFQ
+                   {submitting && <Loader2 className="animate-spin h-4 w-4 mr-2" />}
+                   Create RFQ
                 </button>
               </div>
-            </div>
+            </form>
           </div>
         </div>
       </div>
@@ -401,28 +427,36 @@ const RFQ: React.FC = () => {
 
   // Update RFQ Form Component
   const UpdateRfqForm = () => {
+    if (!editingRfq) return null;
+
     const [formData, setFormData] = useState({
-      rfqNumber: editingRfq?.rfqNumber || '',
-      orderDate: editingRfq?.orderDate || '',
-      currency: editingRfq?.currency || 'USD',
-      vendors: editingRfq?.vendors || [],
-      paymentTerms: editingRfq?.paymentTerms || 'Net 30',
-      deliveryDate: editingRfq?.deliveryDate || '',
-      products: editingRfq?.products || [{ name: '', quantity: 0, uom: 'pieces', unitPrice: 0, taxes: 0 }],
-      notes: editingRfq?.notes || '',
-      status: editingRfq?.status || 'draft'
+      rfqNumber: editingRfq.rfqNumber,
+      orderDate: editingRfq.orderDate ? new Date(editingRfq.orderDate).toISOString().split('T')[0] : '',
+      currency: editingRfq.currency || 'USD',
+      vendors: typeof editingRfq.vendors[0] === 'object' ? editingRfq.vendors.map((v: any) => v.id || v._id) : editingRfq.vendors,
+      paymentTerms: editingRfq.paymentTerms || 'Net 30',
+      deliveryDate: editingRfq.deliveryDate ? new Date(editingRfq.deliveryDate).toISOString().split('T')[0] : '',
+      products: editingRfq.products || [{ name: '', quantity: 0, uom: 'pieces', unitPrice: 0, taxes: 0 }],
+      notes: editingRfq.notes || '',
+      status: editingRfq.status
     });
 
-    const handleSubmit = () => {
-      if (!editingRfq) return;
-      const updatedRfq: Partial<RFQ> = { ...formData };
-      storage.updateById(STORAGE_KEYS.RFQS, editingRfq.id, updatedRfq);
-      loadData();
-      setShowUpdateRfq(false);
-      setEditingRfq(null);
+    const handleSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setSubmitting(true);
+      try {
+        await dispatch(updateRFQ({ id: editingRfq.id, data: formData })).unwrap();
+        toast.success("RFQ updated successfully");
+        setShowUpdateRfq(false);
+        setEditingRfq(null);
+      } catch (e) {
+          // handled
+      } finally {
+          setSubmitting(false);
+      }
     };
 
-    const updateProduct = (index: number, field: string, value: any) => {
+    const updateProduct = (index: number, field: keyof RFQProduct, value: any) => {
       const newProducts = [...formData.products];
       (newProducts[index] as any)[field] = value;
       setFormData({ ...formData, products: newProducts });
@@ -442,8 +476,6 @@ const RFQ: React.FC = () => {
       }
     };
 
-    if (!editingRfq) return null;
-
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
         <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-4/5 lg:w-3/4 shadow-lg rounded-md bg-white mb-10">
@@ -455,25 +487,27 @@ const RFQ: React.FC = () => {
               </button>
             </div>
 
-            <div className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-6">
               {/* Basic Info */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">RFQ Number</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">RFQ Number *</label>
                   <input
                     type="text"
                     value={formData.rfqNumber}
                     onChange={(e) => setFormData({ ...formData, rfqNumber: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Order Date</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Order Date *</label>
                   <input
                     type="date"
                     value={formData.orderDate}
                     onChange={(e) => setFormData({ ...formData, orderDate: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
                   />
                 </div>
                 <div>
@@ -493,7 +527,7 @@ const RFQ: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
                   <select
                     value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="draft">Draft</option>
@@ -508,12 +542,13 @@ const RFQ: React.FC = () => {
               {/* Vendors and Payment */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Select Vendors</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Select Vendors *</label>
                   <select
                     multiple
                     value={formData.vendors}
                     onChange={(e) => setFormData({ ...formData, vendors: Array.from(e.target.selectedOptions, option => option.value) })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent h-24"
+                    required
                   >
                     {vendors.map(vendor => (
                       <option key={vendor.id} value={vendor.id}>{vendor.vendorName}</option>
@@ -537,12 +572,13 @@ const RFQ: React.FC = () => {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Expected Delivery Date</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Expected Delivery Date *</label>
                     <input
                       type="date"
                       value={formData.deliveryDate}
                       onChange={(e) => setFormData({ ...formData, deliveryDate: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      required
                     />
                   </div>
                 </div>
@@ -568,12 +604,14 @@ const RFQ: React.FC = () => {
                         value={product.name}
                         onChange={(e) => updateProduct(index, 'name', e.target.value)}
                         className="px-2 py-1 border border-gray-300 rounded"
+                        required
                       />
                       <input
                         type="number"
                         value={product.quantity}
                         onChange={(e) => updateProduct(index, 'quantity', parseInt(e.target.value) || 0)}
                         className="px-2 py-1 border border-gray-300 rounded"
+                        required
                       />
                       <select
                         value={product.uom}
@@ -592,6 +630,7 @@ const RFQ: React.FC = () => {
                         value={product.unitPrice}
                         onChange={(e) => updateProduct(index, 'unitPrice', parseFloat(e.target.value) || 0)}
                         className="px-2 py-1 border border-gray-300 rounded"
+                        required
                       />
                       <input
                         type="number"
@@ -601,9 +640,10 @@ const RFQ: React.FC = () => {
                         className="px-2 py-1 border border-gray-300 rounded"
                       />
                       <div className="px-2 py-1 text-sm text-gray-900">
-                        ${((product.quantity * product.unitPrice) * (1 + product.taxes / 100)).toFixed(2)}
+                        ₹{((product.quantity * product.unitPrice) * (1 + product.taxes / 100)).toFixed(2)}
                       </div>
                       <button
+                        type="button"
                         onClick={() => removeProduct(index)}
                         className="text-red-500 hover:text-red-700"
                       >
@@ -611,7 +651,7 @@ const RFQ: React.FC = () => {
                       </button>
                     </div>
                   ))}
-                  <button onClick={addProduct} className="text-blue-600 hover:text-blue-800 text-sm mt-2">
+                  <button type="button" onClick={addProduct} className="text-blue-600 hover:text-blue-800 text-sm mt-2">
                     + Add Product
                   </button>
                 </div>
@@ -631,19 +671,22 @@ const RFQ: React.FC = () => {
               {/* Actions */}
               <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
                 <button
+                  type="button"
                   onClick={() => { setShowUpdateRfq(false); setEditingRfq(null); }}
                   className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={handleSubmit}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  type="submit"
+                  disabled={submitting}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center"
                 >
+                  {submitting && <Loader2 className="animate-spin h-4 w-4 mr-2" />}
                   Update RFQ
                 </button>
               </div>
-            </div>
+            </form>
           </div>
         </div>
       </div>
@@ -664,6 +707,10 @@ const RFQ: React.FC = () => {
 
     const getVendorNames = () => {
       return viewingRfq.vendors?.map(vendorId => {
+        // If vendorId is an object (populated), use vendorName, else find in state
+        if (typeof vendorId === 'object' && (vendorId as any).vendorName) {
+            return (vendorId as any).vendorName;
+        }
         const vendor = vendors.find(v => v.id === vendorId);
         return vendor?.vendorName || vendorId;
       }).join(', ') || 'No vendors selected';
@@ -693,11 +740,11 @@ const RFQ: React.FC = () => {
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Order Date</label>
-                    <p className="text-sm font-medium text-gray-900">{viewingRfq.orderDate}</p>
+                    <p className="text-sm font-medium text-gray-900">{viewingRfq.orderDate ? new Date(viewingRfq.orderDate).toLocaleDateString() : 'N/A'}</p>
                   </div>
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Expected Delivery</label>
-                    <p className="text-sm font-medium text-gray-900">{viewingRfq.deliveryDate}</p>
+                    <p className="text-sm font-medium text-gray-900">{viewingRfq.deliveryDate ? new Date(viewingRfq.deliveryDate).toLocaleDateString() : 'N/A'}</p>
                   </div>
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Currency</label>
@@ -810,6 +857,8 @@ const RFQ: React.FC = () => {
     );
   };
 
+  if (rfqLoading && !rfqs.length) return <div>Loading...</div>;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -828,7 +877,7 @@ const RFQ: React.FC = () => {
       </div>
 
       {/* Filters */}
-      <div className="bg-white shadow rounded-lg p-4">
+      {/* <div className="bg-white shadow rounded-lg p-4">
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="flex-1">
             <div className="relative">
@@ -858,7 +907,7 @@ const RFQ: React.FC = () => {
             </select>
           </div>
         </div>
-      </div>
+      </div> */}
 
       {/* RFQ Table */}
       <div className="bg-white shadow rounded-lg overflow-hidden">
@@ -876,7 +925,7 @@ const RFQ: React.FC = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredRfqs.length === 0 ? (
+              {rfqs.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-6 py-12 text-center">
                     <FileText className="h-12 w-12 text-gray-300 mx-auto mb-4" />
@@ -890,12 +939,12 @@ const RFQ: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                filteredRfqs.map((rfq) => (
+                rfqs.map((rfq) => (
                   <tr key={rfq.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{rfq.rfqNumber}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{rfq.vendors?.length || 0} vendors</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{rfq.orderDate}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{rfq.deliveryDate}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{rfq.orderDate ? new Date(rfq.orderDate).toLocaleDateString() : 'N/A'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{rfq.deliveryDate ? new Date(rfq.deliveryDate).toLocaleDateString() : 'N/A'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {rfq.currency} {(rfq.products?.reduce((sum, p) => sum + (p.quantity * p.unitPrice * (1 + p.taxes / 100)), 0) || 0).toFixed(2)}
                     </td>
@@ -949,54 +998,6 @@ const RFQ: React.FC = () => {
         </div>
       </div>
 
-      {/* Summary Cards */}
-      {/* <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="bg-white shadow rounded-lg p-4">
-          <div className="flex items-center">
-            <div className="flex-shrink-0 bg-gray-100 rounded-lg p-3">
-              <FileText className="h-6 w-6 text-gray-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Draft</p>
-              <p className="text-2xl font-semibold text-gray-900">{rfqs.filter(r => r.status === 'draft').length}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white shadow rounded-lg p-4">
-          <div className="flex items-center">
-            <div className="flex-shrink-0 bg-blue-100 rounded-lg p-3">
-              <Send className="h-6 w-6 text-blue-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Sent</p>
-              <p className="text-2xl font-semibold text-gray-900">{rfqs.filter(r => r.status === 'sent').length}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white shadow rounded-lg p-4">
-          <div className="flex items-center">
-            <div className="flex-shrink-0 bg-yellow-100 rounded-lg p-3">
-              <Clock className="h-6 w-6 text-yellow-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Received</p>
-              <p className="text-2xl font-semibold text-gray-900">{rfqs.filter(r => r.status === 'received').length}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white shadow rounded-lg p-4">
-          <div className="flex items-center">
-            <div className="flex-shrink-0 bg-green-100 rounded-lg p-3">
-              <CheckCircle className="h-6 w-6 text-green-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Completed</p>
-              <p className="text-2xl font-semibold text-gray-900">{rfqs.filter(r => r.status === 'done').length}</p>
-            </div>
-          </div>
-        </div>
-      </div> */}
-
       {/* Modals */}
       {showCreateRfq && <CreateRfqForm />}
       {showUpdateRfq && <UpdateRfqForm />}
@@ -1005,4 +1006,4 @@ const RFQ: React.FC = () => {
   );
 };
 
-export default RFQ;
+export default RFQComponent;

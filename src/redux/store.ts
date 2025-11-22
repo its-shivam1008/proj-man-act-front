@@ -24,6 +24,10 @@ import receiptReducer from "./slices/receiptSlice";
 import deliveryReducer from "./slices/deliverySlice";
 import scrapOrderReducer from "./slices/scrapOrderSlice";
 import forecastReducer from "./slices/forecastSlice";
+import vendorReducer from "./slices/purchase/vendorSlice";
+import rfqReducer from "./slices/purchase/rfqSlice";
+import purchaseOrderReducer from "./slices/purchase/purchaseOrderSlice";
+import purchaseAgreementReducer from "./slices/purchase/purchaseAgreementSlice";
 export const store = configureStore({
   reducer: {
     auth: authReducer,
@@ -51,6 +55,10 @@ export const store = configureStore({
     delivery: deliveryReducer,
     scrap: scrapOrderReducer,
     forecast: forecastReducer,
+    vendors: vendorReducer,
+    rfqs: rfqReducer,
+    purchaseOrders: purchaseOrderReducer,
+    purchaseAgreements: purchaseAgreementReducer,
   },
 });
 

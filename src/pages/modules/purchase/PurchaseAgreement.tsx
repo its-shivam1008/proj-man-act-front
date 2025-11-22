@@ -1,46 +1,38 @@
 import React, { useState, useEffect } from 'react';
-import { storage, STORAGE_KEYS } from '@/lib/storage';
-import { Plus, Eye, Trash2, CheckCircle, X } from 'lucide-react';
+import { useDispatch, useSelector } from 'react-redux';
+import { AppDispatch, RootState } from '@/redux/store';
+import { fetchPurchaseAgreements, createPurchaseAgreement, deletePurchaseAgreement } from '@/redux/slices/purchase/purchaseAgreementSlice';
+import { fetchVendors } from '@/redux/slices/purchase/vendorSlice';
+import { PurchaseAgreement } from '@/types/purchase';
+import { Plus, Eye, Trash2, CheckCircle, X, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
-interface PurchaseAgreement {
-  id: string | number;
-  agreementNumber: string;
-  vendor: string;
-  startDate: string;
-  endDate: string;
-  totalValue: number;
-  status: string;
-  terms: string;
-  notes: string;
-}
-
-interface Vendor {
-  id: string;
-  vendorName: string;
-}
-
-const PurchaseAgreement: React.FC = () => {
-  const [purchaseAgreements, setPurchaseAgreements] = useState<PurchaseAgreement[]>([]);
-  const [vendors, setVendors] = useState<Vendor[]>([]);
+const PurchaseAgreementComponent: React.FC = () => {
+  const dispatch = useDispatch<AppDispatch>();
+  const { purchaseAgreements, loading, error } = useSelector((state: RootState) => state.purchaseAgreements);
+  const { vendors } = useSelector((state: RootState) => state.vendors);
+  
   const [showCreateAgreement, setShowCreateAgreement] = useState(false);
   const [showViewAgreement, setShowViewAgreement] = useState(false);
   const [viewingAgreement, setViewingAgreement] = useState<PurchaseAgreement | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    dispatch(fetchPurchaseAgreements());
+    dispatch(fetchVendors());
+  }, [dispatch]);
 
-  const loadData = () => {
-    const loadedAgreements = storage.get<PurchaseAgreement[]>(STORAGE_KEYS.PURCHASE_AGREEMENTS, []);
-    setPurchaseAgreements(Array.isArray(loadedAgreements) ? loadedAgreements : []);
-    const loadedVendors = storage.get<Vendor[]>(STORAGE_KEYS.VENDORS, []);
-    setVendors(Array.isArray(loadedVendors) ? loadedVendors : []);
-  };
+  useEffect(() => {
+    if (error) {
+        toast.error(error);
+    }
+  }, [error]);
 
   const CreateAgreementForm = () => {
     const [formData, setFormData] = useState({
       agreementNumber: '',
       vendor: '',
+      vendorId: '',
       startDate: '',
       endDate: '',
       terms: '',
@@ -48,15 +40,32 @@ const PurchaseAgreement: React.FC = () => {
       notes: ''
     });
 
-    const handleSubmit = () => {
-      const newAgreement: PurchaseAgreement = {
-        ...formData,
-        id: Date.now().toString(),
-        status: 'active'
-      };
-      storage.push(STORAGE_KEYS.PURCHASE_AGREEMENTS, newAgreement);
-      loadData();
-      setShowCreateAgreement(false);
+    const handleVendorChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+       const selectedVendorName = e.target.value;
+       const selectedVendor = vendors.find(v => v.vendorName === selectedVendorName);
+       setFormData({
+           ...formData,
+           vendor: selectedVendorName,
+           vendorId: selectedVendor ? selectedVendor.id : ''
+       });
+    };
+
+    const handleSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setSubmitting(true);
+      try {
+        await dispatch(createPurchaseAgreement({
+            ...formData,
+            status: 'active'
+        })).unwrap();
+        dispatch(fetchPurchaseAgreements());
+        toast.success("Purchase Agreement created");
+        setShowCreateAgreement(false);
+      } catch (e) {
+          toast.error("Failed to create purchase agreement");
+      } finally {
+          setSubmitting(false);
+      }
     };
 
     return (
@@ -69,17 +78,17 @@ const PurchaseAgreement: React.FC = () => {
                 <X className="h-6 w-6" />
               </button>
             </div>
-            <div className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-6">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Agreement Number</label>
-                  <input type="text" value={formData.agreementNumber} onChange={(e) => setFormData({ ...formData, agreementNumber: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Auto-generated" />
+                  <input type="text" value={formData.agreementNumber} onChange={(e) => setFormData({ ...formData, agreementNumber: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Auto-generated" required />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Vendor</label>
-                  <select value={formData.vendor} onChange={(e) => setFormData({ ...formData, vendor: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                    <option>Select Vendor</option>
-                    {vendors.map(vendor => (
+                  <select value={formData.vendor} onChange={handleVendorChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" required>
+                    <option value="">Select Vendor</option>
+                    {vendors?.map(vendor => (
                       <option key={vendor.id} value={vendor.vendorName}>{vendor.vendorName}</option>
                     ))}
                   </select>
@@ -88,11 +97,11 @@ const PurchaseAgreement: React.FC = () => {
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-                  <input type="date" value={formData.startDate} onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                  <input type="date" value={formData.startDate} onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" required />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-                  <input type="date" value={formData.endDate} onChange={(e) => setFormData({ ...formData, endDate: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                  <input type="date" value={formData.endDate} onChange={(e) => setFormData({ ...formData, endDate: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" required />
                 </div>
               </div>
               <div>
@@ -110,10 +119,13 @@ const PurchaseAgreement: React.FC = () => {
                 <textarea rows={3} value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Additional notes..." />
               </div>
               <div className="flex justify-end space-x-3 pt-4">
-                <button onClick={() => setShowCreateAgreement(false)} className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
-                <button onClick={handleSubmit} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">Create Agreement</button>
+                <button type="button" onClick={() => setShowCreateAgreement(false)} className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
+                <button type="submit" disabled={submitting} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center">
+                    {submitting && <Loader2 className="animate-spin h-4 w-4 mr-2" />}
+                    Create Agreement
+                </button>
               </div>
-            </div>
+            </form>
           </div>
         </div>
       </div>
@@ -127,7 +139,7 @@ const PurchaseAgreement: React.FC = () => {
         <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-4/5 lg:w-3/4 shadow-lg rounded-md bg-white">
           <div className="mt-3">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium text-gray-900">View Agreement: {viewingAgreement.agreementNumber}</h3>
+              <h3 className="text-lg font-medium text-gray-900">Agreement Number: {viewingAgreement.agreementNumber}</h3>
               <button onClick={() => { setShowViewAgreement(false); setViewingAgreement(null); }} className="text-gray-400 hover:text-gray-600">
                 <X className="h-6 w-6" />
               </button>
@@ -140,11 +152,11 @@ const PurchaseAgreement: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-                  <p className="text-sm text-gray-900">{viewingAgreement.startDate}</p>
+                  <p className="text-sm text-gray-900">{viewingAgreement.startDate ? new Date(viewingAgreement.startDate).toLocaleDateString() : 'N/A'}</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-                  <p className="text-sm text-gray-900">{viewingAgreement.endDate}</p>
+                  <p className="text-sm text-gray-900">{viewingAgreement.endDate ? new Date(viewingAgreement.endDate).toLocaleDateString() : 'N/A'}</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Total Value</label>
@@ -189,6 +201,8 @@ const PurchaseAgreement: React.FC = () => {
     return null;
   };
 
+  if (loading && !purchaseAgreements.length) return <div>Loading...</div>;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -219,13 +233,13 @@ const PurchaseAgreement: React.FC = () => {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {purchaseAgreements.map((agreement) => (
+            {purchaseAgreements?.map((agreement) => (
               <tr key={agreement.id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{agreement?.agreementNumber}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{agreement?.vendor}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{agreement?.startDate}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{agreement?.endDate}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${(agreement.totalValue || 0).toLocaleString()}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{agreement?.startDate ? new Date(agreement.startDate).toLocaleDateString() : 'N/A'}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{agreement?.endDate ? new Date(agreement.endDate).toLocaleDateString() : 'N/A'}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900"> ₹{(agreement.totalValue || 0).toLocaleString()}</td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center">
                     {getStatusIcon(agreement.status || 'active')}
@@ -238,8 +252,7 @@ const PurchaseAgreement: React.FC = () => {
                   <button onClick={() => { setViewingAgreement(agreement); setShowViewAgreement(true); }} className="text-blue-600 hover:text-blue-900 mr-3"><Eye className="h-4 w-4" /></button>
                   <button className="text-red-600 hover:text-red-900" onClick={() => {
                     if (confirm('Are you sure?')) {
-                      storage.deleteById(STORAGE_KEYS.PURCHASE_AGREEMENTS, agreement.id.toString());
-                      loadData();
+                      dispatch(deletePurchaseAgreement(agreement.id));
                     }
                   }}><Trash2 className="h-4 w-4" /></button>
                 </td>
@@ -255,4 +268,4 @@ const PurchaseAgreement: React.FC = () => {
   );
 };
 
-export default PurchaseAgreement;
+export default PurchaseAgreementComponent;
