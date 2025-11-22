@@ -76,6 +76,13 @@ import AssetDisposalTransferPage from './pages/modules/plant-machinery/AssetDisp
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import VerifyOtp from "./pages/VerifyOtp";
+import RFQ from './pages/modules/purchase/RFQ';
+import PurchaseOrder from './pages/modules/purchase/PurchaseOrder';
+import PurchaseOverview from './pages/modules/purchase/PurchaseOverview';
+import PurchaseAgreement from './pages/modules/purchase/PurchaseAgreement';
+import PurchaseVendors from './pages/modules/purchase/PurchaseVendors';
+import PurchaseReporting from './pages/modules/purchase/PurchaseReporting';
+import PurchaseSettings from './pages/modules/purchase/PurchaseSettings';
 function App() {
   useEffect(() => {
     ensureInitialized();
@@ -178,6 +185,15 @@ function App() {
               <Route path="/plant-machinery/teams" element={<Teams />} />
               <Route path="/plant-machinery/assets-disposal"
                 element={<AssetDisposalTransferPage />} />
+
+                {/* purchase order  */}
+                <Route path="/purchase/rfq" element={<RFQ/>} />
+                <Route path="/purchase/orders" element={<PurchaseOrder/>} />
+                <Route path="/purchase/agreements" element={<PurchaseAgreement/>} />
+                <Route path="/purchase/vendors" element={<PurchaseVendors/>} />
+                <Route path="/purchase/reporting" element={<PurchaseReporting/>} />
+                <Route path="/purchase/settings" element={<PurchaseSettings/>} />
+                <Route path="/purchase/overview" element={<PurchaseOverview/>} />
 
             </Route>
           </Routes>

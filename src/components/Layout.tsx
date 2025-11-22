@@ -100,6 +100,18 @@ const Layout: React.FC = () => {
     { name: 'Reports', href: '/production/reports', icon: FileText },
   ];
 
+  // Links for the Purchase Module (tabs converted to pages)
+  const purchaseLinks = [
+    { name: 'Main Dashboard', href: '/', icon: Home },
+    { name: 'Purchase Overview', href: '/purchase/overview', icon: LayoutDashboard },
+    { name: 'RFQ', href: '/purchase/rfq', icon: FileText },
+    { name: 'Purchase Orders', href: '/purchase/orders', icon: ShoppingCart },
+    { name: 'Agreements', href: '/purchase/agreements', icon: FileText },
+    { name: 'Vendors', href: '/purchase/vendors', icon: Users },
+    { name: 'Reporting', href: '/purchase/reporting', icon: TrendingUp },
+    { name: 'Settings', href: '/purchase/settings', icon: Settings },
+  ];
+
   // Links for the Project Management Module
   const projectLinks = [
     { name: 'Main Dashboard', href: '/', icon: Home }, // Link to go back
@@ -153,6 +165,7 @@ const Layout: React.FC = () => {
     { prefix: '/project-management', name: 'Project' },
     { prefix: '/production', name: 'Production' },
     { prefix: '/plant-machinery', name: 'Plant & Machinery' },
+    { prefix: '/purchase', name: 'Purchase' },
   ].find(module => location.pathname.startsWith(module.prefix));
 
   // This will keep the correct accordion open on page load
@@ -188,6 +201,8 @@ const Layout: React.FC = () => {
                   subLinks = productionLinks.slice(1); // Get all production links except "Main Dashboard"
                 } else if (item.name === 'Plant & Machinery') {
                   subLinks = plantLinks.slice(1); // Get all plant links except "Main Dashboard"
+                } else if (item.name === 'Purchase') {
+                  subLinks = purchaseLinks.slice(1); // Get all purchase links except "Overview"
                 }
 
                 // --- If it has subLinks, render an Accordion Item ---
