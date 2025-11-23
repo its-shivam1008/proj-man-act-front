@@ -149,14 +149,7 @@ const Layout: React.FC = () => {
     { name: "Raw Materials", href: "/inventory/rawmaterials", icon: Warehouse },
     { name: "Warehouses", href: "/inventory/warehouses", icon: MapPin },
     { name: "Stores", href: "/inventory/stores", icon: Package },
-    {
-      name: "Delivery" ,
-      href: "/inventory/delivery",
-      icon: Truck,
-    },
-    { name: "Scrap Orders", href: "/inventory/scrap-order", icon: Flag },
-    { name: "Forecasting", href: "/inventory/forecasting", icon: BarChart3 },
-    { name: "Receipts", href: "/inventory/receipts", icon: Truck },
+    { name: "Operations", href: "/inventory/operations", icon: Warehouse },
     {
       name: "Reporting",
       href: "/inventory/reporting",
