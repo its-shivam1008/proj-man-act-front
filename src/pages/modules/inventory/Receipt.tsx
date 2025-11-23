@@ -5,10 +5,12 @@ import {
   createReceipt,
   updateReceipt,
   deleteReceipt,
+  approveReceipt, 
 } from "@/redux/slices/receiptSlice";
+
 import { fetchProducts } from "@/redux/slices/productSlice";
 import { fetchWarehouses } from "@/redux/slices/warehouseSlice";
-
+import { fetchVendors } from "@/redux/slices/purchase/vendorSlice";
 import {
   Package,
   Plus,
@@ -40,6 +42,10 @@ interface ReceiptItem {
 const Receipt: React.FC = () => {
   const dispatch = useDispatch();
 
+  const { vendors, loading: vendorLoading } = useSelector(
+    (state: any) => state.vendors
+  );
+
   const { receipts, loading: receiptLoading } = useSelector(
     (state: any) => state.receipts
   );
@@ -65,7 +71,8 @@ const Receipt: React.FC = () => {
   useEffect(() => {
     dispatch(fetchProducts());
     dispatch(fetchReceipts());
-    dispatch(fetchWarehouses({ page: 1, limit: 200 })); // enough for select
+    dispatch(fetchWarehouses({ page: 1, limit: 200 }));
+    dispatch(fetchVendors());
   }, [dispatch]);
 
   const filteredReceipts = receipts.filter((r: ReceiptItem) => {
@@ -200,13 +207,19 @@ const Receipt: React.FC = () => {
                 <label className="block text-sm font-semibold mb-2">
                   Receive From *
                 </label>
-                <input
+                <select
                   required
                   value={formData.receiveFrom}
                   onChange={handleChange("receiveFrom")}
-                  className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="Supplier / Partner name"
-                />
+                  className="w-full px-4 py-3 border rounded-lg"
+                >
+                  <option value="">Select Vendor</option>
+                  {vendors?.map((v: any) => (
+                    <option key={v._id} value={v._id}>
+                      {v.vendorName || v.name || v.companyName}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-semibold mb-2">
@@ -587,6 +600,14 @@ const Receipt: React.FC = () => {
                         className="text-green-600 hover:text-green-800 transition"
                       >
                         <Edit className="h-5 w-5" />
+                      </button>
+                      {/* Approve */}
+                      <button
+                        title="Approve"
+                        onClick={() => dispatch(approveReceipt(r._id))}
+                        className="text-purple-600 hover:text-purple-800 transition"
+                      >
+                        <CheckCircle className="h-5 w-5" />
                       </button>
 
                       {/* Delete */}

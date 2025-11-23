@@ -20,7 +20,7 @@ export const signupUser = createAsyncThunk(
       }
 
       // No token returned at signup (correct)
-      return res.data;  
+      return res.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.error || "Signup Failed");
     }
@@ -36,9 +36,9 @@ export const verifyOtpUser = createAsyncThunk(
       const res = await api.post(`/auth/verify-otp`, { email, otp });
 
       localStorage.setItem("token", res.data.token);
-      localStorage.setItem("organisationId", res.data.organisationId); 
+      localStorage.setItem("organisationId", res.data.organisationId);
 
-      return res.data; 
+      return res.data;
     } catch (err) {
       return rejectWithValue(err.response?.data?.error || "OTP Verification Failed");
     }
@@ -67,22 +67,23 @@ export const loginUser = createAsyncThunk(
       localStorage.setItem("token", res.data.token);
       localStorage.setItem("organisationId", res.data.organisationId);
 
-      return res.data; 
+      return res.data;
     } catch (err) {
       return rejectWithValue(err.response?.data?.error || "Invalid Credentials");
     }
   }
 );
-
+const getStoredEmail = () => localStorage.getItem("email") || null;
 const authSlice = createSlice({
   name: "auth",
   initialState: {
     organisationId: getStoredOrganisationId(),
     token: getStoredToken(),
+    email: getStoredEmail(),     
     loading: false,
     error: null,
     isAuthenticated: !!getStoredToken(),
-    emailForVerification: null, // storing email after signup
+    emailForVerification: null,
   },
 
   reducers: {
@@ -114,7 +115,7 @@ const authSlice = createSlice({
         state.loading = false;
         state.error = action.payload;
       })
-      
+
       .addCase(verifyOtpUser.pending, (state) => {
         state.loading = true;
         state.error = null;
@@ -122,10 +123,17 @@ const authSlice = createSlice({
       .addCase(verifyOtpUser.fulfilled, (state, action) => {
         state.loading = false;
         state.token = action.payload.token;
-        setBearerTokenForEveryAxiosCall(action.payload.token)
         state.organisationId = action.payload.organisationId;
         state.isAuthenticated = true;
+
+        state.email = action.payload.email;  // Save in Redux
+
+        // SAVE IN LOCAL STORAGE
+        localStorage.setItem("email", action.payload.email);
+
+        setBearerTokenForEveryAxiosCall(action.payload.token);
       })
+
       .addCase(verifyOtpUser.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
@@ -138,15 +146,18 @@ const authSlice = createSlice({
       .addCase(loginUser.fulfilled, (state, action) => {
         state.loading = false;
         state.token = action.payload.token;
-        setBearerTokenForEveryAxiosCall(action.payload.token)
         state.organisationId = action.payload.organisationId;
         state.isAuthenticated = true;
+        state.email = action.payload.email;
+        localStorage.setItem("email", action.payload.email);
+        setBearerTokenForEveryAxiosCall(action.payload.token);
       })
+
       .addCase(loginUser.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
       })
-    
+
       .addCase(resendOtpUser.pending, (state) => {
         state.loading = true;
       })
