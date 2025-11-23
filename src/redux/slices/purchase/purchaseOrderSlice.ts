@@ -4,9 +4,16 @@ import { PurchaseOrder } from "@/types/purchase";
 
 export const fetchPurchaseOrders = createAsyncThunk(
   "purchaseOrders/fetchPurchaseOrders",
-  async (_, { rejectWithValue }) => {
+  async (params: { page?: number; limit?: number; sort?: string; q?: string } = {}, { rejectWithValue }) => {
     try {
-      const response = await api.get("/purchase/orders");
+      const { page = 1, limit = 10, sort, q } = params;
+      const query = new URLSearchParams();
+      query.set('page', String(page));
+      query.set('limit', String(limit));
+      if (sort) query.set('sort', sort);
+      if (q) query.set('q', q);
+
+      const response = await api.get(`/purchase/orders?${query.toString()}`);
       return response.data;
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.message || "Failed to fetch purchase orders");
@@ -54,12 +61,19 @@ interface PurchaseOrderState {
   purchaseOrders: PurchaseOrder[];
   loading: boolean;
   error: string | null;
+  meta: {
+    total: number;
+    totalPages: number;
+    page: number;
+    limit: number;
+  } | null;
 }
 
 const initialState: PurchaseOrderState = {
   purchaseOrders: [],
   loading: false,
   error: null,
+  meta: null,
 };
 
 const purchaseOrderSlice = createSlice({
@@ -79,7 +93,8 @@ const purchaseOrderSlice = createSlice({
       })
       .addCase(fetchPurchaseOrders.fulfilled, (state, action) => {
         state.loading = false;
-        state.purchaseOrders = action.payload.purchaseOrders;
+        state.purchaseOrders = action.payload.purchaseOrders ?? action.payload.data ?? [];
+        state.meta = action.payload.meta ?? null;
       })
       .addCase(fetchPurchaseOrders.rejected, (state, action) => {
         state.loading = false;

@@ -57,6 +57,20 @@ export const deleteRFQ = createAsyncThunk(
   }
 );
 
+//send RFQ emails
+export const sendRFQ = createAsyncThunk(
+  "rfqs/sendRFQ",
+  async (id: string, { rejectWithValue }) => {
+    try {
+      const response = await api.post(`/purchase/rfq/${id}/send`);
+      // Expect backend to return something like { success: true, message, rfq? }
+      return { id, data: response.data };
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.message || "Failed to send RFQ");
+    }
+  }
+);
+
 interface RFQState {
   rfqs: RFQ[];
   status: 'idle' | 'loading' | 'succeeded' | 'failed';
@@ -147,7 +161,36 @@ const rfqSlice = createSlice({
       .addCase(deleteRFQ.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload as string;
-      });
+      })
+
+            // Send RFQ
+      .addCase(sendRFQ.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(sendRFQ.fulfilled, (state, action) => {
+        state.loading = false;
+        // if backend returned updated RFQ, replace it. Otherwise mark status as 'sent'
+        const id = action.payload.id;
+        const returnedRfq = action.payload.data?.rfq ?? action.payload.data?.purchaseOrder ?? null;
+
+        const index = state.rfqs.findIndex(r => (r.id ?? (r as any)._id) === id);
+        if (index !== -1) {
+          if (returnedRfq) {
+            // Normalize id field naming
+            state.rfqs[index] = returnedRfq;
+          } else {
+            // fallback: optimistic update to status
+            state.rfqs[index] = { ...state.rfqs[index], status: 'sent' } as RFQ;
+          }
+        }
+        state.status = 'succeeded';
+      })
+      .addCase(sendRFQ.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload as string;
+        state.status = 'failed';
+      })
   },
 });
 

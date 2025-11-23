@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '@/redux/store';
-import { fetchRFQs, createRFQ, updateRFQ, deleteRFQ } from '@/redux/slices/purchase/rfqSlice';
+import { fetchRFQs, createRFQ, updateRFQ, deleteRFQ, sendRFQ } from '@/redux/slices/purchase/rfqSlice';
 import { fetchVendors } from '@/redux/slices/purchase/vendorSlice';
 import { RFQ, RFQProduct } from '@/types/purchase';
 import {
@@ -117,15 +117,28 @@ const RFQComponent: React.FC = () => {
     }
   };
 
-  const handleSendRfq = async (rfq: RFQ) => {
-    try {
-        await dispatch(updateRFQ({ id: rfq.id, data: { status: 'sent' } })).unwrap();
-        toast.success("RFQ Sent to vendors");
-        dispatch(fetchRFQs({ page, limit, q: search }));
-    } catch (e) {
-        toast.error("Failed to send RFQ");
-    }
-  };
+const handleSendRfq = async (rfq: RFQ) => {
+  if (!confirm(`Send RFQ ${rfq.rfqNumber} to ${rfq.vendors?.length || 0} vendors?`)) return;
+  setSubmitting(true);
+  try {
+    // dispatch sendRFQ thunk
+    await dispatch(sendRFQ(rfq._id ?? (rfq as any)._id)).unwrap();
+
+    toast.success("RFQ sent to vendors");
+    // Option A: refresh page data from server with current pagination & search
+    dispatch(fetchRFQs({ page, limit, q: search }));
+
+    // Option B (optional): If you prefer optimistic UI only, comment out the fetch above
+    // and rely on slice fulfilled handler to update the RFQ status locally.
+  } catch (err: any) {
+    console.error("send rfq error", err);
+    toast.error(err || "Failed to send RFQ");
+  } finally {
+    setSubmitting(false);
+  }
+};
+
+
 
   const handleDeleteRfq = async (id: string) => {
     if (confirm('Are you sure you want to delete this RFQ?')) {
@@ -855,7 +868,7 @@ const RFQComponent: React.FC = () => {
                   <Edit className="h-4 w-4 mr-2" />
                   Edit
                 </button>
-                {viewingRfq.status === 'draft' && (
+                {/* {viewingRfq.status === 'draft' && (
                   <button
                     onClick={() => {
                       handleSendRfq(viewingRfq);
@@ -867,7 +880,7 @@ const RFQComponent: React.FC = () => {
                     <Send className="h-4 w-4 mr-2" />
                     Send to Vendors
                   </button>
-                )}
+                )} */}
                 <button
                   onClick={() => { setShowViewRfq(false); setViewingRfq(null); }}
                   className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"

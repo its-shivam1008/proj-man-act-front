@@ -20,12 +20,13 @@ import {
   AlertTriangle,
   X,
   Loader2,
+  Search,
 } from "lucide-react";
 import { toast } from "sonner";
 
 const PurchaseOrderComponent: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
-  const { purchaseOrders, loading, error } = useSelector(
+  const { purchaseOrders, loading, error, meta } = useSelector(
     (state: RootState) => state.purchaseOrders
   );
   const { vendors } = useSelector((state: RootState) => state.vendors);
@@ -35,10 +36,14 @@ const PurchaseOrderComponent: React.FC = () => {
   const [viewingPo, setViewingPo] = useState<PurchaseOrder | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const [page, setPage] = useState<number>(1);
+  const [limit, setLimit] = useState<number>(10);
+  const [search, setSearch] = useState<string>("");
+
   useEffect(() => {
-    dispatch(fetchPurchaseOrders());
+    dispatch(fetchPurchaseOrders({ page, limit, q: search }));
     dispatch(fetchVendors());
-  }, [dispatch]);
+  }, [dispatch, page, limit, search]);
 
   useEffect(() => {
     if (error) {
@@ -87,7 +92,7 @@ const PurchaseOrderComponent: React.FC = () => {
           })
         ).unwrap();
         toast.success("Purchase Order created");
-        dispatch(fetchPurchaseOrders());
+        dispatch(fetchPurchaseOrders({ page, limit, q: search }));
         setShowCreatePo(false);
       } catch (e) {
         // handled
@@ -594,7 +599,7 @@ const PurchaseOrderComponent: React.FC = () => {
         .unwrap()
         .then(() => {
           toast.success("Purchase Order deleted");
-          dispatch(fetchPurchaseOrders());
+          dispatch(fetchPurchaseOrders({ page, limit, q: search }));
         })
         .catch(() => {
           toast.error("Failed to delete Purchase Order");
@@ -602,27 +607,65 @@ const PurchaseOrderComponent: React.FC = () => {
     }
   };
 
+  const handlePrev = () => {
+    if (!meta) return;
+    if (page > 1) setPage(page - 1);
+  };
+
+  const handleNext = () => {
+    if (!meta) return;
+    if (page < meta.totalPages) setPage(page + 1);
+  };
+
+  const jumpToPage = (p: number) => {
+    if (!meta) return;
+    const pageNum = Math.min(Math.max(1, p), meta.totalPages);
+    setPage(pageNum);
+  };
+
+  const handleLimitChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newLimit = parseInt(e.target.value, 10);
+    setLimit(newLimit);
+    setPage(1);
+  };
+
   if (loading && !purchaseOrders.length) return <div>Loading...</div>;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-gray-900">Purchase Orders</h2>
           <p className="text-sm text-gray-600">
             Manage purchase orders and track deliveries
           </p>
         </div>
-        <button
-          onClick={() => setShowCreatePo(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          New Purchase Order
-        </button>
+        <div className="flex items-center gap-3">
+            <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
+                <input
+                    type="search"
+                    value={search}
+                    onChange={(e) => {
+                        setSearch(e.target.value);
+                        setPage(1);
+                    }}
+                    placeholder="Search purchase orders..."
+                    className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
+                />
+            </div>
+            <button
+                onClick={() => setShowCreatePo(true)}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center whitespace-nowrap"
+            >
+                <Plus className="h-4 w-4 mr-2" />
+                New Purchase Order
+            </button>
+        </div>
       </div>
 
       <div className="bg-white shadow rounded-lg overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
@@ -669,7 +712,7 @@ const PurchaseOrderComponent: React.FC = () => {
                     : "N/A"}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  ${(po.totalAmount || 0).toLocaleString()}
+                   ₹{(po.totalAmount || 0).toLocaleString()}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center">
@@ -707,6 +750,98 @@ const PurchaseOrderComponent: React.FC = () => {
             ))}
           </tbody>
         </table>
+        </div>
+
+      {/* Pagination */}
+      {meta && meta.totalPages > 1 && (
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-4 py-3 border-t bg-gray-50">
+          <div className="flex items-center gap-2 mb-3 sm:mb-0">
+            <button
+              onClick={handlePrev}
+              disabled={page <= 1}
+              className="px-4 py-2 border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+            >
+              Previous
+            </button>
+
+            <div className="flex items-center gap-1">
+              {(() => {
+                const totalPages = meta.totalPages;
+                const current = page;
+                const delta = 3;
+                const range = [];
+                const rangeWithDots = [];
+
+                for (let i = 1; i <= totalPages; i++) {
+                  if (
+                    i === 1 ||
+                    i === totalPages ||
+                    (i >= current - delta && i <= current + delta)
+                  ) {
+                    range.push(i);
+                  }
+                }
+
+                let last = 0;
+                range.forEach((p) => {
+                  if (last && p - last > 1) {
+                    rangeWithDots.push('...');
+                  }
+                  rangeWithDots.push(p);
+                  last = p;
+                });
+
+                return rangeWithDots.map((p, idx) =>
+                  p === '...' ? (
+                    <span key={`dots-${idx}`} className="px-2 text-gray-500">
+                      ...
+                    </span>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => jumpToPage(p as number)}
+                      className={`px-3 py-1.5 rounded-md text-sm ${
+                        p === current
+                          ? 'bg-blue-600 text-white font-medium'
+                          : 'border border-gray-300 hover:bg-gray-100'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  )
+                );
+              })()}
+            </div>
+
+            <button
+              onClick={handleNext}
+              disabled={page >= meta.totalPages}
+              className="px-4 py-2 border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+            >
+              Next
+            </button>
+          </div>
+
+          <div className="flex items-center gap-6 text-sm text-gray-600">
+            <span>
+              Showing <strong>{(page - 1) * limit + 1}</strong> to{' '}
+              <strong>{Math.min(page * limit, meta.total)}</strong> of <strong>{meta.total}</strong>{' '}
+              Purchase Orders
+            </span>
+
+            <select
+              value={limit}
+              onChange={handleLimitChange}
+              className="border border-gray-300 px-3 py-1.5 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value={5}>5 / page</option>
+              <option value={10}>10 / page</option>
+              <option value={20}>20 / page</option>
+              <option value={50}>50 / page</option>
+            </select>
+          </div>
+        </div>
+      )}
       </div>
 
       {showCreatePo && <CreatePoForm />}

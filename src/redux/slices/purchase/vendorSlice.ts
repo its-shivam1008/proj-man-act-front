@@ -4,9 +4,16 @@ import { Vendor } from "@/types/purchase";
 
 export const fetchVendors = createAsyncThunk(
   "vendors/fetchVendors",
-  async (_, { rejectWithValue }) => {
+  async (params: { page?: number; limit?: number; sort?: string; q?: string } = {}, { rejectWithValue }) => {
     try {
-      const response = await api.get("/purchase/vendors");
+      const { page = 1, limit = 10, sort, q } = params;
+      const query = new URLSearchParams();
+      query.set('page', String(page));
+      query.set('limit', String(limit));
+      if (sort) query.set('sort', sort);
+      if (q) query.set('q', q);
+
+      const response = await api.get(`/purchase/vendors?${query.toString()}`);
       return response.data;
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.message || "Failed to fetch vendors");
@@ -54,12 +61,19 @@ interface VendorState {
   vendors: Vendor[];
   loading: boolean;
   error: string | null;
+  meta: {
+    total: number;
+    totalPages: number;
+    page: number;
+    limit: number;
+  } | null;
 }
 
 const initialState: VendorState = {
   vendors: [],
   loading: false,
   error: null,
+  meta: null,
 };
 
 const vendorSlice = createSlice({
@@ -79,7 +93,8 @@ const vendorSlice = createSlice({
       })
       .addCase(fetchVendors.fulfilled, (state, action) => {
         state.loading = false;
-        state.vendors = action.payload.vendors;
+        state.vendors = action.payload.vendors ?? action.payload.data ?? [];
+        state.meta = action.payload.meta ?? null;
       })
       .addCase(fetchVendors.rejected, (state, action) => {
         state.loading = false;

@@ -73,7 +73,7 @@ const PurchaseOverview: React.FC = () => {
               <div className="ml-5">
                 <p className="text-sm font-medium text-gray-500">Total Value</p>
                 <p className="text-2xl font-semibold text-gray-900">
-                  ${purchaseOrders.reduce((sum, order) => sum + (order.totalAmount || 0), 0).toLocaleString()}
+                   ₹{purchaseOrders.reduce((sum, order) => sum + (order.totalAmount || 0), 0).toLocaleString()}
                 </p>
               </div>
             </div>

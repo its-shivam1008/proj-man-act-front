@@ -4,12 +4,12 @@ import { AppDispatch, RootState } from '@/redux/store';
 import { fetchPurchaseAgreements, createPurchaseAgreement, deletePurchaseAgreement } from '@/redux/slices/purchase/purchaseAgreementSlice';
 import { fetchVendors } from '@/redux/slices/purchase/vendorSlice';
 import { PurchaseAgreement } from '@/types/purchase';
-import { Plus, Eye, Trash2, CheckCircle, X, Loader2 } from 'lucide-react';
+import { Plus, Eye, Trash2, CheckCircle, X, Loader2, Search } from 'lucide-react';
 import { toast } from 'sonner';
 
 const PurchaseAgreementComponent: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
-  const { purchaseAgreements, loading, error } = useSelector((state: RootState) => state.purchaseAgreements);
+  const { purchaseAgreements, loading, error, meta } = useSelector((state: RootState) => state.purchaseAgreements);
   const { vendors } = useSelector((state: RootState) => state.vendors);
   
   const [showCreateAgreement, setShowCreateAgreement] = useState(false);
@@ -17,10 +17,14 @@ const PurchaseAgreementComponent: React.FC = () => {
   const [viewingAgreement, setViewingAgreement] = useState<PurchaseAgreement | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const [page, setPage] = useState<number>(1);
+  const [limit, setLimit] = useState<number>(10);
+  const [search, setSearch] = useState<string>("");
+
   useEffect(() => {
-    dispatch(fetchPurchaseAgreements());
+    dispatch(fetchPurchaseAgreements({ page, limit, q: search }));
     dispatch(fetchVendors());
-  }, [dispatch]);
+  }, [dispatch, page, limit, search]);
 
   useEffect(() => {
     if (error) {
@@ -58,7 +62,7 @@ const PurchaseAgreementComponent: React.FC = () => {
             ...formData,
             status: 'active'
         })).unwrap();
-        dispatch(fetchPurchaseAgreements());
+        dispatch(fetchPurchaseAgreements({ page, limit, q: search }));
         toast.success("Purchase Agreement created");
         setShowCreateAgreement(false);
       } catch (e) {
@@ -201,25 +205,63 @@ const PurchaseAgreementComponent: React.FC = () => {
     return null;
   };
 
+  const handlePrev = () => {
+    if (!meta) return;
+    if (page > 1) setPage(page - 1);
+  };
+
+  const handleNext = () => {
+    if (!meta) return;
+    if (page < meta.totalPages) setPage(page + 1);
+  };
+
+  const jumpToPage = (p: number) => {
+    if (!meta) return;
+    const pageNum = Math.min(Math.max(1, p), meta.totalPages);
+    setPage(pageNum);
+  };
+
+  const handleLimitChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newLimit = parseInt(e.target.value, 10);
+    setLimit(newLimit);
+    setPage(1);
+  };
+
   if (loading && !purchaseAgreements.length) return <div>Loading...</div>;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-gray-900">Purchase Agreements</h2>
           <p className="text-sm text-gray-600">Manage long-term purchase agreements with vendors</p>
         </div>
-        <button
-          onClick={() => setShowCreateAgreement(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          New Agreement
-        </button>
+        <div className="flex items-center gap-3">
+            <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
+                <input
+                    type="search"
+                    value={search}
+                    onChange={(e) => {
+                        setSearch(e.target.value);
+                        setPage(1);
+                    }}
+                    placeholder="Search agreements..."
+                    className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
+                />
+            </div>
+            <button
+                onClick={() => setShowCreateAgreement(true)}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center whitespace-nowrap"
+            >
+                <Plus className="h-4 w-4 mr-2" />
+                New Agreement
+            </button>
+        </div>
       </div>
 
       <div className="bg-white shadow rounded-lg overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
@@ -252,7 +294,11 @@ const PurchaseAgreementComponent: React.FC = () => {
                   <button onClick={() => { setViewingAgreement(agreement); setShowViewAgreement(true); }} className="text-blue-600 hover:text-blue-900 mr-3"><Eye className="h-4 w-4" /></button>
                   <button className="text-red-600 hover:text-red-900" onClick={() => {
                     if (confirm('Are you sure?')) {
-                      dispatch(deletePurchaseAgreement(agreement.id));
+                      dispatch(deletePurchaseAgreement(agreement.id))
+                        .unwrap()
+                        .then(() => {
+                          dispatch(fetchPurchaseAgreements({ page, limit, q: search }));
+                        });
                     }
                   }}><Trash2 className="h-4 w-4" /></button>
                 </td>
@@ -260,6 +306,98 @@ const PurchaseAgreementComponent: React.FC = () => {
             ))}
           </tbody>
         </table>
+        </div>
+
+      {/* Pagination */}
+      {meta && meta.totalPages > 1 && (
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-4 py-3 border-t bg-gray-50">
+          <div className="flex items-center gap-2 mb-3 sm:mb-0">
+            <button
+              onClick={handlePrev}
+              disabled={page <= 1}
+              className="px-4 py-2 border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+            >
+              Previous
+            </button>
+
+            <div className="flex items-center gap-1">
+              {(() => {
+                const totalPages = meta.totalPages;
+                const current = page;
+                const delta = 3;
+                const range = [];
+                const rangeWithDots = [];
+
+                for (let i = 1; i <= totalPages; i++) {
+                  if (
+                    i === 1 ||
+                    i === totalPages ||
+                    (i >= current - delta && i <= current + delta)
+                  ) {
+                    range.push(i);
+                  }
+                }
+
+                let last = 0;
+                range.forEach((p) => {
+                  if (last && p - last > 1) {
+                    rangeWithDots.push('...');
+                  }
+                  rangeWithDots.push(p);
+                  last = p;
+                });
+
+                return rangeWithDots.map((p, idx) =>
+                  p === '...' ? (
+                    <span key={`dots-${idx}`} className="px-2 text-gray-500">
+                      ...
+                    </span>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => jumpToPage(p as number)}
+                      className={`px-3 py-1.5 rounded-md text-sm ${
+                        p === current
+                          ? 'bg-blue-600 text-white font-medium'
+                          : 'border border-gray-300 hover:bg-gray-100'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  )
+                );
+              })()}
+            </div>
+
+            <button
+              onClick={handleNext}
+              disabled={page >= meta.totalPages}
+              className="px-4 py-2 border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+            >
+              Next
+            </button>
+          </div>
+
+          <div className="flex items-center gap-6 text-sm text-gray-600">
+            <span>
+              Showing <strong>{(page - 1) * limit + 1}</strong> to{' '}
+              <strong>{Math.min(page * limit, meta.total)}</strong> of <strong>{meta.total}</strong>{' '}
+              Agreements
+            </span>
+
+            <select
+              value={limit}
+              onChange={handleLimitChange}
+              className="border border-gray-300 px-3 py-1.5 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value={5}>5 / page</option>
+              <option value={10}>10 / page</option>
+              <option value={20}>20 / page</option>
+              <option value={50}>50 / page</option>
+            </select>
+          </div>
+        </div>
+      )}
       </div>
 
       {showCreateAgreement && <CreateAgreementForm />}

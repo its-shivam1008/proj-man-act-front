@@ -3,12 +3,12 @@ import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '@/redux/store';
 import { fetchVendors, createVendor, updateVendor, deleteVendor } from '@/redux/slices/purchase/vendorSlice';
 import { Vendor } from '@/types/purchase';
-import { Plus, Eye, Edit, Trash2, Building, Mail, Phone, MapPin, CreditCard, Star, X, Loader2 } from 'lucide-react';
+import { Plus, Eye, Edit, Trash2, Building, Mail, Phone, MapPin, CreditCard, Star, X, Loader2, Search } from 'lucide-react';
 import { toast } from 'sonner';
 
 const PurchaseVendors: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
-  const { vendors, loading, error } = useSelector((state: RootState) => state.vendors);
+  const { vendors, loading, error, meta } = useSelector((state: RootState) => state.vendors);
   
   const [showCreateVendor, setShowCreateVendor] = useState(false);
   const [showViewVendor, setShowViewVendor] = useState(false);
@@ -17,9 +17,13 @@ const PurchaseVendors: React.FC = () => {
   const [editingVendor, setEditingVendor] = useState<Vendor | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const [page, setPage] = useState<number>(1);
+  const [limit, setLimit] = useState<number>(10);
+  const [search, setSearch] = useState<string>("");
+
   useEffect(() => {
-    dispatch(fetchVendors());
-  }, [dispatch]);
+    dispatch(fetchVendors({ page, limit, q: search }));
+  }, [dispatch, page, limit, search]);
 
   useEffect(() => {
     if (error) {
@@ -52,7 +56,7 @@ const PurchaseVendors: React.FC = () => {
       try {
           await dispatch(createVendor(formData)).unwrap();
           toast.success("Vendor created successfully");
-          dispatch(fetchVendors());
+          dispatch(fetchVendors({ page, limit, q: search }));
           setShowCreateVendor(false);
       } catch (err) {
           // Error handled by global toaster via state listener or unwrap catch
@@ -184,7 +188,7 @@ const PurchaseVendors: React.FC = () => {
       try {
           await dispatch(updateVendor({ id: editingVendor.id, data: formData })).unwrap();
           toast.success("Vendor updated successfully");
-          dispatch(fetchVendors());
+          dispatch(fetchVendors({ page, limit, q: search }));
           setShowEditVendor(false);
           setEditingVendor(null);
       } catch (err) {
@@ -369,20 +373,57 @@ const PurchaseVendors: React.FC = () => {
     );
   };
 
+  const handlePrev = () => {
+    if (!meta) return;
+    if (page > 1) setPage(page - 1);
+  };
+
+  const handleNext = () => {
+    if (!meta) return;
+    if (page < meta.totalPages) setPage(page + 1);
+  };
+
+  const jumpToPage = (p: number) => {
+    if (!meta) return;
+    const pageNum = Math.min(Math.max(1, p), meta.totalPages);
+    setPage(pageNum);
+  };
+
+  const handleLimitChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newLimit = parseInt(e.target.value, 10);
+    setLimit(newLimit);
+    setPage(1);
+  };
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-gray-900">Vendor Management</h2>
           <p className="text-sm text-gray-600">Manage vendor database and performance</p>
         </div>
-        <button
-          onClick={() => setShowCreateVendor(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Add Vendor
-        </button>
+        <div className="flex items-center gap-3">
+            <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
+                <input
+                    type="search"
+                    value={search}
+                    onChange={(e) => {
+                        setSearch(e.target.value);
+                        setPage(1);
+                    }}
+                    placeholder="Search vendors..."
+                    className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
+                />
+            </div>
+            <button
+                onClick={() => setShowCreateVendor(true)}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center whitespace-nowrap"
+            >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Vendor
+            </button>
+        </div>
       </div>
 
       {loading && !vendors.length ? (
@@ -462,7 +503,11 @@ const PurchaseVendors: React.FC = () => {
                 <button onClick={() => { setEditingVendor(vendor); setShowEditVendor(true); }} className="text-green-600 hover:text-green-900"><Edit className="h-4 w-4" /></button>
                 <button className="text-red-600 hover:text-red-900" onClick={() => {
                   if (confirm('Are you sure?')) {
-                    dispatch(deleteVendor(vendor.id));
+                    dispatch(deleteVendor(vendor.id))
+                      .unwrap()
+                      .then(() => {
+                        dispatch(fetchVendors({ page, limit, q: search }));
+                      });
                   }
                 }}><Trash2 className="h-4 w-4" /></button>
               </div>
@@ -470,6 +515,97 @@ const PurchaseVendors: React.FC = () => {
           </div>
         ))}
       </div>
+      )}
+
+      {/* Pagination */}
+      {meta && meta.totalPages > 1 && (
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-4 py-3 border-t bg-gray-50">
+          <div className="flex items-center gap-2 mb-3 sm:mb-0">
+            <button
+              onClick={handlePrev}
+              disabled={page <= 1}
+              className="px-4 py-2 border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+            >
+              Previous
+            </button>
+
+            <div className="flex items-center gap-1">
+              {(() => {
+                const totalPages = meta.totalPages;
+                const current = page;
+                const delta = 3;
+                const range = [];
+                const rangeWithDots = [];
+
+                for (let i = 1; i <= totalPages; i++) {
+                  if (
+                    i === 1 ||
+                    i === totalPages ||
+                    (i >= current - delta && i <= current + delta)
+                  ) {
+                    range.push(i);
+                  }
+                }
+
+                let last = 0;
+                range.forEach((p) => {
+                  if (last && p - last > 1) {
+                    rangeWithDots.push('...');
+                  }
+                  rangeWithDots.push(p);
+                  last = p;
+                });
+
+                return rangeWithDots.map((p, idx) =>
+                  p === '...' ? (
+                    <span key={`dots-${idx}`} className="px-2 text-gray-500">
+                      ...
+                    </span>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => jumpToPage(p as number)}
+                      className={`px-3 py-1.5 rounded-md text-sm ${
+                        p === current
+                          ? 'bg-blue-600 text-white font-medium'
+                          : 'border border-gray-300 hover:bg-gray-100'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  )
+                );
+              })()}
+            </div>
+
+            <button
+              onClick={handleNext}
+              disabled={page >= meta.totalPages}
+              className="px-4 py-2 border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+            >
+              Next
+            </button>
+          </div>
+
+          <div className="flex items-center gap-6 text-sm text-gray-600">
+            <span>
+              Showing <strong>{(page - 1) * limit + 1}</strong> to{' '}
+              <strong>{Math.min(page * limit, meta.total)}</strong> of <strong>{meta.total}</strong>{' '}
+              Vendors
+            </span>
+
+            <select
+              value={limit}
+              onChange={handleLimitChange}
+              className="border border-gray-300 px-3 py-1.5 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value={5}>5 / page</option>
+              <option value={10}>10 / page</option>
+              <option value={20}>20 / page</option>
+              <option value={50}>50 / page</option>
+            </select>
+          </div>
+        </div>
       )}
 
       {showCreateVendor && <CreateVendorForm />}
