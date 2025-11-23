@@ -72,7 +72,7 @@ const PurchaseOrderComponent: React.FC = () => {
       setFormData({
         ...formData,
         vendor: selectedVendorName,
-        vendorId: selectedVendor ? selectedVendor.id : "",
+        vendorId: selectedVendor ? selectedVendor._id : "",
       });
     };
 
