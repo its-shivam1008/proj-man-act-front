@@ -17,6 +17,7 @@ import {
 
 import { fetchProducts } from "@/redux/slices/productSlice";
 import { fetchWarehouses } from "@/redux/slices/warehouseSlice";
+import NotificationCenter from "@/components/NotificationCenter";
 
 import {
   Truck,
@@ -160,7 +161,7 @@ const Deliveries: React.FC = () => {
       shippingMethod: formData.shippingMethod,
       priority: formData.priority,
       status: formData.status || editingDelivery?.status || "draft",
-      warehouseId: formData.warehouseId, // ← ADD
+      warehouseId: formData.warehouseId,
       scheduledDate:
         formData.scheduledDate || new Date().toISOString().split("T")[0],
     };
@@ -457,12 +458,17 @@ const Deliveries: React.FC = () => {
             Track and manage all outgoing deliveries
           </p>
         </div>
-        <button
-          onClick={() => setShowCreateForm(true)}
-          className="bg-blue-600 text-white px-5 py-3 rounded-lg hover:bg-blue-700 flex items-center gap-2"
-        >
-          <Plus className="h-5 w-5" /> New Delivery
-        </button>
+        <div className="flex items-center gap-4">
+            {/* Added Notification Center */}
+            <NotificationCenter destination="delivery.inventory" title="Inventory Notifications" />
+            
+            <button
+            onClick={() => setShowCreateForm(true)}
+            className="bg-blue-600 text-white px-5 py-3 rounded-lg hover:bg-blue-700 flex items-center gap-2"
+            >
+            <Plus className="h-5 w-5" /> New Delivery
+            </button>
+        </div>
       </div>
 
       {/* Stats Cards */}

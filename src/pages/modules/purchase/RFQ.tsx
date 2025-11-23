@@ -4,6 +4,7 @@ import { AppDispatch, RootState } from '@/redux/store';
 import { fetchRFQs, createRFQ, updateRFQ, deleteRFQ, sendRFQ } from '@/redux/slices/purchase/rfqSlice';
 import { fetchVendors } from '@/redux/slices/purchase/vendorSlice';
 import { RFQ, RFQProduct } from '@/types/purchase';
+import NotificationCenter from '@/components/NotificationCenter';
 import {
   Plus,
   Eye,
@@ -907,6 +908,9 @@ return (
       </div>
 
       <div className="flex items-center gap-3">
+        {/* Added Notification Center */}
+        <NotificationCenter destination="rfq.purchase" title="Purchase Notifications" />
+
         <input
           type="search"
           value={search}

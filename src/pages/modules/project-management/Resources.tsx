@@ -5,9 +5,6 @@ import { RootState, AppDispatch } from "@/redux/store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   fetchProjects,
-  addProject,
-  updateProject,
-  deleteProject,
 } from "@/redux/slices/projectSlice";
 import {
   Dialog,
@@ -45,68 +42,13 @@ import {
   deleteResource,
 } from "@/redux/slices/resourceSlice";
 
-// --- Mock Master Data Keys ---
-// These simulate data from other modules
-const MOCK_DATA_KEYS = {
-  HR_MANPOWER: "erp_master_manpower",
-  INVENTORY_ITEMS: "erp_master_inventory",
-  ASSETS_EQUIPMENT: "erp_master_assets",
-};
-
 // --- Define Types ---
-// (Ideally, these would be in a central types file)
 
-interface Project {
-  id: string;
-  name: string;
-  budget: number;
-  actualCost: number; // We will update this
-  // ... other project fields
-}
-
-interface WBSItem {
-  id: string;
-  projectId: string;
-  name: string;
-  type: "phase" | "activity" | "task" | "subtask";
-  startDate?: string;
-  endDate?: string;
-  plannedCost?: number;
-  actualCost: number; // We will update this
-  // ... other wbs fields
-}
-
-// Master Resource Types
-interface Manpower {
-  id: string;
-  name: string;
-  skill: string;
-  rate: number; // per hour
-  unit: string; // e.g., "hour"
-}
-
-interface Material {
-  id: string;
-  name: string;
-  rate: number; // per unit
-  unit: string; // e.g., "bag", "ton"
-  inStock: number;
-}
-
-interface Equipment {
-  id: string;
-  name: string;
-  rate: number; // per hour
-  unit: string; // e.g., "hour"
-  status: "available" | "booked" | "maintenance";
-}
-
-// This is the main data type for this page
 interface ResourceAllocation {
   id: string;
   projectId: string;
   wbsId: string;
-  resourceType: ResourceAllocation["resourceType"] | "";
+  resourceType: "equipment"; // Restricted to equipment
   resourceName: string;
   resourceId: string;
   quantity: string;
@@ -114,11 +56,28 @@ interface ResourceAllocation {
   unit: string;
   duration: string;
   durationUnit: string;
-};
+  _id?: string;
+  totalCost: number;
+  wbsName?: string;
+  createdAt?: string;
+}
 
+interface AllocationFormState {
+  wbsId: string;
+  resourceType: string;
+  resourceName: string;
+  resourceId: string;
+  quantity: string;
+  rate: string;
+  unit: string;
+  duration: string;
+  durationUnit: string;
+}
+
+// Default resourceType set to "equipment"
 const EMPTY_FORM: AllocationFormState = {
   wbsId: "",
-  resourceType: "",
+  resourceType: "equipment",
   resourceName: "",
   resourceId: "",
   quantity: "",
@@ -267,14 +226,14 @@ export default function Resources() {
       projectId: selectedProjectId,
       wbsId: wbsItem.id ?? wbsItem._id,
       wbsName: wbsItem.name,
-      resourceType: formData.resourceType,
+      resourceType: "equipment", // Hardcoded to equipment
       resourceName: formData.resourceName.trim(),
       resourceId: formData.resourceId.trim(),
       quantity,
       rate,
       unit: formData.unit.trim(),
       duration,
-      durationUnit: formData.durationUnit.trim() || (formData.resourceType === "material" ? formData.unit : "hours"),
+      durationUnit: formData.durationUnit.trim() || "hours",
       totalCost: quantity * rate * duration,
       startDate: wbsItem.startDate,
       endDate: wbsItem.endDate,
@@ -285,7 +244,7 @@ export default function Resources() {
     try {
       if (editingAllocation) {
         await dispatch(
-          updateResource({ id: editingAllocation._id, data: payload })
+          updateResource({ id: editingAllocation._id!, data: payload })
         ).unwrap();
         toast({ title: "Success", description: "Allocation updated successfully." });
       } else {
@@ -318,11 +277,11 @@ export default function Resources() {
     }
   };
 
-  const handleResourceTypeChange = (value: ResourceAllocation["resourceType"]) => {
+  const handleResourceTypeChange = (value: string) => {
     setFormData((prev) => ({
       ...prev,
       resourceType: value,
-      durationUnit: value === "material" ? prev.unit || "units" : "hours",
+      durationUnit: "hours", // Default for equipment
     }));
   };
 
@@ -331,7 +290,10 @@ export default function Resources() {
     resetForm();
   };
 
-  const allocationsForView = selectedProjectId ? resources : [];
+  // Filter resources to only show Equipment in the table as well
+  const allocationsForView = selectedProjectId 
+    ? resources.filter((r) => r.resourceType === "equipment") 
+    : [];
 
   useEffect(() => {
     setCurrentPage(1);
@@ -361,10 +323,10 @@ export default function Resources() {
       <div className="flex flex-col md:flex-row items-center justify-between space-y-4 md:space-y-0">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-foreground">
-            Resource Planning & Allocation
+            Equipment Planning & Allocation
           </h2>
           <p className="text-muted-foreground">
-            Create, update and delete allocations backed by the API.
+            Create, update and delete equipment allocations.
           </p>
         </div>
         <div className="flex w-full md:w-auto gap-4">
@@ -405,7 +367,7 @@ export default function Resources() {
                   {editingAllocation ? "Edit allocation" : "Create allocation"}
                 </DialogTitle>
                 <DialogDescription>
-                  Assign resources to a specific WBS task.
+                  Assign equipment to a specific WBS task.
                 </DialogDescription>
               </DialogHeader>
 
@@ -441,15 +403,14 @@ export default function Resources() {
                   <div className="space-y-2">
                     <Label>Resource Type *</Label>
                     <Select
-                      value={formData.resourceType || undefined}
-                      onValueChange={(value: any) => handleResourceTypeChange(value)}
+                      value={formData.resourceType}
+                      onValueChange={(value) => handleResourceTypeChange(value)}
+                      disabled // Disabled since it's only equipment now
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Choose type" />
+                        <SelectValue placeholder="Equipment" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="manpower">Manpower</SelectItem>
-                        <SelectItem value="material">Material</SelectItem>
                         <SelectItem value="equipment">Equipment</SelectItem>
                       </SelectContent>
                     </Select>
@@ -458,7 +419,7 @@ export default function Resources() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Resource Name *</Label>
+                    <Label>Equipment Name *</Label>
                     <Input
                       value={formData.resourceName}
                       onChange={(e) =>
@@ -468,7 +429,7 @@ export default function Resources() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Resource Code / ID *</Label>
+                    <Label>Equipment Code / ID *</Label>
                     <Input
                       value={formData.resourceId}
                       onChange={(e) =>
@@ -520,7 +481,7 @@ export default function Resources() {
                       onChange={(e) =>
                         setFormData((prev) => ({ ...prev, durationUnit: e.target.value }))
                       }
-                      placeholder={formData.resourceType === "material" ? "units" : "hours"}
+                      placeholder="hours"
                     />
                   </div>
                 </div>
@@ -533,7 +494,7 @@ export default function Resources() {
                       onChange={(e) =>
                         setFormData((prev) => ({ ...prev, unit: e.target.value }))
                       }
-                      placeholder="hours / tons / bags"
+                      placeholder="e.g. machine-hours"
                     />
                   </div>
                   <div className="space-y-2">
@@ -652,7 +613,7 @@ export default function Resources() {
               ) : !allocationsForView.length ? (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
-                    No allocations for this project yet.
+                    No equipment allocations for this project yet.
                   </TableCell>
                 </TableRow>
               ) : (
@@ -674,7 +635,7 @@ export default function Resources() {
                         <Button variant="ghost" size="icon" onClick={() => openEditDialog(alloc)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(alloc._id)}>
+                        <Button variant="ghost" size="icon" onClick={() => handleDelete(alloc._id!)}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>

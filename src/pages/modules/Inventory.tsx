@@ -313,8 +313,8 @@ const Inventory: React.FC = () => {
 
   const filteredInventory = safeInventory.filter((item) => {
     const matchesSearch =
-      item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.sku.toLowerCase().includes(searchTerm.toLowerCase());
+      item?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item?.sku?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
     const matchesCategory = categoryFilter === 'all' || item.category === categoryFilter;
     return matchesSearch && matchesStatus && matchesCategory;

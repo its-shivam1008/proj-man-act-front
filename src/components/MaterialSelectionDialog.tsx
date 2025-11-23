@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { RootState, AppDispatch } from "@/redux/store";
 import { fetchMaterials } from "@/redux/slices/rawmaterialSlice";
+import { fetchWbsByProject } from "@/redux/slices/wbsSlice"; // Import fetchWbsByProject
 import api from "@/utils/axiosApi";
 import { Input } from "@/components/ui/input";
 import { X } from "lucide-react";
@@ -21,18 +22,38 @@ export default function MaterialSelectionDialog({ isOpen, onClose, wbsItem }) {
 
   const [selectedMaterials, setSelectedMaterials] = useState([]);
 
+  // 1. Fetch materials when dialog opens
   useEffect(() => {
     if (isOpen) {
       dispatch(fetchMaterials());
-      setSelectedMaterials([]);
     }
   }, [isOpen, dispatch]);
+
+  // 2. Sync wbsItem.linkedMaterials to local state
+  useEffect(() => {
+    if (isOpen && wbsItem?.linkedMaterials && materials.length > 0) {
+      const prefilled = wbsItem.linkedMaterials.map((link) => {
+        const details = materials.find((m) => m._id === link.materialId);
+        return {
+          materialId: link.materialId,
+          name: details?.name || "Unknown Material",
+          quantity: link.quantity,
+          unit: link.unit,
+        };
+      });
+      setSelectedMaterials(prefilled);
+    } else if (isOpen && (!wbsItem?.linkedMaterials || wbsItem.linkedMaterials.length === 0)) {
+      setSelectedMaterials([]);
+    }
+  }, [isOpen, wbsItem, materials]);
 
   const toggleSelect = (material) => {
     const exists = selectedMaterials.find((m) => m.materialId === material._id);
 
     if (exists) {
-      setSelectedMaterials(selectedMaterials.filter((m) => m.materialId !== material._id));
+      setSelectedMaterials(
+        selectedMaterials.filter((m) => m.materialId !== material._id)
+      );
     } else {
       setSelectedMaterials([
         ...selectedMaterials,
@@ -55,16 +76,77 @@ export default function MaterialSelectionDialog({ isOpen, onClose, wbsItem }) {
   };
 
   const handleSave = async () => {
-    await api.post("/wbs/link-materials", {
-      wbsId: wbsItem.id,
-      materials: selectedMaterials.map((m) => ({
-        materialId: m.materialId,
-        quantity: m.quantity,
-        unit: m.unit,
-      })),
-    });
+    try {
+      const originalIds = wbsItem?.linkedMaterials?.map((m) => m.materialId) || [];
+      const currentIds = selectedMaterials.map((m) => m.materialId);
 
-    onClose();
+      const promises = [];
+
+      // 1. Handle Removals (Items in original but not in current)
+      const toRemove = originalIds.filter((id) => !currentIds.includes(id));
+      for (const id of toRemove) {
+        promises.push(
+          api.post("/wbs/unlink-material", {
+            wbsId: wbsItem.id,
+            materialId: id,
+          })
+        );
+      }
+
+      // 2. Handle Updates (Unlink old if quantity/unit changed so we can re-add new)
+      const newMaterialsPayload = [];
+      
+      for (const m of selectedMaterials) {
+        const original = wbsItem?.linkedMaterials?.find(
+          (om) => om.materialId === m.materialId
+        );
+
+        if (!original) {
+          // It's a brand new item
+          newMaterialsPayload.push({
+            materialId: m.materialId,
+            quantity: m.quantity,
+            unit: m.unit,
+          });
+        } else {
+          // It's an existing item. Check if values changed.
+          if (original.quantity != m.quantity || original.unit !== m.unit) {
+             // Values changed. Remove old, add new.
+             promises.push(
+                api.post("/wbs/unlink-material", {
+                  wbsId: wbsItem.id,
+                  materialId: m.materialId,
+                })
+              );
+              newMaterialsPayload.push({
+                materialId: m.materialId,
+                quantity: m.quantity,
+                unit: m.unit,
+              });
+          }
+        }
+      }
+
+      // Wait for removals to finish
+      await Promise.all(promises);
+
+      // 3. Add New / Updated Materials
+      if (newMaterialsPayload.length > 0) {
+        await api.post("/wbs/link-materials", {
+          wbsId: wbsItem.id,
+          materials: newMaterialsPayload,
+        });
+      }
+
+      // Refresh the WBS list so the parent updates
+      if (wbsItem.projectId) {
+        dispatch(fetchWbsByProject(wbsItem.projectId));
+      }
+
+      onClose();
+    } catch (error) {
+      console.error("Failed to save materials", error);
+    }
   };
 
   return (
@@ -128,30 +210,6 @@ export default function MaterialSelectionDialog({ isOpen, onClose, wbsItem }) {
                   <p className="text-xs">
                     <strong>Rate:</strong> ₹{m.unitCost || 0}
                   </p>
-
-                  {m.hsn && (
-                    <p className="text-xs">
-                      <strong>HSN:</strong> {m.hsn}
-                    </p>
-                  )}
-
-                  {m.gstPercent && (
-                    <p className="text-xs">
-                      <strong>GST:</strong> {m.gstPercent}%
-                    </p>
-                  )}
-
-                  {m.preferredVendor && (
-                    <p className="text-xs">
-                      <strong>Vendor:</strong> {m.preferredVendor}
-                    </p>
-                  )}
-
-                  {m.technicalSpecs && (
-                    <p className="text-xs text-gray-600 line-clamp-2">
-                      <strong>Specs:</strong> {m.technicalSpecs}
-                    </p>
-                  )}
                 </div>
               );
             })}
@@ -171,21 +229,19 @@ export default function MaterialSelectionDialog({ isOpen, onClose, wbsItem }) {
                   <div className="flex justify-between items-center">
                     <p className="font-semibold">{m.name}</p>
 
-                    {/* FIXED CLOSE BUTTON */}
-                    <DialogClose asChild>
-                      <button
-                        onClick={() =>
-                          setSelectedMaterials(
-                            selectedMaterials.filter(
-                              (item) => item.materialId !== m.materialId
-                            )
+                    <button
+                      onClick={() =>
+                        setSelectedMaterials(
+                          selectedMaterials.filter(
+                            (item) => item.materialId !== m.materialId
                           )
-                        }
-                        className="rounded-full p-1 hover:bg-gray-200"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </DialogClose>
+                        )
+                      }
+                      className="rounded-full p-1 hover:bg-gray-200"
+                      type="button"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 mt-3">
@@ -194,11 +250,7 @@ export default function MaterialSelectionDialog({ isOpen, onClose, wbsItem }) {
                       <Input
                         value={m.quantity}
                         onChange={(e) =>
-                          updateField(
-                            m.materialId,
-                            "quantity",
-                            e.target.value
-                          )
+                          updateField(m.materialId, "quantity", e.target.value)
                         }
                       />
                     </div>
@@ -221,7 +273,6 @@ export default function MaterialSelectionDialog({ isOpen, onClose, wbsItem }) {
 
         <Button
           className="mt-4"
-          disabled={selectedMaterials.length === 0}
           onClick={handleSave}
         >
           Save Materials

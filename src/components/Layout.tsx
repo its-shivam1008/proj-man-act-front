@@ -441,7 +441,7 @@ const Layout: React.FC = () => {
           {/* --- End of new <nav> section --- */}
 
           {/* User Profile */}
-          <div className="border-t border-gray-200 p-4 flex items-center ">
+          <div className="border-t border-gray-200 p-4 grid grid-cols-2 ">
             {/* ... (user profile code remains the same) ... */}
             <div className="flex items-center">
               <div className="flex-shrink-0">
@@ -455,7 +455,7 @@ const Layout: React.FC = () => {
             </div>
             <button
               onClick={handleLogout}
-              className="mt-3 w-full flex items-center px-2 py-2 text-sm font-medium text-gray-600 rounded-md hover:bg-gray-50 hover:text-gray-900 transition-colors"
+              className="mt-3 w-full flex items-center px-2 py-2 text-sm font-medium text-gray-600 rounded-md"
             >
               <LogOut className="mr-3 h-4 w-4" />
               Sign Out

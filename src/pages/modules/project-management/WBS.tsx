@@ -66,6 +66,12 @@ import MaterialSelectionDialog from "@/components/MaterialSelectionDialog";
 type WBSItemType = "phase" | "activity" | "task" | "subtask";
 type wbstatus = "not-started" | "in-progress" | "completed" | "delayed";
 
+interface LinkedMaterial {
+  materialId: string;
+  quantity: number;
+  unit: string;
+}
+
 interface WBSItem {
   id: string;
   projectId: string;
@@ -78,12 +84,12 @@ interface WBSItem {
   duration?: number;
   plannedCost?: number;
   actualCost: number;
-  manpowerRequirement?: string;
-  materialRequirement?: string;
   dependencies: string[];
   status: wbstatus;
   progress: number;
   createdAt: string;
+  // Added this field
+  linkedMaterials?: LinkedMaterial[];
 }
 
 const WBS_ITEM_TYPES: WBSItemType[] = ["phase", "activity", "task", "subtask"];
@@ -133,7 +139,7 @@ const WBSNode: React.FC<WBSNodeProps> = ({
     return colors[status];
   };
 
-  const handleLinkMaterial = (item) => {
+  const handleLinkMaterial = (item: any) => {
     setLinkingMaterialItem(item);
   };
 
@@ -273,6 +279,21 @@ export default function WBS() {
     );
   }, [debouncedSearchTerm]);
 
+  // Helper to calculate duration based on start and end date
+  const calculateDuration = (start: string, end: string) => {
+    if (!start || !end) return 0;
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    
+    // Difference in milliseconds
+    const diffTime = endDate.getTime() - startDate.getTime();
+    
+    // Convert to days (include start day by adding 1)
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    
+    return diffDays > 0 ? diffDays : 0;
+  };
+
   const handleSave = () => {
     if (!formData.name || !formData.projectId || !formData.type) {
       toast({
@@ -295,6 +316,7 @@ export default function WBS() {
     }
 
     if (editingItem) {
+      // @ts-ignore
       dispatch(updateWbsItem({ id: editingItem.id, data: formData }))
         .unwrap()
         .then(() => {
@@ -516,7 +538,7 @@ export default function WBS() {
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
-                {/* ... (The content of your create/edit form remains unchanged) ... */}
+                
                 <div className="space-y-2">
                   <Label>Project</Label>
                   <Input
@@ -618,9 +640,11 @@ export default function WBS() {
                       id="startDate"
                       type="date"
                       value={formData.startDate || ""}
-                      onChange={(e) =>
-                        setFormData({ ...formData, startDate: e.target.value })
-                      }
+                      onChange={(e) => {
+                        const newStartDate = e.target.value;
+                        const newDuration = calculateDuration(newStartDate, formData.endDate || "");
+                        setFormData({ ...formData, startDate: newStartDate, duration: newDuration });
+                      }}
                     />
                   </div>
                   <div className="space-y-2">
@@ -629,9 +653,11 @@ export default function WBS() {
                       id="endDate"
                       type="date"
                       value={formData.endDate || ""}
-                      onChange={(e) =>
-                        setFormData({ ...formData, endDate: e.target.value })
-                      }
+                      onChange={(e) => {
+                        const newEndDate = e.target.value;
+                        const newDuration = calculateDuration(formData.startDate || "", newEndDate);
+                        setFormData({ ...formData, endDate: newEndDate, duration: newDuration });
+                      }}
                     />
                   </div>
                   <div className="space-y-2">
@@ -639,14 +665,10 @@ export default function WBS() {
                     <Input
                       id="duration"
                       type="number"
+                      readOnly
+                      className="bg-gray-100"
                       value={formData.duration || ""}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          duration: parseInt(e.target.value) || 0,
-                        })
-                      }
-                      placeholder="30"
+                      placeholder="Auto"
                     />
                   </div>
                 </div>
@@ -693,38 +715,6 @@ export default function WBS() {
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="manpowerRequirement">
-                    Manpower Requirements
-                  </Label>
-                  <Textarea
-                    id="manpowerRequirement"
-                    value={formData.manpowerRequirement || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        manpowerRequirement: e.target.value,
-                      })
-                    }
-                    placeholder="e.g., 5 Skilled Laborers, 2 Engineers"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="materialRequirement">
-                    Material Requirements
-                  </Label>
-                  <Textarea
-                    id="materialRequirement"
-                    value={formData.materialRequirement || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        materialRequirement: e.target.value,
-                      })
-                    }
-                    placeholder="e.g., 100 bags Cement, 2 tons Steel"
-                  />
-                </div>
                 <div className="space-y-2">
                   <Label>Dependencies</Label>
 
@@ -844,7 +834,7 @@ export default function WBS() {
         isOpen={!!linkingItem}
         onClose={() => setLinkingItem(null)}
         wbsItem={linkingItem}
-        organisationId={"81b48a8b-f574-4562-be38-f480e99359c9"}
+        organisationId={organisationId || ""}
       />
     </div>
   );
