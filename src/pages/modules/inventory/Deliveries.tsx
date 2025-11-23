@@ -7,6 +7,14 @@ import {
   updateDelivery,
   deleteDelivery,
 } from "@/redux/slices/deliverySlice";
+import {
+  Select,
+  SelectTrigger,
+  SelectContent,
+  SelectItem,
+  SelectValue,
+} from "@/components/ui/select";
+
 import { fetchProducts } from "@/redux/slices/productSlice";
 import { fetchWarehouses } from "@/redux/slices/warehouseSlice";
 
@@ -38,6 +46,7 @@ interface DeliveryItem {
   priority: "low" | "medium" | "high";
   status: "draft" | "ready" | "in-transit" | "delivered" | "cancelled";
   scheduledDate: string;
+  warehouseId: string;
 }
 
 const Deliveries: React.FC = () => {
@@ -150,7 +159,8 @@ const Deliveries: React.FC = () => {
       quantity: Number(formData.quantity),
       shippingMethod: formData.shippingMethod,
       priority: formData.priority,
-      status: editingDelivery?.status || "draft",
+      status: formData.status || editingDelivery?.status || "draft",
+      warehouseId: formData.warehouseId, // ← ADD
       scheduledDate:
         formData.scheduledDate || new Date().toISOString().split("T")[0],
     };
@@ -176,6 +186,8 @@ const Deliveries: React.FC = () => {
       shippingMethod: initialData?.shippingMethod || "Standard",
       priority: initialData?.priority || "medium",
       scheduledDate: initialData?.scheduledDate || "",
+      warehouseId: initialData?.warehouseId || "",
+      status: initialData?.status || "draft",
     });
 
     const handleChange =
@@ -265,6 +277,38 @@ const Deliveries: React.FC = () => {
                   className="w-full px-4 py-3 border rounded-lg"
                 />
               </div>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-2">Status</label>
+              <select
+                value={formData.status}
+                onChange={handleChange("status")}
+                className="w-full px-4 py-3 border rounded-lg"
+              >
+                <option value="draft">Draft</option>
+                <option value="ready">Ready</option>
+                <option value="in-transit">In Transit</option>
+                <option value="delivered">Delivered</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-2">
+                Warehouse *
+              </label>
+              <select
+                required
+                value={formData.warehouseId}
+                onChange={handleChange("warehouseId")}
+                className="w-full px-4 py-3 border rounded-lg"
+              >
+                <option value="">Select Warehouse</option>
+                {warehouses?.map((w: any) => (
+                  <option key={w._id} value={w._id}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -547,7 +591,9 @@ const Deliveries: React.FC = () => {
               ) : (
                 filteredDeliveries.map((d: DeliveryItem) => (
                   <tr key={d._id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 text-sm font-medium">{d._id.slice(0,15)}</td>
+                    <td className="px-6 py-4 text-sm font-medium">
+                      {d._id.slice(0, 15)}
+                    </td>
                     <td className="px-6 py-4 flex items-center">
                       {/* <User className="inline h-4 w-4 mr-2 text-gray-400" /> */}
                       {d.deliverTo}
@@ -556,7 +602,7 @@ const Deliveries: React.FC = () => {
                       <Package className="inline h-4 w-4 mr-2 text-gray-400" />
                       <div className="flex justify-center items-center">
                         <div className="font-medium">
-                          {getProductName(d.productId).slice(1,20)}
+                          {getProductName(d.productId).slice(1, 20)}
                         </div>
                         <div className="text-xs text-gray-500">
                           {d.quantity} units
@@ -574,17 +620,74 @@ const Deliveries: React.FC = () => {
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        {getStatusIcon(d.status)}
-                        <span
-                          className={`px-3 py-1 text-xs rounded-full ${getStatusColor(
-                            d.status
-                          )}`}
-                        >
-                          {d.status.replace("-", " ")}
-                        </span>
-                      </div>
+                      <Select
+                        defaultValue={d.status}
+                        onValueChange={(value) =>
+                          dispatch(
+                            updateDelivery({
+                              id: d._id,
+                              data: {
+                                status: value,
+                                warehouseId: d.warehouseId, 
+                              },
+                            })
+                          )
+                        }
+                      >
+                        <SelectTrigger className="w-[150px] text-xs">
+                          <div
+                            className={`px-2 py-1 rounded-md ${getStatusColor(
+                              d.status
+                            )}`}
+                          >
+                            {d.status.replace("-", " ")}
+                          </div>
+                        </SelectTrigger>
+
+                        <SelectContent>
+                          <SelectItem value="draft">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-1 rounded bg-gray-100 text-gray-700 text-xs">
+                                Draft
+                              </span>
+                            </div>
+                          </SelectItem>
+
+                          <SelectItem value="ready">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-1 rounded bg-yellow-100 text-yellow-700 text-xs">
+                                Ready
+                              </span>
+                            </div>
+                          </SelectItem>
+
+                          <SelectItem value="in-transit">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-1 rounded bg-blue-100 text-blue-700 text-xs">
+                                In Transit
+                              </span>
+                            </div>
+                          </SelectItem>
+
+                          <SelectItem value="delivered">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-1 rounded bg-green-100 text-green-700 text-xs">
+                                Delivered
+                              </span>
+                            </div>
+                          </SelectItem>
+
+                          <SelectItem value="cancelled">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-1 rounded bg-red-100 text-red-700 text-xs">
+                                Cancelled
+                              </span>
+                            </div>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
                     </td>
+
                     <td className="px-6 py-4 text-sm">
                       <Calendar className="inline h-4 w-4 mr-1 text-gray-400" />
                       {d.scheduledDate}

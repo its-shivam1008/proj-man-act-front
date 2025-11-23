@@ -76,7 +76,7 @@ export const deleteReceipt = createAsyncThunk(
   "receipts/deleteReceipt",
   async (id: string, { rejectWithValue }) => {
     try {
-    
+
       await api.delete(`/receipts/delete/${id}`);
       toast.success("Receipt deleted successfully!");
       return id;
@@ -86,6 +86,20 @@ export const deleteReceipt = createAsyncThunk(
     }
   }
 );
+export const approveReceipt = createAsyncThunk<any, string>(
+  "receipts/approveReceipt",
+  async (id, { rejectWithValue }) => {
+    try {
+      const res = await api.put(`/receipts/approve/${id}`);
+      toast.success("Receipt approved & Warehouse created!");
+      return res.data.receipt;
+    } catch (err: any) {
+      toast.error("Failed to approve receipt");
+      return rejectWithValue(err.response?.data);
+    }
+  }
+);
+
 
 const receiptSlice = createSlice({
   name: "receipts",
@@ -93,7 +107,7 @@ const receiptSlice = createSlice({
   reducers: {},
   extraReducers: (builder) => {
     builder
-      
+
       .addCase(fetchReceipts.pending, (state) => {
         state.loading = true;
         state.error = null;
@@ -108,18 +122,24 @@ const receiptSlice = createSlice({
         toast.error("Failed to load receipts");
       })
 
-     
+
       .addCase(createReceipt.fulfilled, (state, action) => {
         state.receipts.push(action.payload);
       })
 
-    
+
       .addCase(updateReceipt.fulfilled, (state, action) => {
         const index = state.receipts.findIndex((r) => r._id === action.payload._id);
         if (index !== -1) state.receipts[index] = action.payload;
       })
+      .addCase(approveReceipt.fulfilled, (state, action) => {
+        const updated = action.payload;
+        const index = state.receipts.findIndex((r) => r._id === updated._id);
+        if (index !== -1) {
+          state.receipts[index] = updated; // Update status to "approved"
+        }
+      })
 
-   
       .addCase(deleteReceipt.fulfilled, (state, action) => {
         state.receipts = state.receipts.filter((r) => r._id !== action.payload);
       });

@@ -85,6 +85,9 @@ import PurchaseReporting from './pages/modules/purchase/PurchaseReporting';
 import PurchaseSettings from './pages/modules/purchase/PurchaseSettings';
 import SchedulingPlaning from './pages/modules/project-management/SchedulingPlaning';
 import ProjectClosure from './pages/modules/project-management/ProjectClosure';
+import RawMaterialMaster from './pages/modules/inventory/Raw-Material';
+import WarehouseManagement from './pages/modules/inventory/Warehouse';
+import StoresManagement from './pages/modules/inventory/Storage';
 function App() {
   useEffect(() => {
     ensureInitialized();
@@ -132,14 +135,18 @@ function App() {
               <Route path="/inventory/receipt" element={<Receipt />} />
               <Route path="/inventory/deliveries" element={<Deliveries />} />
               <Route path='/inventory/products' element={<Products />} />
+              <Route path="/inventory/rawmaterials" element={<RawMaterialMaster />} />
+              <Route path="/inventory/warehouses" element={<WarehouseManagement />} />
               <Route path="/inventory/scrap-order" element={<ScrapOrder />} />
+              <Route path="/inventory/stores" element={<StoresManagement />} />
               <Route path="/inventory/forecasting" element={<Forecasting />} />
               <Route path="/inventory/reporting/stock" element={<Stock />} />
               <Route path="/inventory/reporting/inventory-history" element={<InventoryHistory />} />
               <Route path="/inventory/reporting/moves-analysis" element={<MovesAnalysis />} />
               <Route path="/inventory/reporting/valuation" element={<Valuation />} />
               <Route path="/inventory/form-builder" element={<FormBuilder />} />
-
+              <Route path="/inventory/delivery" element={<Deliveries />} />
+              <Route path="/inventory/receipts" element={<Receipt />} />
               {/* <Route path="/inventory/manufacturing" element={<Manufacturing />} /> */}
               {/* <Route path="/inventory/maintenance" element={<Maintenance />} /> */}
 
