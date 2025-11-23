@@ -23,7 +23,7 @@ import { toast } from 'sonner';
 
 const RFQComponent: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
-  const { rfqs, loading: rfqLoading, error } = useSelector((state: RootState) => state.rfqs);
+  const { rfqs, loading: rfqLoading,meta, error } = useSelector((state: RootState) => state.rfqs);
   const { vendors } = useSelector((state: RootState) => state.vendors);
   
   const [showCreateRfq, setShowCreateRfq] = useState(false);
@@ -31,12 +31,14 @@ const RFQComponent: React.FC = () => {
   const [showViewRfq, setShowViewRfq] = useState(false);
   const [editingRfq, setEditingRfq] = useState<RFQ | null>(null);
   const [viewingRfq, setViewingRfq] = useState<RFQ | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
   const [submitting, setSubmitting] = useState(false);
 
+    const [page, setPage] = useState<number>(1);
+  const [limit, setLimit] = useState<number>(10);
+  const [search, setSearch] = useState<string>("");
+
   useEffect(() => {
-    dispatch(fetchRFQs());
+    dispatch(fetchRFQs({ page, limit, q: search }));
     dispatch(fetchVendors());
   }, [dispatch]);
 
@@ -50,6 +52,28 @@ const RFQComponent: React.FC = () => {
     const year = new Date().getFullYear();
     const count = rfqs.length + 1;
     return `RFQ-${year}-${String(count).padStart(4, '0')}`;
+  };
+
+    const handlePrev = () => {
+    if (!meta) return;
+    if (page > 1) setPage(page - 1);
+  };
+
+  const handleNext = () => {
+    if (!meta) return;
+    if (page < meta.totalPages) setPage(page + 1);
+  };
+
+  const jumpToPage = (p: number) => {
+    if (!meta) return;
+    const pageNum = Math.min(Math.max(1, p), meta.totalPages);
+    setPage(pageNum);
+  };
+
+  const handleLimitChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newLimit = parseInt(e.target.value, 10);
+    setLimit(newLimit);
+    setPage(1); // reset to page 1 when changing page size
   };
 
   // const filteredRfqs = rfqs.filter(rfq => {
@@ -97,7 +121,7 @@ const RFQComponent: React.FC = () => {
     try {
         await dispatch(updateRFQ({ id: rfq.id, data: { status: 'sent' } })).unwrap();
         toast.success("RFQ Sent to vendors");
-        dispatch(fetchRFQs());
+        dispatch(fetchRFQs({ page, limit, q: search }));
     } catch (e) {
         toast.error("Failed to send RFQ");
     }
@@ -108,7 +132,7 @@ const RFQComponent: React.FC = () => {
         try {
              await dispatch(deleteRFQ(id)).unwrap();
              toast.success("RFQ deleted");
-             dispatch(fetchRFQs());
+             dispatch(fetchRFQs({ page, limit, q: search }));
         } catch (e) {
             toast.error("Failed to delete RFQ");
         }
@@ -148,7 +172,7 @@ const RFQComponent: React.FC = () => {
             status: 'draft'
           })).unwrap();
           toast.success("RFQ created successfully");
-          dispatch(fetchRFQs());
+          dispatch(fetchRFQs({ page, limit, q: search }));
           setShowCreateRfq(false);
       } catch(e) {
           // handled
@@ -445,8 +469,9 @@ const RFQComponent: React.FC = () => {
       e.preventDefault();
       setSubmitting(true);
       try {
-        await dispatch(updateRFQ({ id: editingRfq.id, data: formData })).unwrap();
+        await dispatch(updateRFQ({ id: editingRfq._id, data: formData })).unwrap();
         toast.success("RFQ updated successfully");
+        dispatch(fetchRFQs({ page, limit, q: search }));
         setShowUpdateRfq(false);
         setEditingRfq(null);
       } catch (e) {
@@ -859,14 +884,26 @@ const RFQComponent: React.FC = () => {
 
   if (rfqLoading && !rfqs.length) return <div>Loading...</div>;
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900">Request for Quotation (RFQ)</h2>
-          <p className="text-sm text-gray-600">Create and manage RFQs, compare vendor offers</p>
-        </div>
+return (
+  <div className="space-y-6">
+    {/* Header */}
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <h2 className="text-xl font-bold text-gray-900">Request for Quotation (RFQ)</h2>
+        <p className="text-sm text-gray-600">Create and manage RFQs, compare vendor offers</p>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(1);
+          }}
+          placeholder="Search RFQs..."
+          className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
         <button
           onClick={() => setShowCreateRfq(true)}
           className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center"
@@ -875,135 +912,237 @@ const RFQComponent: React.FC = () => {
           New RFQ
         </button>
       </div>
+    </div>
 
-      {/* Filters */}
-      {/* <div className="bg-white shadow rounded-lg p-4">
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="flex-1">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search RFQs..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Filter className="h-4 w-4 text-gray-400" />
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+    {/* RFQ Table */}
+    <div className="bg-white shadow rounded-lg overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                RFQ Number
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Vendors
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Order Date
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Delivery Date
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Total Amount
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Status
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {rfqs.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="px-6 py-12 text-center">
+                  <FileText className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-500">No RFQs found</p>
+                  <button
+                    onClick={() => setShowCreateRfq(true)}
+                    className="mt-4 text-blue-600 hover:text-blue-800 text-sm font-medium"
+                  >
+                    Create your first RFQ
+                  </button>
+                </td>
+              </tr>
+            ) : (
+              rfqs.map((rfq) => (
+                <tr key={rfq.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    {rfq.rfqNumber}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {rfq.vendors?.length || 0} vendors
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {rfq.orderDate ? new Date(rfq.orderDate).toLocaleDateString() : 'N/A'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {rfq.deliveryDate ? new Date(rfq.deliveryDate).toLocaleDateString() : 'N/A'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    {rfq.currency}{' '}
+                    {(
+                      rfq.products?.reduce(
+                        (sum, p) => sum + p.quantity * p.unitPrice * (1 + p.taxes / 100),
+                        0
+                      ) || 0
+                    ).toFixed(2)}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center">
+                      {getStatusIcon(rfq.status)}
+                      <span
+                        className={`ml-2 inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(
+                          rfq.status
+                        )}`}
+                      >
+                        {rfq.status}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <div className="flex items-center space-x-3">
+                      <button
+                        onClick={() => {
+                          setViewingRfq(rfq);
+                          setShowViewRfq(true);
+                        }}
+                        className="text-blue-600 hover:text-blue-900"
+                        title="View"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingRfq(rfq);
+                          setShowUpdateRfq(true);
+                        }}
+                        className="text-green-600 hover:text-green-900"
+                        title="Edit"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </button>
+                      {rfq.status === 'draft' && (
+                        <button
+                          onClick={() => handleSendRfq(rfq)}
+                          className="text-purple-600 hover:text-purple-900"
+                          title="Send to Vendors"
+                        >
+                          <Send className="h-4 w-4" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleDeleteRfq(rfq.id)}
+                        className="text-red-600 hover:text-red-900"
+                        title="Delete"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination */}
+      {meta && meta.totalPages > 1 && (
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-4 py-3 border-t bg-gray-50">
+          <div className="flex items-center gap-2 mb-3 sm:mb-0">
+            <button
+              onClick={handlePrev}
+              disabled={page <= 1}
+              className="px-4 py-2 border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
             >
-              <option value="all">All Status</option>
-              <option value="draft">Draft</option>
-              <option value="sent">Sent</option>
-              <option value="received">Received</option>
-              <option value="done">Done</option>
-              <option value="cancelled">Cancelled</option>
+              Previous
+            </button>
+
+            {/* Dynamic page numbers: show up to 7 pages centered around current page */}
+            <div className="flex items-center gap-1">
+              {(() => {
+                const totalPages = meta.totalPages;
+                const current = page;
+                const delta = 3;
+                const range = [];
+                const rangeWithDots = [];
+
+                for (let i = 1; i <= totalPages; i++) {
+                  if (
+                    i === 1 ||
+                    i === totalPages ||
+                    (i >= current - delta && i <= current + delta)
+                  ) {
+                    range.push(i);
+                  }
+                }
+
+                let last = 0;
+                range.forEach((p) => {
+                  if (last && p - last > 1) {
+                    rangeWithDots.push('...');
+                  }
+                  rangeWithDots.push(p);
+                  last = p;
+                });
+
+                return rangeWithDots.map((p, idx) =>
+                  p === '...' ? (
+                    <span key={`dots-${idx}`} className="px-2 text-gray-500">
+                      ...
+                    </span>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => jumpToPage(p as number)}
+                      className={`px-3 py-1.5 rounded-md text-sm ${
+                        p === current
+                          ? 'bg-blue-600 text-white font-medium'
+                          : 'border border-gray-300 hover:bg-gray-100'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  )
+                );
+              })()}
+            </div>
+
+            <button
+              onClick={handleNext}
+              disabled={page >= meta.totalPages}
+              className="px-4 py-2 border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+            >
+              Next
+            </button>
+          </div>
+
+          <div className="flex items-center gap-6 text-sm text-gray-600">
+            <span>
+              Showing <strong>{(page - 1) * limit + 1}</strong> to{' '}
+              <strong>{Math.min(page * limit, meta.total)}</strong> of <strong>{meta.total}</strong>{' '}
+              RFQs
+            </span>
+
+            <select
+              value={limit}
+              onChange={handleLimitChange}
+              className="border border-gray-300 px-3 py-1.5 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value={5}>5 / page</option>
+              <option value={10}>10 / page</option>
+              <option value={20}>20 / page</option>
+              <option value={50}>50 / page</option>
             </select>
           </div>
         </div>
-      </div> */}
-
-      {/* RFQ Table */}
-      <div className="bg-white shadow rounded-lg overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">RFQ Number</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vendors</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order Date</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Delivery Date</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Amount</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {rfqs.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center">
-                    <FileText className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                    <p className="text-gray-500">No RFQs found</p>
-                    <button
-                      onClick={() => setShowCreateRfq(true)}
-                      className="mt-2 text-blue-600 hover:text-blue-800 text-sm font-medium"
-                    >
-                      Create your first RFQ
-                    </button>
-                  </td>
-                </tr>
-              ) : (
-                rfqs.map((rfq) => (
-                  <tr key={rfq.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{rfq.rfqNumber}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{rfq.vendors?.length || 0} vendors</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{rfq.orderDate ? new Date(rfq.orderDate).toLocaleDateString() : 'N/A'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{rfq.deliveryDate ? new Date(rfq.deliveryDate).toLocaleDateString() : 'N/A'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {rfq.currency} {(rfq.products?.reduce((sum, p) => sum + (p.quantity * p.unitPrice * (1 + p.taxes / 100)), 0) || 0).toFixed(2)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        {getStatusIcon(rfq.status)}
-                        <span className={`ml-2 inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(rfq.status)}`}>
-                          {rfq.status}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => { setViewingRfq(rfq); setShowViewRfq(true); }}
-                          className="text-blue-600 hover:text-blue-900 p-1"
-                          title="View"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => { setEditingRfq(rfq); setShowUpdateRfq(true); }}
-                          className="text-green-600 hover:text-green-900 p-1"
-                          title="Edit"
-                        >
-                          <Edit className="h-4 w-4" />
-                        </button>
-                        {rfq.status === 'draft' && (
-                          <button
-                            onClick={() => handleSendRfq(rfq)}
-                            className="text-purple-600 hover:text-purple-900 p-1"
-                            title="Send to Vendors"
-                          >
-                            <Send className="h-4 w-4" />
-                          </button>
-                        )}
-                        <button
-                          onClick={() => handleDeleteRfq(rfq.id)}
-                          className="text-red-600 hover:text-red-900 p-1"
-                          title="Delete"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Modals */}
-      {showCreateRfq && <CreateRfqForm />}
-      {showUpdateRfq && <UpdateRfqForm />}
-      {showViewRfq && <ViewRfqModal />}
+      )}
     </div>
-  );
+
+    {/* Modals */}
+    {showCreateRfq && <CreateRfqForm onClose={() => setShowCreateRfq(false)} />}
+    {showUpdateRfq && editingRfq && (
+      <UpdateRfqForm rfq={editingRfq} onClose={() => setShowUpdateRfq(false)} />
+    )}
+    {showViewRfq && viewingRfq && (
+      <ViewRfqModal rfq={viewingRfq} onClose={() => setShowViewRfq(false)} />
+    )}
+  </div>
+);
 };
 
 export default RFQComponent;

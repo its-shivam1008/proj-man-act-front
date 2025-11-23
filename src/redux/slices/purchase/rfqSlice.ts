@@ -4,9 +4,16 @@ import { RFQ } from "@/types/purchase";
 
 export const fetchRFQs = createAsyncThunk(
   "rfqs/fetchRFQs",
-  async (_, { rejectWithValue }) => {
+  async (params: { page?: number; limit?: number; sort?: string; q?: string } = {}, { rejectWithValue }) => {
     try {
-      const response = await api.get("/purchase/rfq");
+      const { page = 1, limit = 10, sort, q } = params;
+      const query = new URLSearchParams();
+      query.set('page', String(page));
+      query.set('limit', String(limit));
+      if (sort) query.set('sort', sort);
+      if (q) query.set('q', q);
+
+      const response = await api.get(`/purchase/rfq?${query.toString()}`);
       return response.data;
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.message || "Failed to fetch RFQs");
@@ -52,8 +59,15 @@ export const deleteRFQ = createAsyncThunk(
 
 interface RFQState {
   rfqs: RFQ[];
-  loading: boolean;
+  status: 'idle' | 'loading' | 'succeeded' | 'failed';
   error: string | null;
+  loading: boolean;
+  meta: {
+    total: number;
+    totalPages: number;
+    page: number;
+    limit: number;
+  } | null;
 }
 
 const initialState: RFQState = {
@@ -69,6 +83,12 @@ const rfqSlice = createSlice({
     clearError: (state) => {
       state.error = null;
     },
+    resetRFQs: (state) => {
+      state.rfqs = [];
+      state.meta = null;
+      state.status = 'idle';
+      state.error = null;
+    }
   },
   extraReducers: (builder) => {
     builder
@@ -79,7 +99,8 @@ const rfqSlice = createSlice({
       })
       .addCase(fetchRFQs.fulfilled, (state, action) => {
         state.loading = false;
-        state.rfqs = action.payload.rfqs;
+        state.rfqs = action.payload.rfqs ?? action.payload.data ?? [];
+        state.meta = action.payload.meta ?? null;
       })
       .addCase(fetchRFQs.rejected, (state, action) => {
         state.loading = false;
