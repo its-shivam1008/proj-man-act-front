@@ -74,9 +74,9 @@ const Layout: React.FC = () => {
   const mainLinks = [
     { name: "Dashboard", href: "/", icon: Home },
     { name: "Project", href: "/project-management", icon: FolderKanban },
-    { name: "Production", href: "/production", icon: Factory },
     { name: "Inventory", href: "/inventory", icon: Package },
     { name: "Purchase", href: "/purchase", icon: ShoppingCart },
+    { name: "Production", href: "/production", icon: Factory },
     { name: "Quality Control", href: "/quality", icon: Shield },
     { name: "Plant & Machinery", href: "/plant-machinery", icon: FactoryIcon },
     { name: "Product Lifecycle", href: "/product-lifecycle", icon: GitBranch },

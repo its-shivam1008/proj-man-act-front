@@ -1,0 +1,210 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { AppDispatch, RootState } from "@/redux/store";
+import {
+  fetchMasterData,
+  addMasterItem,
+  updateMasterItem,
+  deleteMasterItem,
+  MasterItem,
+} from "@/redux/slices/masterDataSlice";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Pencil, Trash2, Plus } from "lucide-react";
+import { toast } from "sonner";
+
+type MasterType = "client" | "department" | "project-type";
+
+export default function MasterDataPage() {
+  const dispatch = useDispatch<AppDispatch>();
+  const { clients, departments, projectTypes } = useSelector(
+    (state: RootState) => state.masterData
+  );
+
+  const [activeTab, setActiveTab] = useState<MasterType>("client");
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<MasterItem | null>(null);
+  const [formData, setFormData] = useState({ name: "", description: "" });
+
+  useEffect(() => {
+    dispatch(fetchMasterData("client"));
+    dispatch(fetchMasterData("department"));
+    dispatch(fetchMasterData("project-type"));
+  }, [dispatch]);
+
+  const getCurrentList = () => {
+    if (activeTab === "client") return clients;
+    if (activeTab === "department") return departments;
+    return projectTypes;
+  };
+
+  const handleOpenDialog = (item?: MasterItem) => {
+    if (item) {
+      setEditingItem(item);
+      setFormData({ name: item.name, description: item.description || "" });
+    } else {
+      setEditingItem(null);
+      setFormData({ name: "", description: "" });
+    }
+    setIsDialogOpen(true);
+  };
+
+  const handleSave = async () => {
+    if (!formData.name) return toast.error("Name is required");
+
+    try {
+      if (editingItem) {
+        await dispatch(
+          updateMasterItem({
+            type: activeTab,
+            id: editingItem._id,
+            data: formData,
+          })
+        ).unwrap();
+        toast.success("Updated successfully");
+      } else {
+        await dispatch(
+          addMasterItem({ type: activeTab, data: formData })
+        ).unwrap();
+        toast.success("Created successfully");
+      }
+      setIsDialogOpen(false);
+    } catch (error) {
+      toast.error("Operation failed");
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (confirm("Are you sure?")) {
+        await dispatch(deleteMasterItem({ type: activeTab, id }));
+        toast.success("Deleted");
+    }
+  };
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-3xl font-bold">Master Data Management</h2>
+        <Button onClick={() => handleOpenDialog()}>
+          <Plus className="mr-2 h-4 w-4" /> Add New
+        </Button>
+      </div>
+
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => setActiveTab(v as MasterType)}
+      >
+        <TabsList className="w-full justify-start">
+          <TabsTrigger value="client">Clients</TabsTrigger>
+          <TabsTrigger value="department">Departments</TabsTrigger>
+          <TabsTrigger value="project-type">Project Types</TabsTrigger>
+        </TabsList>
+
+        <Card className="mt-4">
+            <CardHeader>
+                <CardTitle className="capitalize">{activeTab.replace("-", " ")} List</CardTitle>
+            </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {getCurrentList().length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center py-8">
+                      No records found.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  getCurrentList().map((item) => (
+                    <TableRow key={item._id}>
+                      <TableCell className="font-medium">{item.name}</TableCell>
+                      <TableCell>{item.description}</TableCell>
+                      <TableCell className="text-right space-x-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleOpenDialog(item)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDelete(item._id)}
+                        >
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </Tabs>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {editingItem ? "Edit" : "Add"} {activeTab.replace("-", " ")}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Name</Label>
+              <Input
+                value={formData.name}
+                onChange={(e) =>
+                  setFormData({ ...formData, name: e.target.value })
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <Input
+                value={formData.description}
+                onChange={(e) =>
+                  setFormData({ ...formData, description: e.target.value })
+                }
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSave}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
