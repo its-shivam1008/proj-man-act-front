@@ -1,424 +1,625 @@
-import React, { useState, useEffect } from 'react';
-import { Warehouse, Plus, Package, MapPin, Edit, Trash2, XCircle, Badge } from 'lucide-react';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+// WarehouseManagement.tsx
+import React, { useState, useEffect } from "react";
+import {
+  Warehouse,
+  Plus,
+  Package,
+  MapPin,
+  Edit,
+  Trash2,
+  XCircle,
+  AlertTriangle,
+  Truck,
+  History,
+  Box,
+  AlertCircle,
+} from "lucide-react";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useDispatch, useSelector } from "react-redux";
 import {
-    fetchWarehouses,
-    addWarehouse,
-    updateWarehouse,
-    deleteWarehouse,
+  fetchWarehouses,
+  addWarehouse,
+  updateWarehouse,
+  deleteWarehouse,
 } from "@/redux/slices/warehouseSlice";
+import { fetchProducts } from "@/redux/slices/productSlice";
 import { toast } from "sonner";
-// Define proper TypeScript interface
-interface WarehouseData {
-    id: string;
-    name: string;
-    type: string;
-    location: string;
-    capacity: number;
-    totalItems: number;
-    categories: {
-        raw: number;
-        finished: number;
-        consumables: number;
-    };
-    lastGRN: {
-        date: string;
-        qty: number;
-        po: string;
-    } | null;
-    lastIssue: {
-        date: string;
-        qty: number;
-        dept: string;
-    } | null;
-    ageing: {
-        "0-30 Days": number;
-        "31-90 Days": number;
-        "90+ Days": number;
-    };
-    inTransit: number;
-    reorderAlerts: string[];
-    bins: string[];
+
+// Types matching your backend exactly
+interface Product {
+  _id: string;
+  name: string;
+  sku: string;
+  quantity: number;
+  minStock: number;
+  unitCost: number;
+  status: "in-stock" | "low-stock" | "out-of-stock";
 }
 
-// Initial mock data (will be saved to storage on first load)
-const initialWarehouseData: WarehouseData[] = [
-    {
-        id: "1",
-        name: "Main Warehouse",
-        type: "General",
-        location: "Plant A – Sector 21",
-        capacity: 78,
-        totalItems: 420,
-        categories: { raw: 120, finished: 250, consumables: 50 },
-        lastGRN: { date: "12 Jan 2025", qty: 120, po: "PO-8745" },
-        lastIssue: { date: "10 Jan 2025", qty: 90, dept: "Production" },
-        ageing: { "0-30 Days": 200, "31-90 Days": 150, "90+ Days": 70 },
-        inTransit: 40,
-        reorderAlerts: ["Steel Rod 12mm", "Lubricant Oil - 5L"],
-        bins: ["Rack A1", "Rack B2", "Rack C3"],
-    },
-    {
-        id: "2",
-        name: "Cold Storage WH",
-        type: "Cold Storage",
-        location: "Plant B – Phase 3",
-        capacity: 62,
-        totalItems: 310,
-        categories: { raw: 90, finished: 160, consumables: 60 },
-        lastGRN: { date: "09 Jan 2025", qty: 200, po: "PO-8722" },
-        lastIssue: { date: "08 Jan 2025", qty: 50, dept: "Quality" },
-        ageing: { "0-30 Days": 150, "31-90 Days": 100, "90+ Days": 60 },
-        inTransit: 20,
-        reorderAlerts: ["Frozen Material - Type B"],
-        bins: ["Cold Rack 1", "Cold Rack 2"],
-    },
-];
+interface WarehouseData {
+  _id: string;
+  name: string;
+  type: string;
+  location: string;
+  capacity: number;
+  unit: string;
+  productId: string;
+  productName?: string;
+  lastGRN: { date: string; qty: number; po: string } | null;
+  lastIssue: { date: string; qty: number; dept: string } | null;
+  ageing: {
+    "0-30": number;
+    "30-60": number;
+    "60-90": number;
+    "90+": number;
+  };
+  inTransit?: number;
+  reorderAlerts: string[];
+  bins: string[];
+}
+
+interface EnrichedWarehouse extends WarehouseData {
+  product: Product | null;
+}
 
 const WarehouseManagement: React.FC = () => {
-    const dispatch = useDispatch();
+  const dispatch = useDispatch();
+  const { products = [] } = useSelector((state: any) => state.products);
+  const { warehouses = [], loading } = useSelector((state: any) => state.warehouse);
 
-    const { warehouses, loading } = useSelector((state: any) => state.warehouse);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
-    const [showWarehouseForm, setShowWarehouseForm] = useState(false);
-    const [editingWarehouseId, setEditingWarehouseId] = useState<string | null>(null);
+  useEffect(() => {
+    dispatch(fetchProducts({ page: 1, limit: 200 }));
+    dispatch(fetchWarehouses({ page: 1, limit: 50 }));
+  }, [dispatch]);
 
-    useEffect(() => {
-        dispatch(fetchWarehouses({ page: 1, limit: 20 }))
-            .unwrap()
-            .then((res) => {
-                if (res.length === 0) {
-                    // fallback to local mock data
-                    console.warn("No warehouse found, loading mock data.");
-                    dispatch(addWarehouse(initialWarehouseData[0]));
-                    dispatch(addWarehouse(initialWarehouseData[1]));
-                }
-            })
-            .catch(() => {
-                // backend error fallback
-                dispatch(addWarehouse(initialWarehouseData[0]));
-                dispatch(addWarehouse(initialWarehouseData[1]));
-            });
-    }, []);
+  // Enrich warehouse with real product data
+  const enrichedWarehouses: EnrichedWarehouse[] = warehouses.map((w: WarehouseData) => ({
+    ...w,
+    product: products.find((p: Product) => p._id === w.productId) || null,
+  }));
 
+  const getStockStatus = (qty: number, minStock: number) => {
+    if (qty === 0) return { label: "Out of Stock", color: "bg-red-100 text-red-800" };
+    if (qty <= minStock) return { label: "Low Stock", color: "bg-yellow-100 text-yellow-800" };
+    return { label: "In Stock", color: "bg-green-100 text-green-800" };
+  };
 
+  const handleEdit = (id: string) => {
+    setEditingId(id);
+    setShowForm(true);
+  };
 
-    const handleAdd = () => {
-        setEditingWarehouseId(null);
-        setShowWarehouseForm(true);
-        // Optional subtle feedback when opening the form
-        toast.info("Fill the form to add a new warehouse");
-    };
+  const handleDelete = (id: string) => {
+    if (window.confirm("Are you sure you want to delete this warehouse?")) {
+      dispatch(deleteWarehouse(id))
+        .unwrap()
+        .then(() => toast.success("Warehouse deleted"))
+        .catch(() => toast.error("Failed to delete"));
+    }
+  };
 
-    const handleEdit = (id: string) => {
-        setEditingWarehouseId(id);
-        setShowWarehouseForm(true);
-    };
-    const handleDelete = (id: string) => {
-        dispatch(deleteWarehouse(id))
-            .unwrap()
-            .then(() => toast.success("Warehouse deleted"))
-            .catch(() => toast.error("Delete failed"));
-    };
+  const handleClose = () => {
+    setShowForm(false);
+    setEditingId(null);
+  };
 
+  const currentWarehouse = editingId
+    ? enrichedWarehouses.find((w) => w._id === editingId)
+    : null;
 
-    const handleCloseForm = () => {
-        setShowWarehouseForm(false);
-        setEditingWarehouseId(null);
-    };
+  return (
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-7xl mx-auto space-y-8">
+        {/* Header */}
+        <div className="flex justify-between items-center">
+          <h1 className="text-4xl font-bold flex items-center gap-3 text-gray-800">
+            <Warehouse className="w-10 h-10 text-blue-600" />
+            Warehouse Management
+          </h1>
+          <Button onClick={() => setShowForm(true)} size="lg">
+            <Plus className="w-5 h-5 mr-2" /> Add Warehouse
+          </Button>
+        </div>
 
+        {/* Empty State */}
+        {enrichedWarehouses.length === 0 && !loading && (
+          <div className="text-center py-20 bg-white rounded-2xl shadow">
+            <Warehouse className="w-20 h-20 mx-auto text-gray-300 mb-4" />
+            <p className="text-xl text-gray-500">No warehouses created yet</p>
+            <Button onClick={() => setShowForm(true)} className="mt-6">
+              Create Your First Warehouse
+            </Button>
+          </div>
+        )}
 
-    const WarehouseForm = ({ initialData }: { initialData?: WarehouseData }) => {
-        const [formData, setFormData] = useState({
-            name: initialData?.name || '',
-            type: initialData?.type || 'General',
-            location: initialData?.location || '',
-            capacity: initialData?.capacity?.toString() || '0',
-            totalItems: initialData?.totalItems?.toString() || '0',
-            raw: initialData?.categories?.raw?.toString() || '0',
-            finished: initialData?.categories?.finished?.toString() || '0',
-            consumables: initialData?.categories?.consumables?.toString() || '0',
-            lastGRN: {
-                date: initialData?.lastGRN?.date || '',
-                qty: initialData?.lastGRN?.qty?.toString() || '',
-                po: initialData?.lastGRN?.po || '',
-            },
-            lastIssue: {
-                date: initialData?.lastIssue?.date || '',
-                qty: initialData?.lastIssue?.qty?.toString() || '',
-                dept: initialData?.lastIssue?.dept || '',
-            },
-            ageing30: initialData?.ageing?.["0-30 Days"]?.toString() || '0',
-            ageing90: initialData?.ageing?.["31-90 Days"]?.toString() || '0',
-            ageingPlus: initialData?.ageing?.["90+ Days"]?.toString() || '0',
-            inTransit: initialData?.inTransit?.toString() || '0',
-            reorderAlerts: initialData?.reorderAlerts?.join(', ') || '',
-            bins: initialData?.bins?.join(', ') || '',
-        });
+        {/* Warehouse Cards */}
+        <Accordion type="single" collapsible className="space-y-6">
+          {enrichedWarehouses.map((w) => {
+            const stock = w.product?.quantity || 0;
+            const minStock = w.product?.minStock || 0;
+            const status = getStockStatus(stock, minStock);
+            const totalValue = stock * (w.product?.unitCost || 0);
 
-        const handleSubmit = async (formData: any) => {
-            try {
-                const payload = {
-                    name: formData.name,
-                    type: formData.type,
-                    location: formData.location,
-                    capacity: Number(formData.capacity),
-                    totalItems: Number(formData.totalItems || 0),
-                    categories: {
-                        raw: Number(formData.raw || 0),
-                        finished: Number(formData.finished || 0),
-                        consumables: Number(formData.consumables || 0),
-                    },
-                    lastGRN: formData.lastGRN.date ? {
-                        date: formData.lastGRN.date,
-                        qty: Number(formData.lastGRN.qty || 0),
-                        po: formData.lastGRN.po,
-                    } : null,
-                    lastIssue: formData.lastIssue.date ? {
-                        date: formData.lastIssue.date,
-                        qty: Number(formData.lastIssue.qty || 0),
-                        dept: formData.lastIssue.dept,
-                    } : null,
-                    ageing: {
-                        "0-30 Days": Number(formData.ageing30 || 0),
-                        "31-90 Days": Number(formData.ageing90 || 0),
-                        "90+ Days": Number(formData.ageingPlus || 0),
-                    },
-                    inTransit: Number(formData.inTransit || 0),
-                    reorderAlerts: formData.reorderAlerts.split(',').map((s: string) => s.trim()).filter(Boolean),
-                    bins: formData.bins.split(',').map((s: string) => s.trim()).filter(Boolean),
-                };
-
-                if (editingWarehouseId) {
-                    await dispatch(updateWarehouse({ id: editingWarehouseId, data: payload })).unwrap();
-                    toast.success("Warehouse updated successfully!");
-                } else {
-                    await dispatch(addWarehouse(payload)).unwrap();
-                    toast.success("Warehouse added successfully!");
-                }
-
-                handleCloseForm();
-            } catch (err) {
-                toast.error(editingWarehouseId ? "Failed to update warehouse" : "Failed to add warehouse");
-            }
-        };
-        const handleChange = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-            setFormData(prev => ({ ...prev, [field]: e.target.value }));
-        };
-
-        const handleNested = (parent: 'lastGRN' | 'lastIssue', field: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
-            setFormData(prev => ({
-                ...prev,
-                [parent]: { ...prev[parent], [field]: e.target.value }
-            }));
-        };
-
-        return (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6">
-                    <div className="flex justify-between items-center mb-6">
-                        <h2 className="text-2xl font-bold">{editingWarehouseId ? 'Edit' : 'Add'} Warehouse</h2>
-                        <button onClick={handleCloseForm} className="text-gray-500 hover:text-gray-700">
-                            <XCircle className="w-8 h-8" />
-                        </button>
+            return (
+              <AccordionItem
+                key={w._id}
+                value={w._id}
+                className="bg-white rounded-2xl shadow-lg overflow-hidden border hover:shadow-2xl transition-all"
+              >
+                <AccordionTrigger className="px-8 py-6 hover:no-underline">
+                  <div className="grid grid-cols-12 w-full items-center gap-6">
+                    {/* Name & Product */}
+                    <div className="col-span-5">
+                      <div className="flex items-center gap-4">
+                        <Package className="w-9 h-9 text-blue-600" />
+                        <div>
+                          <h3 className="text-xl font-bold text-gray-900">{w.name}</h3>
+                          {w.product ? (
+                            <div className="flex items-center gap-2 mt-1">
+                              <Box className="w-4 h-4 text-gray-500" />
+                              <span className="text-sm font-medium">{w.product.name}</span>
+                              <span className="text-xs text-gray-400">• {w.product.sku}</span>
+                            </div>
+                          ) : (
+                            <span className="text-sm text-red-600">No product linked</span>
+                          )}
+                        </div>
+                      </div>
                     </div>
 
-                    <form onSubmit={(e) => { e.preventDefault(); handleSubmit(formData); }} className="space-y-6">
-                        {/* Basic Info */}
-                        <div className="grid md:grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-sm font-medium mb-1">Name *</label>
-                                <input required value={formData.name} onChange={handleChange('name')} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium mb-1">Type</label>
-                                <select value={formData.type} onChange={handleChange('type')} className="w-full px-4 py-2 border rounded-lg">
-                                    <option>General</option>
-                                    <option>Cold Storage</option>
-                                    <option>Bonded</option>
-                                    <option>Quarantine</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium mb-1">Location *</label>
-                                <input required value={formData.location} onChange={handleChange('location')} className="w-full px-4 py-2 border rounded-lg" />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium mb-1">Capacity %</label>
-                                <input type="number" min="0" max="100" value={formData.capacity} onChange={handleChange('capacity')} className="w-full px-4 py-2 border rounded-lg" />
-                            </div>
-                        </div>
+                    {/* Type */}
+                    <div className="col-span-2">
+                      <Badge variant="secondary" className="text-sm">
+                        {w.type}
+                      </Badge>
+                    </div>
 
-                        {/* Stock Summary */}
+                    {/* Location */}
+                    <div className="col-span-2 text-sm text-gray-600 flex items-center gap-2">
+                      <MapPin className="w-5 h-5" />
+                      {w.location}
+                    </div>
+
+                    {/* Live Stock */}
+                    <div className="col-span-3 text-right">
+                      <div className="text-3xl font-bold text-gray-800">
+                        {stock.toLocaleString()}
+                      </div>
+                      <div className="text-sm text-gray-500">{w.unit}</div>
+                      <Badge className={`mt-2 ${status.color}`}>
+                        {status.label}
+                        {status.label === "Low Stock" && ` (Min: ${minStock})`}
+                      </Badge>
+                    </div>
+                  </div>
+                </AccordionTrigger>
+
+                <AccordionContent className="bg-gradient-to-r from-gray-50 to-white px-8 py-8 border-t">
+                  <div className="flex justify-end gap-3 mb-6">
+                    <Button size="sm" variant="outline" onClick={() => handleEdit(w._id)}>
+                      <Edit className="w-4 h-4 mr-2" /> Edit
+                    </Button>
+                    <Button size="sm" variant="destructive" onClick={() => handleDelete(w._id)}>
+                      <Trash2 className="w-4 h-4 mr-2" /> Delete
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    {/* Product Stock Details */}
+                    <div className="space-y-4">
+                      <h4 className="font-bold text-lg flex items-center gap-2">
+                        <Box className="w-5 h-5 text-blue-600" />
+                        Current Stock Details
+                      </h4>
+                      {w.product ? (
+                        <div className="bg-blue-50 p-6 rounded-xl space-y-4">
+                          <div className="flex justify-between text-lg">
+                            <span className="text-gray-600">Available</span>
+                            <strong className="font-bold">{stock.toLocaleString()} {w.unit}</strong>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Min Required</span>
+                            <strong>{minStock} {w.unit}</strong>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Unit Cost</span>
+                            <strong>${w.product.unitCost}</strong>
+                          </div>
+                          <div className="border-t pt-3 flex justify-between">
+                            <span className="font-medium">Total Value</span>
+                            <strong className="text-green-600 text-xl">
+                              ${totalValue.toLocaleString()}
+                            </strong>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-red-600 italic">Link a product to see stock</p>
+                      )}
+                    </div>
+
+                    {/* Recent Activity */}
+                    <div className="space-y-4">
+                      <h4 className="font-bold text-lg flex items-center gap-2">
+                        <History className="w-5 h-5 text-purple-600" />
+                        Recent Transactions
+                      </h4>
+                      <div className="space-y-3">
+                        {w.lastGRN && (
+                          <div className="bg-green-50 p-4 rounded-lg">
+                            <p className="font-medium text-green-800">Last GRN</p>
+                            <p className="text-sm">
+                              {w.lastGRN.date} • +{w.lastGRN.qty} units • PO: {w.lastGRN.po}
+                            </p>
+                          </div>
+                        )}
+                        {w.lastIssue && (
+                          <div className="bg-blue-50 p-4 rounded-lg">
+                            <p className="font-medium text-blue-800">Last Issue</p>
+                            <p className="text-sm">
+                              {w.lastIssue.date} • -{w.lastIssue.qty} units → {w.lastIssue.dept}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Stock Health */}
+                    <div className="space-y-6">
+                      <div>
+                        <h4 className="font-bold text-lg">Stock Ageing</h4>
+                        <div className="mt-4 space-y-3">
+                          <div className="flex justify-between">
+                            <span className="text-sm">0-30 days</span>
+                            <strong className="text-green-600">{w.ageing["0-30"]}</strong>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm">30-60 days</span>
+                            <strong className="text-yellow-600">{w.ageing["30-60"]}</strong>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm">60-90 days</span>
+                            <strong className="text-orange-600">{w.ageing["60-90"]}</strong>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm">90+ days</span>
+                            <strong className="text-red-600">{w.ageing["90+"]}</strong>
+                          </div>
+                        </div>
+                      </div>
+
+                      {w.inTransit ? (
+                        <div className="flex items-center gap-3 text-blue-600 bg-blue-50 p-4 rounded-lg">
+                          <Truck className="w-6 h-6" />
+                          <div>
+                            <p className="font-medium">{w.inTransit} units</p>
+                            <p className="text-sm">In Transit</p>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {w.reorderAlerts.length > 0 && (
                         <div>
-                            <h3 className="font-semibold mb-3">Category-wise Stock</h3>
-                            <div className="grid grid-cols-3 gap-4">
-                                <input placeholder="Raw Materials" type="number" value={formData.raw} onChange={handleChange('raw')} className="px-4 py-2 border rounded-lg" />
-                                <input placeholder="Finished Goods" type="number" value={formData.finished} onChange={handleChange('finished')} className="px-4 py-2 border rounded-lg" />
-                                <input placeholder="Consumables" type="number" value={formData.consumables} onChange={handleChange('consumables')} className="px-4 py-2 border rounded-lg" />
-                            </div>
+                          <h4 className="font-bold text-red-600 flex items-center gap-2">
+                            <AlertTriangle className="w-5 h-5" />
+                            Reorder Alerts
+                          </h4>
+                          <ul className="mt-2 space-y-1 text-sm">
+                            {w.reorderAlerts.map((alert, i) => (
+                              <li key={i} className="text-red-700">• {alert}</li>
+                            ))}
+                          </ul>
                         </div>
+                      )}
+                    </div>
+                  </div>
 
-                        {/* Last Transactions */}
-                        <div className="grid md:grid-cols-2 gap-6">
-                            <div>
-                                <h3 className="font-semibold mb-2">Last GRN</h3>
-                                <input placeholder="Date (e.g. 18 Nov 2025)" value={formData.lastGRN.date} onChange={handleNested('lastGRN', 'date')} className="w-full mb-2 px-4 py-2 border rounded-lg" />
-                                <input placeholder="Quantity" type="number" value={formData.lastGRN.qty} onChange={handleNested('lastGRN', 'qty')} className="w-full mb-2 px-4 py-2 border rounded-lg" />
-                                <input placeholder="PO Number" value={formData.lastGRN.po} onChange={handleNested('lastGRN', 'po')} className="w-full px-4 py-2 border rounded-lg" />
-                            </div>
-                            <div>
-                                <h3 className="font-semibold mb-2">Last Issue</h3>
-                                <input placeholder="Date" value={formData.lastIssue.date} onChange={handleNested('lastIssue', 'date')} className="w-full mb-2 px-4 py-2 border rounded-lg" />
-                                <input placeholder="Quantity" type="number" value={formData.lastIssue.qty} onChange={handleNested('lastIssue', 'qty')} className="w-full mb-2 px-4 py-2 border rounded-lg" />
-                                <input placeholder="Department" value={formData.lastIssue.dept} onChange={handleNested('lastIssue', 'dept')} className="w-full px-4 py-2 border rounded-lg" />
-                            </div>
-                        </div>
+                  {w.bins.length > 0 && (
+                    <div className="mt-8 pt-6 border-t text-center">
+                      <p className="text-sm text-gray-600">
+                        <strong>Storage Locations:</strong> {w.bins.join(" • ")}
+                      </p>
+                    </div>
+                  )}
+                </AccordionContent>
+              </AccordionItem>
+            );
+          })}
+        </Accordion>
+      </div>
 
-                        {/* Ageing & Transit */}
-                        <div>
-                            <h3 className="font-semibold mb-2">Stock Ageing</h3>
-                            <div className="grid grid-cols-3 gap-4">
-                                <input placeholder="0-30 Days" type="number" value={formData.ageing30} onChange={handleChange('ageing30')} className="px-4 py-2 border rounded-lg" />
-                                <input placeholder="31-90 Days" type="number" value={formData.ageing90} onChange={handleChange('ageing90')} className="px-4 py-2 border rounded-lg" />
-                                <input placeholder="90+ Days" type="number" value={formData.ageingPlus} onChange={handleChange('ageingPlus')} className="px-4 py-2 border rounded-lg" />
-                            </div>
-                            <input placeholder="In Transit" type="number" value={formData.inTransit} onChange={handleChange('inTransit')} className="w-full mt-3 px-4 py-2 border rounded-lg" />
-                        </div>
+      {/* Form Modal */}
+      {showForm && (
+        <WarehouseForm
+          warehouse={currentWarehouse}
+          products={products}
+          onClose={handleClose}
+          isEdit={!!editingId}
+        />
+      )}
+    </div>
+  );
+};
 
-                        {/* Lists */}
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Reorder Alerts (comma separated)</label>
-                            <input value={formData.reorderAlerts} onChange={handleChange('reorderAlerts')} className="w-full px-4 py-2 border rounded-lg" placeholder="Item A, Item B" />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Bins/Racks (comma separated)</label>
-                            <input value={formData.bins} onChange={handleChange('bins')} className="w-full px-4 py-2 border rounded-lg" placeholder="A1, B2, Cold-01" />
-                        </div>
+// Full Form Component
+const WarehouseForm: React.FC<{
+  warehouse: EnrichedWarehouse | null;
+  products: Product[];
+  onClose: () => void;
+  isEdit: boolean;
+}> = ({ warehouse, products, onClose, isEdit }) => {
+  const dispatch = useDispatch();
+  const [formData, setFormData] = useState({
+    name: warehouse?.name || "",
+    type: warehouse?.type || "General",
+    location: warehouse?.location || "",
+    capacity: warehouse?.capacity?.toString() || "0",
+    unit: warehouse?.unit || "PCS",
+    productId: warehouse?.productId || "",
+    lastGRN: {
+      date: warehouse?.lastGRN?.date || "",
+      qty: warehouse?.lastGRN?.qty?.toString() || "",
+      po: warehouse?.lastGRN?.po || "",
+    },
+    lastIssue: {
+      date: warehouse?.lastIssue?.date || "",
+      qty: warehouse?.lastIssue?.qty?.toString() || "",
+      dept: warehouse?.lastIssue?.dept || "",
+    },
+    ageing: {
+      "0-30": warehouse?.ageing?.["0-30"]?.toString() || "0",
+      "30-60": warehouse?.ageing?.["30-60"]?.toString() || "0",
+      "60-90": warehouse?.ageing?.["60-90"]?.toString() || "0",
+      "90+": warehouse?.ageing?.["90+"]?.toString() || "0",
+    },
+    inTransit: warehouse?.inTransit?.toString() || "0",
+    reorderAlerts: warehouse?.reorderAlerts?.join(", ") || "",
+    bins: warehouse?.bins?.join(", ") || "",
+  });
 
-                        <div className="flex justify-end gap-4 pt-6">
-                            <Button type="button" variant="outline" onClick={handleCloseForm}>Cancel</Button>
-                            <Button type="submit">{editingWarehouseId ? 'Update' : 'Create'} Warehouse</Button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        );
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const payload = {
+      name: formData.name,
+      type: formData.type,
+      location: formData.location,
+      capacity: Number(formData.capacity),
+      unit: formData.unit,
+      productId: formData.productId,
+      lastGRN: formData.lastGRN.date
+        ? {
+            date: formData.lastGRN.date,
+            qty: Number(formData.lastGRN.qty || 0),
+            po: formData.lastGRN.po,
+          }
+        : null,
+      lastIssue: formData.lastIssue.date
+        ? {
+            date: formData.lastIssue.date,
+            qty: Number(formData.lastIssue.qty || 0),
+            dept: formData.lastIssue.dept,
+          }
+        : null,
+      ageing: {
+        "0-30": Number(formData.ageing["0-30"]),
+        "30-60": Number(formData.ageing["30-60"]),
+        "60-90": Number(formData.ageing["60-90"]),
+        "90+": Number(formData.ageing["90+"]),
+      },
+      inTransit: Number(formData.inTransit || 0),
+      reorderAlerts: formData.reorderAlerts
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+      bins: formData.bins
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
     };
 
-    return (
-        <div className="space-y-8">
-            <div className="flex justify-between items-center">
-                <h1 className="text-3xl font-bold flex items-center gap-3">
-                    <Warehouse className="text-blue-600" />
-                    Warehouse Management
-                </h1>
-                <Button onClick={handleAdd} className="flex items-center gap-2">
-                    <Plus className="w-5 h-5" /> Add Warehouse
-                </Button>
+    try {
+      if (isEdit && warehouse) {
+        await dispatch(updateWarehouse({ id: warehouse._id, data: payload })).unwrap();
+        toast.success("Warehouse updated successfully!");
+      } else {
+        await dispatch(addWarehouse(payload)).unwrap();
+        toast.success("Warehouse created successfully!");
+      }
+      onClose();
+    } catch (err) {
+      toast.error("Operation failed");
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto p-8">
+        <div className="flex justify-between items-center mb-8">
+          <h2 className="text-3xl font-bold">{isEdit ? "Edit" : "Create"} Warehouse</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+            <XCircle className="w-9 h-9" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <Label>Warehouse Name *</Label>
+              <Input
+                required
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="Main Warehouse"
+              />
             </div>
 
-            {showWarehouseForm && (
-                <WarehouseForm initialData={editingWarehouseId ? warehouses.find(w => w._id === editingWarehouseId) : undefined} />
-            )}
+            <div>
+              <Label>Linked Product *</Label>
+              <Select
+                value={formData.productId}
+                onValueChange={(val) => setFormData({ ...formData, productId: val })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select product" />
+                </SelectTrigger>
+                <SelectContent>
+                  {products.map((p) => (
+                    <SelectItem key={p._id} value={p._id}>
+                      {p.name} ({p.sku}) - Stock: {p.quantity}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-            <Accordion type="single" collapsible className="space-y-4">
-                {warehouses.map((w) => (
-                    <AccordionItem key={w._id} value={w._id} className="border rounded-xl shadow-md overflow-hidden">
-                        <AccordionTrigger className="px-6 py-4 hover:bg-gray-50">
-                            <div className="grid grid-cols-12 w-full items-center text-left gap-4">
-                                <div className="col-span-4 font-semibold flex items-center gap-3">
-                                    <Package className="text-blue-600" />
-                                    {w.name}
-                                </div>
-                                <div className="col-span-2">
-                                    <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
-                                        {w.type}
-                                    </span>
-                                </div>
-                                <div className="col-span-3 text-sm text-gray-600 flex items-center gap-2">
-                                    <MapPin className="w-4 h-4" /> {w.location}
-                                </div>
-                                <div className="col-span-2 text-right font-medium">{w.totalItems} items</div>
-                                <div className="col-span-1 text-right font-bold text-blue-600">{w.capacity}%</div>
-                            </div>
-                        </AccordionTrigger>
+            <div>
+              <Label>Type</Label>
+              <Select value={formData.type} onValueChange={(v) => setFormData({ ...formData, type: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="General">General</SelectItem>
+                  <SelectItem value="Cold Storage">Cold Storage</SelectItem>
+                  <SelectItem value="Bonded">Bonded</SelectItem>
+                  <SelectItem value="Quarantine">Quarantine</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-                        <AccordionContent className="bg-gray-50 px-6 py-6 border-t">
-                            <div className="flex justify-end gap-4 mb-6">
-                                <Button size="sm" variant="outline" onClick={() => handleEdit(w._id)}>
-                                    <Edit className="w-4 h-4 mr-2" /> Edit
-                                </Button>
-                                <Button size="sm" variant="destructive" onClick={() => handleDelete(w._id)}>
-                                    <Trash2 className="w-4 h-4 mr-2" /> Delete
-                                </Button>
-                            </div>
+            <div>
+              <Label>Location *</Label>
+              <Input
+                required
+                value={formData.location}
+                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+              />
+            </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-sm">
-                                <div>
-                                    <h4 className="font-semibold text-gray-900 mb-3">Category Summary</h4>
-                                    <ul className="space-y-1">
-                                        <li>Raw Materials: <strong>{w.categories.raw}</strong></li>
-                                        <li>Finished Goods: <strong>{w.categories.finished}</strong></li>
-                                        <li>Consumables: <strong>{w.categories.consumables}</strong></li>
-                                    </ul>
-                                </div>
+            <div>
+              <Label>Unit</Label>
+              <Select value={formData.unit} onValueChange={(v) => setFormData({ ...formData, unit: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="PCS">PCS</SelectItem>
+                  <SelectItem value="KG">KG</SelectItem>
+                  <SelectItem value="Litre">Litre</SelectItem>
+                  <SelectItem value="Box">Box</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-                                <div>
-                                    <h4 className="font-semibold text-gray-900 mb-3">Last Transactions</h4>
-                                    {w.lastGRN && (
-                                        <div className="mb-3">
-                                            <p className="font-medium text-green-700">GRN</p>
-                                            <p>{w.lastGRN.date} • {w.lastGRN.qty} units • PO: {w.lastGRN.po}</p>
-                                        </div>
-                                    )}
-                                    {w.lastIssue && (
-                                        <div>
-                                            <p className="font-medium text-blue-700">Issue</p>
-                                            <p>{w.lastIssue.date} • {w.lastIssue.qty} units • {w.lastIssue.dept}</p>
-                                        </div>
-                                    )}
-                                </div>
+            <div>
+              <Label>Capacity %</Label>
+              <Input
+                type="number"
+                min="0"
+                max="100"
+                value={formData.capacity}
+                onChange={(e) => setFormData({ ...formData, capacity: e.target.value })}
+              />
+            </div>
+          </div>
 
-                                <div>
-                                    <h4 className="font-semibold text-gray-900 mb-3">Stock Health</h4>
-                                    <p>In Transit: <strong>{w.inTransit}</strong></p>
-                                    <div className="mt-2 space-y-1">
-                                        <p>0-30 Days: <strong>{w.ageing["0-30 Days"]}</strong></p>
-                                        <p>31-90 Days: <strong>{w.ageing["31-90 Days"]}</strong></p>
-                                        <p>90+ Days: <strong>{w.ageing["90+ Days"]}</strong></p>
-                                    </div>
-                                </div>
-                            </div>
+          {/* Last Transactions */}
+          <div className="grid md:grid-cols-2 gap-8">
+            <div className="space-y-4 p-6 bg-gray-50 rounded-xl">
+              <h3 className="font-bold">Last GRN</h3>
+              <Input placeholder="Date" value={formData.lastGRN.date} onChange={(e) => setFormData({
+                ...formData, lastGRN: { ...formData.lastGRN, date: e.target.value }
+              })} />
+              <Input type="number" placeholder="Qty" value={formData.lastGRN.qty} onChange={(e) => setFormData({
+                ...formData, lastGRN: { ...formData.lastGRN, qty: e.target.value }
+              })} />
+              <Input placeholder="PO" value={formData.lastGRN.po} onChange={(e) => setFormData({
+                ...formData, lastGRN: { ...formData.lastGRN, po: e.target.value }
+              })} />
+            </div>
 
-                            {(w.reorderAlerts.length > 0 || w.bins.length > 0) && (
-                                <div className="grid md:grid-cols-2 gap-8 mt-8">
-                                    {w.reorderAlerts.length > 0 && (
-                                        <div>
-                                            <h4 className="font-semibold text-red-600 mb-2">Reorder Alerts</h4>
-                                            <ul className="space-y-1">
-                                                {w.reorderAlerts.map((alert, i) => (
-                                                    <li key={i} className="text-red-600">• {alert}</li>
-                                                ))}
-                                            </ul>
-                                        </div>
-                                    )}
-                                    {w.bins.length > 0 && (
-                                        <div>
-                                            <h4 className="font-semibold text-gray-900 mb-2">Bins / Racks</h4>
-                                            <p className="text-sm text-gray-600">{w.bins.join(" • ")}</p>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </AccordionContent>
-                    </AccordionItem>
+            <div className="space-y-4 p-6 bg-gray-50 rounded-xl">
+              <h3 className="font-bold">Last Issue</h3>
+              <Input placeholder="Date" value={formData.lastIssue.date} onChange={(e) => setFormData({
+                ...formData, lastIssue: { ...formData.lastIssue, date: e.target.value }
+              })} />
+              <Input type="number" placeholder="Qty" value={formData.lastIssue.qty} onChange={(e) => setFormData({
+                ...formData, lastIssue: { ...formData.lastIssue, qty: e.target.value }
+              })} />
+              <Input placeholder="Dept" value={formData.lastIssue.dept} onChange={(e) => setFormData({
+                ...formData, lastIssue: { ...formData.lastIssue, dept: e.target.value }
+              })} />
+            </div>
+          </div>
+
+          {/* Ageing & Others */}
+          <div className="space-y-6">
+            <div className="p-6 bg-amber-50 rounded-xl">
+              <h3 className="font-bold mb-4">Stock Ageing</h3>
+              <div className="grid grid-cols-4 gap-4">
+                {Object.keys(formData.ageing).map((key) => (
+                  <Input
+                    key={key}
+                    placeholder={key + " days"}
+                    value={formData.ageing[key as keyof typeof formData.ageing]}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      ageing: { ...formData.ageing, [key]: e.target.value }
+                    })}
+                  />
                 ))}
-            </Accordion>
-        </div>
-    );
+              </div>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-6">
+              <div>
+                <Label>In Transit</Label>
+                <Input
+                  type="number"
+                  value={formData.inTransit}
+                  onChange={(e) => setFormData({ ...formData, inTransit: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Reorder Alerts (comma separated)</Label>
+                <Input
+                  value={formData.reorderAlerts}
+                  onChange={(e) => setFormData({ ...formData, reorderAlerts: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label>Bins/Racks (comma separated)</Label>
+              <Input
+                value={formData.bins}
+                onChange={(e) => setFormData({ ...formData, bins: e.target.value })}
+                placeholder="A1, B2, Cold-01"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-4 pt-6">
+            <Button type="button" variant="outline" size="lg" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" size="lg">
+              {isEdit ? "Update Warehouse" : "Create Warehouse"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 };
 
 export default WarehouseManagement;

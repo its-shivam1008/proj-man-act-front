@@ -395,16 +395,23 @@ const Products: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Location
+                    Location / Warehouse
                   </label>
-                  <input
-                    type="text"
+                  <select
                     value={formData.location}
                     onChange={handleChange("location")}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="e.g. Rack A-12"
-                  />
+                  >
+                    <option value="">Select Warehouse</option>
+
+                    {warehouses.map((w) => (
+                      <option key={w._id} value={w.name}>
+                        {w.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
+
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
                     Barcode

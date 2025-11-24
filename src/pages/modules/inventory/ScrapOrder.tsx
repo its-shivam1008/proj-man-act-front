@@ -1,646 +1,699 @@
-// ScrapOrder.tsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import { toast } from "sonner";
+import { format } from "date-fns";
+import { Plus, Trash2, CheckCircle, Clock, Edit2, Eye } from "lucide-react";
+
+// shadcn/ui imports
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogClose,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+
+import {
+  Table,
+  TableHeader,
+  TableRow,
+  TableHead,
+  TableBody,
+  TableCell,
+} from "@/components/ui/table";
+
+// redux actions
 import {
   getScrapOrders,
   createScrapOrder,
-  updateScrapOrder,
-  deleteScrapOrder,
   approveScrapOrder,
+  deleteScrapOrder,
+  updateScrapOrder,
 } from "@/redux/slices/scrapOrderSlice";
 import { fetchProducts } from "@/redux/slices/productSlice";
 
-import {
-  Trash2,
-  Plus,
-  Search,
-  Calendar,
-  Package,
-  CheckCircle,
-  Clock,
-  AlertTriangle,
-  Edit,
-  Eye,
-  X,
-} from "lucide-react";
+const EMPTY_FORM = {
+  productId: "",
+  quantity: "",
+  reason: "",
+  scrapLocation: "",
+  remark: "",
+};
 
-interface ScrapOrderItem {
-  _id: string;
-  productId: string;
-  quantity: number;
-  reason: "damaged" | "expired" | "lost" | "obsolete";
-  scrapLocation: string;
-  status: "pending" | "approved" | "completed";
-  date: string;
-  remark?: string;
-}
+const ScrapManagement: React.FC = () => {
+  const dispatch = useDispatch<any>();
 
-const ScrapOrder: React.FC = () => {
-  const dispatch = useDispatch();
-
-  const { scrapOrders, loading: scrapLoading } = useSelector(
-    (state: any) => state.scrap
+  const { scrapOrders = [], loading: scrapLoading } = useSelector(
+    (s: any) => s.scrap || {}
   );
-  const { products, loading: productLoading } = useSelector(
-    (state: any) => state.products
+  const { products = [], loading: productLoading } = useSelector(
+    (s: any) => s.products || {}
   );
 
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [reasonFilter, setReasonFilter] = useState("all");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [showUpdateForm, setShowUpdateForm] = useState(false);
-  const [showViewForm, setShowViewForm] = useState(false);
-  const [editingScrap, setEditingScrap] = useState<ScrapOrderItem | null>(null);
-  const [viewingScrap, setViewingScrap] = useState<ScrapOrderItem | null>(null);
+  // Dialog states
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [viewOpen, setViewOpen] = useState(false); // View dialog
+  const [selectedOrder, setSelectedOrder] = useState<any>(null); // For view modal
+
+  const [createForm, setCreateForm] = useState(EMPTY_FORM);
+  const [editForm, setEditForm] = useState(EMPTY_FORM);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const [creating, setCreating] = useState(false);
+  const [updating, setUpdating] = useState(false);
 
   useEffect(() => {
     dispatch(getScrapOrders());
     dispatch(fetchProducts());
   }, [dispatch]);
 
-  const filteredScrapOrders = scrapOrders.filter((s: ScrapOrderItem) => {
-    const product = products.find((p: any) => p._id === s.productId);
-    const matchesSearch =
-      s._id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      product?.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === "all" || s.status === statusFilter;
-    const matchesReason = reasonFilter === "all" || s.reason === reasonFilter;
-    return matchesSearch && matchesStatus && matchesReason;
-  });
+  const selectedCreateProduct = useMemo(
+    () => products.find((p: any) => p._id === createForm.productId) || null,
+    [products, createForm.productId]
+  );
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "pending":
-        return "bg-yellow-100 text-yellow-800";
-      case "approved":
-        return "bg-blue-100 text-blue-800";
-      case "completed":
-        return "bg-green-100 text-green-800";
-      default:
-        return "bg-gray-100 text-gray-800";
+  const selectedEditProduct = useMemo(
+    () => products.find((p: any) => p._id === editForm.productId) || null,
+    [products, editForm.productId]
+  );
+
+  // CREATE
+  const handleCreate = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!createForm.productId || !createForm.quantity || !createForm.reason) {
+      toast.error("Product, quantity and reason are required");
+      return;
+    }
+    const qty = Number(createForm.quantity);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      toast.error("Quantity must be a positive number");
+      return;
+    }
+    if (selectedCreateProduct && qty > selectedCreateProduct.quantity) {
+      toast.error(`Only ${selectedCreateProduct.quantity} available`);
+      return;
+    }
+    try {
+      setCreating(true);
+      await dispatch(
+        createScrapOrder({ ...createForm, quantity: qty })
+      ).unwrap();
+      toast.success("Scrap order created");
+      setCreateOpen(false);
+      setCreateForm(EMPTY_FORM);
+      dispatch(getScrapOrders());
+      dispatch(fetchProducts());
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to create scrap order");
+    } finally {
+      setCreating(false);
     }
   };
 
-  const getReasonColor = (reason: string) => {
-    switch (reason) {
-      case "damaged":
-        return "bg-red-100 text-red-800";
-      case "expired":
-        return "bg-orange-100 text-orange-800";
-      case "lost":
-        return "bg-purple-100 text-purple-800";
-      case "obsolete":
-        return "bg-gray-100 text-gray-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "pending":
-        return <Clock className="h-5 w-5 text-yellow-500" />;
-      case "approved":
-        return <AlertTriangle className="h-5 w-5 text-blue-500" />;
-      case "completed":
-        return <CheckCircle className="h-5 w-5 text-green-500" />;
-      default:
-        return null;
-    }
-  };
-
-  const getProductName = (productId: string) => {
-    const p = products.find((p: any) => p._id === productId);
-    return p ? p.name : "Unknown Product";
-  };
-
-  const handleClose = () => {
-    setShowCreateForm(false);
-    setShowUpdateForm(false);
-    setShowViewForm(false);
-    setEditingScrap(null);
-    setViewingScrap(null);
-  };
-
-  const handleSubmit = (formData: any) => {
-    const payload = {
-      productId: formData.productId,
-      quantity: Number(formData.quantity),
-      reason: formData.reason,
-      scrapLocation: formData.scrapLocation,
-      remark: formData.remark || undefined,
-      date: formData.date || new Date().toISOString().split("T")[0],
-    };
-
-    if (editingScrap) {
-      dispatch(updateScrapOrder({ id: editingScrap._id, data: payload }));
-    } else {
-      dispatch(createScrapOrder(payload));
-    }
-    handleClose();
-  };
-
-  const handleApprove = (id: string) => {
-    if (confirm("Approve this scrap order?")) {
-      dispatch(approveScrapOrder(id));
-    }
-  };
-
-  const ScrapOrderForm = ({
-    initialData,
-  }: {
-    initialData?: Partial<ScrapOrderItem>;
-  }) => {
-    const [formData, setFormData] = useState({
-      productId: initialData?.productId || "",
-      quantity: (initialData?.quantity || 1).toString(),
-      reason: initialData?.reason || "damaged",
-      scrapLocation: initialData?.scrapLocation || "",
-      remark: initialData?.remark || "",
-      date: initialData?.date || new Date().toISOString().split("T")[0],
+  // OPEN EDIT
+  const openEdit = (order: any) => {
+    setEditingId(order._id);
+    setEditForm({
+      productId: order.productId || "",
+      quantity: String(order.quantity || ""),
+      reason: order.reason || "",
+      scrapLocation: order.scrapLocation || "",
+      remark: order.remark || "",
     });
-
-    const handleChange =
-      (field: string) =>
-      (
-        e: React.ChangeEvent<
-          HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
-        >
-      ) => {
-        setFormData((prev) => ({ ...prev, [field]: e.target.value }));
-      };
-
-    const onSubmit = (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!formData.productId) return alert("Please select a product");
-      if (!formData.scrapLocation.trim())
-        return alert("Please enter scrap location");
-      handleSubmit(formData);
-    };
-
-    return (
-      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
-          <div className="mt-3">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium text-gray-900">
-                {initialData ? "Update Scrap Order" : "Create New Scrap Order"}
-              </h3>
-              <button
-                onClick={handleClose}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="h-6 w-6" />
-              </button>
-            </div>
-
-            <form onSubmit={onSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Product Name *
-                  </label>
-                  <select
-                    required
-                    value={formData.productId}
-                    onChange={handleChange("productId")}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Select Product</option>
-                    {products.map((p: any) => (
-                      <option key={p._id} value={p._id}>
-                        {p.name} ({p.sku})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Quantity *
-                  </label>
-                  <input
-                    required
-                    type="number"
-                    min="1"
-                    value={formData.quantity}
-                    onChange={handleChange("quantity")}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Reason *
-                  </label>
-                  <select
-                    value={formData.reason}
-                    onChange={handleChange("reason")}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="damaged">Damaged</option>
-                    <option value="expired">Expired</option>
-                    <option value="lost">Lost</option>
-                    <option value="obsolete">Obsolete</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Scrap Location *
-                  </label>
-                  <input
-                    required
-                    type="text"
-                    value={formData.scrapLocation}
-                    onChange={handleChange("scrapLocation")}
-                    placeholder="e.g. Scrap Yard B, Bin #12, Disposal Area"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Remark (Optional)
-                </label>
-                <textarea
-                  value={formData.remark}
-                  onChange={handleChange("remark")}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="Additional notes..."
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Date
-                </label>
-                <input
-                  type="date"
-                  value={formData.date}
-                  onChange={handleChange("date")}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={handleClose}
-                  className="px-5 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  {initialData ? "Update" : "Create"} Scrap Order
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      </div>
-    );
+    setEditOpen(true);
   };
 
-  const ViewScrapOrderForm = ({ item }: { item?: ScrapOrderItem }) => {
-    if (!item) return null;
-    const productName = getProductName(item.productId);
+  // OPEN VIEW
+  const openView = (order: any) => {
+    setSelectedOrder(order);
+    setViewOpen(true);
+  };
 
-    return (
-      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
-          <div className="mt-3">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold">Scrap Order: {item._id}</h3>
-              <button onClick={handleClose}>
-                <X className="h-8 w-8 text-gray-500" />
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <strong>Product:</strong> {productName}
-              </div>
-              <div>
-                <strong>Quantity:</strong> {item.quantity} units
-              </div>
-              <div>
-                <strong>Reason:</strong>{" "}
-                <span
-                  className={`px-2 py-1 rounded-full text-xs ${getReasonColor(
-                    item.reason
-                  )}`}
-                >
-                  {item.reason}
-                </span>
-              </div>
-              <div>
-                <strong>Location:</strong> {item.scrapLocation}
-              </div>
-              <div>
-                <strong>Status:</strong>{" "}
-                <span
-                  className={`px-2 py-1 rounded-full text-xs ${getStatusColor(
-                    item.status
-                  )}`}
-                >
-                  {item.status}
-                </span>
-              </div>
-              <div>
-                <strong>Date:</strong> {item.date}
-              </div>
-              {item.remark && (
-                <div className="col-span-2">
-                  <strong>Remark:</strong> {item.remark}
-                </div>
-              )}
-            </div>
-            <div className="mt-6 text-right">
-              <button
-                onClick={handleClose}
-                className="px-6 py-3 bg-gray-600 text-white rounded-lg"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+  // UPDATE
+  const handleUpdate = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!editingId) return toast.error("No scrap order selected");
+    if (!editForm.productId || !editForm.quantity || !editForm.reason) {
+      toast.error("Product, quantity and reason are required");
+      return;
+    }
+    const qty = Number(editForm.quantity);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      toast.error("Quantity must be a positive number");
+      return;
+    }
+
+    try {
+      setUpdating(true);
+      await dispatch(
+        updateScrapOrder({
+          id: editingId,
+          data: { ...editForm, quantity: qty },
+        })
+      ).unwrap();
+      toast.success("Scrap order updated");
+      setEditOpen(false);
+      setEditingId(null);
+      setEditForm(EMPTY_FORM);
+      dispatch(getScrapOrders());
+      dispatch(fetchProducts());
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to update");
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleApprove = async (id: string) => {
+    if (!confirm("Approve and deduct stock?")) return;
+    try {
+      await dispatch(approveScrapOrder(id)).unwrap();
+      toast.success("Approved & Stock Deducted");
+      dispatch(fetchProducts());
+      dispatch(getScrapOrders());
+    } catch (err: any) {
+      toast.error(err?.message || "Failed");
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Delete this scrap order?")) return;
+    try {
+      await dispatch(deleteScrapOrder(id)).unwrap();
+      toast.success("Deleted");
+      dispatch(getScrapOrders());
+    } catch (err: any) {
+      toast.error(err?.message || "Failed");
+    }
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Scrap Orders</h1>
-          <p className="text-gray-600 mt-1">
-            Manage damaged, expired, or obsolete inventory
-          </p>
-        </div>
-        <button
-          onClick={() => setShowCreateForm(true)}
-          className="bg-red-600 text-white px-5 py-3 rounded-lg hover:bg-red-700 flex items-center gap-2"
-        >
-          <Plus className="h-5 w-5" /> New Scrap Order
-        </button>
-      </div>
+    <div className="min-h-screen bg-slate-50 ">
+      <div className="max-w-7xl mx-auto space-y-8">
+        {/* HEADER */}
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-semibold">Scrap Management</h1>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-        <div className="bg-white p-6 rounded-lg shadow flex items-center gap-4">
-          <Trash2 className="h-10 w-10 text-red-500" />
-          <div>
-            <p className="text-sm text-gray-500">Total Scraps</p>
-            <p className="text-2xl font-bold">{scrapOrders.length}</p>
-          </div>
-        </div>
-        <div className="bg-white p-6 rounded-lg shadow flex items-center gap-4">
-          <Clock className="h-10 w-10 text-yellow-500" />
-          <div>
-            <p className="text-sm text-gray-500">Pending Approval</p>
-            <p className="text-2xl font-bold">
-              {scrapOrders.filter((s: any) => s.status === "pending").length}
-            </p>
-          </div>
-        </div>
-        <div className="bg-white p-6 rounded-lg shadow flex items-center gap-4">
-          <CheckCircle className="h-10 w-10 text-green-500" />
-          <div>
-            <p className="text-sm text-gray-500">Completed</p>
-            <p className="text-2xl font-bold">
-              {scrapOrders.filter((s: any) => s.status === "completed").length}
-            </p>
-          </div>
-        </div>
-      </div>
+          {/* CREATE DIALOG */}
+          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="w-4 h-4 mr-2" /> Create Scrap Order
+              </Button>
+            </DialogTrigger>
 
-      {/* Filters */}
-      <div className="bg-white shadow rounded-lg p-6">
-        <div className="flex flex-col lg:flex-row gap-4">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search by product or ID..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 border rounded-lg"
-            />
-          </div>
-          <div className="flex gap-3">
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-4 py-3 border rounded-lg"
-            >
-              <option value="all">All Status</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="completed">Completed</option>
-            </select>
-            <select
-              value={reasonFilter}
-              onChange={(e) => setReasonFilter(e.target.value)}
-              className="px-4 py-3 border rounded-lg"
-            >
-              <option value="all">All Reasons</option>
-              <option value="damaged">Damaged</option>
-              <option value="expired">Expired</option>
-              <option value="lost">Lost</option>
-              <option value="obsolete">Obsolete</option>
-            </select>
-          </div>
-        </div>
-      </div>
+            <DialogContent className="sm:max-w-[520px]">
+              <DialogHeader>
+                <DialogTitle>Create Scrap Order</DialogTitle>
+              </DialogHeader>
 
-      {/* Table */}
-      <div className="bg-white shadow rounded-xl overflow-hidden border border-gray-200">
-        {/* Scrollable container */}
-        <div className="overflow-x-auto max-h-[480px]">
-          <table className="min-w-full table-fixed divide-y divide-gray-200">
-            <thead className="bg-gray-100 sticky top-0 z-10 shadow-sm">
-              <tr>
-                {[
-                  "Scrap ID",
-                  "Product",
-                  "Quantity",
-                  "Reason",
-                  "Remark",
-                  "Location",
-                  "Status",
-                  "Date",
-                  "Actions",
-                ].map((head) => (
-                  <th
-                    key={head}
-                    className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide"
+              <form onSubmit={handleCreate} className="grid gap-4 py-2">
+                <div>
+                  <Label>Product *</Label>
+                  <Select
+                    value={createForm.productId}
+                    onValueChange={(v) =>
+                      setCreateForm({ ...createForm, productId: v })
+                    }
                   >
-                    {head}
-                  </th>
-                ))}
-              </tr>
-            </thead>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose product..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {products.map((p: any) => (
+                        <SelectItem key={p._id} value={p._id}>
+                          {p.name} — Stock: {p.quantity ?? 0}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {selectedCreateProduct && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Available: {selectedCreateProduct.quantity}
+                    </p>
+                  )}
+                </div>
 
-            <tbody className="bg-white divide-y divide-gray-100">
-              {scrapLoading || productLoading ? (
-                <tr>
-                  <td
-                    colSpan={9}
-                    className="text-center py-12 text-gray-500 text-sm"
+                <div>
+                  <Label>Quantity *</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={createForm.quantity}
+                    onChange={(e) =>
+                      setCreateForm({ ...createForm, quantity: e.target.value })
+                    }
+                    required
+                  />
+                </div>
+
+                <div>
+                  <Label>Reason *</Label>
+                  <Select
+                    value={createForm.reason}
+                    onValueChange={(v) =>
+                      setCreateForm({ ...createForm, reason: v })
+                    }
                   >
-                    Loading scrap orders...
-                  </td>
-                </tr>
-              ) : filteredScrapOrders.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={9}
-                    className="text-center py-12 text-gray-500 text-sm"
-                  >
-                    No scrap orders found
-                  </td>
-                </tr>
-              ) : (
-                filteredScrapOrders.map(
-                  (scrap: ScrapOrderItem, index: number) => (
-                    <tr
-                      key={scrap._id}
-                      className={`transition-all duration-150 ${
-                        index % 2 === 0 ? "bg-white" : "bg-gray-50"
-                      } hover:bg-gray-100`}
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select reason..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="damaged">Damaged</SelectItem>
+                      <SelectItem value="expired">Expired</SelectItem>
+                      <SelectItem value="lost">Lost</SelectItem>
+                      <SelectItem value="obsolete">Obsolete</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Location (optional)</Label>
+                  <Input
+                    value={createForm.scrapLocation}
+                    onChange={(e) =>
+                      setCreateForm({
+                        ...createForm,
+                        scrapLocation: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+
+                <div>
+                  <Label>Remark</Label>
+                  <Textarea
+                    value={createForm.remark}
+                    onChange={(e) =>
+                      setCreateForm({ ...createForm, remark: e.target.value })
+                    }
+                  />
+                </div>
+
+                <div className="flex justify-end gap-3">
+                  <DialogClose asChild>
+                    <Button
+                      variant="outline"
+                      type="button"
+                      onClick={() => setCreateForm(EMPTY_FORM)}
                     >
-                      {/* Scrap ID */}
-                      <td className="px-6 py-4 text-sm font-medium text-gray-800 truncate">
-                        {scrap._id}
-                      </td>
-
-                      {/* Product */}
-                      <td className="px-6 py-4 text-sm flex items-center whitespace-nowrap">
-                        <Package className="h-4 w-4 mr-2 text-gray-400" />
-                        {getProductName(scrap.productId)}
-                      </td>
-
-                      {/* Quantity */}
-                      <td className="px-6 py-4 text-sm text-gray-800">
-                        {scrap.quantity} units
-                      </td>
-
-                      {/* Reason */}
-                      <td className="px-6 py-4">
-                        <span
-                          className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full shadow-sm ${getReasonColor(
-                            scrap.reason
-                          )}`}
-                        >
-                          {scrap.reason}
-                        </span>
-                      </td>
-
-                      {/* Remark */}
-                      <td
-                        className="px-6 py-4 text-sm text-gray-700 max-w-[150px] truncate"
-                        title={scrap.remark}
-                      >
-                        {scrap.remark || "—"}
-                      </td>
-
-                      {/* Scrap Location */}
-                      <td className="px-6 py-4 text-sm text-gray-800">
-                        {scrap.scrapLocation}
-                      </td>
-
-                      {/* Status */}
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          {getStatusIcon(scrap.status)}
-                          <span
-                            className={`px-3 py-1 text-xs font-medium rounded-full shadow-sm ${getStatusColor(
-                              scrap.status
-                            )}`}
-                          >
-                            {scrap.status}
-                          </span>
-                        </div>
-                      </td>
-
-                      {/* Date */}
-                      <td className="px-6 py-4 text-sm text-gray-700 whitespace-nowrap">
-                        <Calendar className="inline h-4 w-4 mr-1 text-gray-400" />
-                        {scrap.date}
-                      </td>
-
-                      {/* Actions */}
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-4">
-                          <button
-                            onClick={() => {
-                              setViewingScrap(scrap);
-                              setShowViewForm(true);
-                            }}
-                            className="text-blue-600 hover:text-blue-800 transition"
-                          >
-                            <Eye className="h-5 w-5" />
-                          </button>
-
-                          <button
-                            onClick={() => {
-                              setEditingScrap(scrap);
-                              setShowUpdateForm(true);
-                            }}
-                            className="text-green-600 hover:text-green-800 transition"
-                          >
-                            <Edit className="h-5 w-5" />
-                          </button>
-
-                          <button
-                            onClick={() =>
-                              confirm("Delete this scrap order?") &&
-                              dispatch(deleteScrapOrder(scrap._id))
-                            }
-                            className="text-red-600 hover:text-red-800 transition"
-                          >
-                            <Trash2 className="h-5 w-5" />
-                          </button>
-
-                          {scrap.status === "pending" && (
-                            <button
-                              onClick={() =>
-                                dispatch(approveScrapOrder(scrap._id))
-                              }
-                              className="text-purple-600 hover:text-purple-800 text-xs font-semibold"
-                            >
-                              Approve
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                )
-              )}
-            </tbody>
-          </table>
+                      Cancel
+                    </Button>
+                  </DialogClose>
+                  <Button type="submit" disabled={creating}>
+                    {creating ? "Creating..." : "Create"}
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
         </div>
-      </div>
 
-      {/* Modals */}
-      {showCreateForm && <ScrapOrderForm />}
-      {showUpdateForm && editingScrap && (
-        <ScrapOrderForm initialData={editingScrap} />
-      )}
-      {showViewForm && viewingScrap && (
-        <ViewScrapOrderForm item={viewingScrap} />
-      )}
+        <Separator />
+
+        {/* TABLE */}
+        <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <Table className="min-w-[850px]">
+              {/* HEADER */}
+              <TableHeader className="bg-gray-100/70 backdrop-blur-sm">
+                <TableRow className="border-b">
+                  {[
+                    "Product",
+                    "SKU",
+                    "Qty",
+                    "Stock",
+                    "Reason",
+                    "Status",
+                    "Date",
+                    "Actions",
+                  ].map((head, i) => (
+                    <TableHead
+                      key={i}
+                      className={`text-gray-700 font-semibold whitespace-nowrap ${
+                        head === "Actions" ? "text-right" : ""
+                      }`}
+                    >
+                      {head}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+
+              {/* BODY */}
+              <TableBody>
+                {scrapOrders.map((order: any, index: number) => {
+                  const product =
+                    products.find((p: any) => p._id === order.productId) || {};
+
+                  return (
+                    <TableRow
+                      key={order._id}
+                      className={`
+                transition-all hover:bg-gray-50/80 
+                ${index % 2 === 0 ? "bg-white" : "bg-gray-50/50"}
+              `}
+                    >
+                      {/* PRODUCT */}
+                      <TableCell className="font-medium text-gray-900">
+                        {product.name || "Unknown"}
+                      </TableCell>
+
+                      {/* SKU */}
+                      <TableCell className="text-gray-600">
+                        {product.sku || "N/A"}
+                      </TableCell>
+
+                      {/* QTY */}
+                      <TableCell className="font-semibold text-rose-600">
+                        {order.quantity}
+                      </TableCell>
+
+                      {/* STOCK */}
+                      <TableCell className="text-gray-800">
+                        {product.quantity ?? 0}
+                      </TableCell>
+
+                      {/* REASON */}
+                      <TableCell className="capitalize text-gray-700">
+                        {order.reason}
+                      </TableCell>
+
+                      {/* STATUS */}
+                      <TableCell>
+                        {order.status === "pending" ? (
+                          <Badge
+                            variant="outline"
+                            className="flex items-center gap-1 w-fit text-amber-700 border-amber-300 bg-amber-50 px-2 py-0.5 text-xs"
+                          >
+                            <Clock className="w-3 h-3" /> Pending
+                          </Badge>
+                        ) : (
+                          <Badge className="flex items-center gap-1 w-fit bg-green-600 text-white px-2 py-0.5 text-xs">
+                            <CheckCircle className="w-3 h-3" /> Approved
+                          </Badge>
+                        )}
+                      </TableCell>
+
+                      {/* DATE */}
+                      <TableCell className="text-gray-600 text-sm">
+                        {format(new Date(order.date), "PP")}
+                      </TableCell>
+
+                      {/* ACTIONS */}
+                      <TableCell className="text-right space-x-1">
+                        {/* VIEW */}
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 hover:bg-blue-50 text-blue-600"
+                          onClick={() => openView(order)}
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Button>
+
+                        {/* APPROVE */}
+                        {order.status === "pending" && (
+                          <Button
+                            size="sm"
+                            className="bg-green-600 hover:bg-green-700 text-white px-3"
+                            onClick={() => handleApprove(order._id)}
+                          >
+                            Approve
+                          </Button>
+                        )}
+
+                        {/* EDIT */}
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 hover:bg-indigo-50 text-indigo-600"
+                          onClick={() => openEdit(order)}
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </Button>
+
+                        {/* DELETE */}
+                        <Button
+                          size="icon"
+                          variant="destructive"
+                          className="h-8 w-8"
+                          onClick={() => handleDelete(order._id)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+
+        {/* ==================== VIEW DIALOG ==================== */}
+        <Dialog open={viewOpen} onOpenChange={setViewOpen}>
+          <DialogContent className="sm:max-w-[650px] rounded-xl border border-gray-200 shadow-xl">
+            <DialogHeader>
+              <DialogTitle className="text-xl font-semibold flex items-center gap-2">
+                Scrap Order Details
+              </DialogTitle>
+              <p className="text-sm text-gray-500">
+                View request details and history
+              </p>
+            </DialogHeader>
+
+            {selectedOrder && (
+              <div className="mt-4 space-y-5">
+                {/* TOP CARD */}
+                <div className="rounded-lg border bg-gray-50 p-4">
+                  <h3 className="text-sm font-semibold mb-3">
+                    Product Information
+                  </h3>
+
+                  <div className="grid grid-cols-4 gap-y-3 text-sm">
+                    <span className="font-medium text-gray-600">Product:</span>
+                    <span className="col-span-3 font-medium">
+                      {products.find(
+                        (p: any) => p._id === selectedOrder.productId
+                      )?.name || "N/A"}
+                    </span>
+
+                    <span className="font-medium text-gray-600">SKU:</span>
+                    <span className="col-span-3">
+                      {products.find(
+                        (p: any) => p._id === selectedOrder.productId
+                      )?.sku || "N/A"}
+                    </span>
+
+                    <span className="font-medium text-gray-600">Quantity:</span>
+                    <span className="col-span-3 font-bold text-rose-600 text-base">
+                      {selectedOrder.quantity}
+                    </span>
+                  </div>
+                </div>
+
+                {/* MIDDLE CARD */}
+                <div className="rounded-lg border bg-white p-4 shadow-sm">
+                  <h3 className="text-sm font-semibold mb-3">Order Details</h3>
+
+                  <div className="grid grid-cols-4 gap-y-3 text-sm">
+                    <span className="font-medium text-gray-600">Reason:</span>
+                    <span className="col-span-3 capitalize">
+                      {selectedOrder.reason}
+                    </span>
+
+                    <span className="font-medium text-gray-600">Status:</span>
+                    <span className="col-span-3">
+                      <Badge
+                        variant={
+                          selectedOrder.status === "pending"
+                            ? "outline"
+                            : "default"
+                        }
+                        className={
+                          selectedOrder.status === "approved"
+                            ? "bg-green-600 text-white"
+                            : selectedOrder.status === "rejected"
+                            ? "bg-red-600 text-white"
+                            : ""
+                        }
+                      >
+                        {selectedOrder.status}
+                      </Badge>
+                    </span>
+
+                    {selectedOrder.scrapLocation && (
+                      <>
+                        <span className="font-medium text-gray-600">
+                          Location:
+                        </span>
+                        <span className="col-span-3">
+                          {selectedOrder.scrapLocation}
+                        </span>
+                      </>
+                    )}
+
+                    {selectedOrder.remark && (
+                      <>
+                        <span className="font-medium text-gray-600">
+                          Remark:
+                        </span>
+                        <span className="col-span-3 text-gray-700">
+                          {selectedOrder.remark}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* BOTTOM TIMELINE STYLE */}
+                <div className="rounded-lg border bg-gray-50 p-4">
+                  <h3 className="text-sm font-semibold mb-3">Timeline</h3>
+                  <div className="flex items-center gap-3">
+                    <div className="h-3 w-3 rounded-full bg-blue-600"></div>
+                    <span className="text-sm text-gray-700">
+                      Created on: {format(new Date(selectedOrder.date), "PPpp")}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end mt-6">
+              <DialogClose asChild>
+                <Button variant="outline" className="px-5">
+                  Close
+                </Button>
+              </DialogClose>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* ==================== EDIT DIALOG ==================== */}
+        <Dialog open={editOpen} onOpenChange={setEditOpen}>
+          <DialogContent className="sm:max-w-[520px]">
+            <DialogHeader>
+              <DialogTitle>Edit Scrap Order</DialogTitle>
+            </DialogHeader>
+
+            <form onSubmit={handleUpdate} className="grid gap-4 py-2">
+              <div>
+                <Label>Product *</Label>
+                <Select
+                  value={editForm.productId}
+                  onValueChange={(v) =>
+                    setEditForm({ ...editForm, productId: v })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose product..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {products.map((p: any) => (
+                      <SelectItem key={p._id} value={p._id}>
+                        {p.name} — Stock: {p.quantity ?? 0}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedEditProduct && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Available: {selectedEditProduct.quantity}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <Label>Quantity *</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={editForm.quantity}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, quantity: e.target.value })
+                  }
+                  required
+                />
+              </div>
+
+              <div>
+                <Label>Reason *</Label>
+                <Select
+                  value={editForm.reason}
+                  onValueChange={(v) => setEditForm({ ...editForm, reason: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select reason..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="damaged">Damaged</SelectItem>
+                    <SelectItem value="expired">Expired</SelectItem>
+                    <SelectItem value="lost">Lost</SelectItem>
+                    <SelectItem value="obsolete">Obsolete</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label>Location (optional)</Label>
+                <Input
+                  value={editForm.scrapLocation}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, scrapLocation: e.target.value })
+                  }
+                />
+              </div>
+
+              <div>
+                <Label>Remark</Label>
+                <Textarea
+                  value={editForm.remark}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, remark: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="flex justify-end gap-3">
+                <DialogClose asChild>
+                  <Button
+                    variant="outline"
+                    type="button"
+                    onClick={() => {
+                      setEditOpen(false);
+                      setEditForm(EMPTY_FORM);
+                      setEditingId(null);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </DialogClose>
+                <Button type="submit" disabled={updating}>
+                  {updating ? "Updating..." : "Update"}
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
     </div>
   );
 };
 
-export default ScrapOrder;
+export default ScrapManagement;
