@@ -50,7 +50,7 @@ const PurchaseAgreementComponent: React.FC = () => {
        setFormData({
            ...formData,
            vendor: selectedVendorName,
-           vendorId: selectedVendor ? selectedVendor.id : ''
+           vendorId: selectedVendor ? selectedVendor._id : ''
        });
     };
 
@@ -294,7 +294,7 @@ const PurchaseAgreementComponent: React.FC = () => {
                   <button onClick={() => { setViewingAgreement(agreement); setShowViewAgreement(true); }} className="text-blue-600 hover:text-blue-900 mr-3"><Eye className="h-4 w-4" /></button>
                   <button className="text-red-600 hover:text-red-900" onClick={() => {
                     if (confirm('Are you sure?')) {
-                      dispatch(deletePurchaseAgreement(agreement.id))
+                      dispatch(deletePurchaseAgreement(agreement._id))
                         .unwrap()
                         .then(() => {
                           dispatch(fetchPurchaseAgreements({ page, limit, q: search }));

@@ -186,7 +186,7 @@ const PurchaseVendors: React.FC = () => {
       e.preventDefault();
       setSubmitting(true);
       try {
-          await dispatch(updateVendor({ id: editingVendor.id, data: formData })).unwrap();
+          await dispatch(updateVendor({ id: editingVendor._id, data: formData })).unwrap();
           toast.success("Vendor updated successfully");
           dispatch(fetchVendors({ page, limit, q: search }));
           setShowEditVendor(false);
@@ -503,7 +503,7 @@ const PurchaseVendors: React.FC = () => {
                 <button onClick={() => { setEditingVendor(vendor); setShowEditVendor(true); }} className="text-green-600 hover:text-green-900"><Edit className="h-4 w-4" /></button>
                 <button className="text-red-600 hover:text-red-900" onClick={() => {
                   if (confirm('Are you sure?')) {
-                    dispatch(deleteVendor(vendor.id))
+                    dispatch(deleteVendor(vendor._id))
                       .unwrap()
                       .then(() => {
                         dispatch(fetchVendors({ page, limit, q: search }));

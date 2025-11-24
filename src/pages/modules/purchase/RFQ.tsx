@@ -284,7 +284,7 @@ const handleSendRfq = async (rfq: RFQ) => {
                     required
                   >
                     {vendors.map(vendor => (
-                      <option key={vendor.id} value={vendor.id}>{vendor.vendorName}</option>
+                      <option key={vendor.id} value={vendor._id}>{vendor.vendorName}</option>
                     ))}
                   </select>
                   <p className="text-xs text-gray-500 mt-1">Hold Ctrl/Cmd to select multiple</p>
@@ -590,7 +590,7 @@ const handleSendRfq = async (rfq: RFQ) => {
                     required
                   >
                     {vendors.map(vendor => (
-                      <option key={vendor.id} value={vendor.id}>{vendor.vendorName}</option>
+                      <option key={vendor.id} value={vendor._id}>{vendor.vendorName}</option>
                     ))}
                   </select>
                 </div>
@@ -1042,7 +1042,7 @@ return (
                         </button>
                       )}
                       <button
-                        onClick={() => handleDeleteRfq(rfq.id)}
+                        onClick={() => handleDeleteRfq(rfq._id)}
                         className="text-red-600 hover:text-red-900"
                         title="Delete"
                       >
