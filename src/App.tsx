@@ -71,7 +71,7 @@ import KanbanBoard from "./pages/modules/plant-machinery/KanbanBoard";
 import PreventivePlanning from "./pages/modules/plant-machinery/PreventivePlanning";
 import Teams from "./pages/modules/plant-machinery/TeamsAndTechnicians";
 import AssetDisposalTransferPage from "./pages/modules/plant-machinery/AssetDisposalTransfer";
-
+import MasterDataPage from "./pages/modules/project-management/MasterData";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import VerifyOtp from "./pages/VerifyOtp";
@@ -251,6 +251,10 @@ function App() {
               <Route
                 path="/project-management/project-closure"
                 element={<ProjectClosure />}
+              />
+              <Route
+                path="/project-management/master-data"
+                element={<MasterDataPage />}
               />
 
               {/* <Route path="/project-management/milestones" element={<Milestones />} /> */}

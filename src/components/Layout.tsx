@@ -37,6 +37,7 @@ import {
   Warehouse,
   MapPin,
   Truck,
+  FileTextIcon,
 } from "lucide-react";
 import {} from "@/redux/slices/authSlice";
 // --- ADD these imports for shadcn/ui Accordion ---
@@ -223,6 +224,11 @@ const Layout: React.FC = () => {
       name: "Project Closure",
       href: "/project-management/project-closure",
       icon: FolderClosed,
+    },
+    {
+      name: "Master Data",
+      href: "/project-management/master-data",
+      icon: FileTextIcon,
     },
   ];
 

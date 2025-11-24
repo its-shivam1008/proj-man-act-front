@@ -29,6 +29,7 @@ import rfqReducer from "./slices/purchase/rfqSlice";
 import purchaseOrderReducer from "./slices/purchase/purchaseOrderSlice";
 import purchaseAgreementReducer from "./slices/purchase/purchaseAgreementSlice";
 import notificationReducer from "./slices/notificationSlice"
+import masterDataReducer from "./slices/masterDataSlice"
 export const store = configureStore({
   reducer: {
     auth: authReducer,
@@ -60,7 +61,8 @@ export const store = configureStore({
     rfqs: rfqReducer,
     purchaseOrders: purchaseOrderReducer,
     purchaseAgreements: purchaseAgreementReducer,
-    notification:notificationReducer
+    notification:notificationReducer,
+    masterData:masterDataReducer
   },
 });
 

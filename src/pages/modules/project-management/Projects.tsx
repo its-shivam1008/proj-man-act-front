@@ -1,9 +1,7 @@
-"use client";
-
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { getPublicEmployees } from "@/lib/hrmsIntegration";
-
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import { RootState, AppDispatch } from "@/redux/store";
 import { toast } from "sonner";
 import {
@@ -19,7 +17,7 @@ import {
   CommandGroup,
   CommandItem,
 } from "@/components/ui/command";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { Check, ChevronsUpDown, ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import {
@@ -58,10 +56,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Pencil, Trash2, Search } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { useDebounce } from "@/hooks/useDebounce";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+
 // ---------------- Types ----------------
 type ProjectStatus =
   | "planning"
@@ -70,20 +67,15 @@ type ProjectStatus =
   | "completed"
   | "cancelled";
 
-type ProjectType =
-  | "construction"
-  | "manufacturing"
-  | "internal"
-  | "client-based"
-  | "other";
-
+// Interface updated to reflect that client/department/type can be ID strings or populated objects
 interface Project {
   _id: string;
   code: string;
   name: string;
   description: string;
-  clientOrDepartment: string;
-  type: ProjectType;
+  client?: string | { _id: string; name: string };
+  department?: string | { _id: string; name: string };
+  projectType?: string | { _id: string; name: string };
   location?: string;
   budget?: number;
   expectedRevenue?: number;
@@ -107,21 +99,12 @@ const PROJECT_STATUSES: ProjectStatus[] = [
   "cancelled",
 ];
 
-const PROJECT_TYPES: ProjectType[] = [
-  "construction",
-  "manufacturing",
-  "internal",
-  "client-based",
-  "other",
-];
-
 // ---------------- Component Start ----------------
 export default function Projects() {
   const [managerPopoverOpen, setManagerPopoverOpen] = useState(false);
   const [employeePage, setEmployeePage] = useState(1);
   const employeePageSize = 250; 
-  // const [empTotalCount, setEmpTotalCount] = useState(0);
-
+  
   const [employeeSearch, setEmployeeSearch] = useState("");
   const debouncedEmployeeSearch = useDebounce(employeeSearch, 400);
 
@@ -132,7 +115,6 @@ export default function Projects() {
 
   const dispatch = useDispatch<AppDispatch>();
 
-  // 1. get new state from redux
   const {
     projects = [],
     loading,
@@ -142,26 +124,51 @@ export default function Projects() {
   } = useSelector((state: RootState) => state.projects);
 
   const [color, setColor] = useState("#212121");
-  // Dialog/Form State
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
-  const [formData, setFormData] = useState<Partial<Project>>({
-    status: "planning",
-    type: "construction",
-  });
 
-  // 2. Setup state for filters and pagination
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<ProjectStatus | "all">(
-    "all"
-  );
-  const [page, setPage] = useState(1); // Page state
-  const [limit, setLimit] = useState(10); // Items per page
+  const [statusFilter, setStatusFilter] = useState<ProjectStatus | "all">("all");
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
 
-  // 3. Create debounced search term
   const debouncedSearch = useDebounce(searchTerm, 500);
   const uuid = "81b48a8b-f574-4562-be38-f480e99359c9";
-  // 4. Update the data-fetching useEffect
+
+  // Get Master Data from Redux
+  const { clients, departments, projectTypes } = useSelector(
+    (state: RootState) => state.masterData
+  );
+
+  const [clientOpen, setClientOpen] = useState(false);
+  const [deptOpen, setDeptOpen] = useState(false);
+  const [typeOpen, setTypeOpen] = useState(false);
+
+  // Fetch Master Data on mount
+  useEffect(() => {
+    dispatch(fetchMasterData("client"));
+    dispatch(fetchMasterData("department"));
+    dispatch(fetchMasterData("project-type"));
+  }, [dispatch]);
+
+  const [formData, setFormData] = useState<{
+    code?: string;
+    name?: string;
+    description?: string;
+    client?: string;
+    department?: string;
+    projectType?: string;
+    status: ProjectStatus;
+    budget?: number;
+    expectedRevenue?: number;
+    manager?: string;
+  }>({
+    status: "planning",
+    client: undefined, 
+    department: undefined,
+    projectType: undefined
+  });
+
   useEffect(() => {
     if (organisationId) {
       dispatch(
@@ -174,63 +181,54 @@ export default function Projects() {
       );
     }
   }, [organisationId, page, limit, statusFilter, debouncedSearch]);
+
   useEffect(() => {
-  if (!uuid) return;
+    if (!uuid) return;
 
-  const fetchEmployees = async () => {
-    setEmployeeLoading(true);
-    try {
-      const res = await getPublicEmployees(
-        uuid,
-        employeePage,           // ← now uses current page
-        employeePageSize,       // ← 50 or 100
-        debouncedEmployeeSearch,
-        ""
-      );
+    const fetchEmployees = async () => {
+      setEmployeeLoading(true);
+      try {
+        const res = await getPublicEmployees(
+          uuid,
+          employeePage,
+          employeePageSize,
+          debouncedEmployeeSearch,
+          ""
+        );
 
-      if (res.data?.data) {
-        setEmployeeList(res.data.data);
-      } else {
+        if (res.data?.data) {
+          setEmployeeList(res.data.data);
+        } else {
+          setEmployeeList([]);
+        }
+      } catch (error) {
+        console.error("Failed to fetch employees:", error);
         setEmployeeList([]);
+      } finally {
+        setEmployeeLoading(false);
       }
-    } catch (error) {
-      console.error("Failed to fetch employees:", error);
-      setEmployeeList([]);
-    } finally {
-      setEmployeeLoading(false);
-    }
-  };
+    };
 
-  fetchEmployees();
-}, [uuid, debouncedEmployeeSearch, employeePage]); // ← employeePage added here
+    fetchEmployees();
+  }, [uuid, debouncedEmployeeSearch, employeePage]);
 
-  // 5. Handle filter/search changes (reset to page 1)
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(e.target.value);
-    setPage(1); // Reset to page 1 on new search
+    setPage(1);
   };
 
   const handleStatusChange = (val: any) => {
     setStatusFilter(val);
-    setPage(1); // Reset to page 1 on new filter
+    setPage(1);
   };
-  // const [searchTerm, setSearchTerm] = useState("");
-  // const [statusFilter, setStatusFilter] =
-  //   useState<ProjectStatus | "all">("all");
-
-  // useEffect(() => {
-  //   if(organisationId){
-  //     dispatch(fetchProjects());
-  //   }
-
-  // }, [dispatch , organisationId]);
 
   const handleSave = async () => {
     if (
-      !formData.code ||
-      !formData.name ||
-      !formData.description ||
-      !formData.clientOrDepartment
+      !formData?.code ||
+      !formData?.name ||
+      !formData?.description ||
+      !formData?.client || 
+      !formData?.department
     ) {
       toast.error("Please fill all required fields");
       return;
@@ -247,7 +245,6 @@ export default function Projects() {
         toast.error(res.payload || "Update failed");
       }
     } else {
-      // -------- CREATE --------
       const res = await dispatch(addProject(formData));
 
       if (addProject.fulfilled.match(res)) {
@@ -263,7 +260,6 @@ export default function Projects() {
 
   const handleDelete = async (id: string) => {
     const res = await dispatch(deleteProject(id));
-
     if (deleteProject.fulfilled.match(res)) {
       toast.success("Project deleted");
     } else {
@@ -271,36 +267,27 @@ export default function Projects() {
     }
   };
 
-  // ---------------- Helpers ----------------
   const resetForm = () => {
     setEditingProject(null);
-    setFormData({ status: "planning", type: "construction" });
+    setFormData({ status: "planning" });
   };
 
   const openEditDialog = (project: Project) => {
     setEditingProject(project);
-    setFormData(project);
+    
+    // When opening edit, ensure we extract the ID if the field is an object (populated)
+    const getSafeId = (field: any) => (typeof field === 'object' && field?._id ? field._id : field);
+
+    setFormData({
+      ...project,
+      client: getSafeId(project.client),
+      department: getSafeId(project.department),
+      projectType: getSafeId(project.projectType),
+    });
+    
     setIsDialogOpen(true);
   };
 
-  // const filteredProjects = useMemo(() => {
-  //   const list = Array.isArray(projects) ? projects : [];
-
-  //   return list
-  //     .filter((p) =>
-  //       statusFilter === "all" ? true : p.status === statusFilter
-  //     )
-  //     .filter((p) => {
-  //       const q = searchTerm.toLowerCase();
-  //       return (
-  //         p.name.toLowerCase().includes(q) ||
-  //         p.code.toLowerCase().includes(q) ||
-  //         p.clientOrDepartment.toLowerCase().includes(q)
-  //       );
-  //     });
-  // }, [projects, searchTerm, statusFilter]);
-
-  // 7. Pagination handlers
   const handleNextPage = () => {
     if (currentPage < totalPages) {
       setPage(currentPage + 1);
@@ -324,7 +311,26 @@ export default function Projects() {
     return variants[status];
   };
 
-  // ---------------- UI ----------------
+  // ---------------- HELPER FUNCTIONS FOR NAMES ----------------
+  
+  // Helper to find Client Name by ID
+  const getClientName = (clientData: string | { _id: string; name: string } | undefined) => {
+    if (!clientData) return "N/A";
+    // If it's already an object (populated from backend)
+    if (typeof clientData === 'object' && clientData.name) return clientData.name;
+    // If it's an ID, find it in the redux store
+    const found = clients.find((c) => c._id === clientData);
+    return found ? found.name : "Unknown Client";
+  };
+
+  // Helper to find Project Type Name by ID
+  const getProjectTypeName = (typeData: string | { _id: string; name: string } | undefined) => {
+    if (!typeData) return "N/A";
+    if (typeof typeData === 'object' && typeData.name) return typeData.name;
+    const found = projectTypes.find((t) => t._id === typeData);
+    return found ? found.name : "Unknown Type";
+  };
+
   return (
     <div className="space-y-6 p-4 md:p-6">
       {/* Header */}
@@ -335,7 +341,10 @@ export default function Projects() {
         </div>
 
         <Button
-          onClick={() => setIsDialogOpen(true)}
+          onClick={() => {
+            resetForm();
+            setIsDialogOpen(true);
+          }}
           className="flex items-center gap-2"
         >
           <Plus size={16} />
@@ -413,10 +422,12 @@ export default function Projects() {
               ) : (
                 projects.map((p) => (
                   <TableRow key={p._id}>
-                    <TableCell>{p.code}</TableCell>
-                    <TableCell>{p.name}</TableCell>
-                    <TableCell>{p.clientOrDepartment}</TableCell>
-                    <TableCell className="capitalize">{p.type}</TableCell>
+                    <TableCell>{p?.code}</TableCell>
+                    <TableCell>{p?.name}</TableCell>
+                    
+                    {/* USE HELPERS HERE */}
+                    <TableCell>{getClientName(p.client)}</TableCell>
+                    <TableCell className="capitalize">{getProjectTypeName(p.projectType)}</TableCell>
 
                     <TableCell>
                       <Badge
@@ -533,40 +544,150 @@ export default function Projects() {
               />
             </div>
 
-            {/* Client + Type */}
+            {/* Client + Department Selection */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label>Client / Department *</Label>
-                <Input
-                  value={formData.clientOrDepartment || ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      clientOrDepartment: e.target.value,
-                    })
-                  }
-                />
+              
+              {/* CLIENT POPOVER */}
+              <div className="flex flex-col gap-2">
+                <Label>Client</Label>
+                <Popover open={clientOpen} onOpenChange={setClientOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      className="justify-between"
+                    >
+                      {formData.client
+                        ? clients.find((c) => c._id === formData.client)?.name
+                        : "Select Client"}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="p-0">
+                    <Command>
+                      <CommandInput placeholder="Search client..." />
+                      <CommandList>
+                        <CommandEmpty>No client found.</CommandEmpty>
+                        <CommandGroup>
+                          {clients.map((c) => (
+                            <CommandItem
+                              key={c._id}
+                              value={c.name}
+                              onSelect={() => {
+                                setFormData({ ...formData, client: c._id });
+                                setClientOpen(false);
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  formData.client === c._id ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              {c.name}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
 
-              <div>
+              {/* DEPARTMENT POPOVER */}
+              <div className="flex flex-col gap-2">
+                <Label>Department</Label>
+                <Popover open={deptOpen} onOpenChange={setDeptOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      className="justify-between"
+                    >
+                      {formData.department
+                        ? departments.find((d) => d._id === formData.department)?.name
+                        : "Select Department"}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="p-0">
+                    <Command>
+                      <CommandInput placeholder="Search department..." />
+                      <CommandList>
+                        <CommandEmpty>No department found.</CommandEmpty>
+                        <CommandGroup>
+                          {departments.map((d) => (
+                            <CommandItem
+                              key={d._id}
+                              value={d.name}
+                              onSelect={() => {
+                                setFormData({ ...formData, department: d._id });
+                                setDeptOpen(false);
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  formData.department === d._id ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              {d.name}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </div>
+
+            {/* Project Type POPOVER */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <div className="flex flex-col gap-2">
                 <Label>Project Type</Label>
-                <Select
-                  value={formData.type}
-                  onValueChange={(val: ProjectType) =>
-                    setFormData({ ...formData, type: val })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select Type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PROJECT_TYPES.map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {t}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Popover open={typeOpen} onOpenChange={setTypeOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      className="justify-between"
+                    >
+                      {formData.projectType
+                        ? projectTypes.find((t) => t._id === formData.projectType)?.name
+                        : "Select Type"}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="p-0">
+                    <Command>
+                      <CommandInput placeholder="Search type..." />
+                      <CommandList>
+                        <CommandEmpty>No type found.</CommandEmpty>
+                        <CommandGroup>
+                          {projectTypes.map((t) => (
+                            <CommandItem
+                              key={t._id}
+                              value={t.name}
+                              onSelect={() => {
+                                setFormData({ ...formData, projectType: t._id });
+                                setTypeOpen(false);
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  formData.projectType === t._id ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              {t.name}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
 
@@ -759,16 +880,6 @@ export default function Projects() {
                 </Select>
               </div>
             </div>
-
-            {/* <div>
-              <Label>Assigned Team</Label>
-              <Textarea
-                value={formData.assignedTeam || ""}
-                onChange={(e) =>
-                  setFormData({ ...formData, assignedTeam: e.target.value })
-                }
-              />
-            </div> */}
           </div>
 
           <DialogFooter>
