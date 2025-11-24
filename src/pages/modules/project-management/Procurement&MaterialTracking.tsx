@@ -228,7 +228,10 @@ export default function ProcurementPage() {
             return mrsListRaw;
         }
 
-        // 2. If Project IS selected, generate the list from WBS Linked Materials
+        // 2. If Project IS selected, combine:
+        //    a) WBS Linked Materials
+        //    b) Manually created MRS items for this project
+        
         const wbsDerivedItems: MRSItem[] = [];
         
         // Iterate through all WBS items for this project
@@ -256,7 +259,16 @@ export default function ProcurementPage() {
             }
         });
 
-        return wbsDerivedItems;
+        // Get manually created MRS items for this project
+        // Compare projectId as strings to handle ObjectId vs string comparison
+        const manualMrsItems = mrsListRaw.filter(item => {
+            const itemProjectId = String(item.projectId || '');
+            const selectedId = String(selectedProjectId || '');
+            return itemProjectId === selectedId && !item.isWbsLinked;
+        });
+
+        // Combine both: WBS-linked items and manually created items
+        return [...wbsDerivedItems, ...manualMrsItems];
 
     }, [selectedProjectId, mrsListRaw, wbsList, rawMaterials]);
 
@@ -279,10 +291,6 @@ export default function ProcurementPage() {
     };
 
     const openCreate = () => {
-        if (selectedProjectId) {
-             alert("To add materials for this project, please go to the WBS section and link materials to tasks.");
-             return;
-        }
         setEditing(null);
         setForm({ item: "", quantity: 1, requiredDate: "" });
         setIsDialogOpen(true);
@@ -316,6 +324,10 @@ export default function ProcurementPage() {
         } else {
            await dispatch(createMRS(cleanForm));
         }
+        
+        // Refetch MRS list to ensure new item appears
+        await dispatch(fetchMRS());
+        
         setIsDialogOpen(false);
         setEditing(null);
         setForm({ item: "", quantity: 1, requiredDate: "" });
@@ -503,7 +515,7 @@ export default function ProcurementPage() {
                         </PopoverContent>
                     </Popover>
 
-                    <Button onClick={openCreate} disabled={mrsLoading || !!selectedProjectId}>
+                    <Button onClick={openCreate} disabled={mrsLoading}>
                         <Plus className="mr-2 h-4 w-4" /> Create MRS Item
                     </Button>
                     {/* <Button variant="outline" onClick={bootstrapInventory}>

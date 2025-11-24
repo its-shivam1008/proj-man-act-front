@@ -545,7 +545,26 @@ export default function BillingPage() {
                                 max="100"
                                 placeholder="25"
                                 value={form.percent ?? ""}
-                                onChange={(e) => setForm({ ...form, percent: parseFloat(e.target.value) || 0 })}
+                                onChange={(e) => {
+                                    const value = parseFloat(e.target.value);
+                                    // Restrict to 0-100 range
+                                    if (isNaN(value) || value < 0) {
+                                        setForm({ ...form, percent: 0 });
+                                    } else if (value > 100) {
+                                        setForm({ ...form, percent: 100 });
+                                    } else {
+                                        setForm({ ...form, percent: value });
+                                    }
+                                }}
+                                onBlur={(e) => {
+                                    // Ensure value is within range on blur
+                                    const value = parseFloat(e.target.value);
+                                    if (isNaN(value) || value < 0) {
+                                        setForm({ ...form, percent: 0 });
+                                    } else if (value > 100) {
+                                        setForm({ ...form, percent: 100 });
+                                    }
+                                }}
                             />
                         </div>
 
