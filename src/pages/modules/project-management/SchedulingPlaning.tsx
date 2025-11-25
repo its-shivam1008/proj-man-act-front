@@ -52,6 +52,7 @@ import {
   BellRing,
   Pencil,
   Save,
+  ShieldAlert,
 } from "lucide-react";
 import { calculateCPM, CPMResult } from "@/components/CPM";
 import {
@@ -77,6 +78,7 @@ import {
   GanttFeatureItem,
   GanttToday,
 } from "@/components/ui/shadcn-io/gantt";
+import { usePermission } from "@/hooks/userPermission";
 
 interface ReminderForm {
   itemId: string;
@@ -116,6 +118,8 @@ const saveCustomSequences = (projectId: string | null, sequences: Record<string,
 
 export default function SchedulingPlanning() {
   const dispatch = useDispatch<AppDispatch>();
+
+  const canView = usePermission('schedulingPlanning', 'view');
 
   const { projects, loading: projectsLoading } = useSelector(
     (state: RootState) => state.projects
@@ -826,6 +830,16 @@ export default function SchedulingPlanning() {
     setEditingNumberId(null);
     setEditingNumberValue("");
   };
+
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
+        <p className="text-gray-600">You do not have the necessary permissions to view this page.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 p-4 md:p-6 h-full flex flex-col">

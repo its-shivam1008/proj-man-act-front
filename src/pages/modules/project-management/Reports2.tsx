@@ -50,9 +50,10 @@ import {
   ComposedChart,
   Area,
 } from "recharts";
-import { Calendar, BarChart3, Filter, Plus, Trash2 } from "lucide-react";
+import { Calendar, BarChart3, Filter, Plus, Trash2, ShieldAlert } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "../../../components/ui/dialog";
 import { format, parseISO, startOfMonth, endOfMonth, eachMonthOfInterval, differenceInDays } from "date-fns";
+import { usePermission } from "@/hooks/userPermission";
 
 // -------------------------------
 // ⚙️ Types
@@ -118,6 +119,8 @@ export default function ReportsAnalytics() {
       dispatch(fetchWbsByProject(selectedProjectId));
     }
   }, [selectedProjectId, dispatch]);
+
+  const canView = usePermission('projectReports', 'view');
 
   useEffect(() => {
     setReports(getReports());
@@ -704,6 +707,16 @@ export default function ReportsAnalytics() {
   }, [selectedProject, invoices, milestones, costs.total, selectedProjectId]);
 
   const COLORS = ["#8884d8", "#82ca9d", "#ffc658", "#ff7f50"];
+
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
+        <p className="text-gray-600">You do not have the necessary permissions to view this page.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 p-6">

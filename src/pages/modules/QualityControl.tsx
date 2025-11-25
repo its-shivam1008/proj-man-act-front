@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { Plus, CheckCircle2, XCircle, Clock, ShieldAlert } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../../components/ui/dialog';
@@ -9,11 +9,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { storage, STORAGE_KEYS } from '../../lib/storage';
 import { QualityCheck, WorkOrder } from '../../types/production';
 import { toast } from 'sonner';
+import { usePermission } from '@/hooks/userPermission';
 
 export default function QualityControlPage() {
   const [checks, setChecks] = useState<QualityCheck[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  const canView = usePermission('qualityControl', 'view');
 
   const [formData, setFormData] = useState({
     workOrderId: '',
@@ -92,6 +95,16 @@ export default function QualityControlPage() {
   };
 
   const stats = getStats();
+
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
+        <p className="text-gray-600">You do not have the necessary permissions to view this page.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

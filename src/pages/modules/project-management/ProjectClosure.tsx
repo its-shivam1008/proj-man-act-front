@@ -29,7 +29,8 @@ import {
   BarChart3,
   Printer,
   Archive,
-  Briefcase
+  Briefcase,
+  ShieldAlert
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
@@ -41,6 +42,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { RootState, AppDispatch } from "@/redux/store";
 import { fetchProjects, updateProject } from "@/redux/slices/projectSlice";
 import { fetchWbsByProject } from "@/redux/slices/wbsSlice";
+import { usePermission } from "@/hooks/userPermission";
 
 // --- TYPES (Re-defined here for safety, or import from your types file) ---
 type ProjectStatus = "planning" | "active" | "on-hold" | "completed" | "cancelled";
@@ -77,6 +79,8 @@ interface ChecklistState {
 
 export default function ProjectClosure() {
   const { toast } = useToast();
+
+  const canView = usePermission('projectClosure', 'view');
   
   // --- REDUX HOOKS ---
   const dispatch = useDispatch<AppDispatch>();
@@ -243,6 +247,16 @@ export default function ProjectClosure() {
   const handlePrint = () => {
     window.print();
   };
+
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
+        <p className="text-gray-600">You do not have the necessary permissions to view this page.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto font-sans">

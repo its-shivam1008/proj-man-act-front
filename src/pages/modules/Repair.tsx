@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { storage, STORAGE_KEYS, ensureInitialized } from '@/lib/storage'; // Adjust path to your storage.ts file
 import Layout from '../../components/Layout';
-import { Wrench, Plus, Clock, CheckCircle, AlertTriangle, XCircle, Search, Filter, Calendar, User, Package, DollarSign, FileText, Settings, Users, BarChart3, Edit, Eye, Trash2, Play, Pause, MapPin, Phone, Mail, Upload, Download, Clipboard, PenTool as Tool, Star, TrendingUp, Activity, X } from 'lucide-react';
+import { Wrench, Plus, Clock, CheckCircle, AlertTriangle, XCircle, Search, Filter, Calendar, User, Package, DollarSign, FileText, Settings, Users, BarChart3, Edit, Eye, Trash2, Play, Pause, MapPin, Phone, Mail, Upload, Download, Clipboard, PenTool as Tool, Star, TrendingUp, Activity, X, ShieldAlert } from 'lucide-react';
+import { usePermission } from '@/hooks/userPermission';
 
 const Repair: React.FC = () => {
   // Local state for data, loaded from storage
@@ -9,6 +10,8 @@ const Repair: React.FC = () => {
   const [repairTeams, setRepairTeams] = useState([]);
   const [repairTemplates, setRepairTemplates] = useState([]);
   const [inventory, setInventory] = useState([]);
+
+  const canView = usePermission('repair', 'view');
 
   // Form states (unchanged)
   const [teamFormData, setTeamFormData] = useState({
@@ -1894,6 +1897,17 @@ const Repair: React.FC = () => {
         return renderDashboard();
     }
   };
+
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
+        <p className="text-gray-600">You do not have the necessary permissions to view this page.</p>
+      </div>
+    );
+  }
+
   return (
     // <Layout>
       <div className="space-y-6">

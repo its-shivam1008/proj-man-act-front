@@ -32,7 +32,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { AlertTriangle, DollarSign, Pencil, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, DollarSign, Pencil, Plus, ShieldAlert, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { fetchWbsByProject } from "@/redux/slices/wbsSlice";
 import {
@@ -41,6 +41,7 @@ import {
   updateResource,
   deleteResource,
 } from "@/redux/slices/resourceSlice";
+import { usePermission } from "@/hooks/userPermission";
 
 // --- Define Types ---
 
@@ -104,6 +105,11 @@ export default function Resources() {
     resources,
     loading: resourcesLoading,
   } = useSelector((state: RootState) => state.resources);
+
+  const canView = usePermission('resources', 'view');
+  const canCreate = usePermission('resources', 'create');
+  const canEdit = usePermission('resources', 'edit');
+  const canDelete = usePermission('resources', 'delete');
 
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -318,6 +324,16 @@ export default function Resources() {
     });
   };
 
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
+        <p className="text-gray-600">You do not have the necessary permissions to view this page.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 p-4 md:p-6">
       <div className="flex flex-col md:flex-row items-center justify-between space-y-4 md:space-y-0">
@@ -352,14 +368,14 @@ export default function Resources() {
 
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
-              <Button
+              {canCreate && <Button
                 onClick={openCreateDialog}
                 disabled={!selectedProjectId || !projectWBSItems.length}
                 className="w-full md:w-auto"
               >
                 <Plus className="mr-2 h-4 w-4" />
                 New Allocation
-              </Button>
+              </Button>}
             </DialogTrigger>
             <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
@@ -632,12 +648,12 @@ export default function Resources() {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => openEditDialog(alloc)}>
+                        {canEdit && <Button variant="ghost" size="icon" onClick={() => openEditDialog(alloc)}>
                           <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(alloc._id!)}>
+                        </Button>}
+                        {canDelete && <Button variant="ghost" size="icon" onClick={() => handleDelete(alloc._id!)}>
                           <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
+                        </Button>}
                       </div>
                     </TableCell>
                   </TableRow>

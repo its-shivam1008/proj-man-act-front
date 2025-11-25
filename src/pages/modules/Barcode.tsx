@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import Layout from '../../components/Layout';
-import { ScanLine, Package, Truck, FileText, Search, Plus, CheckCircle, AlertTriangle, X, Barcode as BarcodeIcon, Edit, Trash2 } from 'lucide-react';
+import { ScanLine, Package, Truck, FileText, Search, Plus, CheckCircle, AlertTriangle, X, Barcode as BarcodeIcon, Edit, Trash2, ShieldAlert } from 'lucide-react';
 import { storage, STORAGE_KEYS, ensureInitialized } from '@/lib/storage'; // Adjust path to your storage.ts file
+import { usePermission } from '@/hooks/userPermission';
 
 // Add this key to STORAGE_KEYS in storage.ts
 // BARCODE_SCANS: "BARCODE_SCANS",
@@ -21,6 +22,8 @@ const Barcode: React.FC = () => {
   const [generateForm, setGenerateForm] = useState({ itemName: '', category: 'steel' });
   const [generatedCode, setGeneratedCode] = useState('');
   const [editingScan, setEditingScan] = useState(null); // For update mode
+
+  const canView = usePermission('barcode', 'view');
 
   // Initialize storage and load recentScans on mount
   useEffect(() => {
@@ -158,6 +161,17 @@ const Barcode: React.FC = () => {
     { value: 'hydraulic', label: 'Hydraulic Components' },
     { value: 'electrical', label: 'Electrical Parts' },
   ];
+
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
+        <p className="text-gray-600">You do not have the necessary permissions to view this page.</p>
+      </div>
+    );
+  }
+
 
   return (
     // <Layout>

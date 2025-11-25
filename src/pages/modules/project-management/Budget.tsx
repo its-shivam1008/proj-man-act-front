@@ -40,6 +40,7 @@ import {
   Truck,
   Users,
   Package,
+  ShieldAlert,
 } from "lucide-react";
 
 // Charts
@@ -56,10 +57,13 @@ import {
   Pie,
   Cell,
 } from "recharts";
+import { usePermission } from "@/hooks/userPermission";
 
 export default function BudgetPage() {
   const dispatch = useDispatch<AppDispatch>();
   const organisationId = localStorage.getItem("organisationId") || "";
+
+  const canView = usePermission('budgetCost', 'view');
 
   // --- Selectors ---
   const { projects } = useSelector((state: RootState) => state.projects);
@@ -237,6 +241,16 @@ export default function BudgetPage() {
     { name: "Equipment", value: costs.equipment, color: "#f59e0b" },
     { name: "Other", value: costs.other, color: "#94a3b8" }, 
   ].filter((d) => d.value > 0);
+
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
+        <p className="text-gray-600">You do not have the necessary permissions to view this page.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 p-4 md:p-6">

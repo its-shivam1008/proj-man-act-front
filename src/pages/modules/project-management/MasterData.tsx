@@ -30,8 +30,9 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Pencil, Trash2, Plus } from "lucide-react";
+import { Pencil, Trash2, Plus, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
+import { usePermission } from "@/hooks/userPermission";
 
 type MasterType = "client" | "department" | "project-type";
 
@@ -40,6 +41,11 @@ export default function MasterDataPage() {
   const { clients, departments, projectTypes } = useSelector(
     (state: RootState) => state.masterData
   );
+
+  const canView = usePermission('masterData', 'view');
+  const canCreate = usePermission('masterData', 'create');
+  const canEdit = usePermission('masterData', 'edit');
+  const canDelete = usePermission('masterData', 'delete');
 
   const [activeTab, setActiveTab] = useState<MasterType>("client");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -101,13 +107,23 @@ export default function MasterDataPage() {
     }
   };
 
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
+        <p className="text-gray-600">You do not have the necessary permissions to view this page.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-3xl font-bold">Master Data Management</h2>
-        <Button onClick={() => handleOpenDialog()}>
+        {canCreate && <Button onClick={() => handleOpenDialog()}>
           <Plus className="mr-2 h-4 w-4" /> Add New
-        </Button>
+        </Button>}
       </div>
 
       <Tabs
@@ -146,20 +162,20 @@ export default function MasterDataPage() {
                       <TableCell className="font-medium">{item.name}</TableCell>
                       <TableCell>{item.description}</TableCell>
                       <TableCell className="text-right space-x-2">
-                        <Button
+                        {canEdit && <Button
                           variant="ghost"
                           size="icon"
                           onClick={() => handleOpenDialog(item)}
                         >
                           <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
+                        </Button>}
+                        {canDelete && <Button
                           variant="ghost"
                           size="icon"
                           onClick={() => handleDelete(item._id)}
                         >
                           <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
+                        </Button>}
                       </TableCell>
                     </TableRow>
                   ))

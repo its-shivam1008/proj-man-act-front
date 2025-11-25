@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { storage, STORAGE_KEYS } from '@/lib/storage';
 import Layout from '../../components/Layout';
-import { GitBranch, Plus, FileText, Clock, CheckCircle, AlertTriangle, Search, Filter, Eye, Edit, Trash2, Download, Upload, MessageSquare, Users, Calendar, Package, Settings, BarChart3, XCircle, User, Paperclip, Send, ArrowRight, ArrowLeft, GitCompare as Compare, Archive, FileImage, File as FilePdf, FileCode, Layers, Target, TrendingUp, DollarSign } from 'lucide-react';
+import { GitBranch, Plus, FileText, Clock, CheckCircle, AlertTriangle, Search, Filter, Eye, Edit, Trash2, Download, Upload, MessageSquare, Users, Calendar, Package, Settings, BarChart3, XCircle, User, Paperclip, Send, ArrowRight, ArrowLeft, GitCompare as Compare, Archive, FileImage, File as FilePdf, FileCode, Layers, Target, TrendingUp, DollarSign, ShieldAlert } from 'lucide-react';
+import { usePermission } from '@/hooks/userPermission';
 
 const ProductLifecycle: React.FC = () => {
   const [engineeringChangeOrders, setEngineeringChangeOrders] = useState<any[]>([]);
@@ -33,6 +34,8 @@ const ProductLifecycle: React.FC = () => {
   // New states for advanced reports
   const [reportDateRange, setReportDateRange] = useState('last30days');
   const [selectedReport, setSelectedReport] = useState('eco-summary');
+
+  const canView = usePermission('productLifecycle', 'view');
 
   useEffect(() => {
     setEngineeringChangeOrders(storage.get(STORAGE_KEYS.ENGINEERING_CHANGE_ORDERS, []));
@@ -334,6 +337,18 @@ const ProductLifecycle: React.FC = () => {
         approvers: []
       });
     };
+
+
+    if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
+        <p className="text-gray-600">You do not have the necessary permissions to view this page.</p>
+      </div>
+    );
+  }
+
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
         <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 shadow-lg rounded-md bg-white">
