@@ -7,6 +7,7 @@ import { fetchProjects } from "@/redux/slices/projectSlice";
 import { fetchResources, ResourceAllocation } from "@/redux/slices/resourceSlice";
 import { fetchWbsByProject, WBSItem } from "@/redux/slices/wbsSlice";
 import { fetchMaterials } from "@/redux/slices/rawmaterialSlice";
+import { fetchMRS } from "@/redux/slices/mrsSlice";
 
 // UI Components
 import { Button } from "@/components/ui/button";
@@ -70,6 +71,9 @@ export default function BudgetPage() {
   const { materials: rawMaterials, loading: materialsLoading } = useSelector(
     (state: RootState) => state.rawMaterials
   );
+  const { list: mrsList, loading: mrsLoading } = useSelector(
+    (state: RootState) => state.mrs
+  );
 
   // --- Local State ---
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
@@ -79,7 +83,8 @@ export default function BudgetPage() {
   useEffect(() => {
     if (organisationId) {
       dispatch(fetchProjects({ page: 1, limit: 50 }));
-      dispatch(fetchMaterials()); 
+      dispatch(fetchMaterials());
+      dispatch(fetchMRS());
     }
   }, [organisationId, dispatch]);
 
@@ -93,6 +98,7 @@ export default function BudgetPage() {
     if (selectedProjectId) {
       dispatch(fetchResources(selectedProjectId));
       dispatch(fetchWbsByProject(selectedProjectId));
+      dispatch(fetchMRS()); // Fetch MRS when project changes
     }
   }, [selectedProjectId, dispatch]);
 
@@ -175,6 +181,30 @@ export default function BudgetPage() {
       }
     });
 
+    // C. Calculate from ALL MRS Items for selected project (price * quantity)
+    if (selectedProjectId && mrsList && Array.isArray(mrsList) && mrsList.length > 0) {
+      mrsList.forEach((mrs: any) => {
+        if (!mrs) return;
+        
+        // Match project ID - include ALL MRS items for this project
+        const mrsProjectId = String(mrs.projectId || '');
+        const selectedId = String(selectedProjectId || '');
+        
+        if (mrsProjectId === selectedId) {
+          const quantity = Number(mrs.quantity) || 0;
+          const price = Number(mrs.price) || 0;
+          
+          // Calculate cost: price * quantity
+          const mrsMaterialCost = quantity * price;
+          
+          // Add to material cost if we have valid values
+          if (mrsMaterialCost > 0) {
+            materialCost += mrsMaterialCost;
+          }
+        }
+      });
+    }
+
     return {
       material: materialCost,
       labour: labourCost,
@@ -182,7 +212,7 @@ export default function BudgetPage() {
       other: otherCost,
       total: materialCost + labourCost + equipmentCost + otherCost,
     };
-  }, [resources, wbs, rawMaterials]);
+  }, [resources, wbs, rawMaterials, mrsList, selectedProjectId]);
 
   // Variance Calculation
   const variance = costs.total - totalPlannedBudget;
@@ -416,7 +446,7 @@ export default function BudgetPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(wbsLoading || resourcesLoading || materialsLoading) && (
+              {(wbsLoading || resourcesLoading || materialsLoading || mrsLoading) && (
                  <TableRow>
                    <TableCell colSpan={4} className="text-center py-8">Calculating costs...</TableCell>
                  </TableRow>
@@ -484,14 +514,43 @@ export default function BudgetPage() {
                       </TableCell>
                       <TableCell className="text-right">₹{mCost.toLocaleString()}</TableCell>
                       <TableCell className="text-muted-foreground text-sm">
-                        @ ₹{unitPrice}/unit
+                        @ ₹{unitPrice}/unit (WBS Linked)
                       </TableCell>
                     </TableRow>
                    );
                 })
               )}
 
-              {!wbsLoading && !resourcesLoading && !materialsLoading && costs.total === 0 && (
+              {/* 4. MRS Items (All items for selected project) */}
+              {selectedProjectId && mrsList && mrsList.length > 0 && mrsList
+                .filter((mrs: any) => {
+                  if (!mrs) return false;
+                  const mrsProjectId = String(mrs.projectId || '');
+                  const selectedId = String(selectedProjectId || '');
+                  return mrsProjectId === selectedId;
+                })
+                .map((mrs: any) => {
+                  const quantity = Number(mrs.quantity) || 0;
+                  const price = Number(mrs.price) || 0;
+                  const mrsCost = quantity * price;
+                  
+                  if (mrsCost === 0) return null;
+
+                  return (
+                    <TableRow key={`mrs-${mrs._id || mrs.id}`}>
+                      <TableCell>Material</TableCell>
+                      <TableCell>
+                        {mrs.item || "Unknown Item"} (Qty: {quantity})
+                      </TableCell>
+                      <TableCell className="text-right">₹{mrsCost.toLocaleString()}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        @ ₹{price}/unit {mrs.isWbsLinked ? "(WBS Linked)" : "(Manual MRS)"}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+
+              {!wbsLoading && !resourcesLoading && !materialsLoading && !mrsLoading && costs.total === 0 && (
                  <TableRow>
                     <TableCell colSpan={4} className="text-center py-6 text-muted-foreground">No cost data found.</TableCell>
                  </TableRow>

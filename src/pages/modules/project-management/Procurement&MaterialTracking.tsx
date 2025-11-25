@@ -65,6 +65,7 @@ type MRSItem = {
     task?: string;
     item: string; // This will hold Raw Material Name
     quantity: number;
+    price?: number;
     requiredDate?: string;
     status?: "open" | "sent" | "ordered" | "received" | "cancelled" | "planned";
     remarks?: string;
@@ -198,7 +199,9 @@ export default function ProcurementPage() {
     // Dialog / Form State
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editing, setEditing] = useState<MRSItem | null>(null);
-    const [form, setForm] = useState<Partial<MRSItem>>({ item: "", quantity: 1, requiredDate: "" });
+    const [form, setForm] = useState<Partial<MRSItem>>({ item: "", quantity: 1, price: 0, requiredDate: "" });
+    const [taskPopoverOpen, setTaskPopoverOpen] = useState(false);
+    const [taskSearch, setTaskSearch] = useState("");
 
     // Initial Data Load
     useEffect(() => {
@@ -221,11 +224,35 @@ export default function ProcurementPage() {
 
     const selectedProject = projects.find((p) => p._id === selectedProjectId);
 
+    // Helper function to build hierarchical path for WBS items
+    const getWbsHierarchicalPath = (item: WBSItem, allWbs: WBSItem[]): string => {
+        const path: string[] = [item.name];
+        let currentItem: WBSItem | undefined = item;
+        
+        while (currentItem?.parentId) {
+            const parent = allWbs.find(w => w.id === currentItem.parentId);
+            if (parent) {
+                path.unshift(parent.name);
+                currentItem = parent;
+            } else {
+                break;
+            }
+        }
+        
+        return path.join(" > ");
+    };
+
+    // Filter WBS items for selected project
+    const projectWbsItems = useMemo(() => {
+        if (!selectedProjectId) return [];
+        return wbsList.filter((item) => item.projectId === selectedProjectId);
+    }, [wbsList, selectedProjectId]);
+
     // --- DATA TRANSFORMATION: Filter & Merge ---
     const displayedMrsList = useMemo(() => {
-        // 1. If NO project is selected, show the standard MRS list from the database
+        // 1. If NO project is selected, show only MRS items that don't have a projectId
         if (!selectedProjectId) {
-            return mrsListRaw;
+            return mrsListRaw.filter(item => !item.projectId || item.projectId === null || item.projectId === undefined);
         }
 
         // 2. If Project IS selected, combine:
@@ -292,7 +319,7 @@ export default function ProcurementPage() {
 
     const openCreate = () => {
         setEditing(null);
-        setForm({ item: "", quantity: 1, requiredDate: "" });
+        setForm({ item: "", quantity: 1, price: 0, requiredDate: "", projectId: selectedProjectId || undefined });
         setIsDialogOpen(true);
     };
 
@@ -315,8 +342,9 @@ export default function ProcurementPage() {
             ...form,
             item: form.item.trim(),
             quantity: Number(form.quantity),
+            price: form.price ? Number(form.price) : undefined,
             requiredDate: form.requiredDate ? form.requiredDate : undefined,
-            projectId: selectedProjectId || undefined, 
+            projectId: form.projectId || selectedProjectId || undefined, 
         };
         
         if (editing) {
@@ -330,7 +358,7 @@ export default function ProcurementPage() {
         
         setIsDialogOpen(false);
         setEditing(null);
-        setForm({ item: "", quantity: 1, requiredDate: "" });
+        setForm({ item: "", quantity: 1, price: 0, requiredDate: "" });
     };
 
     const handleDelete = async (id: string, isWbsLinked?: boolean) => {
@@ -744,11 +772,86 @@ export default function ProcurementPage() {
                     </DialogHeader>
                     <div className="grid gap-4 py-4">
                         <div className="grid grid-cols-2 gap-4">
-                            <div><Label>Task</Label><Input value={form.task || ""} onChange={(e) => setForm({ ...form, task: e.target.value })} /></div>
-                            <div><Label>Item</Label><Input value={form.item || ""} onChange={(e) => setForm({ ...form, item: e.target.value })} /></div>
+                            <div>
+                                <Label>Project</Label>
+                                <Input 
+                                    value={selectedProject ? `${selectedProject.code} - ${selectedProject.name}` : "No project selected"} 
+                                    disabled 
+                                    className="bg-muted cursor-not-allowed"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Task</Label>
+                                <Popover open={taskPopoverOpen} onOpenChange={setTaskPopoverOpen}>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="outline"
+                                            role="combobox"
+                                            aria-expanded={taskPopoverOpen}
+                                            className="w-full justify-between"
+                                            disabled={!selectedProjectId || wbsLoading}
+                                        >
+                                            {form.task || "Select task..."}
+                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-[400px] p-0">
+                                        <Command>
+                                            <CommandInput
+                                                placeholder="Search tasks..."
+                                                value={taskSearch}
+                                                onValueChange={setTaskSearch}
+                                            />
+                                            <CommandList>
+                                                {wbsLoading && <div className="p-4 text-center text-sm">Loading...</div>}
+                                                <CommandEmpty>
+                                                    {!wbsLoading && (!selectedProjectId ? "Please select a project first" : "No tasks found")}
+                                                </CommandEmpty>
+                                                <CommandGroup>
+                                                    {!wbsLoading && projectWbsItems.length > 0 && projectWbsItems
+                                                        .filter((item) => {
+                                                            if (!taskSearch) return true;
+                                                            const searchLower = taskSearch.toLowerCase();
+                                                            const path = getWbsHierarchicalPath(item, projectWbsItems);
+                                                            return path.toLowerCase().includes(searchLower) || 
+                                                                   item.type.toLowerCase().includes(searchLower);
+                                                        })
+                                                        .map((item) => {
+                                                            const path = getWbsHierarchicalPath(item, projectWbsItems);
+                                                            return (
+                                                                <CommandItem
+                                                                    key={item.id}
+                                                                    value={item.name}
+                                                                    onSelect={() => {
+                                                                        setForm({ ...form, task: item.name });
+                                                                        setTaskPopoverOpen(false);
+                                                                    }}
+                                                                >
+                                                                    <Check
+                                                                        className={`mr-2 h-4 w-4 ${
+                                                                            form.task === item.name ? "opacity-100" : "opacity-0"
+                                                                        }`}
+                                                                    />
+                                                                    <div className="flex flex-col">
+                                                                        <span className="font-medium">{path}</span>
+                                                                        <span className="text-xs text-muted-foreground capitalize">{item.type}</span>
+                                                                    </div>
+                                                                </CommandItem>
+                                                            );
+                                                        })}
+                                                </CommandGroup>
+                                            </CommandList>
+                                        </Command>
+                                    </PopoverContent>
+                                </Popover>
+                            </div>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
+                            <div><Label>Item</Label><Input value={form.item || ""} onChange={(e) => setForm({ ...form, item: e.target.value })} /></div>
                             <div><Label>Quantity</Label><Input type="number" value={form.quantity ?? 1} onChange={(e) => setForm({ ...form, quantity: parseFloat(e.target.value || "0") })} /></div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div><Label>Price (₹)</Label><Input type="number" step="0.01" value={form.price ?? 0} onChange={(e) => setForm({ ...form, price: parseFloat(e.target.value || "0") })} placeholder="0.00" /></div>
                             <div><Label>Required Date</Label><Input type="date" value={form.requiredDate ? form.requiredDate.split("T")[0] : ""} onChange={(e) => setForm({ ...form, requiredDate: e.target.value })} /></div>
                         </div>
                     </div>

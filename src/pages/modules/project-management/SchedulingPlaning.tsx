@@ -32,6 +32,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
   Calendar as CalendarIcon,
   AlertCircle,
   Clock,
@@ -77,6 +85,35 @@ interface ReminderForm {
   note: string;
 }
 
+// Helper functions for localStorage management
+const getCustomSequencesKey = (projectId: string | null) => {
+  return projectId ? `customSequences_${projectId}` : 'customSequences_default';
+};
+
+// Load custom sequences from localStorage
+const loadCustomSequences = (projectId: string | null): Record<string, number> => {
+  try {
+    const key = getCustomSequencesKey(projectId);
+    const saved = localStorage.getItem(key);
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (error) {
+    console.error('Error loading custom sequences from localStorage:', error);
+  }
+  return {};
+};
+
+// Save custom sequences to localStorage
+const saveCustomSequences = (projectId: string | null, sequences: Record<string, number>) => {
+  try {
+    const key = getCustomSequencesKey(projectId);
+    localStorage.setItem(key, JSON.stringify(sequences));
+  } catch (error) {
+    console.error('Error saving custom sequences to localStorage:', error);
+  }
+};
+
 export default function SchedulingPlanning() {
   const dispatch = useDispatch<AppDispatch>();
 
@@ -88,7 +125,7 @@ export default function SchedulingPlanning() {
   );
   const [customSequences, setCustomSequences] = useState<
     Record<string, number>
-  >({});
+  >(() => loadCustomSequences(null));
   const [customHierarchicalNumbers, setCustomHierarchicalNumbers] = useState<
     Record<string, string>
   >({});
@@ -149,11 +186,13 @@ export default function SchedulingPlanning() {
     }
   }, [projects, selectedProjectId]);
 
-  // 3. Fetch WBS
+  // 3. Fetch WBS and load custom sequences for selected project
   useEffect(() => {
     if (selectedProjectId) {
       dispatch(fetchWbsByProject(selectedProjectId));
-      setCustomSequences({});
+      // Load custom sequences for this project from localStorage
+      const loadedSequences = loadCustomSequences(selectedProjectId);
+      setCustomSequences(loadedSequences);
       setCustomHierarchicalNumbers({});
     }
   }, [selectedProjectId, dispatch]);
@@ -206,6 +245,7 @@ export default function SchedulingPlanning() {
       setCustomSequences((prev) => {
         const next = { ...prev };
         delete next[id];
+        saveCustomSequences(selectedProjectId, next);
         return next;
       });
       return;
@@ -213,7 +253,11 @@ export default function SchedulingPlanning() {
 
     const num = parseInt(newVal);
     if (!isNaN(num)) {
-      setCustomSequences((prev) => ({ ...prev, [id]: num }));
+      setCustomSequences((prev) => {
+        const updated = { ...prev, [id]: num };
+        saveCustomSequences(selectedProjectId, updated);
+        return updated;
+      });
     }
   };
   // --- Generate Hierarchical Numbering (1, 1.1, 1.2, 2, 2.1, etc.) ---
@@ -385,6 +429,7 @@ export default function SchedulingPlanning() {
 
       // 4. Get hierarchical number
       const hierarchicalNumber = generateHierarchicalNumbering[item.id] || "";
+      // Display number will be calculated after sorting
       const displayNumber = customSequences[item.id] 
         ? customSequences[item.id].toString() 
         : hierarchicalNumber;
@@ -440,18 +485,108 @@ export default function SchedulingPlanning() {
       });
     });
 
-    // Sort items within groups by hierarchical number
+    // Sort items within groups: Priority numbers first, then by date
     Object.keys(groupedFeatures).forEach((group) => {
       groupedFeatures[group].sort((a, b) => {
-        // Compare hierarchical numbers (e.g., "1" < "1.1" < "2")
+        // Check if items have manual priority numbers
+        const hasPriorityA = customSequences[a.id] !== undefined;
+        const hasPriorityB = customSequences[b.id] !== undefined;
+        
+        // If both have priority numbers, sort by priority
+        if (hasPriorityA && hasPriorityB) {
+          return customSequences[a.id] - customSequences[b.id];
+        }
+        
+        // If only A has priority, A comes first
+        if (hasPriorityA && !hasPriorityB) {
+          return -1;
+        }
+        
+        // If only B has priority, B comes first
+        if (!hasPriorityA && hasPriorityB) {
+          return 1;
+        }
+        
+        // If neither has priority, sort by start date
+        if (!hasPriorityA && !hasPriorityB) {
+          const dateA = a.startAt ? new Date(a.startAt).getTime() : 0;
+          const dateB = b.startAt ? new Date(b.startAt).getTime() : 0;
+          return dateA - dateB;
+        }
+        
+        // Fallback to hierarchical number comparison
         const numA = a.hierarchicalNumber || "";
         const numB = b.hierarchicalNumber || "";
         return numA.localeCompare(numB, undefined, { numeric: true, sensitivity: 'base' });
+      });
+
+      // After sorting, assign sequential numbers to non-priority items
+      // Find the maximum priority number in this group
+      let maxPriority = 0;
+      groupedFeatures[group].forEach((item) => {
+        if (customSequences[item.id] !== undefined) {
+          maxPriority = Math.max(maxPriority, customSequences[item.id]);
+        }
+      });
+
+      // Assign sequential numbers to non-priority items starting from maxPriority + 1
+      let sequentialCounter = maxPriority;
+      groupedFeatures[group].forEach((item) => {
+        if (customSequences[item.id] === undefined) {
+          sequentialCounter++;
+          item.sequence = sequentialCounter.toString();
+        } else {
+          // Keep priority number as is
+          item.sequence = customSequences[item.id].toString();
+        }
       });
     });
 
     return groupedFeatures;
   }, [wbs, cpmData, viewMode, selectedProject, customSequences, generateHierarchicalNumbering]);
+
+  // --- Sorted List for Table View ---
+  const sortedItemsList = useMemo(() => {
+    if (!ganttData || Object.keys(ganttData).length === 0) return [];
+    
+    // Flatten all items from all groups into a single array
+    const allItems: any[] = [];
+    Object.entries(ganttData).forEach(([group, items]) => {
+      items.forEach((item) => {
+        allItems.push({ ...item, group });
+      });
+    });
+
+    // Sort by the same logic as ganttData: Priority first, then by date
+    allItems.sort((a, b) => {
+      const hasPriorityA = customSequences[a.id] !== undefined;
+      const hasPriorityB = customSequences[b.id] !== undefined;
+      
+      if (hasPriorityA && hasPriorityB) {
+        return customSequences[a.id] - customSequences[b.id];
+      }
+      
+      if (hasPriorityA && !hasPriorityB) {
+        return -1;
+      }
+      
+      if (!hasPriorityA && hasPriorityB) {
+        return 1;
+      }
+      
+      if (!hasPriorityA && !hasPriorityB) {
+        const dateA = a.startAt ? new Date(a.startAt).getTime() : 0;
+        const dateB = b.startAt ? new Date(b.startAt).getTime() : 0;
+        return dateA - dateB;
+      }
+      
+      const numA = a.hierarchicalNumber || "";
+      const numB = b.hierarchicalNumber || "";
+      return numA.localeCompare(numB, undefined, { numeric: true, sensitivity: 'base' });
+    });
+
+    return allItems;
+  }, [ganttData, customSequences]);
 
   // --- Reminders Logic ---
   const reminders = useMemo(() => {
@@ -645,40 +780,42 @@ export default function SchedulingPlanning() {
     const trimmedValue = editingNumberValue.trim();
     
     if (trimmedValue === "") {
-      // Remove custom number (revert to auto-generated)
-      setCustomHierarchicalNumbers((prev) => {
+      // Remove custom priority number (revert to auto-generated)
+      setCustomSequences((prev) => {
         const next = { ...prev };
         delete next[itemId];
+        saveCustomSequences(selectedProjectId, next);
         return next;
       });
-      toast.success("Number reset to auto-generated");
+      toast.success("Priority reset - will sort by date");
     } else {
-      // Validate format (should be like "1", "1.1", "1.1.1", etc.)
-      const isValidFormat = /^(\d+(\.\d+)*)$/.test(trimmedValue);
-      if (!isValidFormat) {
-        toast.error("Invalid format. Use numbers like 1, 1.1, 1.1.1, etc.");
+      // Accept simple priority number (1, 2, 3, etc.)
+      const priorityNum = parseInt(trimmedValue);
+      if (isNaN(priorityNum) || priorityNum < 1) {
+        toast.error("Please enter a valid positive number (1, 2, 3, etc.)");
         return;
       }
 
-      // Save custom number
-      setCustomHierarchicalNumbers((prev) => ({
-        ...prev,
-        [itemId]: trimmedValue,
-      }));
-      
-      // Optionally save to backend
-      try {
-        await dispatch(
-          updateWbsItem({
-            id: itemId,
-            data: { customNumber: trimmedValue },
-          })
-        );
-        toast.success("Number updated successfully!");
-      } catch (error) {
-        // Even if backend save fails, keep the local change
-        toast.success("Number updated (local only)");
+      // Check for duplicate priority (same priority should not be assigned to multiple items)
+      const existingItemWithSamePriority = Object.entries(customSequences).find(
+        ([id, priority]) => id !== itemId && priority === priorityNum
+      );
+
+      if (existingItemWithSamePriority) {
+        const [existingId] = existingItemWithSamePriority;
+        const existingItem = wbs.find((item) => item.id === existingId);
+        toast.error(`Priority ${priorityNum} is already assigned to "${existingItem?.name || 'another item'}". Please use a different priority number.`);
+        return;
       }
+
+      // Save priority number for sorting
+      setCustomSequences((prev) => {
+        const updated = { ...prev, [itemId]: priorityNum };
+        saveCustomSequences(selectedProjectId, updated);
+        return updated;
+      });
+      
+      toast.success(`Priority ${priorityNum} set - item will appear in priority order`);
     }
     
     setEditingNumberId(null);
@@ -912,10 +1049,12 @@ export default function SchedulingPlanning() {
                                   key={item.id}
                                   className="flex items-center justify-between group pr-2 hover:bg-slate-100 transition-colors h-12 border-b border-slate-100"
                                 >
-                                  <div className="w-16 shrink-0 flex items-center justify-center pl-2">
+                                  <div className="w-20 shrink-0 flex items-center justify-center pl-2">
                                     {editingNumberId === item.id ? (
                                       <div className="flex items-center gap-1">
                                         <Input
+                                          type="number"
+                                          min="1"
                                           value={editingNumberValue}
                                           onChange={(e) => setEditingNumberValue(e.target.value)}
                                           onBlur={() => handleNumberEditSave(item.id)}
@@ -926,18 +1065,34 @@ export default function SchedulingPlanning() {
                                               handleNumberEditCancel();
                                             }
                                           }}
-                                          className="h-7 w-16 text-xs px-1.5 py-0.5 text-center font-bold"
+                                          placeholder="Priority"
+                                          className="h-7 w-20 text-xs px-1.5 py-0.5 text-center font-bold"
                                           autoFocus
                                         />
                                       </div>
                                     ) : (
-                                      <span
-                                        className="text-xs font-bold text-slate-700 bg-gradient-to-br from-slate-100 to-slate-200 px-2 py-1 rounded-md border border-slate-300 shadow-sm cursor-pointer hover:bg-slate-200 transition-colors"
-                                        onClick={() => handleNumberEditStart(item.id, item.hierarchicalNumber || item.sequence || "")}
-                                        title="Click to edit number"
-                                      >
-                                        {item.hierarchicalNumber || item.sequence}
-                                      </span>
+                                      <div className="flex flex-col items-center gap-0.5">
+                                        {customSequences[item.id] ? (
+                                          <span
+                                            className="text-xs font-bold text-white bg-blue-600 px-2 py-1 rounded-md border border-blue-700 shadow-sm cursor-pointer hover:bg-blue-700 transition-colors"
+                                            onClick={() => handleNumberEditStart(item.id, customSequences[item.id].toString())}
+                                            title="Click to edit priority number"
+                                          >
+                                            P{customSequences[item.id]}
+                                          </span>
+                                        ) : (
+                                          <span
+                                            className="text-xs font-semibold text-slate-600 bg-slate-100 px-2 py-1 rounded-md border border-slate-300 cursor-pointer hover:bg-slate-200 transition-colors"
+                                            onClick={() => handleNumberEditStart(item.id, "")}
+                                            title="Click to set priority number (or leave empty to sort by date)"
+                                          >
+                                            {item.sequence ? `P${item.sequence}` : item.hierarchicalNumber}
+                                          </span>
+                                        )}
+                                        {!customSequences[item.id] && (
+                                          <span className="text-[9px] text-slate-400">Date</span>
+                                        )}
+                                      </div>
                                     )}
                                   </div>
                                   <div className="flex-1 min-w-0">
@@ -985,12 +1140,18 @@ export default function SchedulingPlanning() {
                                   <GanttFeatureItem key={item.id} {...item}>
                                     <div
                                       className={`group/item flex items-center gap-2 px-3 py-1.5 w-full h-full rounded-md shadow-md border-2 transition-all hover:shadow-lg min-w-[200px] ${item.className}`}
-                                      title={`${item.hierarchicalNumber || item.sequence}: ${item.name} (${item.type})`}
+                                      title={`${customSequences[item.id] ? `Priority ${customSequences[item.id]}` : item.sequence ? `P${item.sequence}` : item.hierarchicalNumber}: ${item.name} (${item.type})`}
                                     >
-                                      {/* Hierarchical Number Badge */}
-                                      <span className="font-bold text-xs bg-white/40 backdrop-blur-sm px-2 py-0.5 rounded-md border border-white/60 shrink-0 shadow-sm">
-                                        {item.hierarchicalNumber || item.sequence}
-                                      </span>
+                                      {/* Priority or Hierarchical Number Badge */}
+                                      {customSequences[item.id] ? (
+                                        <span className="font-bold text-xs bg-blue-600 text-white px-2 py-0.5 rounded-md border border-blue-700 shrink-0 shadow-sm">
+                                          P{customSequences[item.id]}
+                                        </span>
+                                      ) : (
+                                        <span className="font-bold text-xs bg-white/40 backdrop-blur-sm px-2 py-0.5 rounded-md border border-white/60 shrink-0 shadow-sm">
+                                          {item.sequence ? `P${item.sequence}` : item.hierarchicalNumber}
+                                        </span>
+                                      )}
 
                                       {/* Task Name - More Prominent */}
                                       <span className="truncate font-semibold text-sm flex-1 min-w-[120px]">
@@ -1097,6 +1258,102 @@ export default function SchedulingPlanning() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Sorted Items Table */}
+          {ganttData && Object.keys(ganttData).length > 0 && (
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle>Schedule Items (Sorted by Order)</CardTitle>
+                <CardDescription>
+                  All items sorted by priority and date order
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-20">Order</TableHead>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Group</TableHead>
+                        <TableHead>Start Date</TableHead>
+                        <TableHead>End Date</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Duration</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {sortedItemsList.map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell>
+                            <Badge
+                              variant={customSequences[item.id] ? "default" : "outline"}
+                              className={
+                                customSequences[item.id]
+                                  ? "bg-blue-600 text-white"
+                                  : "bg-slate-100 text-slate-700"
+                              }
+                            >
+                              {customSequences[item.id]
+                                ? `P${customSequences[item.id]}`
+                                : item.sequence
+                                ? `P${item.sequence}`
+                                : item.hierarchicalNumber || "-"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="font-medium">{item.name}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="capitalize">
+                              {item.type}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {item.group}
+                          </TableCell>
+                          <TableCell>
+                            {item.startAt
+                              ? format(new Date(item.startAt), "MMM dd, yyyy")
+                              : "-"}
+                          </TableCell>
+                          <TableCell>
+                            {item.endAt
+                              ? format(new Date(item.endAt), "MMM dd, yyyy")
+                              : "-"}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                item.status === "completed"
+                                  ? "default"
+                                  : item.status === "in-progress"
+                                  ? "secondary"
+                                  : "outline"
+                              }
+                              className={
+                                item.status === "completed"
+                                  ? "bg-green-600 text-white"
+                                  : item.status === "in-progress"
+                                  ? "bg-blue-600 text-white"
+                                  : ""
+                              }
+                            >
+                              {item.status || "not-started"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {item.startAt && item.endAt
+                              ? `${differenceInDays(new Date(item.endAt), new Date(item.startAt)) + 1} days`
+                              : "-"}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </>
       )}
 
