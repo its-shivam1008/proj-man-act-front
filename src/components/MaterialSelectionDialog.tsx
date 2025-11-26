@@ -113,25 +113,30 @@ export default function MaterialSelectionDialog({
   useEffect(() => {
     if (!isOpen) return;
 
-    dispatch(fetchMaterials());
+    // wait for BOTH to exist
+    if (
+      isUpdateMode &&
+      wbsItem?.linkedMaterials?.length > 0 &&
+      materials.length > 0
+    ) {
+      const prefilled = wbsItem.linkedMaterials
+        .map((link: any) => {
+          const details = materials.find((m) => m._id === link.materialId);
 
-    if (isUpdateMode && wbsItem?.linkedMaterials?.length > 0) {
-      const prefilled = wbsItem.linkedMaterials.map((link: any) => {
-        const details = materials.find((m) => m._id === link.materialId);
+          if (!details) return null;
 
-        return {
-          materialId: link.materialId,
-          name: details?.name || "Unknown Material",
-          quantity: link.quantity,
-          unit: link.unit,
-        };
-      });
+          return {
+            materialId: link.materialId,
+            name: details.name,
+            quantity: link.quantity,
+            unit: link.unit,
+          };
+        })
+        .filter(Boolean);
 
       setSavedMaterials(prefilled);
-    } else {
-      setSavedMaterials([]);
     }
-  }, [isOpen]);
+  }, [isOpen, materials, wbsItem]);
 
   const openMaterialModalForAdd = (m: MaterialItem) => {
     setMaterialInput({

@@ -189,9 +189,9 @@ const WBSNode: React.FC<WBSNodeProps> = ({
         <div className="w-20 text-center text-sm text-muted-foreground">
           {item.endDate || "N/A"}
         </div>
-        <div className="w-48 text-right pr-4">
+        <div className="w-48 text-center  flex justify-center items-center space-x-2 pr-4">
           {canEdit && (
-            <div>
+            <div className="">
               <Button
                 variant="ghost"
                 size="icon"

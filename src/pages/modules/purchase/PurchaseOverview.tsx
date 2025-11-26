@@ -1,3 +1,4 @@
+import { usePermission } from "@/hooks/userPermission";
 import React, { useState, useEffect } from 'react';
 import { storage, STORAGE_KEYS } from '@/lib/storage';
 import {
@@ -8,7 +9,8 @@ import {
   Users,
   CheckCircle,
   Send,
-  Package
+  Package,
+  ShieldAlert
 } from 'lucide-react';
 
 interface PurchaseOrder {
@@ -26,6 +28,20 @@ interface Vendor {
 }
 
 const PurchaseOverview: React.FC = () => {
+  const canView = usePermission("purchaseOverview", "view");
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [rfqs, setRfqs] = useState<RFQ[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -41,7 +57,7 @@ const PurchaseOverview: React.FC = () => {
 
   return (
     <div className="space-y-6">
-       <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Purchase Overview</h1>
           <p className="mt-1 text-sm text-gray-600">
@@ -73,7 +89,7 @@ const PurchaseOverview: React.FC = () => {
               <div className="ml-5">
                 <p className="text-sm font-medium text-gray-500">Total Value</p>
                 <p className="text-2xl font-semibold text-gray-900">
-                   ₹{purchaseOrders.reduce((sum, order) => sum + (order.totalAmount || 0), 0).toLocaleString()}
+                  ₹{purchaseOrders.reduce((sum, order) => sum + (order.totalAmount || 0), 0).toLocaleString()}
                 </p>
               </div>
             </div>

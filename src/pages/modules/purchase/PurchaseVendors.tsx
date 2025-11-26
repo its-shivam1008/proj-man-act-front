@@ -1,15 +1,35 @@
+import { usePermission } from "@/hooks/userPermission";
 import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '@/redux/store';
 import { fetchVendors, createVendor, updateVendor, deleteVendor } from '@/redux/slices/purchase/vendorSlice';
 import { Vendor } from '@/types/purchase';
-import { Plus, Eye, Edit, Trash2, Building, Mail, Phone, MapPin, CreditCard, Star, X, Loader2, Search } from 'lucide-react';
+import { Plus, Eye, Edit, Trash2, Building, Mail, Phone, MapPin, CreditCard, Star, X, Loader2, Search, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
 
 const PurchaseVendors: React.FC = () => {
+
+  const canView = usePermission("vendors", "view");
+  const canCreate = usePermission("vendors", "create");
+  const canEdit = usePermission("vendors", "edit");
+  const canDelete = usePermission("vendors", "delete");
+
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
   const dispatch = useDispatch<AppDispatch>();
   const { vendors, loading, error, meta } = useSelector((state: RootState) => state.vendors);
-  
+
   const [showCreateVendor, setShowCreateVendor] = useState(false);
   const [showViewVendor, setShowViewVendor] = useState(false);
   const [showEditVendor, setShowEditVendor] = useState(false);
@@ -27,7 +47,7 @@ const PurchaseVendors: React.FC = () => {
 
   useEffect(() => {
     if (error) {
-        toast.error(error);
+      toast.error(error);
     }
   }, [error]);
 
@@ -54,17 +74,24 @@ const PurchaseVendors: React.FC = () => {
       e.preventDefault();
       setSubmitting(true);
       try {
-          await dispatch(createVendor(formData)).unwrap();
-          toast.success("Vendor created successfully");
-          dispatch(fetchVendors({ page, limit, q: search }));
-          setShowCreateVendor(false);
+        await dispatch(createVendor(formData)).unwrap();
+        toast.success("Vendor created successfully");
+        dispatch(fetchVendors({ page, limit, q: search }));
+        setShowCreateVendor(false);
       } catch (err) {
-          // Error handled by global toaster via state listener or unwrap catch
-          toast.error("Failed to create vendor");
+        // Error handled by global toaster via state listener or unwrap catch
+        toast.error("Failed to create vendor");
       } finally {
-          setSubmitting(false);
+        setSubmitting(false);
       }
     };
+    if (!canCreate) {
+      return (
+        <p className="text-center text-red-600 py-6">
+          You do not have permission to create vendors.
+        </p>
+      );
+    }
 
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
@@ -150,10 +177,16 @@ const PurchaseVendors: React.FC = () => {
               </div>
               <div className="flex justify-end space-x-3 pt-4">
                 <button type="button" onClick={() => setShowCreateVendor(false)} className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
-                <button type="submit" disabled={submitting} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center">
-                    {submitting && <Loader2 className="animate-spin h-4 w-4 mr-2" />}
-                    Add Vendor
+                <button
+                  type="submit"
+                  disabled={submitting || !canCreate}
+                  className={`px-4 py-2 rounded-lg text-white flex items-center ${canCreate ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-400 cursor-not-allowed"
+                    }`}
+                >
+                  {submitting && <Loader2 className="animate-spin h-4 w-4 mr-2" />}
+                  Add Vendor
                 </button>
+
               </div>
             </form>
           </div>
@@ -186,31 +219,38 @@ const PurchaseVendors: React.FC = () => {
       e.preventDefault();
       setSubmitting(true);
       try {
-          await dispatch(updateVendor({ id: editingVendor._id, data: formData })).unwrap();
-          toast.success("Vendor updated successfully");
-          dispatch(fetchVendors({ page, limit, q: search }));
-          setShowEditVendor(false);
-          setEditingVendor(null);
+        await dispatch(updateVendor({ id: editingVendor._id, data: formData })).unwrap();
+        toast.success("Vendor updated successfully");
+        dispatch(fetchVendors({ page, limit, q: search }));
+        setShowEditVendor(false);
+        setEditingVendor(null);
       } catch (err) {
-          const message = typeof err === "string" ? err : err?.message ?? "Failed to create vendor";
-          toast.error(message);
+        const message = typeof err === "string" ? err : err?.message ?? "Failed to create vendor";
+        toast.error(message);
       } finally {
-          setSubmitting(false);
+        setSubmitting(false);
       }
     };
+    if (!canEdit) {
+      return (
+        <p className="text-center text-red-600 py-6">
+          You do not have permission to edit vendors.
+        </p>
+      );
+    }
 
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
         <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-4/5 lg:w-3/4 shadow-lg rounded-md bg-white">
           <div className="mt-3">
-             <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-medium text-gray-900">Edit Vendor</h3>
               <button onClick={() => { setShowEditVendor(false); setEditingVendor(null); }} className="text-gray-400 hover:text-gray-600">
                 <X className="h-6 w-6" />
               </button>
             </div>
             <form onSubmit={handleSubmit} className="space-y-6">
-               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Vendor Name *</label>
                   <input type="text" value={formData.vendorName} onChange={(e) => setFormData({ ...formData, vendorName: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Enter vendor name" required />
@@ -283,10 +323,16 @@ const PurchaseVendors: React.FC = () => {
               </div>
               <div className="flex justify-end space-x-3 pt-4">
                 <button type="button" onClick={() => { setShowEditVendor(false); setEditingVendor(null); }} className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
-                <button type="submit" disabled={submitting} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center">
-                     {submitting && <Loader2 className="animate-spin h-4 w-4 mr-2" />}
-                     Update Vendor
+                <button
+                  type="submit"
+                  disabled={submitting || !canEdit}
+                  className={`px-4 py-2 rounded-lg text-white flex items-center ${canEdit ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-400 cursor-not-allowed"
+                    }`}
+                >
+                  {submitting && <Loader2 className="animate-spin h-4 w-4 mr-2" />}
+                  Update Vendor
                 </button>
+
               </div>
             </form>
           </div>
@@ -403,118 +449,133 @@ const PurchaseVendors: React.FC = () => {
           <p className="text-sm text-gray-600">Manage vendor database and performance</p>
         </div>
         <div className="flex items-center gap-3">
-            <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
-                <input
-                    type="search"
-                    value={search}
-                    onChange={(e) => {
-                        setSearch(e.target.value);
-                        setPage(1);
-                    }}
-                    placeholder="Search vendors..."
-                    className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
-                />
-            </div>
-            <button
-                onClick={() => setShowCreateVendor(true)}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center whitespace-nowrap"
-            >
-                <Plus className="h-4 w-4 mr-2" />
-                Add Vendor
-            </button>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              placeholder="Search vendors..."
+              className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
+            />
+          </div>
+          <button
+            disabled={!canCreate}
+            onClick={() => canCreate && setShowCreateVendor(true)}
+            className={`px-4 py-2 rounded-lg flex items-center justify-center whitespace-nowrap ${canCreate ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-gray-400 text-white cursor-not-allowed"
+              }`}
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Add Vendor
+          </button>
+
         </div>
       </div>
 
       {loading && !vendors.length ? (
         <div className="flex justify-center p-10"><Loader2 className="animate-spin h-8 w-8 text-blue-500" /></div>
       ) : (
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {vendors?.map((vendor) => (
-          <div key={vendor.id} className="bg-white shadow rounded-lg p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center">
-                <Building className="h-8 w-8 text-blue-500 mr-3" />
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900">{vendor.vendorName}</h3>
-                  <p className="text-sm text-gray-500">{vendor.contactPerson}</p>
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {vendors?.map((vendor) => (
+            <div key={vendor.id} className="bg-white shadow rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center">
+                  <Building className="h-8 w-8 text-blue-500 mr-3" />
+                  <div>
+                    <h3 className="text-lg font-medium text-gray-900">{vendor.vendorName}</h3>
+                    <p className="text-sm text-gray-500">{vendor.contactPerson}</p>
+                  </div>
+                </div>
+                <div className="flex items-center">
+                  <Star className="h-4 w-4 text-yellow-400 mr-1" />
+                  <span className="text-sm font-medium text-gray-900">{vendor.vendorRating}</span>
                 </div>
               </div>
-              <div className="flex items-center">
-                <Star className="h-4 w-4 text-yellow-400 mr-1" />
-                <span className="text-sm font-medium text-gray-900">{vendor.vendorRating}</span>
+              <div className="space-y-2 mb-4">
+                <div className="flex items-center text-sm text-gray-600">
+                  <Mail className="h-4 w-4 mr-2" />
+                  {vendor.email}
+                </div>
+                <div className="flex items-center text-sm text-gray-600">
+                  <Phone className="h-4 w-4 mr-2" />
+                  {vendor.phone}
+                </div>
+                <div className="flex items-center text-sm text-gray-600">
+                  <MapPin className="h-4 w-4 mr-2" />
+                  {vendor.address ? vendor.address.substring(0, 50) + '...' : ''}
+                </div>
+                <div className="flex items-center text-sm text-gray-600">
+                  <CreditCard className="h-4 w-4 mr-2" />
+                  {vendor.paymentTerms}
+                </div>
               </div>
-            </div>
-            <div className="space-y-2 mb-4">
-              <div className="flex items-center text-sm text-gray-600">
-                <Mail className="h-4 w-4 mr-2" />
-                {vendor.email}
-              </div>
-              <div className="flex items-center text-sm text-gray-600">
-                <Phone className="h-4 w-4 mr-2" />
-                {vendor.phone}
-              </div>
-              <div className="flex items-center text-sm text-gray-600">
-                <MapPin className="h-4 w-4 mr-2" />
-                {vendor.address ? vendor.address.substring(0, 50) + '...' : ''}
-              </div>
-              <div className="flex items-center text-sm text-gray-600">
-                <CreditCard className="h-4 w-4 mr-2" />
-                {vendor.paymentTerms}
-              </div>
-            </div>
-            <div className="mb-4">
-              <p className="text-xs text-gray-500 mb-1">Products Supplied:</p>
-              <div className="flex flex-wrap gap-1">
-                {(() => {
-                  let products: string[] = [];
-                  if (vendor.productsSupplied) {
-                    products = vendor.productsSupplied.split(',').map(p => p.trim()).filter(p => p);
-                  }
-                  return products.slice(0, 3).map((product: string, index: number) => (
-                    <span key={index} className="inline-flex px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
-                      {product}
-                    </span>
-                  ));
-                })()}
-                {(() => {
-                   let products: string[] = [];
-                   if (vendor.productsSupplied) {
-                     products = vendor.productsSupplied.split(',').map(p => p.trim()).filter(p => p);
-                   }
-                  if (products.length > 3) {
-                    return (
-                      <span className="inline-flex px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">
-                        +{products.length - 3} more
+              <div className="mb-4">
+                <p className="text-xs text-gray-500 mb-1">Products Supplied:</p>
+                <div className="flex flex-wrap gap-1">
+                  {(() => {
+                    let products: string[] = [];
+                    if (vendor.productsSupplied) {
+                      products = vendor.productsSupplied.split(',').map(p => p.trim()).filter(p => p);
+                    }
+                    return products.slice(0, 3).map((product: string, index: number) => (
+                      <span key={index} className="inline-flex px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
+                        {product}
                       </span>
-                    );
-                  }
-                  return null;
-                })()}
+                    ));
+                  })()}
+                  {(() => {
+                    let products: string[] = [];
+                    if (vendor.productsSupplied) {
+                      products = vendor.productsSupplied.split(',').map(p => p.trim()).filter(p => p);
+                    }
+                    if (products.length > 3) {
+                      return (
+                        <span className="inline-flex px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">
+                          +{products.length - 3} more
+                        </span>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${vendor.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                  }`}>
+                  {vendor.isActive ? 'Active' : 'Inactive'}
+                </span>
+                <div className="flex space-x-2">
+                  <button onClick={() => { setViewingVendor(vendor); setShowViewVendor(true); }} className="text-blue-600 hover:text-blue-900"><Eye className="h-4 w-4" /></button>
+                  <button
+                    disabled={!canEdit}
+                    onClick={() => canEdit && (setEditingVendor(vendor), setShowEditVendor(true))}
+                    className={`${canEdit ? "text-green-600 hover:text-green-900" : "text-gray-400 cursor-not-allowed"}`}
+                  >
+                    <Edit className="h-4 w-4" />
+                  </button>
+
+                  <button
+                    disabled={!canDelete}
+                    onClick={() =>
+                      canDelete &&
+                      confirm("Are you sure?") &&
+                      dispatch(deleteVendor(vendor._id))
+                        .unwrap()
+                        .then(() => dispatch(fetchVendors({ page, limit, q: search })))
+                    }
+                    className={`${canDelete ? "text-red-600 hover:text-red-900" : "text-gray-400 cursor-not-allowed"}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+
+                </div>
               </div>
             </div>
-            <div className="flex justify-between items-center">
-              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${vendor.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                }`}>
-                {vendor.isActive ? 'Active' : 'Inactive'}
-              </span>
-              <div className="flex space-x-2">
-                <button onClick={() => { setViewingVendor(vendor); setShowViewVendor(true); }} className="text-blue-600 hover:text-blue-900"><Eye className="h-4 w-4" /></button>
-                <button onClick={() => { setEditingVendor(vendor); setShowEditVendor(true); }} className="text-green-600 hover:text-green-900"><Edit className="h-4 w-4" /></button>
-                <button className="text-red-600 hover:text-red-900" onClick={() => {
-                  if (confirm('Are you sure?')) {
-                    dispatch(deleteVendor(vendor._id))
-                      .unwrap()
-                      .then(() => {
-                        dispatch(fetchVendors({ page, limit, q: search }));
-                      });
-                  }
-                }}><Trash2 className="h-4 w-4" /></button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
       )}
 
       {/* Pagination */}
@@ -565,11 +626,10 @@ const PurchaseVendors: React.FC = () => {
                     <button
                       key={p}
                       onClick={() => jumpToPage(p as number)}
-                      className={`px-3 py-1.5 rounded-md text-sm ${
-                        p === current
-                          ? 'bg-blue-600 text-white font-medium'
-                          : 'border border-gray-300 hover:bg-gray-100'
-                      }`}
+                      className={`px-3 py-1.5 rounded-md text-sm ${p === current
+                        ? 'bg-blue-600 text-white font-medium'
+                        : 'border border-gray-300 hover:bg-gray-100'
+                        }`}
                     >
                       {p}
                     </button>

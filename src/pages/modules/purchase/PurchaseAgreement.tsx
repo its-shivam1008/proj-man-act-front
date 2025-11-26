@@ -1,17 +1,36 @@
+import { usePermission } from "@/hooks/userPermission";
 import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '@/redux/store';
 import { fetchPurchaseAgreements, createPurchaseAgreement, deletePurchaseAgreement } from '@/redux/slices/purchase/purchaseAgreementSlice';
 import { fetchVendors } from '@/redux/slices/purchase/vendorSlice';
 import { PurchaseAgreement } from '@/types/purchase';
-import { Plus, Eye, Trash2, CheckCircle, X, Loader2, Search } from 'lucide-react';
+import { Plus, Eye, Trash2, CheckCircle, X, Loader2, Search, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
 
 const PurchaseAgreementComponent: React.FC = () => {
+  const canView = usePermission("agreements", "view");
+  const canCreate = usePermission("agreements", "create");
+  const canEdit = usePermission("agreements", "edit");
+  const canDelete = usePermission("agreements", "delete");
+
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
   const dispatch = useDispatch<AppDispatch>();
   const { purchaseAgreements, loading, error, meta } = useSelector((state: RootState) => state.purchaseAgreements);
   const { vendors } = useSelector((state: RootState) => state.vendors);
-  
+
   const [showCreateAgreement, setShowCreateAgreement] = useState(false);
   const [showViewAgreement, setShowViewAgreement] = useState(false);
   const [viewingAgreement, setViewingAgreement] = useState<PurchaseAgreement | null>(null);
@@ -28,7 +47,7 @@ const PurchaseAgreementComponent: React.FC = () => {
 
   useEffect(() => {
     if (error) {
-        toast.error(error);
+      toast.error(error);
     }
   }, [error]);
 
@@ -45,13 +64,13 @@ const PurchaseAgreementComponent: React.FC = () => {
     });
 
     const handleVendorChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-       const selectedVendorName = e.target.value;
-       const selectedVendor = vendors.find(v => v.vendorName === selectedVendorName);
-       setFormData({
-           ...formData,
-           vendor: selectedVendorName,
-           vendorId: selectedVendor ? selectedVendor._id : ''
-       });
+      const selectedVendorName = e.target.value;
+      const selectedVendor = vendors.find(v => v.vendorName === selectedVendorName);
+      setFormData({
+        ...formData,
+        vendor: selectedVendorName,
+        vendorId: selectedVendor ? selectedVendor._id : ''
+      });
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -59,18 +78,27 @@ const PurchaseAgreementComponent: React.FC = () => {
       setSubmitting(true);
       try {
         await dispatch(createPurchaseAgreement({
-            ...formData,
-            status: 'active'
+          ...formData,
+          status: 'active'
         })).unwrap();
         dispatch(fetchPurchaseAgreements({ page, limit, q: search }));
         toast.success("Purchase Agreement created");
         setShowCreateAgreement(false);
       } catch (e) {
-          toast.error("Failed to create purchase agreement");
+        toast.error("Failed to create purchase agreement");
       } finally {
-          setSubmitting(false);
+        setSubmitting(false);
       }
     };
+
+    if (!canCreate) {
+      return (
+        <p className="text-center text-red-600 py-6">
+          You do not have permission to create purchase agreements.
+        </p>
+      );
+    }
+
 
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
@@ -124,10 +152,16 @@ const PurchaseAgreementComponent: React.FC = () => {
               </div>
               <div className="flex justify-end space-x-3 pt-4">
                 <button type="button" onClick={() => setShowCreateAgreement(false)} className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
-                <button type="submit" disabled={submitting} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center">
-                    {submitting && <Loader2 className="animate-spin h-4 w-4 mr-2" />}
-                    Create Agreement
+                <button
+                  type="submit"
+                  disabled={submitting || !canCreate}
+                  className={`px-4 py-2 rounded-lg text-white flex items-center ${canCreate ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-400 cursor-not-allowed"
+                    }`}
+                >
+                  {submitting && <Loader2 className="animate-spin h-4 w-4 mr-2" />}
+                  Create Agreement
                 </button>
+
               </div>
             </form>
           </div>
@@ -237,167 +271,170 @@ const PurchaseAgreementComponent: React.FC = () => {
           <p className="text-sm text-gray-600">Manage long-term purchase agreements with vendors</p>
         </div>
         <div className="flex items-center gap-3">
-            <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
-                <input
-                    type="search"
-                    value={search}
-                    onChange={(e) => {
-                        setSearch(e.target.value);
-                        setPage(1);
-                    }}
-                    placeholder="Search agreements..."
-                    className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
-                />
-            </div>
-            <button
-                onClick={() => setShowCreateAgreement(true)}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center whitespace-nowrap"
-            >
-                <Plus className="h-4 w-4 mr-2" />
-                New Agreement
-            </button>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              placeholder="Search agreements..."
+              className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
+            />
+          </div>
+          <button
+            disabled={!canCreate}
+            onClick={() => canCreate && setShowCreateAgreement(true)}
+            className={`px-4 py-2 rounded-lg flex items-center justify-center whitespace-nowrap ${canCreate ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-gray-400 text-white cursor-not-allowed"
+              }`}
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            New Agreement
+          </button>
+
         </div>
       </div>
 
       <div className="bg-white shadow rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Agreement Number</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vendor</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Start Date</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">End Date</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Value</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {purchaseAgreements?.map((agreement) => (
-              <tr key={agreement.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{agreement?.agreementNumber}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{agreement?.vendor}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{agreement?.startDate ? new Date(agreement.startDate).toLocaleDateString() : 'N/A'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{agreement?.endDate ? new Date(agreement.endDate).toLocaleDateString() : 'N/A'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900"> ₹{(agreement.totalValue || 0).toLocaleString()}</td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="flex items-center">
-                    {getStatusIcon(agreement.status || 'active')}
-                    <span className={`ml-2 inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(agreement.status || 'active')}`}>
-                      {agreement.status || 'active'}
-                    </span>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                  <button onClick={() => { setViewingAgreement(agreement); setShowViewAgreement(true); }} className="text-blue-600 hover:text-blue-900 mr-3"><Eye className="h-4 w-4" /></button>
-                  <button className="text-red-600 hover:text-red-900" onClick={() => {
-                    if (confirm('Are you sure?')) {
-                      dispatch(deletePurchaseAgreement(agreement._id))
-                        .unwrap()
-                        .then(() => {
-                          dispatch(fetchPurchaseAgreements({ page, limit, q: search }));
-                        });
-                    }
-                  }}><Trash2 className="h-4 w-4" /></button>
-                </td>
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Agreement Number</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vendor</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Start Date</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">End Date</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Value</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {purchaseAgreements?.map((agreement) => (
+                <tr key={agreement.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{agreement?.agreementNumber}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{agreement?.vendor}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{agreement?.startDate ? new Date(agreement.startDate).toLocaleDateString() : 'N/A'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{agreement?.endDate ? new Date(agreement.endDate).toLocaleDateString() : 'N/A'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900"> ₹{(agreement.totalValue || 0).toLocaleString()}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center">
+                      {getStatusIcon(agreement.status || 'active')}
+                      <span className={`ml-2 inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(agreement.status || 'active')}`}>
+                        {agreement.status || 'active'}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <button onClick={() => { setViewingAgreement(agreement); setShowViewAgreement(true); }} className="text-blue-600 hover:text-blue-900 mr-3"><Eye className="h-4 w-4" /></button>
+                    <button
+                      disabled={!canDelete}
+                      onClick={() => canDelete && confirm('Are you sure?') && dispatch(deletePurchaseAgreement(agreement._id))
+                        .unwrap()
+                        .then(() => dispatch(fetchPurchaseAgreements({ page, limit, q: search })))}
+                      className={`${canDelete ? "text-red-600 hover:text-red-900" : "text-gray-400 cursor-not-allowed"}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
 
-      {/* Pagination */}
-      {meta && meta.totalPages > 1 && (
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-4 py-3 border-t bg-gray-50">
-          <div className="flex items-center gap-2 mb-3 sm:mb-0">
-            <button
-              onClick={handlePrev}
-              disabled={page <= 1}
-              className="px-4 py-2 border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
-            >
-              Previous
-            </button>
+        {/* Pagination */}
+        {meta && meta.totalPages > 1 && (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-4 py-3 border-t bg-gray-50">
+            <div className="flex items-center gap-2 mb-3 sm:mb-0">
+              <button
+                onClick={handlePrev}
+                disabled={page <= 1}
+                className="px-4 py-2 border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+              >
+                Previous
+              </button>
 
-            <div className="flex items-center gap-1">
-              {(() => {
-                const totalPages = meta.totalPages;
-                const current = page;
-                const delta = 3;
-                const range = [];
-                const rangeWithDots = [];
+              <div className="flex items-center gap-1">
+                {(() => {
+                  const totalPages = meta.totalPages;
+                  const current = page;
+                  const delta = 3;
+                  const range = [];
+                  const rangeWithDots = [];
 
-                for (let i = 1; i <= totalPages; i++) {
-                  if (
-                    i === 1 ||
-                    i === totalPages ||
-                    (i >= current - delta && i <= current + delta)
-                  ) {
-                    range.push(i);
+                  for (let i = 1; i <= totalPages; i++) {
+                    if (
+                      i === 1 ||
+                      i === totalPages ||
+                      (i >= current - delta && i <= current + delta)
+                    ) {
+                      range.push(i);
+                    }
                   }
-                }
 
-                let last = 0;
-                range.forEach((p) => {
-                  if (last && p - last > 1) {
-                    rangeWithDots.push('...');
-                  }
-                  rangeWithDots.push(p);
-                  last = p;
-                });
+                  let last = 0;
+                  range.forEach((p) => {
+                    if (last && p - last > 1) {
+                      rangeWithDots.push('...');
+                    }
+                    rangeWithDots.push(p);
+                    last = p;
+                  });
 
-                return rangeWithDots.map((p, idx) =>
-                  p === '...' ? (
-                    <span key={`dots-${idx}`} className="px-2 text-gray-500">
-                      ...
-                    </span>
-                  ) : (
-                    <button
-                      key={p}
-                      onClick={() => jumpToPage(p as number)}
-                      className={`px-3 py-1.5 rounded-md text-sm ${
-                        p === current
+                  return rangeWithDots.map((p, idx) =>
+                    p === '...' ? (
+                      <span key={`dots-${idx}`} className="px-2 text-gray-500">
+                        ...
+                      </span>
+                    ) : (
+                      <button
+                        key={p}
+                        onClick={() => jumpToPage(p as number)}
+                        className={`px-3 py-1.5 rounded-md text-sm ${p === current
                           ? 'bg-blue-600 text-white font-medium'
                           : 'border border-gray-300 hover:bg-gray-100'
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  )
-                );
-              })()}
+                          }`}
+                      >
+                        {p}
+                      </button>
+                    )
+                  );
+                })()}
+              </div>
+
+              <button
+                onClick={handleNext}
+                disabled={page >= meta.totalPages}
+                className="px-4 py-2 border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+              >
+                Next
+              </button>
             </div>
 
-            <button
-              onClick={handleNext}
-              disabled={page >= meta.totalPages}
-              className="px-4 py-2 border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
-            >
-              Next
-            </button>
-          </div>
+            <div className="flex items-center gap-6 text-sm text-gray-600">
+              <span>
+                Showing <strong>{(page - 1) * limit + 1}</strong> to{' '}
+                <strong>{Math.min(page * limit, meta.total)}</strong> of <strong>{meta.total}</strong>{' '}
+                Agreements
+              </span>
 
-          <div className="flex items-center gap-6 text-sm text-gray-600">
-            <span>
-              Showing <strong>{(page - 1) * limit + 1}</strong> to{' '}
-              <strong>{Math.min(page * limit, meta.total)}</strong> of <strong>{meta.total}</strong>{' '}
-              Agreements
-            </span>
-
-            <select
-              value={limit}
-              onChange={handleLimitChange}
-              className="border border-gray-300 px-3 py-1.5 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value={5}>5 / page</option>
-              <option value={10}>10 / page</option>
-              <option value={20}>20 / page</option>
-              <option value={50}>50 / page</option>
-            </select>
+              <select
+                value={limit}
+                onChange={handleLimitChange}
+                className="border border-gray-300 px-3 py-1.5 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value={5}>5 / page</option>
+                <option value={10}>10 / page</option>
+                <option value={20}>20 / page</option>
+                <option value={50}>50 / page</option>
+              </select>
+            </div>
           </div>
-        </div>
-      )}
+        )}
       </div>
 
       {showCreateAgreement && <CreateAgreementForm />}

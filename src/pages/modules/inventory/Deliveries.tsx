@@ -1,4 +1,4 @@
-// Deliveries.tsx
+import { usePermission } from "@/hooks/userPermission";
 import React, { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -35,6 +35,7 @@ import {
   Eye,
   Trash2,
   X,
+  ShieldAlert,
 } from "lucide-react";
 
 interface DeliveryItem {
@@ -51,8 +52,25 @@ interface DeliveryItem {
 }
 
 const Deliveries: React.FC = () => {
-  const dispatch = useDispatch();
 
+  const canView = usePermission("deliveries", "view");
+  const canCreate = usePermission("deliveries", "create");
+  const canEdit = usePermission("deliveries", "edit");
+  const canDelete = usePermission("deliveries", "delete");
+  const dispatch = useDispatch();
+      if (!canView) {
+      return (
+        <div className="text-center py-12 px-4">
+          <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-gray-900 mb-2">
+            Access Denied
+          </h3>
+          <p className="text-gray-600">
+            You do not have the necessary permissions to view this page.
+          </p>
+        </div>
+      );
+    }
   const { deliveries, loading: deliveryLoading } = useSelector(
     (state: any) => state.delivery
   );
@@ -202,6 +220,7 @@ const Deliveries: React.FC = () => {
       if (!formData.productId) return alert("Please select a product");
       handleSubmit(formData);
     };
+
 
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
@@ -366,7 +385,17 @@ const Deliveries: React.FC = () => {
               </button>
               <button
                 type="submit"
-                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                disabled={initialData ? !canEdit : !canCreate}
+                className={`px-6 py-3 rounded-lg text-white
+    ${
+      initialData
+        ? canEdit
+          ? "bg-blue-600 hover:bg-blue-700"
+          : "bg-gray-400 cursor-not-allowed"
+        : canCreate
+        ? "bg-blue-600 hover:bg-blue-700"
+        : "bg-gray-400 cursor-not-allowed"
+    }`}
               >
                 {initialData ? "Update Delivery" : "Create Delivery"}
               </button>
@@ -459,15 +488,24 @@ const Deliveries: React.FC = () => {
           </p>
         </div>
         <div className="flex items-center gap-4">
-            {/* Added Notification Center */}
-            <NotificationCenter destination="delivery.inventory" title="Inventory Notifications" />
-            
-            <button
-            onClick={() => setShowCreateForm(true)}
-            className="bg-blue-600 text-white px-5 py-3 rounded-lg hover:bg-blue-700 flex items-center gap-2"
-            >
+          {/* Added Notification Center */}
+          <NotificationCenter
+            destination="delivery.inventory"
+            title="Inventory Notifications"
+          />
+
+          <button
+            disabled={!canCreate}
+            onClick={() => canCreate && setShowCreateForm(true)}
+            className={`flex items-center gap-2 px-5 py-3 rounded-lg
+    ${
+      canCreate
+        ? "bg-blue-600 text-white hover:bg-blue-700"
+        : "bg-gray-400 text-white cursor-not-allowed"
+    }`}
+          >
             <Plus className="h-5 w-5" /> New Delivery
-            </button>
+          </button>
         </div>
       </div>
 
@@ -634,7 +672,7 @@ const Deliveries: React.FC = () => {
                               id: d._id,
                               data: {
                                 status: value,
-                                warehouseId: d.warehouseId, 
+                                warehouseId: d.warehouseId,
                               },
                             })
                           )
@@ -710,21 +748,29 @@ const Deliveries: React.FC = () => {
                           <Eye className="h-5 w-5" />
                         </button>
                         <button
-                          onClick={() => {
-                            setEditingDelivery(d);
-                            setShowUpdateForm(true);
-                          }}
-                          className="text-green-600 hover:text-green-900"
+                          disabled={!canEdit}
+                          onClick={() =>
+                            canEdit &&
+                            (setEditingDelivery(d), setShowUpdateForm(true))
+                          }
+                          className={`${
+                            canEdit
+                              ? "text-blue-600"
+                              : "text-gray-400 cursor-not-allowed"
+                          }`}
                         >
                           <Edit className="h-5 w-5" />
                         </button>
                         <button
-                          onClick={() => {
-                            if (confirm("Delete this delivery?")) {
-                              dispatch(deleteDelivery(d._id));
-                            }
-                          }}
-                          className="text-red-600 hover:text-red-900"
+                          disabled={!canDelete}
+                          onClick={() =>
+                            canDelete && dispatch(deleteDelivery(d._id))
+                          }
+                          className={`${
+                            canDelete
+                              ? "text-red-600"
+                              : "text-gray-400 cursor-not-allowed"
+                          }`}
                         >
                           <Trash2 className="h-5 w-5" />
                         </button>

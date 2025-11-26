@@ -1,7 +1,26 @@
+import { usePermission } from "@/hooks/userPermission";
+
 import React, { useState } from 'react';
-import { Settings as SettingsIcon } from 'lucide-react';
+import { Settings as SettingsIcon, ShieldAlert } from 'lucide-react';
 
 const PurchaseSettings: React.FC = () => {
+
+  const canView = usePermission("purchaseSettings", "view");
+  const canEdit = usePermission("purchaseSettings", "edit");
+
+   if (!canView) {
+      return (
+        <div className="text-center py-12 px-4">
+          <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-gray-900 mb-2">
+            Access Denied
+          </h3>
+          <p className="text-gray-600">
+            You do not have the necessary permissions to view this page.
+          </p>
+        </div>
+      );
+    }
   const [settings, setSettings] = useState({
     defaultWarehouse: 'Warehouse A',
     defaultCurrency: 'USD',
@@ -38,7 +57,8 @@ const PurchaseSettings: React.FC = () => {
           <div className="space-y-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Default Warehouse</label>
-              <select 
+              <select
+               disabled={!canEdit}
                 value={settings.defaultWarehouse}
                 onChange={(e) => handleSettingChange('defaultWarehouse', e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -50,7 +70,7 @@ const PurchaseSettings: React.FC = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Default Currency</label>
-              <select 
+              <select
                 value={settings.defaultCurrency}
                 onChange={(e) => handleSettingChange('defaultCurrency', e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -61,11 +81,11 @@ const PurchaseSettings: React.FC = () => {
               </select>
             </div>
             <label className="flex items-center">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 checked={settings.multiCurrency}
                 onChange={(e) => handleSettingChange('multiCurrency', e.target.checked)}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" 
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               <span className="ml-2 text-sm text-gray-700">Multi-Currency Support</span>
             </label>
@@ -76,30 +96,30 @@ const PurchaseSettings: React.FC = () => {
           <h3 className="text-lg font-medium text-gray-900 mb-4">Approval Workflow</h3>
           <div className="space-y-3">
             <label className="flex items-center">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 checked={settings.enableApprovalWorkflow}
                 onChange={(e) => handleSettingChange('enableApprovalWorkflow', e.target.checked)}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" 
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               <span className="ml-2 text-sm text-gray-700">Enable Approval Workflow</span>
             </label>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Approval Threshold</label>
-              <input 
-                type="number" 
+              <input
+                type="number"
                 value={settings.approvalThreshold}
                 onChange={(e) => handleSettingChange('approvalThreshold', parseInt(e.target.value))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
-                placeholder="10000" 
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="10000"
               />
             </div>
             <label className="flex items-center">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 checked={settings.autoReplenishment}
                 onChange={(e) => handleSettingChange('autoReplenishment', e.target.checked)}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" 
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               <span className="ml-2 text-sm text-gray-700">Auto-Replenishment</span>
             </label>
@@ -110,29 +130,29 @@ const PurchaseSettings: React.FC = () => {
           <h3 className="text-lg font-medium text-gray-900 mb-4">Notifications</h3>
           <div className="space-y-3">
             <label className="flex items-center">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 checked={settings.emailNotifications}
                 onChange={(e) => handleSettingChange('emailNotifications', e.target.checked)}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" 
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               <span className="ml-2 text-sm text-gray-700">Email Notifications</span>
             </label>
             <label className="flex items-center">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 checked={settings.smsNotifications}
                 onChange={(e) => handleSettingChange('smsNotifications', e.target.checked)}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" 
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               <span className="ml-2 text-sm text-gray-700">SMS Notifications</span>
             </label>
             <label className="flex items-center">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 checked={settings.contractRenewalAlerts}
                 onChange={(e) => handleSettingChange('contractRenewalAlerts', e.target.checked)}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" 
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               <span className="ml-2 text-sm text-gray-700">Contract Renewal Alerts</span>
             </label>
@@ -143,29 +163,29 @@ const PurchaseSettings: React.FC = () => {
           <h3 className="text-lg font-medium text-gray-900 mb-4">Purchase Types</h3>
           <div className="space-y-3">
             <label className="flex items-center">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 checked={settings.localPurchase}
                 onChange={(e) => handleSettingChange('localPurchase', e.target.checked)}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" 
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               <span className="ml-2 text-sm text-gray-700">Local Purchase</span>
             </label>
             <label className="flex items-center">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 checked={settings.importPurchase}
                 onChange={(e) => handleSettingChange('importPurchase', e.target.checked)}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" 
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               <span className="ml-2 text-sm text-gray-700">Import Purchase</span>
             </label>
             <label className="flex items-center">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 checked={settings.dropShipping}
                 onChange={(e) => handleSettingChange('dropShipping', e.target.checked)}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" 
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               <span className="ml-2 text-sm text-gray-700">Drop Shipping</span>
             </label>
@@ -177,21 +197,21 @@ const PurchaseSettings: React.FC = () => {
           <div className="space-y-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Default Purchase Tax</label>
-              <input 
-                type="number" 
-                step="0.01" 
+              <input
+                type="number"
+                step="0.01"
                 value={settings.defaultPurchaseTax}
                 onChange={(e) => handleSettingChange('defaultPurchaseTax', parseFloat(e.target.value))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
-                placeholder="10.00" 
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="10.00"
               />
             </div>
             <label className="flex items-center">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 checked={settings.taxInclusivePricing}
                 onChange={(e) => handleSettingChange('taxInclusivePricing', e.target.checked)}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" 
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               <span className="ml-2 text-sm text-gray-700">Tax Inclusive Pricing</span>
             </label>
@@ -203,7 +223,7 @@ const PurchaseSettings: React.FC = () => {
           <div className="space-y-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Evaluation Criteria</label>
-              <select 
+              <select
                 value={settings.evaluationCriteria}
                 onChange={(e) => handleSettingChange('evaluationCriteria', e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -214,11 +234,11 @@ const PurchaseSettings: React.FC = () => {
               </select>
             </div>
             <label className="flex items-center">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 checked={settings.autoVendorScoring}
                 onChange={(e) => handleSettingChange('autoVendorScoring', e.target.checked)}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" 
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               <span className="ml-2 text-sm text-gray-700">Auto Vendor Scoring</span>
             </label>

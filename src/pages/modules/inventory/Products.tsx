@@ -11,6 +11,7 @@ import {
 import { fetchWarehouses } from "@/redux/slices/warehouseSlice";
 import { fetchStores } from "@/redux/slices/storageSlice";
 import { toast } from "sonner";
+import { usePermission } from "@/hooks/userPermission";
 
 import {
   Package,
@@ -30,6 +31,7 @@ import {
   FileText,
   Building2,
   Store,
+  ShieldAlert,
 } from "lucide-react";
 
 interface Product {
@@ -57,10 +59,27 @@ interface Product {
 }
 
 const Products: React.FC = () => {
+  const canView = usePermission("products", "view");
+  const canCreate = usePermission("products", "create");
+  const canEdit = usePermission("products", "edit");
+  const canDelete = usePermission("products", "delete");
   const dispatch = useDispatch<AppDispatch>();
   const { products } = useSelector((state: RootState) => state.products);
   const { warehouses } = useSelector((state: RootState) => state.warehouse);
   const { stores } = useSelector((state: RootState) => state.storages);
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have permission to view products.
+        </p>
+      </div>
+    );
+  }
 
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -239,10 +258,24 @@ const Products: React.FC = () => {
       };
 
     const onSubmit = (e: React.FormEvent) => {
+      if (initialData && !canEdit) {
+        return (
+          <div className="text-center py-12 text-red-600 font-semibold">
+            You do not have permission to edit products.
+          </div>
+        );
+      }
+
+      if (!initialData && !canCreate) {
+        return (
+          <div className="text-center py-12 text-red-600 font-semibold">
+            You do not have permission to create products.
+          </div>
+        );
+      }
       e.preventDefault();
       handleSubmit(formData);
     };
-
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
         {/* Backdrop click to close */}
@@ -644,6 +677,7 @@ const Products: React.FC = () => {
           </p>
         </div>
         <button
+          disabled={!canCreate}
           onClick={() => {
             setEditingProduct(null);
             setShowAddProductForm(true);
@@ -776,6 +810,7 @@ const Products: React.FC = () => {
 
                     <button
                       className="text-green-600 hover:text-green-800"
+                      disabled={!canCreate}
                       onClick={() => {
                         setEditingProduct(item);
                         setShowAddProductForm(true);
@@ -785,6 +820,7 @@ const Products: React.FC = () => {
                     </button>
 
                     <button
+                      disabled={!canCreate}
                       className="text-red-600 hover:text-red-800"
                       onClick={() => handleDelete(item._id!)}
                     >

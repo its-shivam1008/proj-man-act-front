@@ -5,9 +5,9 @@ import {
   createReceipt,
   updateReceipt,
   deleteReceipt,
-  approveReceipt, 
+  approveReceipt,
 } from "@/redux/slices/receiptSlice";
-
+import { usePermission } from "@/hooks/userPermission";
 import { fetchProducts } from "@/redux/slices/productSlice";
 import { fetchWarehouses } from "@/redux/slices/warehouseSlice";
 import { fetchVendors } from "@/redux/slices/purchase/vendorSlice";
@@ -25,6 +25,7 @@ import {
   Eye,
   Trash2,
   Warehouse as WarehouseIcon,
+  ShieldAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -40,6 +41,10 @@ interface ReceiptItem {
 }
 
 const Receipt: React.FC = () => {
+  const canView = usePermission("receipt", "view");
+  const canCreate = usePermission("receipt", "create");
+  const canEdit = usePermission("receipt", "edit");
+  const canDelete = usePermission("receipt", "delete");
   const dispatch = useDispatch();
 
   const { vendors, loading: vendorLoading } = useSelector(
@@ -185,7 +190,19 @@ const Receipt: React.FC = () => {
       }
       handleSubmit(formData);
     };
-
+    if (!canView) {
+      return (
+        <div className="text-center py-12 px-4">
+          <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-gray-900 mb-2">
+            Access Denied
+          </h3>
+          <p className="text-gray-600">
+            You do not have the necessary permissions to view this page.
+          </p>
+        </div>
+      );
+    }
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
         <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl my-8">
@@ -336,7 +353,17 @@ const Receipt: React.FC = () => {
               </button>
               <button
                 type="submit"
-                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                disabled={initialData ? !canEdit : !canCreate}
+                className={`px-6 py-3 rounded-lg text-white 
+    ${
+      initialData
+        ? canEdit
+          ? "bg-blue-600 hover:bg-blue-700"
+          : "bg-gray-400 cursor-not-allowed"
+        : canCreate
+        ? "bg-blue-600 hover:bg-blue-700"
+        : "bg-gray-400 cursor-not-allowed"
+    }`}
               >
                 {initialData ? "Update Receipt" : "Create Receipt"}
               </button>
@@ -412,7 +439,19 @@ const Receipt: React.FC = () => {
       </div>
     );
   };
-
+if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -426,8 +465,14 @@ const Receipt: React.FC = () => {
           </p>
         </div>
         <button
-          onClick={() => setShowCreateForm(true)}
-          className="bg-blue-600 text-white px-5 py-3 rounded-lg hover:bg-blue-700 flex items-center gap-2"
+          disabled={!canCreate}
+          onClick={() => canCreate && setShowCreateForm(true)}
+          className={`px-5 py-3 rounded-lg flex items-center gap-2
+    ${
+      canCreate
+        ? "bg-blue-600 text-white hover:bg-blue-700"
+        : "bg-gray-400 text-white cursor-not-allowed"
+    }`}
         >
           <Plus className="h-5 w-5" /> New Receipt
         </button>
@@ -592,12 +637,16 @@ const Receipt: React.FC = () => {
 
                       {/* Edit */}
                       <button
-                        title="Edit"
-                        onClick={() => {
-                          setEditingReceipt(r);
-                          setShowUpdateForm(true);
-                        }}
-                        className="text-green-600 hover:text-green-800 transition"
+                        disabled={!canEdit}
+                        onClick={() =>
+                          canEdit &&
+                          (setEditingReceipt(r), setShowUpdateForm(true))
+                        }
+                        className={`${
+                          canEdit
+                            ? "text-blue-600"
+                            : "text-gray-400 cursor-not-allowed"
+                        }`}
                       >
                         <Edit className="h-5 w-5" />
                       </button>
@@ -612,13 +661,13 @@ const Receipt: React.FC = () => {
 
                       {/* Delete */}
                       <button
-                        title="Delete"
-                        onClick={() => {
-                          if (confirm("Delete this receipt?")) {
-                            dispatch(deleteReceipt(r._id));
-                          }
-                        }}
-                        className="text-red-600 hover:text-red-800 transition"
+                        disabled={!canDelete}
+                        onClick={() => canDelete && handleDelete(r._id)}
+                        className={`${
+                          canDelete
+                            ? "text-red-600"
+                            : "text-gray-400 cursor-not-allowed"
+                        }`}
                       >
                         <Trash2 className="h-5 w-5" />
                       </button>

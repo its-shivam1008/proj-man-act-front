@@ -1,3 +1,4 @@
+import { usePermission } from "@/hooks/userPermission";
 import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '@/redux/store';
@@ -18,15 +19,34 @@ import {
   AlertTriangle,
   Search,
   Filter,
-  Loader2
+  Loader2,
+  ShieldAlert
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 const RFQComponent: React.FC = () => {
+  const canView = usePermission("rfq", "view");
+  const canCreate = usePermission("rfq", "create");
+  const canEdit = usePermission("rfq", "edit");
+  const canDelete = usePermission("rfq", "delete");
+
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
   const dispatch = useDispatch<AppDispatch>();
-  const { rfqs, loading: rfqLoading,meta, error } = useSelector((state: RootState) => state.rfqs);
+  const { rfqs, loading: rfqLoading, meta, error } = useSelector((state: RootState) => state.rfqs);
   const { vendors } = useSelector((state: RootState) => state.vendors);
-  
+
   const [showCreateRfq, setShowCreateRfq] = useState(false);
   const [showUpdateRfq, setShowUpdateRfq] = useState(false);
   const [showViewRfq, setShowViewRfq] = useState(false);
@@ -34,7 +54,7 @@ const RFQComponent: React.FC = () => {
   const [viewingRfq, setViewingRfq] = useState<RFQ | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-    const [page, setPage] = useState<number>(1);
+  const [page, setPage] = useState<number>(1);
   const [limit, setLimit] = useState<number>(10);
   const [search, setSearch] = useState<string>("");
 
@@ -43,9 +63,9 @@ const RFQComponent: React.FC = () => {
     dispatch(fetchVendors());
   }, [dispatch]);
 
-    useEffect(() => {
+  useEffect(() => {
     if (error) {
-        toast.error(error);
+      toast.error(error);
     }
   }, [error]);
 
@@ -55,7 +75,7 @@ const RFQComponent: React.FC = () => {
     return `RFQ-${year}-${String(count).padStart(4, '0')}`;
   };
 
-    const handlePrev = () => {
+  const handlePrev = () => {
     if (!meta) return;
     if (page > 1) setPage(page - 1);
   };
@@ -118,38 +138,38 @@ const RFQComponent: React.FC = () => {
     }
   };
 
-const handleSendRfq = async (rfq: RFQ) => {
-  if (!confirm(`Send RFQ ${rfq.rfqNumber} to ${rfq.vendors?.length || 0} vendors?`)) return;
-  setSubmitting(true);
-  try {
-    // dispatch sendRFQ thunk
-    await dispatch(sendRFQ(rfq._id ?? (rfq as any)._id)).unwrap();
+  const handleSendRfq = async (rfq: RFQ) => {
+    if (!confirm(`Send RFQ ${rfq.rfqNumber} to ${rfq.vendors?.length || 0} vendors?`)) return;
+    setSubmitting(true);
+    try {
+      // dispatch sendRFQ thunk
+      await dispatch(sendRFQ(rfq._id ?? (rfq as any)._id)).unwrap();
 
-    toast.success("RFQ sent to vendors");
-    // Option A: refresh page data from server with current pagination & search
-    dispatch(fetchRFQs({ page, limit, q: search }));
+      toast.success("RFQ sent to vendors");
+      // Option A: refresh page data from server with current pagination & search
+      dispatch(fetchRFQs({ page, limit, q: search }));
 
-    // Option B (optional): If you prefer optimistic UI only, comment out the fetch above
-    // and rely on slice fulfilled handler to update the RFQ status locally.
-  } catch (err: any) {
-    console.error("send rfq error", err);
-    toast.error(err || "Failed to send RFQ");
-  } finally {
-    setSubmitting(false);
-  }
-};
+      // Option B (optional): If you prefer optimistic UI only, comment out the fetch above
+      // and rely on slice fulfilled handler to update the RFQ status locally.
+    } catch (err: any) {
+      console.error("send rfq error", err);
+      toast.error(err || "Failed to send RFQ");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
 
 
   const handleDeleteRfq = async (id: string) => {
     if (confirm('Are you sure you want to delete this RFQ?')) {
-        try {
-             await dispatch(deleteRFQ(id)).unwrap();
-             toast.success("RFQ deleted");
-             dispatch(fetchRFQs({ page, limit, q: search }));
-        } catch (e) {
-            toast.error("Failed to delete RFQ");
-        }
+      try {
+        await dispatch(deleteRFQ(id)).unwrap();
+        toast.success("RFQ deleted");
+        dispatch(fetchRFQs({ page, limit, q: search }));
+      } catch (e) {
+        toast.error("Failed to delete RFQ");
+      }
     }
   };
 
@@ -168,30 +188,30 @@ const handleSendRfq = async (rfq: RFQ) => {
 
     const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
-      
+
       if (!formData.rfqNumber || !formData.orderDate || !formData.deliveryDate) {
         toast.error('Please fill in all required fields');
         return;
       }
 
       if (formData.vendors.length === 0) {
-          toast.error('Please select at least one vendor');
-          return;
+        toast.error('Please select at least one vendor');
+        return;
       }
 
       setSubmitting(true);
       try {
-          await dispatch(createRFQ({
-            ...formData,
-            status: 'draft'
-          })).unwrap();
-          toast.success("RFQ created successfully");
-          dispatch(fetchRFQs({ page, limit, q: search }));
-          setShowCreateRfq(false);
-      } catch(e) {
-          // handled
+        await dispatch(createRFQ({
+          ...formData,
+          status: 'draft'
+        })).unwrap();
+        toast.success("RFQ created successfully");
+        dispatch(fetchRFQs({ page, limit, q: search }));
+        setShowCreateRfq(false);
+      } catch (e) {
+        // handled
       } finally {
-          setSubmitting(false);
+        setSubmitting(false);
       }
     };
 
@@ -222,6 +242,15 @@ const handleSendRfq = async (rfq: RFQ) => {
         return sum + subtotal + taxAmount;
       }, 0);
     };
+
+    if (!canCreate) {
+      return (
+        <p className="text-center text-red-600 py-6">
+          You do not have permission to create RFQs.
+        </p>
+      );
+    }
+
 
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
@@ -449,11 +478,13 @@ const handleSendRfq = async (rfq: RFQ) => {
                 </button>
                 <button
                   type="submit"
-                  disabled={submitting}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+                  disabled={submitting || !canCreate}
+                  className={`px-4 py-2 rounded-lg text-white flex items-center ${canCreate ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-400 cursor-not-allowed"
+                    }`}
                 >
-                   {submitting && <Loader2 className="animate-spin h-4 w-4 mr-2" />}
-                   Create RFQ
+
+                  {submitting && <Loader2 className="animate-spin h-4 w-4 mr-2" />}
+                  Create RFQ
                 </button>
               </div>
             </form>
@@ -489,9 +520,9 @@ const handleSendRfq = async (rfq: RFQ) => {
         setShowUpdateRfq(false);
         setEditingRfq(null);
       } catch (e) {
-          // handled
+        // handled
       } finally {
-          setSubmitting(false);
+        setSubmitting(false);
       }
     };
 
@@ -514,6 +545,14 @@ const handleSendRfq = async (rfq: RFQ) => {
         setFormData({ ...formData, products: newProducts });
       }
     };
+    if (!canEdit) {
+      return (
+        <p className="text-center text-red-600 py-6">
+          You do not have permission to edit RFQs.
+        </p>
+      );
+    }
+
 
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
@@ -748,7 +787,7 @@ const handleSendRfq = async (rfq: RFQ) => {
       return viewingRfq.vendors?.map(vendorId => {
         // If vendorId is an object (populated), use vendorName, else find in state
         if (typeof vendorId === 'object' && (vendorId as any).vendorName) {
-            return (vendorId as any).vendorName;
+          return (vendorId as any).vendorName;
         }
         const vendor = vendors.find(v => v.id === vendorId);
         return vendor?.vendorName || vendorId;
@@ -830,10 +869,10 @@ const handleSendRfq = async (rfq: RFQ) => {
                           </td>
                         </tr>
                       )) || (
-                        <tr>
-                          <td colSpan={6} className="px-4 py-3 text-sm text-gray-500 text-center">No products</td>
-                        </tr>
-                      )}
+                          <tr>
+                            <td colSpan={6} className="px-4 py-3 text-sm text-gray-500 text-center">No products</td>
+                          </tr>
+                        )}
                     </tbody>
                     <tfoot className="bg-gray-50">
                       <tr>
@@ -898,268 +937,270 @@ const handleSendRfq = async (rfq: RFQ) => {
 
   if (rfqLoading && !rfqs.length) return <div>Loading...</div>;
 
-return (
-  <div className="space-y-6">
-    {/* Header */}
-    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-      <div>
-        <h2 className="text-xl font-bold text-gray-900">Request for Quotation (RFQ)</h2>
-        <p className="text-sm text-gray-600">Create and manage RFQs, compare vendor offers</p>
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-bold text-gray-900">Request for Quotation (RFQ)</h2>
+          <p className="text-sm text-gray-600">Create and manage RFQs, compare vendor offers</p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {/* Added Notification Center */}
+          <NotificationCenter destination="rfq.purchase" title="Purchase Notifications" />
+
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            placeholder="Search RFQs..."
+            className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <button
+            disabled={!canCreate}
+            onClick={() => canCreate && setShowCreateRfq(true)}
+            className={`bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center justify-center ${canCreate ? "hover:bg-blue-700" : "opacity-50 cursor-not-allowed"
+              }`}
+          >
+
+            <Plus className="h-4 w-4 mr-2" />
+            New RFQ
+          </button>
+        </div>
       </div>
 
-      <div className="flex items-center gap-3">
-        {/* Added Notification Center */}
-        <NotificationCenter destination="rfq.purchase" title="Purchase Notifications" />
-
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setPage(1);
-          }}
-          placeholder="Search RFQs..."
-          className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <button
-          onClick={() => setShowCreateRfq(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          New RFQ
-        </button>
-      </div>
-    </div>
-
-    {/* RFQ Table */}
-    <div className="bg-white shadow rounded-lg overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                RFQ Number
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Vendors
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Order Date
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Delivery Date
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Total Amount
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Status
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {rfqs.length === 0 ? (
+      {/* RFQ Table */}
+      <div className="bg-white shadow rounded-lg overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
               <tr>
-                <td colSpan={7} className="px-6 py-12 text-center">
-                  <FileText className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-500">No RFQs found</p>
-                  <button
-                    onClick={() => setShowCreateRfq(true)}
-                    className="mt-4 text-blue-600 hover:text-blue-800 text-sm font-medium"
-                  >
-                    Create your first RFQ
-                  </button>
-                </td>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  RFQ Number
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Vendors
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Order Date
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Delivery Date
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Total Amount
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
               </tr>
-            ) : (
-              rfqs.map((rfq) => (
-                <tr key={rfq.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {rfq.rfqNumber}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {rfq.vendors?.length || 0} vendors
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {rfq.orderDate ? new Date(rfq.orderDate).toLocaleDateString() : 'N/A'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {rfq.deliveryDate ? new Date(rfq.deliveryDate).toLocaleDateString() : 'N/A'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {rfq.currency}{' '}
-                    {(
-                      rfq.products?.reduce(
-                        (sum, p) => sum + p.quantity * p.unitPrice * (1 + p.taxes / 100),
-                        0
-                      ) || 0
-                    ).toFixed(2)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      {getStatusIcon(rfq.status)}
-                      <span
-                        className={`ml-2 inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(
-                          rfq.status
-                        )}`}
-                      >
-                        {rfq.status}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex items-center space-x-3">
-                      <button
-                        onClick={() => {
-                          setViewingRfq(rfq);
-                          setShowViewRfq(true);
-                        }}
-                        className="text-blue-600 hover:text-blue-900"
-                        title="View"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          setEditingRfq(rfq);
-                          setShowUpdateRfq(true);
-                        }}
-                        className="text-green-600 hover:text-green-900"
-                        title="Edit"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </button>
-                      {rfq.status === 'draft' && (
-                        <button
-                          onClick={() => handleSendRfq(rfq)}
-                          className="text-purple-600 hover:text-purple-900"
-                          title="Send to Vendors"
-                        >
-                          <Send className="h-4 w-4" />
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleDeleteRfq(rfq._id)}
-                        className="text-red-600 hover:text-red-900"
-                        title="Delete"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {rfqs.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-12 text-center">
+                    <FileText className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                    <p className="text-gray-500">No RFQs found</p>
+                    <button
+                      onClick={() => setShowCreateRfq(true)}
+                      className="mt-4 text-blue-600 hover:text-blue-800 text-sm font-medium"
+                    >
+                      Create your first RFQ
+                    </button>
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              ) : (
+                rfqs.map((rfq) => (
+                  <tr key={rfq.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {rfq.rfqNumber}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {rfq.vendors?.length || 0} vendors
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {rfq.orderDate ? new Date(rfq.orderDate).toLocaleDateString() : 'N/A'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {rfq.deliveryDate ? new Date(rfq.deliveryDate).toLocaleDateString() : 'N/A'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {rfq.currency}{' '}
+                      {(
+                        rfq.products?.reduce(
+                          (sum, p) => sum + p.quantity * p.unitPrice * (1 + p.taxes / 100),
+                          0
+                        ) || 0
+                      ).toFixed(2)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        {getStatusIcon(rfq.status)}
+                        <span
+                          className={`ml-2 inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(
+                            rfq.status
+                          )}`}
+                        >
+                          {rfq.status}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <div className="flex items-center space-x-3">
+                        <button
+                          onClick={() => {
+                            setViewingRfq(rfq);
+                            setShowViewRfq(true);
+                          }}
+                          className="text-blue-600 hover:text-blue-900"
+                          title="View"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
+                        <button
+                          disabled={!canEdit}
+                          onClick={() => canEdit && (setEditingRfq(rfq), setShowUpdateRfq(true))}
+                          className={`${canEdit ? "text-green-600 hover:text-green-900" : "text-gray-400 cursor-not-allowed"}`}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </button>
 
-      {/* Pagination */}
-      {meta && meta.totalPages > 1 && (
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-4 py-3 border-t bg-gray-50">
-          <div className="flex items-center gap-2 mb-3 sm:mb-0">
-            <button
-              onClick={handlePrev}
-              disabled={page <= 1}
-              className="px-4 py-2 border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
-            >
-              Previous
-            </button>
+                        {rfq.status === 'draft' && (
+                          <button
+                            disabled={!canEdit}
+                            onClick={() => canEdit && handleSendRfq(rfq)}
+                            className={`${canEdit ? "text-purple-600 hover:text-purple-900" : "text-gray-400 cursor-not-allowed"}`}
+                          >
+                            <Send className="h-4 w-4" />
+                          </button>
 
-            {/* Dynamic page numbers: show up to 7 pages centered around current page */}
-            <div className="flex items-center gap-1">
-              {(() => {
-                const totalPages = meta.totalPages;
-                const current = page;
-                const delta = 3;
-                const range = [];
-                const rangeWithDots = [];
+                        )}
+                        <button
+                          disabled={!canDelete}
+                          onClick={() => canDelete && handleDeleteRfq(rfq._id)}
+                          className={`${canDelete ? "text-red-600 hover:text-red-900" : "text-gray-400 cursor-not-allowed"}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
 
-                for (let i = 1; i <= totalPages; i++) {
-                  if (
-                    i === 1 ||
-                    i === totalPages ||
-                    (i >= current - delta && i <= current + delta)
-                  ) {
-                    range.push(i);
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination */}
+        {meta && meta.totalPages > 1 && (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-4 py-3 border-t bg-gray-50">
+            <div className="flex items-center gap-2 mb-3 sm:mb-0">
+              <button
+                onClick={handlePrev}
+                disabled={page <= 1}
+                className="px-4 py-2 border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+              >
+                Previous
+              </button>
+
+              {/* Dynamic page numbers: show up to 7 pages centered around current page */}
+              <div className="flex items-center gap-1">
+                {(() => {
+                  const totalPages = meta.totalPages;
+                  const current = page;
+                  const delta = 3;
+                  const range = [];
+                  const rangeWithDots = [];
+
+                  for (let i = 1; i <= totalPages; i++) {
+                    if (
+                      i === 1 ||
+                      i === totalPages ||
+                      (i >= current - delta && i <= current + delta)
+                    ) {
+                      range.push(i);
+                    }
                   }
-                }
 
-                let last = 0;
-                range.forEach((p) => {
-                  if (last && p - last > 1) {
-                    rangeWithDots.push('...');
-                  }
-                  rangeWithDots.push(p);
-                  last = p;
-                });
+                  let last = 0;
+                  range.forEach((p) => {
+                    if (last && p - last > 1) {
+                      rangeWithDots.push('...');
+                    }
+                    rangeWithDots.push(p);
+                    last = p;
+                  });
 
-                return rangeWithDots.map((p, idx) =>
-                  p === '...' ? (
-                    <span key={`dots-${idx}`} className="px-2 text-gray-500">
-                      ...
-                    </span>
-                  ) : (
-                    <button
-                      key={p}
-                      onClick={() => jumpToPage(p as number)}
-                      className={`px-3 py-1.5 rounded-md text-sm ${
-                        p === current
+                  return rangeWithDots.map((p, idx) =>
+                    p === '...' ? (
+                      <span key={`dots-${idx}`} className="px-2 text-gray-500">
+                        ...
+                      </span>
+                    ) : (
+                      <button
+                        key={p}
+                        onClick={() => jumpToPage(p as number)}
+                        className={`px-3 py-1.5 rounded-md text-sm ${p === current
                           ? 'bg-blue-600 text-white font-medium'
                           : 'border border-gray-300 hover:bg-gray-100'
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  )
-                );
-              })()}
+                          }`}
+                      >
+                        {p}
+                      </button>
+                    )
+                  );
+                })()}
+              </div>
+
+              <button
+                onClick={handleNext}
+                disabled={page >= meta.totalPages}
+                className="px-4 py-2 border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+              >
+                Next
+              </button>
             </div>
 
-            <button
-              onClick={handleNext}
-              disabled={page >= meta.totalPages}
-              className="px-4 py-2 border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
-            >
-              Next
-            </button>
-          </div>
+            <div className="flex items-center gap-6 text-sm text-gray-600">
+              <span>
+                Showing <strong>{(page - 1) * limit + 1}</strong> to{' '}
+                <strong>{Math.min(page * limit, meta.total)}</strong> of <strong>{meta.total}</strong>{' '}
+                RFQs
+              </span>
 
-          <div className="flex items-center gap-6 text-sm text-gray-600">
-            <span>
-              Showing <strong>{(page - 1) * limit + 1}</strong> to{' '}
-              <strong>{Math.min(page * limit, meta.total)}</strong> of <strong>{meta.total}</strong>{' '}
-              RFQs
-            </span>
-
-            <select
-              value={limit}
-              onChange={handleLimitChange}
-              className="border border-gray-300 px-3 py-1.5 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value={5}>5 / page</option>
-              <option value={10}>10 / page</option>
-              <option value={20}>20 / page</option>
-              <option value={50}>50 / page</option>
-            </select>
+              <select
+                value={limit}
+                onChange={handleLimitChange}
+                className="border border-gray-300 px-3 py-1.5 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value={5}>5 / page</option>
+                <option value={10}>10 / page</option>
+                <option value={20}>20 / page</option>
+                <option value={50}>50 / page</option>
+              </select>
+            </div>
           </div>
-        </div>
+        )}
+      </div>
+
+      {/* Modals */}
+      {showCreateRfq && <CreateRfqForm onClose={() => setShowCreateRfq(false)} />}
+      {showUpdateRfq && editingRfq && (
+        <UpdateRfqForm rfq={editingRfq} onClose={() => setShowUpdateRfq(false)} />
+      )}
+      {showViewRfq && viewingRfq && (
+        <ViewRfqModal rfq={viewingRfq} onClose={() => setShowViewRfq(false)} />
       )}
     </div>
-
-    {/* Modals */}
-    {showCreateRfq && <CreateRfqForm onClose={() => setShowCreateRfq(false)} />}
-    {showUpdateRfq && editingRfq && (
-      <UpdateRfqForm rfq={editingRfq} onClose={() => setShowUpdateRfq(false)} />
-    )}
-    {showViewRfq && viewingRfq && (
-      <ViewRfqModal rfq={viewingRfq} onClose={() => setShowViewRfq(false)} />
-    )}
-  </div>
-);
+  );
 };
 
 export default RFQComponent;

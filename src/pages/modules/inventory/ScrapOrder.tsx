@@ -2,9 +2,16 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import { Plus, Trash2, CheckCircle, Clock, Edit2, Eye } from "lucide-react";
-
-// shadcn/ui imports
+import {
+  Plus,
+  Trash2,
+  CheckCircle,
+  Clock,
+  Edit2,
+  Eye,
+  ShieldAlert,
+} from "lucide-react";
+import { usePermission } from "@/hooks/userPermission";
 import {
   Dialog,
   DialogContent,
@@ -36,7 +43,6 @@ import {
   TableCell,
 } from "@/components/ui/table";
 
-// redux actions
 import {
   getScrapOrders,
   createScrapOrder,
@@ -55,6 +61,10 @@ const EMPTY_FORM = {
 };
 
 const ScrapManagement: React.FC = () => {
+  const canView = usePermission("scrap", "view");
+  const canCreate = usePermission("scrap", "create");
+  const canEdit = usePermission("scrap", "edit");
+  const canDelete = usePermission("scrap", "delete");
   const dispatch = useDispatch<any>();
 
   const { scrapOrders = [], loading: scrapLoading } = useSelector(
@@ -201,7 +211,19 @@ const ScrapManagement: React.FC = () => {
       toast.error(err?.message || "Failed");
     }
   };
-
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="min-h-screen bg-slate-50 ">
       <div className="max-w-7xl mx-auto space-y-8">
@@ -212,7 +234,7 @@ const ScrapManagement: React.FC = () => {
           {/* CREATE DIALOG */}
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogTrigger asChild>
-              <Button>
+              <Button  disabled={!canCreate} className="px-4">
                 <Plus className="w-4 h-4 mr-2" /> Create Scrap Order
               </Button>
             </DialogTrigger>
@@ -440,6 +462,7 @@ const ScrapManagement: React.FC = () => {
 
                         {/* EDIT */}
                         <Button
+                        disabled={!canEdit}
                           size="icon"
                           variant="ghost"
                           className="h-8 w-8 hover:bg-indigo-50 text-indigo-600"
@@ -450,6 +473,7 @@ const ScrapManagement: React.FC = () => {
 
                         {/* DELETE */}
                         <Button
+                        disabled={!canDelete}
                           size="icon"
                           variant="destructive"
                           className="h-8 w-8"

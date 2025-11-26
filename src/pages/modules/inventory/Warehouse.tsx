@@ -1,4 +1,4 @@
-// WarehouseManagement.tsx
+import { usePermission } from "@/hooks/userPermission";
 import React, { useState, useEffect } from "react";
 import {
   Warehouse,
@@ -13,6 +13,7 @@ import {
   History,
   Box,
   AlertCircle,
+  ShieldAlert,
 } from "lucide-react";
 import {
   Accordion,
@@ -24,7 +25,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useDispatch, useSelector } from "react-redux";
 import {
   fetchWarehouses,
@@ -74,8 +81,14 @@ interface EnrichedWarehouse extends WarehouseData {
 
 const WarehouseManagement: React.FC = () => {
   const dispatch = useDispatch();
+  const canView = usePermission("warehouses", "view");
+  const canCreate = usePermission("warehouses", "create");
+  const canEdit = usePermission("warehouses", "edit");
+  const canDelete = usePermission("warehouses", "delete");
   const { products = [] } = useSelector((state: any) => state.products);
-  const { warehouses = [], loading } = useSelector((state: any) => state.warehouse);
+  const { warehouses = [], loading } = useSelector(
+    (state: any) => state.warehouse
+  );
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -86,14 +99,18 @@ const WarehouseManagement: React.FC = () => {
   }, [dispatch]);
 
   // Enrich warehouse with real product data
-  const enrichedWarehouses: EnrichedWarehouse[] = warehouses.map((w: WarehouseData) => ({
-    ...w,
-    product: products.find((p: Product) => p._id === w.productId) || null,
-  }));
+  const enrichedWarehouses: EnrichedWarehouse[] = warehouses.map(
+    (w: WarehouseData) => ({
+      ...w,
+      product: products.find((p: Product) => p._id === w.productId) || null,
+    })
+  );
 
   const getStockStatus = (qty: number, minStock: number) => {
-    if (qty === 0) return { label: "Out of Stock", color: "bg-red-100 text-red-800" };
-    if (qty <= minStock) return { label: "Low Stock", color: "bg-yellow-100 text-yellow-800" };
+    if (qty === 0)
+      return { label: "Out of Stock", color: "bg-red-100 text-red-800" };
+    if (qty <= minStock)
+      return { label: "Low Stock", color: "bg-yellow-100 text-yellow-800" };
     return { label: "In Stock", color: "bg-green-100 text-green-800" };
   };
 
@@ -119,7 +136,19 @@ const WarehouseManagement: React.FC = () => {
   const currentWarehouse = editingId
     ? enrichedWarehouses.find((w) => w._id === editingId)
     : null;
-
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto space-y-8">
@@ -129,7 +158,11 @@ const WarehouseManagement: React.FC = () => {
             <Warehouse className="w-10 h-10 text-blue-600" />
             Warehouse Management
           </h1>
-          <Button onClick={() => setShowForm(true)} size="lg">
+          <Button
+            disabled={!canCreate}
+            onClick={() => setShowForm(true)}
+            size="lg"
+          >
             <Plus className="w-5 h-5 mr-2" /> Add Warehouse
           </Button>
         </div>
@@ -166,15 +199,23 @@ const WarehouseManagement: React.FC = () => {
                       <div className="flex items-center gap-4">
                         <Package className="w-9 h-9 text-blue-600" />
                         <div>
-                          <h3 className="text-xl font-bold text-gray-900">{w.name}</h3>
+                          <h3 className="text-xl font-bold text-gray-900">
+                            {w.name}
+                          </h3>
                           {w.product ? (
                             <div className="flex items-center gap-2 mt-1">
                               <Box className="w-4 h-4 text-gray-500" />
-                              <span className="text-sm font-medium">{w.product.name}</span>
-                              <span className="text-xs text-gray-400">• {w.product.sku}</span>
+                              <span className="text-sm font-medium">
+                                {w.product.name}
+                              </span>
+                              <span className="text-xs text-gray-400">
+                                • {w.product.sku}
+                              </span>
                             </div>
                           ) : (
-                            <span className="text-sm text-red-600">No product linked</span>
+                            <span className="text-sm text-red-600">
+                              No product linked
+                            </span>
                           )}
                         </div>
                       </div>
@@ -209,10 +250,20 @@ const WarehouseManagement: React.FC = () => {
 
                 <AccordionContent className="bg-gradient-to-r from-gray-50 to-white px-8 py-8 border-t">
                   <div className="flex justify-end gap-3 mb-6">
-                    <Button size="sm" variant="outline" onClick={() => handleEdit(w._id)}>
+                    <Button
+                      disabled={!canEdit}
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleEdit(w._id)}
+                    >
                       <Edit className="w-4 h-4 mr-2" /> Edit
                     </Button>
-                    <Button size="sm" variant="destructive" onClick={() => handleDelete(w._id)}>
+                    <Button
+                      disabled={!canDelete}
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => handleDelete(w._id)}
+                    >
                       <Trash2 className="w-4 h-4 mr-2" /> Delete
                     </Button>
                   </div>
@@ -228,11 +279,15 @@ const WarehouseManagement: React.FC = () => {
                         <div className="bg-blue-50 p-6 rounded-xl space-y-4">
                           <div className="flex justify-between text-lg">
                             <span className="text-gray-600">Available</span>
-                            <strong className="font-bold">{stock.toLocaleString()} {w.unit}</strong>
+                            <strong className="font-bold">
+                              {stock.toLocaleString()} {w.unit}
+                            </strong>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-gray-600">Min Required</span>
-                            <strong>{minStock} {w.unit}</strong>
+                            <strong>
+                              {minStock} {w.unit}
+                            </strong>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-gray-600">Unit Cost</span>
@@ -246,7 +301,9 @@ const WarehouseManagement: React.FC = () => {
                           </div>
                         </div>
                       ) : (
-                        <p className="text-red-600 italic">Link a product to see stock</p>
+                        <p className="text-red-600 italic">
+                          Link a product to see stock
+                        </p>
                       )}
                     </div>
 
@@ -259,17 +316,23 @@ const WarehouseManagement: React.FC = () => {
                       <div className="space-y-3">
                         {w.lastGRN && (
                           <div className="bg-green-50 p-4 rounded-lg">
-                            <p className="font-medium text-green-800">Last GRN</p>
+                            <p className="font-medium text-green-800">
+                              Last GRN
+                            </p>
                             <p className="text-sm">
-                              {w.lastGRN.date} • +{w.lastGRN.qty} units • PO: {w.lastGRN.po}
+                              {w.lastGRN.date} • +{w.lastGRN.qty} units • PO:{" "}
+                              {w.lastGRN.po}
                             </p>
                           </div>
                         )}
                         {w.lastIssue && (
                           <div className="bg-blue-50 p-4 rounded-lg">
-                            <p className="font-medium text-blue-800">Last Issue</p>
+                            <p className="font-medium text-blue-800">
+                              Last Issue
+                            </p>
                             <p className="text-sm">
-                              {w.lastIssue.date} • -{w.lastIssue.qty} units → {w.lastIssue.dept}
+                              {w.lastIssue.date} • -{w.lastIssue.qty} units →{" "}
+                              {w.lastIssue.dept}
                             </p>
                           </div>
                         )}
@@ -283,19 +346,27 @@ const WarehouseManagement: React.FC = () => {
                         <div className="mt-4 space-y-3">
                           <div className="flex justify-between">
                             <span className="text-sm">0-30 days</span>
-                            <strong className="text-green-600">{w.ageing["0-30"]}</strong>
+                            <strong className="text-green-600">
+                              {w.ageing["0-30"]}
+                            </strong>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-sm">30-60 days</span>
-                            <strong className="text-yellow-600">{w.ageing["30-60"]}</strong>
+                            <strong className="text-yellow-600">
+                              {w.ageing["30-60"]}
+                            </strong>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-sm">60-90 days</span>
-                            <strong className="text-orange-600">{w.ageing["60-90"]}</strong>
+                            <strong className="text-orange-600">
+                              {w.ageing["60-90"]}
+                            </strong>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-sm">90+ days</span>
-                            <strong className="text-red-600">{w.ageing["90+"]}</strong>
+                            <strong className="text-red-600">
+                              {w.ageing["90+"]}
+                            </strong>
                           </div>
                         </div>
                       </div>
@@ -318,7 +389,9 @@ const WarehouseManagement: React.FC = () => {
                           </h4>
                           <ul className="mt-2 space-y-1 text-sm">
                             {w.reorderAlerts.map((alert, i) => (
-                              <li key={i} className="text-red-700">• {alert}</li>
+                              <li key={i} className="text-red-700">
+                                • {alert}
+                              </li>
                             ))}
                           </ul>
                         </div>
@@ -432,7 +505,9 @@ const WarehouseForm: React.FC<{
 
     try {
       if (isEdit && warehouse) {
-        await dispatch(updateWarehouse({ id: warehouse._id, data: payload })).unwrap();
+        await dispatch(
+          updateWarehouse({ id: warehouse._id, data: payload })
+        ).unwrap();
         toast.success("Warehouse updated successfully!");
       } else {
         await dispatch(addWarehouse(payload)).unwrap();
@@ -448,8 +523,13 @@ const WarehouseForm: React.FC<{
     <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto p-8">
         <div className="flex justify-between items-center mb-8">
-          <h2 className="text-3xl font-bold">{isEdit ? "Edit" : "Create"} Warehouse</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+          <h2 className="text-3xl font-bold">
+            {isEdit ? "Edit" : "Create"} Warehouse
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700"
+          >
             <XCircle className="w-9 h-9" />
           </button>
         </div>
@@ -461,7 +541,9 @@ const WarehouseForm: React.FC<{
               <Input
                 required
                 value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, name: e.target.value })
+                }
                 placeholder="Main Warehouse"
               />
             </div>
@@ -470,7 +552,9 @@ const WarehouseForm: React.FC<{
               <Label>Linked Product *</Label>
               <Select
                 value={formData.productId}
-                onValueChange={(val) => setFormData({ ...formData, productId: val })}
+                onValueChange={(val) =>
+                  setFormData({ ...formData, productId: val })
+                }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select product" />
@@ -487,8 +571,13 @@ const WarehouseForm: React.FC<{
 
             <div>
               <Label>Type</Label>
-              <Select value={formData.type} onValueChange={(v) => setFormData({ ...formData, type: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+              <Select
+                value={formData.type}
+                onValueChange={(v) => setFormData({ ...formData, type: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="General">General</SelectItem>
                   <SelectItem value="Cold Storage">Cold Storage</SelectItem>
@@ -503,14 +592,21 @@ const WarehouseForm: React.FC<{
               <Input
                 required
                 value={formData.location}
-                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, location: e.target.value })
+                }
               />
             </div>
 
             <div>
               <Label>Unit</Label>
-              <Select value={formData.unit} onValueChange={(v) => setFormData({ ...formData, unit: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+              <Select
+                value={formData.unit}
+                onValueChange={(v) => setFormData({ ...formData, unit: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="PCS">PCS</SelectItem>
                   <SelectItem value="KG">KG</SelectItem>
@@ -527,7 +623,9 @@ const WarehouseForm: React.FC<{
                 min="0"
                 max="100"
                 value={formData.capacity}
-                onChange={(e) => setFormData({ ...formData, capacity: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, capacity: e.target.value })
+                }
               />
             </div>
           </div>
@@ -536,28 +634,72 @@ const WarehouseForm: React.FC<{
           <div className="grid md:grid-cols-2 gap-8">
             <div className="space-y-4 p-6 bg-gray-50 rounded-xl">
               <h3 className="font-bold">Last GRN</h3>
-              <Input placeholder="Date" value={formData.lastGRN.date} onChange={(e) => setFormData({
-                ...formData, lastGRN: { ...formData.lastGRN, date: e.target.value }
-              })} />
-              <Input type="number" placeholder="Qty" value={formData.lastGRN.qty} onChange={(e) => setFormData({
-                ...formData, lastGRN: { ...formData.lastGRN, qty: e.target.value }
-              })} />
-              <Input placeholder="PO" value={formData.lastGRN.po} onChange={(e) => setFormData({
-                ...formData, lastGRN: { ...formData.lastGRN, po: e.target.value }
-              })} />
+              <Input
+                placeholder="Date"
+                value={formData.lastGRN.date}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    lastGRN: { ...formData.lastGRN, date: e.target.value },
+                  })
+                }
+              />
+              <Input
+                type="number"
+                placeholder="Qty"
+                value={formData.lastGRN.qty}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    lastGRN: { ...formData.lastGRN, qty: e.target.value },
+                  })
+                }
+              />
+              <Input
+                placeholder="PO"
+                value={formData.lastGRN.po}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    lastGRN: { ...formData.lastGRN, po: e.target.value },
+                  })
+                }
+              />
             </div>
 
             <div className="space-y-4 p-6 bg-gray-50 rounded-xl">
               <h3 className="font-bold">Last Issue</h3>
-              <Input placeholder="Date" value={formData.lastIssue.date} onChange={(e) => setFormData({
-                ...formData, lastIssue: { ...formData.lastIssue, date: e.target.value }
-              })} />
-              <Input type="number" placeholder="Qty" value={formData.lastIssue.qty} onChange={(e) => setFormData({
-                ...formData, lastIssue: { ...formData.lastIssue, qty: e.target.value }
-              })} />
-              <Input placeholder="Dept" value={formData.lastIssue.dept} onChange={(e) => setFormData({
-                ...formData, lastIssue: { ...formData.lastIssue, dept: e.target.value }
-              })} />
+              <Input
+                placeholder="Date"
+                value={formData.lastIssue.date}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    lastIssue: { ...formData.lastIssue, date: e.target.value },
+                  })
+                }
+              />
+              <Input
+                type="number"
+                placeholder="Qty"
+                value={formData.lastIssue.qty}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    lastIssue: { ...formData.lastIssue, qty: e.target.value },
+                  })
+                }
+              />
+              <Input
+                placeholder="Dept"
+                value={formData.lastIssue.dept}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    lastIssue: { ...formData.lastIssue, dept: e.target.value },
+                  })
+                }
+              />
             </div>
           </div>
 
@@ -571,10 +713,12 @@ const WarehouseForm: React.FC<{
                     key={key}
                     placeholder={key + " days"}
                     value={formData.ageing[key as keyof typeof formData.ageing]}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      ageing: { ...formData.ageing, [key]: e.target.value }
-                    })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        ageing: { ...formData.ageing, [key]: e.target.value },
+                      })
+                    }
                   />
                 ))}
               </div>
@@ -586,14 +730,18 @@ const WarehouseForm: React.FC<{
                 <Input
                   type="number"
                   value={formData.inTransit}
-                  onChange={(e) => setFormData({ ...formData, inTransit: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, inTransit: e.target.value })
+                  }
                 />
               </div>
               <div>
                 <Label>Reorder Alerts (comma separated)</Label>
                 <Input
                   value={formData.reorderAlerts}
-                  onChange={(e) => setFormData({ ...formData, reorderAlerts: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, reorderAlerts: e.target.value })
+                  }
                 />
               </div>
             </div>
@@ -602,7 +750,9 @@ const WarehouseForm: React.FC<{
               <Label>Bins/Racks (comma separated)</Label>
               <Input
                 value={formData.bins}
-                onChange={(e) => setFormData({ ...formData, bins: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, bins: e.target.value })
+                }
                 placeholder="A1, B2, Cold-01"
               />
             </div>

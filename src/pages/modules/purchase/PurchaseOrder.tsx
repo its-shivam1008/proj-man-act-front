@@ -1,3 +1,4 @@
+import { usePermission } from "@/hooks/userPermission";
 import React, { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
@@ -21,10 +22,28 @@ import {
   X,
   Loader2,
   Search,
+  ShieldAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 
 const PurchaseOrderComponent: React.FC = () => {
+  const canView = usePermission("purchaseOrders", "view");
+  const canCreate = usePermission("purchaseOrders", "create");
+  const canEdit = usePermission("purchaseOrders", "edit");
+  const canDelete = usePermission("purchaseOrders", "delete");
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
   const dispatch = useDispatch<AppDispatch>();
   const { purchaseOrders, loading, error, meta } = useSelector(
     (state: RootState) => state.purchaseOrders
@@ -100,6 +119,13 @@ const PurchaseOrderComponent: React.FC = () => {
         setSubmitting(false);
       }
     };
+    if (!canCreate) {
+      return (
+        <p className="text-center text-red-600 py-6">
+          You do not have permission to create purchase orders.
+        </p>
+      );
+    }
 
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
@@ -404,9 +430,11 @@ const PurchaseOrderComponent: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={submitting}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+                  disabled={submitting || !canCreate}
+                  className={`px-4 py-2 rounded-lg text-white flex items-center ${canCreate ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-400 cursor-not-allowed"
+                    }`}
                 >
+
                   {submitting && (
                     <Loader2 className="animate-spin h-4 w-4 mr-2" />
                   )}
@@ -485,8 +513,8 @@ const PurchaseOrderComponent: React.FC = () => {
                   <p className="text-sm text-gray-900">
                     {viewingPo.scheduledDeliveryDate
                       ? new Date(
-                          viewingPo.scheduledDeliveryDate
-                        ).toLocaleDateString()
+                        viewingPo.scheduledDeliveryDate
+                      ).toLocaleDateString()
                       : "N/A"}
                   </p>
                 </div>
@@ -539,8 +567,8 @@ const PurchaseOrderComponent: React.FC = () => {
                       <div>${line.subtotal}</div>
                     </div>
                   )) || (
-                    <p className="text-sm text-gray-500">No product lines</p>
-                  )}
+                      <p className="text-sm text-gray-500">No product lines</p>
+                    )}
                 </div>
               </div>
               <div className="flex justify-end space-x-3 pt-4">
@@ -641,207 +669,211 @@ const PurchaseOrderComponent: React.FC = () => {
           </p>
         </div>
         <div className="flex items-center gap-3">
-            <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
-                <input
-                    type="search"
-                    value={search}
-                    onChange={(e) => {
-                        setSearch(e.target.value);
-                        setPage(1);
-                    }}
-                    placeholder="Search purchase orders..."
-                    className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
-                />
-            </div>
-            <button
-                onClick={() => setShowCreatePo(true)}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center whitespace-nowrap"
-            >
-                <Plus className="h-4 w-4 mr-2" />
-                New Purchase Order
-            </button>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              placeholder="Search purchase orders..."
+              className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
+            />
+          </div>
+          <button
+            disabled={!canCreate}
+            onClick={() => canCreate && setShowCreatePo(true)}
+            className={`px-4 py-2 rounded-lg flex items-center justify-center whitespace-nowrap ${canCreate ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-gray-400 text-white cursor-not-allowed"
+              }`}
+          >
+
+            <Plus className="h-4 w-4 mr-2" />
+            New Purchase Order
+          </button>
         </div>
       </div>
 
       <div className="bg-white shadow rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                PO Number
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Vendor
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Order Date
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Delivery Date
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Total Amount
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Status
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {purchaseOrders.map((po) => (
-              <tr key={po.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  {po.poNo}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {po.vendor}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {po.orderDate
-                    ? new Date(po.orderDate).toLocaleDateString()
-                    : "N/A"}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {po.scheduledDeliveryDate
-                    ? new Date(po.scheduledDeliveryDate).toLocaleDateString()
-                    : "N/A"}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                   ₹{(po.totalAmount || 0).toLocaleString()}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="flex items-center">
-                    {getStatusIcon(po.status)}
-                    <span
-                      className={`ml-2 inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(
-                        po.status
-                      )}`}
-                    >
-                      {po.status?.replace("-", " ") || "Unknown"}
-                    </span>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                  <button
-                    onClick={() => {
-                      setViewingPo(po);
-                      setShowViewPo(true);
-                    }}
-                    className="text-blue-600 hover:text-blue-900 mr-3"
-                  >
-                    <Eye className="h-4 w-4" />
-                  </button>
-                  <button className="text-purple-600 hover:text-purple-900 mr-3">
-                    <Package className="h-4 w-4" />
-                  </button>
-                  <button
-                    className="text-red-600 hover:text-red-900"
-                    onClick={() => handleDeletePurchasePrder(po._id)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </td>
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  PO Number
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Vendor
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Order Date
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Delivery Date
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Total Amount
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {purchaseOrders.map((po) => (
+                <tr key={po.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    {po.poNo}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {po.vendor}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {po.orderDate
+                      ? new Date(po.orderDate).toLocaleDateString()
+                      : "N/A"}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {po.scheduledDeliveryDate
+                      ? new Date(po.scheduledDeliveryDate).toLocaleDateString()
+                      : "N/A"}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    ₹{(po.totalAmount || 0).toLocaleString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center">
+                      {getStatusIcon(po.status)}
+                      <span
+                        className={`ml-2 inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(
+                          po.status
+                        )}`}
+                      >
+                        {po.status?.replace("-", " ") || "Unknown"}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <button
+                      onClick={() => {
+                        setViewingPo(po);
+                        setShowViewPo(true);
+                      }}
+                      className="text-blue-600 hover:text-blue-900 mr-3"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </button>
+                    <button className="text-purple-600 hover:text-purple-900 mr-3">
+                      <Package className="h-4 w-4" />
+                    </button>
+                    <button
+                      disabled={!canDelete}
+                      onClick={() => canDelete && handleDeletePurchasePrder(po._id)}
+                      className={`${canDelete ? "text-red-600 hover:text-red-900" : "text-gray-400 cursor-not-allowed"}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
 
-      {/* Pagination */}
-      {meta && meta.totalPages > 1 && (
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-4 py-3 border-t bg-gray-50">
-          <div className="flex items-center gap-2 mb-3 sm:mb-0">
-            <button
-              onClick={handlePrev}
-              disabled={page <= 1}
-              className="px-4 py-2 border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
-            >
-              Previous
-            </button>
+        {/* Pagination */}
+        {meta && meta.totalPages > 1 && (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-4 py-3 border-t bg-gray-50">
+            <div className="flex items-center gap-2 mb-3 sm:mb-0">
+              <button
+                onClick={handlePrev}
+                disabled={page <= 1}
+                className="px-4 py-2 border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+              >
+                Previous
+              </button>
 
-            <div className="flex items-center gap-1">
-              {(() => {
-                const totalPages = meta.totalPages;
-                const current = page;
-                const delta = 3;
-                const range = [];
-                const rangeWithDots = [];
+              <div className="flex items-center gap-1">
+                {(() => {
+                  const totalPages = meta.totalPages;
+                  const current = page;
+                  const delta = 3;
+                  const range = [];
+                  const rangeWithDots = [];
 
-                for (let i = 1; i <= totalPages; i++) {
-                  if (
-                    i === 1 ||
-                    i === totalPages ||
-                    (i >= current - delta && i <= current + delta)
-                  ) {
-                    range.push(i);
+                  for (let i = 1; i <= totalPages; i++) {
+                    if (
+                      i === 1 ||
+                      i === totalPages ||
+                      (i >= current - delta && i <= current + delta)
+                    ) {
+                      range.push(i);
+                    }
                   }
-                }
 
-                let last = 0;
-                range.forEach((p) => {
-                  if (last && p - last > 1) {
-                    rangeWithDots.push('...');
-                  }
-                  rangeWithDots.push(p);
-                  last = p;
-                });
+                  let last = 0;
+                  range.forEach((p) => {
+                    if (last && p - last > 1) {
+                      rangeWithDots.push('...');
+                    }
+                    rangeWithDots.push(p);
+                    last = p;
+                  });
 
-                return rangeWithDots.map((p, idx) =>
-                  p === '...' ? (
-                    <span key={`dots-${idx}`} className="px-2 text-gray-500">
-                      ...
-                    </span>
-                  ) : (
-                    <button
-                      key={p}
-                      onClick={() => jumpToPage(p as number)}
-                      className={`px-3 py-1.5 rounded-md text-sm ${
-                        p === current
+                  return rangeWithDots.map((p, idx) =>
+                    p === '...' ? (
+                      <span key={`dots-${idx}`} className="px-2 text-gray-500">
+                        ...
+                      </span>
+                    ) : (
+                      <button
+                        key={p}
+                        onClick={() => jumpToPage(p as number)}
+                        className={`px-3 py-1.5 rounded-md text-sm ${p === current
                           ? 'bg-blue-600 text-white font-medium'
                           : 'border border-gray-300 hover:bg-gray-100'
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  )
-                );
-              })()}
+                          }`}
+                      >
+                        {p}
+                      </button>
+                    )
+                  );
+                })()}
+              </div>
+
+              <button
+                onClick={handleNext}
+                disabled={page >= meta.totalPages}
+                className="px-4 py-2 border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+              >
+                Next
+              </button>
             </div>
 
-            <button
-              onClick={handleNext}
-              disabled={page >= meta.totalPages}
-              className="px-4 py-2 border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
-            >
-              Next
-            </button>
-          </div>
+            <div className="flex items-center gap-6 text-sm text-gray-600">
+              <span>
+                Showing <strong>{(page - 1) * limit + 1}</strong> to{' '}
+                <strong>{Math.min(page * limit, meta.total)}</strong> of <strong>{meta.total}</strong>{' '}
+                Purchase Orders
+              </span>
 
-          <div className="flex items-center gap-6 text-sm text-gray-600">
-            <span>
-              Showing <strong>{(page - 1) * limit + 1}</strong> to{' '}
-              <strong>{Math.min(page * limit, meta.total)}</strong> of <strong>{meta.total}</strong>{' '}
-              Purchase Orders
-            </span>
-
-            <select
-              value={limit}
-              onChange={handleLimitChange}
-              className="border border-gray-300 px-3 py-1.5 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value={5}>5 / page</option>
-              <option value={10}>10 / page</option>
-              <option value={20}>20 / page</option>
-              <option value={50}>50 / page</option>
-            </select>
+              <select
+                value={limit}
+                onChange={handleLimitChange}
+                className="border border-gray-300 px-3 py-1.5 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value={5}>5 / page</option>
+                <option value={10}>10 / page</option>
+                <option value={20}>20 / page</option>
+                <option value={50}>50 / page</option>
+              </select>
+            </div>
           </div>
-        </div>
-      )}
+        )}
       </div>
 
       {showCreatePo && <CreatePoForm />}

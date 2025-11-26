@@ -1,3 +1,4 @@
+import { usePermission } from "@/hooks/userPermission";
 import React, { useState, useEffect } from 'react';
 import { storage, STORAGE_KEYS } from '@/lib/storage';
 import {
@@ -9,7 +10,8 @@ import {
   DollarSign,
   Upload,
   Download,
-  Star
+  Star,
+  ShieldAlert
 } from 'lucide-react';
 
 interface PurchaseOrder {
@@ -25,6 +27,21 @@ interface Vendor {
 }
 
 const PurchaseReporting: React.FC = () => {
+  const canView = usePermission("purchaseReporting", "view");
+
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
 

@@ -8,7 +8,7 @@ import {
   deleteForecast,
 } from "@/redux/slices/forecastSlice";
 import { fetchProducts } from "@/redux/slices/productSlice";
-
+import { usePermission } from "@/hooks/userPermission";
 import {
   TrendingUp,
   Plus,
@@ -27,6 +27,7 @@ import {
   Eye,
   Trash2,
   X,
+  ShieldAlert,
 } from "lucide-react";
 
 interface ForecastItem {
@@ -41,7 +42,25 @@ interface ForecastItem {
 }
 
 const Forecasting: React.FC = () => {
+  const canView = usePermission("forecasting", "view");
+  const canCreate = usePermission("forecasting", "create");
+  const canEdit = usePermission("forecasting", "edit");
+  const canDelete = usePermission("forecasting", "delete");
   const dispatch = useDispatch();
+
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
 
   const { items: forecastItems, loading: forecastLoading } = useSelector(
     (state: any) => state.forecast
@@ -176,9 +195,9 @@ const Forecasting: React.FC = () => {
 
     const handleChange =
       (field: string) =>
-      (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        setFormData((prev) => ({ ...prev, [field]: e.target.value }));
-      };
+        (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+          setFormData((prev) => ({ ...prev, [field]: e.target.value }));
+        };
 
     const handleFormSubmit = (e: React.FormEvent) => {
       e.preventDefault();
@@ -321,11 +340,22 @@ const Forecasting: React.FC = () => {
                   Cancel
                 </button>
                 <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  {initialData ? "Update Rule" : "Add Rule"}
-                </button>
+  type="submit"
+  disabled={initialData ? !canEdit : !canCreate}
+  className={`px-4 py-2 rounded-lg text-white
+    ${
+      initialData
+        ? canEdit
+          ? "bg-blue-600 hover:bg-blue-700"
+          : "bg-gray-400 cursor-not-allowed"
+        : canCreate
+        ? "bg-blue-600 hover:bg-blue-700"
+        : "bg-gray-400 cursor-not-allowed"
+    }`}
+>
+  {initialData ? "Update Rule" : "Add Rule"}
+</button>
+
               </div>
             </form>
           </div>
@@ -470,8 +500,13 @@ const Forecasting: React.FC = () => {
           </p>
         </div>
         <button
-          onClick={() => setShowCreateForm(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+          disabled={!canCreate}
+          onClick={() => canCreate && setShowCreateForm(true)}
+          className={`px-4 py-2 rounded-lg flex items-center
+    ${canCreate
+              ? "bg-blue-600 text-white hover:bg-blue-700"
+              : "bg-gray-400 text-white cursor-not-allowed"
+            }`}
         >
           <Plus className="h-4 w-4 mr-2" />
           Add Forecast Rule
@@ -550,11 +585,11 @@ const Forecasting: React.FC = () => {
                 <p className="text-2xl font-semibold text-gray-900">
                   {forecastItems.length > 0
                     ? Math.round(
-                        forecastItems.reduce(
-                          (sum: number, item: any) => sum + item.leadTime,
-                          0
-                        ) / forecastItems.length
-                      )
+                      forecastItems.reduce(
+                        (sum: number, item: any) => sum + item.leadTime,
+                        0
+                      ) / forecastItems.length
+                    )
                     : 0}{" "}
                   days
                 </p>
@@ -791,22 +826,31 @@ const Forecasting: React.FC = () => {
                         </button>
 
                         <button
-                          className="text-green-600 hover:text-green-800 transition"
-                          onClick={() => {
-                            setEditingId(forecast._id);
-                            setShowUpdateForm(true);
-                          }}
+                          disabled={!canEdit}
+                          onClick={() =>
+                            canEdit &&
+                            (setEditingId(forecast._id),
+                              setShowUpdateForm(true))
+                          }
+                          className={`${canEdit
+                              ? "text-green-600"
+                              : "text-gray-400 cursor-not-allowed"
+                            }`}
                         >
                           <Edit className="h-4 w-4" />
                         </button>
 
                         <button
-                          className="text-red-600 hover:text-red-800 transition"
+                          disabled={!canDelete}
                           onClick={() => {
-                            if (confirm("Delete this forecast?")) {
+                            if (canDelete && confirm("Delete this forecast?")) {
                               dispatch(deleteForecast(forecast._id));
                             }
                           }}
+                          className={`${canDelete
+                              ? "text-red-600"
+                              : "text-gray-400 cursor-not-allowed"
+                            }`}
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
@@ -841,11 +885,10 @@ const Forecasting: React.FC = () => {
                 return (
                   <div
                     key={forecast._id}
-                    className={`border rounded-lg p-4 ${
-                      forecast.priority === "critical"
+                    className={`border rounded-lg p-4 ${forecast.priority === "critical"
                         ? "border-red-200 bg-red-50"
                         : "border-orange-200 bg-orange-50"
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center">
@@ -862,11 +905,10 @@ const Forecasting: React.FC = () => {
                       </div>
                       <div className="flex items-center space-x-2">
                         <span
-                          className={`text-sm font-medium ${
-                            forecast.priority === "critical"
+                          className={`text-sm font-medium ${forecast.priority === "critical"
                               ? "text-red-600"
                               : "text-orange-600"
-                          }`}
+                            }`}
                         >
                           Order {forecast.suggestedReplenishment} units
                         </span>
@@ -883,6 +925,8 @@ const Forecasting: React.FC = () => {
       </div>
 
       {/* Modals */}
+    
+
       {showCreateForm && <ForecastForm />}
       {showUpdateForm && editingId && (
         <ForecastForm

@@ -1,5 +1,4 @@
-"use client";
-
+import { usePermission } from "@/hooks/userPermission";
 import React, { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 
@@ -36,11 +35,15 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import { Eye, Edit, Trash2, Plus, Warehouse } from "lucide-react";
+import { Eye, Edit, Trash2, Plus, Warehouse, ShieldAlert } from "lucide-react";
 
 import { RawMaterial } from "@/redux/rawMaterialSlice";
 
 export default function RawMaterialMaster() {
+  const canView = usePermission("rawMaterials", "view");
+  const canCreate = usePermission("rawMaterials", "create");
+  const canEdit = usePermission("rawMaterials", "edit");
+  const canDelete = usePermission("rawMaterials", "delete");
   const dispatch = useDispatch<any>();
 
   // Redux State
@@ -112,6 +115,19 @@ export default function RawMaterialMaster() {
     return <Badge className="bg-green-600">In stock</Badge>;
   };
 
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
@@ -140,7 +156,7 @@ export default function RawMaterialMaster() {
             }}
           >
             <DialogTrigger asChild>
-              <Button>
+              <Button disabled={!canCreate}>
                 <Plus className="h-4 w-4 mr-1" /> Add Material
               </Button>
             </DialogTrigger>
@@ -268,16 +284,18 @@ export default function RawMaterialMaster() {
                       className="h-4 w-4 cursor-pointer"
                       onClick={() => setViewItem(m)}
                     />
-
-                    <Edit
-                      className="h-4 w-4 cursor-pointer"
-                      onClick={() => startEdit(m)}
-                    />
-
-                    <Trash2
-                      className="h-4 w-4 cursor-pointer text-red-500"
-                      onClick={() => dispatch(deleteMaterial(m._id!))}
-                    />
+                    <button disabled={!canEdit} title="Update">
+                      <Edit
+                        className="h-4 w-4 cursor-pointer"
+                        onClick={() => startEdit(m)}
+                      />
+                    </button>
+                    <button disabled={!canDelete} title="Delete">
+                      <Trash2
+                        className="h-4 w-4 cursor-pointer text-red-500"
+                        onClick={() => dispatch(deleteMaterial(m._id!))}
+                      />
+                    </button>
                   </TableCell>
                 </TableRow>
               ))}
