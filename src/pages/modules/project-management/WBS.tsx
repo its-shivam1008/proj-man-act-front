@@ -64,6 +64,7 @@ import {
 import TeamSelectionDialog from "@/components/TeamSelectionDialog";
 import MaterialSelectionDialog from "@/components/MaterialSelectionDialog";
 import { usePermission } from "@/hooks/userPermission";
+import { Progress } from "@/components/ui/progress";
 
 // --- TYPES ---
 type WBSItemType = "phase" | "activity" | "task" | "subtask";
@@ -89,6 +90,7 @@ interface WBSItem {
   actualCost: number;
   dependencies: string[];
   status: wbstatus;
+  drawingCode?: string;
   progress: number;
   createdAt: string;
   // Added this field
@@ -189,9 +191,13 @@ const WBSNode: React.FC<WBSNodeProps> = ({
         <div className="w-20 text-center text-sm text-muted-foreground">
           {item.endDate || "N/A"}
         </div>
-        <div className="w-48 text-center  flex justify-center items-center space-x-2 pr-4">
+        <div className="flex flex-col px-2 items-center gap-2">
+          <span className='text-xs'>{item.progress}%</span>
+          <Progress value={item.progress} className="w-16" />
+        </div>
+        <div className="w-48 flex justify-around text-center items-center space-x-2 pr-4">
           {canEdit && (
-            <div className="">
+            <div className="space-x-3">
               <Button
                 variant="ghost"
                 size="icon"
@@ -712,7 +718,17 @@ export default function WBS() {
                     placeholder="e.g., Foundation Work"
                   />
                 </div>
-
+                <div className="space-y-2">
+                  <Label htmlFor="drawingCode">Drawing Code</Label>
+                  <Input
+                    id="drawingCode"
+                    value={formData.drawingCode || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, drawingCode: e.target.value })
+                    }
+                    placeholder="e.g. STR-05"
+                  />
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="description">Description</Label>
                   <Textarea
@@ -895,6 +911,7 @@ export default function WBS() {
             <div className="w-24 text-center">Status</div>
             <div className="w-20 text-center">Start Date</div>
             <div className="w-20 text-center">End Date</div>
+            <div className="w-20 text-center">Progress</div>
             <div className="w-48 text-right pr-4">Actions</div>
           </div>
         </CardHeader>

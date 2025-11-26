@@ -72,6 +72,7 @@ type ProjectStatus =
 interface Project {
   _id: string;
   code: string;
+  drawingCode?: string;
   name: string;
   description: string;
   client?: string | { _id: string; name: string };
@@ -104,8 +105,8 @@ const PROJECT_STATUSES: ProjectStatus[] = [
 export default function Projects() {
   const [managerPopoverOpen, setManagerPopoverOpen] = useState(false);
   const [employeePage, setEmployeePage] = useState(1);
-  const employeePageSize = 250; 
-  
+  const employeePageSize = 250;
+
   const [employeeSearch, setEmployeeSearch] = useState("");
   const debouncedEmployeeSearch = useDebounce(employeeSearch, 400);
 
@@ -160,6 +161,7 @@ export default function Projects() {
   const [formData, setFormData] = useState<{
     code?: string;
     name?: string;
+    drawingCode?: string;
     description?: string;
     client?: string;
     department?: string;
@@ -170,7 +172,7 @@ export default function Projects() {
     manager?: string;
   }>({
     status: "planning",
-    client: undefined, 
+    client: undefined,
     department: undefined,
     projectType: undefined
   });
@@ -233,7 +235,7 @@ export default function Projects() {
       !formData?.code ||
       !formData?.name ||
       !formData?.description ||
-      !formData?.client || 
+      !formData?.client ||
       !formData?.department
     ) {
       toast.error("Please fill all required fields");
@@ -280,7 +282,7 @@ export default function Projects() {
 
   const openEditDialog = (project: Project) => {
     setEditingProject(project);
-    
+
     // When opening edit, ensure we extract the ID if the field is an object (populated)
     const getSafeId = (field: any) => (typeof field === 'object' && field?._id ? field._id : field);
 
@@ -290,7 +292,7 @@ export default function Projects() {
       department: getSafeId(project.department),
       projectType: getSafeId(project.projectType),
     });
-    
+
     setIsDialogOpen(true);
   };
 
@@ -318,7 +320,7 @@ export default function Projects() {
   };
 
   // ---------------- HELPER FUNCTIONS FOR NAMES ----------------
-  
+
   // Helper to find Client Name by ID
   const getClientName = (clientData: string | { _id: string; name: string } | undefined) => {
     if (!clientData) return "N/A";
@@ -356,7 +358,7 @@ export default function Projects() {
           <p className="text-muted-foreground">Manage all company projects.</p>
         </div>
 
-       {canCreate && <Button
+        {canCreate && <Button
           onClick={() => {
             resetForm();
             setIsDialogOpen(true);
@@ -440,7 +442,7 @@ export default function Projects() {
                   <TableRow key={p._id}>
                     <TableCell>{p?.code}</TableCell>
                     <TableCell>{p?.name}</TableCell>
-                    
+
                     {/* USE HELPERS HERE */}
                     <TableCell>{getClientName(p.client)}</TableCell>
                     <TableCell className="capitalize">{getProjectTypeName(p.projectType)}</TableCell>
@@ -538,7 +540,16 @@ export default function Projects() {
                   }
                 />
               </div>
-
+              <div>
+                <Label>Drawing Code</Label>
+                <Input
+                  value={formData.drawingCode || ""}
+                  onChange={(e) =>
+                    setFormData({ ...formData, drawingCode: e.target.value })
+                  }
+                  placeholder="e.g. DWG-001"
+                />
+              </div>
               <div>
                 <Label>Project Name *</Label>
                 <Input
@@ -562,7 +573,7 @@ export default function Projects() {
 
             {/* Client + Department Selection */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              
+
               {/* CLIENT POPOVER */}
               <div className="flex flex-col gap-2">
                 <Label>Client</Label>
@@ -753,17 +764,15 @@ export default function Projects() {
                     >
                       {formData.manager
                         ? employeeList.find(
+                          (e: any) => e.id === formData.manager
+                        )
+                          ? `${employeeList.find(
                             (e: any) => e.id === formData.manager
-                          )
-                          ? `${
-                              employeeList.find(
-                                (e: any) => e.id === formData.manager
-                              )?.personalInfo?.firstName
-                            } ${
-                              employeeList.find(
-                                (e: any) => e.id === formData.manager
-                              )?.personalInfo?.lastName
-                            }`
+                          )?.personalInfo?.firstName
+                          } ${employeeList.find(
+                            (e: any) => e.id === formData.manager
+                          )?.personalInfo?.lastName
+                          }`
                           : "Select Project Manager"
                         : "Select Project Manager"}
                       <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -800,11 +809,9 @@ export default function Projects() {
                               {employeeList.map((emp: any) => (
                                 <CommandItem
                                   key={emp.id}
-                                  value={`${
-                                    emp.personalInfo?.firstName || ""
-                                  } ${emp.personalInfo?.lastName || ""} ${
-                                    emp.id
-                                  }`}
+                                  value={`${emp.personalInfo?.firstName || ""
+                                    } ${emp.personalInfo?.lastName || ""} ${emp.id
+                                    }`}
                                   onSelect={() => {
                                     setFormData((prev) => ({
                                       ...prev,

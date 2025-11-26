@@ -19,6 +19,7 @@ import { useDispatch } from "react-redux";
 import { assignPersonToWbs, removePersonFromWbs } from "@/redux/slices/wbsSlice"; 
 import { AppDispatch } from "@/redux/store";
 import api from "@/utils/axiosApi"; 
+import { Progress } from "./ui/progress";
 
 interface WBSItemSummary {
   id: string;
@@ -279,6 +280,7 @@ const TeamSelectionDialog: React.FC<TeamSelectionDialogProps> = ({
                      <th className="px-4 py-3 text-left font-medium text-gray-500">Source</th>
                      <th className="px-4 py-3 text-left font-medium text-gray-500">Type</th>
                      <th className="px-4 py-3 text-left font-medium text-gray-500">Name</th>
+                     <th className="px-4 py-3 text-left font-medium text-gray-500">Progress</th>
                      <th className="px-4 py-3 text-left font-medium text-gray-500">Role/Agency</th>
                      <th className="px-4 py-3 text-left font-medium text-gray-500">Assigned At</th>
                      <th className="px-4 py-3 text-right font-medium text-gray-500">Action</th>
@@ -309,6 +311,12 @@ const TeamSelectionDialog: React.FC<TeamSelectionDialogProps> = ({
                          </td>
                          <td className="px-4 py-3 font-medium align-top">
                            {person.personalInfo?.firstName} {person.personalInfo?.lastName}
+                         </td>
+                         <td className="px-4 py-3 font-medium align-top">
+                             {person.type === 'employee' && !person.isInherited && <div className="flex items-center gap-2">
+                               <span className='text-xs'>{person.progress}%</span>
+                                <Progress value={person.progress} className="w-16" />
+                             </div>}
                          </td>
                          <td className="px-4 py-3 text-gray-500 align-top">
                            {person.type === 'labour' 

@@ -21,6 +21,7 @@ export interface WBSItem {
   parentId: string | null;
   name: string;
   description?: string;
+  drawingCode?: string;
   type: WBSItemType;
   startDate?: string;
   endDate?: string;
