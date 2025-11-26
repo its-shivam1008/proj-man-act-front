@@ -123,9 +123,9 @@ const WBSNode: React.FC<WBSNodeProps> = ({
   onShowToast,
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
-  
-  const canEdit = usePermission('wbsManagement', 'edit');
-  const canDelete = usePermission('wbsManagement', 'delete');
+
+  const canEdit = usePermission("wbsManagement", "edit");
+  const canDelete = usePermission("wbsManagement", "delete");
 
   const children = useMemo(
     () => allwbs.filter((i) => i.parentId === item.id),
@@ -189,47 +189,51 @@ const WBSNode: React.FC<WBSNodeProps> = ({
           {item.endDate || "N/A"}
         </div>
         <div className="w-48 text-right pr-4">
-          {canEdit && <div>
-            <Button
-              variant="ghost"
-              size="icon"
-              title="Link Materials"
-              onClick={() => handleLinkMaterial(item)}
-            >
-              <Package className="h-4 w-4 text-blue-600" />
+          {canEdit && (
+            <div>
+              <Button
+                variant="ghost"
+                size="icon"
+                title="Link Materials"
+                onClick={() => handleLinkMaterial(item)}
+              >
+                <Package className="h-4 w-4 text-blue-600" />
+              </Button>
+
               <MaterialSelectionDialog
                 isOpen={!!linkingMaterialItem}
                 onClose={() => setLinkingMaterialItem(null)}
                 wbsItem={linkingMaterialItem}
               />
-            </Button>
 
+              <Button
+                variant="ghost"
+                size="icon"
+                title="Link Team"
+                onClick={() => onLinkTeam(item)} // Trigger Link Team
+              >
+                <Users className="h-4 w-4 text-green-600" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                title="Edit Item"
+                onClick={() => onEdit(item)}
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+          {canDelete && (
             <Button
               variant="ghost"
               size="icon"
-              title="Link Team"
-              onClick={() => onLinkTeam(item)} // Trigger Link Team
+              title="Delete Item"
+              onClick={() => onDelete(item.id)}
             >
-              <Users className="h-4 w-4 text-green-600" />
+              <Trash2 className="h-4 w-4 text-destructive" />
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              title="Edit Item"
-              onClick={() => onEdit(item)}
-            >
-              <Pencil className="h-4 w-4" />
-            </Button>
-          </div>
-          }
-          {canDelete && <Button
-            variant="ghost"
-            size="icon"
-            title="Delete Item"
-            onClick={() => onDelete(item.id)}
-          >
-            <Trash2 className="h-4 w-4 text-destructive" />
-          </Button>}
+          )}
         </div>
       </div>
       {/* Render children */}
@@ -256,10 +260,10 @@ export default function WBS() {
   const dispatch = useDispatch<AppDispatch>();
   const { wbs, loading } = useSelector((state: RootState) => state.wbs);
 
-  const canView = usePermission('wbsManagement', 'view');
-  const canCreate = usePermission('wbsManagement', 'create');
-  const canEdit = usePermission('wbsManagement', 'edit');
-  const canDelete = usePermission('wbsManagement', 'delete');
+  const canView = usePermission("wbsManagement", "view");
+  const canCreate = usePermission("wbsManagement", "create");
+  const canEdit = usePermission("wbsManagement", "edit");
+  const canDelete = usePermission("wbsManagement", "delete");
 
   const { projects, loading: projectLoading } = useSelector(
     (state: RootState) => state.projects
@@ -292,16 +296,13 @@ export default function WBS() {
     );
   }, [debouncedSearchTerm]);
 
-  // Helper to calculate duration based on start and end date
   const calculateDuration = (start: string, end: string) => {
     if (!start || !end) return 0;
     const startDate = new Date(start);
     const endDate = new Date(end);
 
-    // Difference in milliseconds
     const diffTime = endDate.getTime() - startDate.getTime();
 
-    // Convert to days (include start day by adding 1)
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 
     return diffDays > 0 ? diffDays : 0;
@@ -329,7 +330,6 @@ export default function WBS() {
     }
 
     if (editingItem) {
-      // @ts-ignore
       dispatch(updateWbsItem({ id: editingItem.id, data: formData }))
         .unwrap()
         .then(() => {
@@ -404,7 +404,6 @@ export default function WBS() {
     });
   };
 
-  // Open Team Link Modal
   const handleLinkTeam = (item: WBSItem) => {
     setLinkingItem(item);
   };
@@ -450,15 +449,18 @@ export default function WBS() {
     return (
       <div className="text-center py-12 px-4">
         <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
-        <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
-        <p className="text-gray-600">You do not have the necessary permissions to view this page.</p>
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
       </div>
     );
   }
 
   return (
     <div className="space-y-6 p-4 md:p-6">
-      {/* --- HEADER SECTION --- */}
       <div className="flex flex-col md:flex-row items-center justify-between space-y-4 md:space-y-0">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-foreground">
@@ -506,18 +508,20 @@ export default function WBS() {
                       projects.map((project) => (
                         <CommandItem
                           key={project._id}
-                          value={`${project.code} ${project.name} ${project.clientOrDepartment || ""
-                            }`}
+                          value={`${project.code} ${project.name} ${
+                            project.clientOrDepartment || ""
+                          }`}
                           onSelect={() => {
                             setSelectedProjectId(project._id);
                             setPopoverOpen(false);
                           }}
                         >
                           <Check
-                            className={`mr-2 h-4 w-4 ${selectedProjectId === project._id
+                            className={`mr-2 h-4 w-4 ${
+                              selectedProjectId === project._id
                                 ? "opacity-100"
                                 : "opacity-0"
-                              }`}
+                            }`}
                           />
                           <div className="flex flex-col">
                             <span className="font-medium">
@@ -538,14 +542,16 @@ export default function WBS() {
           {/* CREATE/EDIT DIALOG */}
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
-              {canCreate && <Button
-                onClick={openCreateDialog}
-                disabled={!selectedProjectId}
-                className="w-full md:w-auto"
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                New WBS Item
-              </Button>}
+              {canCreate && (
+                <Button
+                  onClick={openCreateDialog}
+                  disabled={!selectedProjectId}
+                  className="w-full md:w-auto"
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  New WBS Item
+                </Button>
+              )}
             </DialogTrigger>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
@@ -559,7 +565,6 @@ export default function WBS() {
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
-
                 <div className="space-y-2">
                   <Label>Project</Label>
                   <Input
@@ -663,8 +668,15 @@ export default function WBS() {
                       value={formData.startDate || ""}
                       onChange={(e) => {
                         const newStartDate = e.target.value;
-                        const newDuration = calculateDuration(newStartDate, formData.endDate || "");
-                        setFormData({ ...formData, startDate: newStartDate, duration: newDuration });
+                        const newDuration = calculateDuration(
+                          newStartDate,
+                          formData.endDate || ""
+                        );
+                        setFormData({
+                          ...formData,
+                          startDate: newStartDate,
+                          duration: newDuration,
+                        });
                       }}
                     />
                   </div>
@@ -676,8 +688,15 @@ export default function WBS() {
                       value={formData.endDate || ""}
                       onChange={(e) => {
                         const newEndDate = e.target.value;
-                        const newDuration = calculateDuration(formData.startDate || "", newEndDate);
-                        setFormData({ ...formData, endDate: newEndDate, duration: newDuration });
+                        const newDuration = calculateDuration(
+                          formData.startDate || "",
+                          newEndDate
+                        );
+                        setFormData({
+                          ...formData,
+                          endDate: newEndDate,
+                          duration: newDuration,
+                        });
                       }}
                     />
                   </div>

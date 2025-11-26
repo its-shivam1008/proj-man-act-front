@@ -1,60 +1,183 @@
-import { BASE_URL } from '@/utils/constants';
+"use client";
 
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import axios from "axios";
 import api from "@/utils/axiosApi";
 
+/* TYPES */
+export interface StoredFile {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  dataUrl: string;
+}
 
-export const fetchEquipment = createAsyncThunk(
-  "equipment/fetchEquipment",
-  async (_, { rejectWithValue }) => {
+export interface Equipment {
+  _id?: string;
+  id: string;
+  code: string;
+  name: string;
+  model: string;
+  category?: string;
+  location?: string;
+  manufacturer?: string;
+  supplier?: string;
+  warranty?: string;
+  purchaseDate?: string;
+  cost?: number;
+  serialNumber?: string;
+  department?: string;
+  capacity?: string;
+  frequency?: string;
+  insurance?: string;
+  depreciation?: string;
+  documents?: StoredFile[];
+  createdAt: string;
+}
+
+/* STATE */
+interface EquipmentState {
+  equipments: Equipment[];
+  loading: boolean;
+  error: string | null;
+  total: number;
+  page: number;
+  limit: number;
+}
+
+const initialState: EquipmentState = {
+  equipments: [],
+  loading: false,
+  error: null,
+  total: 0,
+  page: 1,
+  limit: 10,
+};
+
+/* API CALLS */
+
+// FETCH WITH PAGINATION
+export const fetchEquipments = createAsyncThunk(
+  "equipment/fetchEquipments",
+  async (
+    { page = 1, limit = 10 }: { page: number; limit: number },
+    thunkAPI
+  ) => {
     try {
-      const res = await api.get(BASE_URL);
-      return res.data;
+      const organisationId = localStorage.getItem("organisationId");
+
+      const res = await api.get(
+        `/equipment?page=${page}&limit=${limit}&organisationId=${organisationId}`
+      );
+
+      return res.data; // backend sends { success, data, pagination }
     } catch (err: any) {
-      return rejectWithValue(err.response?.data?.message ?? err.message);
+      return thunkAPI.rejectWithValue(err.response?.data?.message || "Failed");
     }
   }
 );
 
-interface Equipment {
-  _id: string;
-  name: string;
-  rate: number;
-  unit: string;
-  status: "available" | "booked" | "maintenance";
-  // ... other fields
-}
+// CREATE
+export const createEquipment = createAsyncThunk(
+  "equipment/createEquipment",
+  async (payload: Partial<Equipment>, thunkAPI) => {
+    try {
+      const organisationId = localStorage.getItem("organisationId");
+      const res = await api.post("/equipment/create", {
+        ...payload,
+        organisationId,
+      });
 
-interface EquipmentState {
-  equipment: Equipment[];
-  loading: boolean;
-  error: string | null;
-}
+      return res.data.data; // must contain _id
+    } catch (err: any) {
+      return thunkAPI.rejectWithValue(err.response?.data?.message || "Failed");
+    }
+  }
+);
 
-const initialState: EquipmentState = {
-  equipment: [],
-  loading: false,
-  error: null,
-};
+// UPDATE
+export const updateEquipment = createAsyncThunk(
+  "equipment/updateEquipment",
+  async ({ id, data }: { id: string; data: Partial<Equipment> }, thunkAPI) => {
+    try {
+      const res = await api.put(`/equipment/${id}`, data);
+      return res.data.data; // updated object with _id
+    } catch (err: any) {
+      return thunkAPI.rejectWithValue(err.response?.data?.message || "Failed");
+    }
+  }
+);
 
+// DELETE
+export const deleteEquipment = createAsyncThunk(
+  "equipment/deleteEquipment",
+  async (id: string, thunkAPI) => {
+    try {
+      await api.delete(`/equipment/delete/${id}`);
+      return id;
+    } catch (err: any) {
+      return thunkAPI.rejectWithValue(err.response?.data?.message || "Failed");
+    }
+  }
+);
+
+
+/* SLICE */
 const equipmentSlice = createSlice({
   name: "equipment",
   initialState,
-  reducers: {},
+  reducers: {
+    setPage(state, action) {
+      state.page = action.payload;
+    },
+    setLimit(state, action) {
+      state.limit = action.payload;
+    },
+  },
+
   extraReducers: (builder) => {
-    builder.addCase(fetchEquipment.pending, (state) => {
+    /* FETCH */
+    builder.addCase(fetchEquipments.pending, (state) => {
       state.loading = true;
     });
-    builder.addCase(fetchEquipment.fulfilled, (state, action) => {
+
+    builder.addCase(fetchEquipments.fulfilled, (state, action) => {
       state.loading = false;
-      state.equipment = action.payload;
+
+      state.equipments = action.payload.data; // correct
+      state.total = action.payload.pagination.total; // correct
+      state.page = action.payload.pagination.page;
+      state.limit = action.payload.pagination.limit;
     });
-    builder.addCase(fetchEquipment.rejected, (state, action) => {
+
+    builder.addCase(fetchEquipments.rejected, (state, action) => {
       state.loading = false;
       state.error = action.payload as string;
+    });
+
+    /* CREATE */
+    builder.addCase(createEquipment.fulfilled, (state, action) => {
+      state.equipments.unshift(action.payload);
+      state.total += 1;
+    });
+
+    builder.addCase(updateEquipment.fulfilled, (state, action) => {
+      const index = state.equipments.findIndex(
+        (e) => e._id === action.payload._id
+      );
+      if (index !== -1) state.equipments[index] = action.payload;
+    });
+
+    // DELETE
+    builder.addCase(deleteEquipment.fulfilled, (state, action) => {
+      state.equipments = state.equipments.filter(
+        (e) => e._id !== action.payload
+      );
+      state.total -= 1;
     });
   },
 });
 
+/* EXPORTS */
+export const { setPage, setLimit } = equipmentSlice.actions;
 export default equipmentSlice.reducer;
