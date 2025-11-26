@@ -5,7 +5,6 @@ import wbsReducer from "./slices/wbsSlice";
 import resourceReducer from "./slices/resourceSlice";
 import manpowerReducer from "./slices/manpowerSlice";
 import materialReducer from "./slices/materialSlice";
-import equipmentReducer from "./slices/equipmentSlice";
 import budgetReducer from "./slices/budgetSlice";
 import mrsReducer from "./slices/mrsSlice";
 import prReducer from "./slices/prSlice";
@@ -29,7 +28,8 @@ import rfqReducer from "./slices/purchase/rfqSlice";
 import purchaseOrderReducer from "./slices/purchase/purchaseOrderSlice";
 import purchaseAgreementReducer from "./slices/purchase/purchaseAgreementSlice";
 import notificationReducer from "./slices/notificationSlice"
-import masterDataReducer from "./slices/masterDataSlice"
+import masterDataReducer from "./slices/masterDataSlice";
+import equipmentReducer from "./slices/equipmentSlice";
 export const store = configureStore({
   reducer: {
     auth: authReducer,
@@ -38,7 +38,6 @@ export const store = configureStore({
     resources: resourceReducer,
     manpower: manpowerReducer,
     materials: materialReducer,
-    equipment: equipmentReducer,
     budget: budgetReducer,
     mrs: mrsReducer,
     pr: prReducer,
@@ -61,8 +60,9 @@ export const store = configureStore({
     rfqs: rfqReducer,
     purchaseOrders: purchaseOrderReducer,
     purchaseAgreements: purchaseAgreementReducer,
-    notification:notificationReducer,
-    masterData:masterDataReducer
+    notification: notificationReducer,
+    masterData: masterDataReducer,
+    equipment: equipmentReducer,
   },
 });
 

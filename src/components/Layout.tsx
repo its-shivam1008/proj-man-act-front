@@ -150,6 +150,38 @@ const Layout: React.FC = () => {
     { name: "Raw Materials", href: "/inventory/rawmaterials", icon: Warehouse },
     { name: "Warehouses", href: "/inventory/warehouses", icon: MapPin },
     { name: "Stores", href: "/inventory/stores", icon: Package },
+    {
+      name: "Forecasting",
+      href: "/inventory/operations/forecasting",
+      icon: Truck,
+    },
+    { name: "Delivery", href: "/inventory/operations/deliveries", icon: Truck },
+    {
+      name: "Scrap Orders",
+      href: "/inventory/operations/scrap-order",
+      icon: FileText,
+    },
+    {
+      name: "Receipts",
+      href: "/inventory/operations/receipts",
+      icon: ReceiptIndianRupee,
+    },
+    { name: "Stock", href: "/inventory/operations/stock", icon: Package },
+    {
+      name: "Inventory History",
+      href: "/inventory/operations/inventory-history",
+      icon: FileText,
+    },
+    {
+      name: "Move Analysis",
+      href: "/inventory/operations/move-analysis",
+      icon: FileText,
+    },
+    {
+      name: "Valuation",
+      href: "/inventory/operations/valuation",
+      icon: CircleDollarSign,
+    },
     { name: "Operations", href: "/inventory/operations", icon: Warehouse },
     {
       name: "Reporting",

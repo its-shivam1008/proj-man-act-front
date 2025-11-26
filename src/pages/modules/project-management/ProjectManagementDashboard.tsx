@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui
 import { getFromStorage, STORAGE_KEYS } from "../../../utils/localStorage";
 import { Project, Budget, Milestone } from "../../../types/production";
 import { useEffect, useState, useMemo } from "react";
-import { FolderKanban, DollarSign, TrendingUp, AlertCircle, Calendar } from "lucide-react";
+import { FolderKanban, DollarSign, TrendingUp, AlertCircle, ShieldAlert, Calendar } from "lucide-react";
 import { parseISO, min, max } from "date-fns";
 import { Badge } from "../../../components/ui/badge";
 import { Progress } from "../../../components/ui/progress";
@@ -34,6 +34,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
+import { usePermission } from "@/hooks/userPermission";
 
 
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1);
@@ -231,6 +232,8 @@ const Timeline = () => {
 export default function ProjectManagementDashboard() {
   const dispatch = useDispatch<AppDispatch>();
   const organisationId = localStorage.getItem('organisationId');
+
+  const canView = usePermission('projectDashboard', 'view');
   
   // Get projects from Redux
   const { projects = [], loading: projectsLoading } = useSelector((state: RootState) => state.projects);
@@ -498,6 +501,16 @@ export default function ProjectManagementDashboard() {
         return "bg-muted";
     }
   };
+
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
+        <p className="text-gray-600">You do not have the necessary permissions to view this page.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

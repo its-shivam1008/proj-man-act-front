@@ -23,7 +23,7 @@ import {
 } from "../../../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
 import { Badge } from "../../../components/ui/badge";
-import { Plus, Trash2, Edit2, FileText, Loader2 } from "lucide-react";
+import { Plus, Trash2, Edit2, FileText, Loader2, ShieldAlert } from "lucide-react";
 import {
     ResponsiveContainer,
     BarChart,
@@ -48,12 +48,18 @@ import {
     createInvoice,
 } from "@/redux/slices/billingSlice";
 import { fetchProjects } from "@/redux/slices/projectSlice";
+import { usePermission } from "@/hooks/userPermission";
 
 export default function BillingPage() {
     const dispatch = useDispatch();
     const { milestones, invoices, loading: billingLoading } = useSelector((state: RootState) => state.billing);
     const { projects, loading: projectsLoading } = useSelector((state: RootState) => state.projects);
     const loading = billingLoading || projectsLoading;
+
+    const canView = usePermission('billings', 'view');
+  const canCreate = usePermission('billings', 'create');
+  const canEdit = usePermission('billings', 'edit');
+  const canDelete = usePermission('billings', 'delete');
 
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editing, setEditing] = useState<Milestone | null>(null);
@@ -214,6 +220,16 @@ export default function BillingPage() {
     const safeMilestones = (milestones || []).filter(Boolean);
     const safeProjects = (projects || []).filter(Boolean);
 
+    if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
+        <p className="text-gray-600">You do not have the necessary permissions to view this page.</p>
+      </div>
+    );
+  }
+
     return (
         <div className="space-y-6 p-4 md:p-6">
             {/* Header */}
@@ -225,9 +241,9 @@ export default function BillingPage() {
                     </p>
                 </div>
                 <div className="flex gap-3">
-                    <Button onClick={openCreate}>
+                    {canCreate && <Button onClick={openCreate}>
                         <Plus className="mr-2 h-4 w-4" /> Add Milestone
-                    </Button>
+                    </Button>}
                     <Button variant="outline" onClick={() => generateInvoice()}>
                         <FileText className="mr-2 h-4 w-4" /> Generate Invoice
                     </Button>
@@ -267,12 +283,12 @@ export default function BillingPage() {
                                         <TableCell>{project?.name || "—"}</TableCell>
                                         <TableCell>
                                             <div className="flex items-center justify-end gap-2">
-                                                <Button size="icon" variant="ghost" onClick={() => openEdit(m)}>
+                                                {canEdit && <Button size="icon" variant="ghost" onClick={() => openEdit(m)}>
                                                     <Edit2 className="h-4 w-4" />
-                                                </Button>
-                                                <Button size="icon" variant="ghost" onClick={() => handleDelete(m._id)}>
+                                                </Button>}
+                                                {canDelete && <Button size="icon" variant="ghost" onClick={() => handleDelete(m._id)}>
                                                     <Trash2 className="h-4 w-4 text-red-600" />
-                                                </Button>
+                                                </Button>}
                                                 {m.balance > 0 && (
                                                     <Button size="sm" onClick={() => generateInvoice(m)}>
                                                         <FileText className="h-4 w-4 mr-1" /> Invoice

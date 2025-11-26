@@ -3,6 +3,15 @@ import { removeBearerTokenForEveryAxiosCall, setBearerTokenForEveryAxiosCall } f
 import api from "@/utils/axiosApi";
 
 const getStoredToken = () => localStorage.getItem("token") || null;
+// Helper to safely parse the user profile object
+const getStoredUserProfile = () => {
+  const stored = localStorage.getItem("userProfile");
+  try {
+    return stored ? JSON.parse(stored) : null;
+  } catch (error) {
+    return null;
+  }
+};
 const getStoredOrganisationId = () => localStorage.getItem("organisationId") || null;
 
 export const signupUser = createAsyncThunk(
@@ -37,6 +46,7 @@ export const verifyOtpUser = createAsyncThunk(
 
       localStorage.setItem("token", res.data.token);
       localStorage.setItem("organisationId", res.data.organisationId);
+      localStorage.setItem("userProfile", JSON.stringify(res.data.user));
 
       return res.data;
     } catch (err) {
@@ -66,6 +76,7 @@ export const loginUser = createAsyncThunk(
 
       localStorage.setItem("token", res.data.token);
       localStorage.setItem("organisationId", res.data.organisationId);
+      localStorage.setItem("userProfile", JSON.stringify(res.data.user));
 
       return res.data;
     } catch (err) {
@@ -84,6 +95,7 @@ const authSlice = createSlice({
     error: null,
     isAuthenticated: !!getStoredToken(),
     emailForVerification: null,
+    userProfile:getStoredUserProfile()
   },
 
   reducers: {
@@ -93,8 +105,7 @@ const authSlice = createSlice({
       state.isAuthenticated = false;
 
       removeBearerTokenForEveryAxiosCall();
-      localStorage.removeItem("token");
-      localStorage.removeItem("organisationId");
+      localStorage.clear();
     },
     clearError: (state) => {
       state.error = null;
@@ -125,7 +136,6 @@ const authSlice = createSlice({
         state.token = action.payload.token;
         state.organisationId = action.payload.organisationId;
         state.isAuthenticated = true;
-
         state.email = action.payload.email;  // Save in Redux
 
         // SAVE IN LOCAL STORAGE

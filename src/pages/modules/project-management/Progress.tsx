@@ -18,7 +18,7 @@ import { Textarea } from "../../../components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
 import { Badge } from "../../../components/ui/badge";
 import { Avatar } from "../../../components/ui/avatar";
-import { Upload, Trash2, Edit2, Globe, MapPin, Loader2 } from "lucide-react";
+import { Upload, Trash2, Edit2, Globe, MapPin, Loader2, ShieldAlert } from "lucide-react";
 import { generateId } from "../../../utils/localStorage"; // Only for local photo IDs and gantt
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 import { useDispatch, useSelector } from "react-redux";
@@ -30,6 +30,7 @@ import {
   editDailyProgress,
   removeDailyProgress,
 } from "@/redux/slices/dailyProgressSlice";
+import { usePermission } from "@/hooks/userPermission";
 
 // Gantt storage (kept local as no Redux slice for it)
 const getGantt = () =>
@@ -43,6 +44,8 @@ export default function DailyProgressPage() {
   const dispatch = useDispatch();
   const { items, loading } = useSelector((state: RootState) => state.dailyProgress);
   const [gantt, setGantt] = useState<{ date: string; planned: number }[]>([]);
+
+  const canView = usePermission('progressUpdates', 'view');
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editing, setEditing] = useState<DailyProgressItem | null>(null);
@@ -188,6 +191,16 @@ export default function DailyProgressPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
+        <p className="text-gray-600">You do not have the necessary permissions to view this page.</p>
       </div>
     );
   }

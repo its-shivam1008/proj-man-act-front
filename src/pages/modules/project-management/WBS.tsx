@@ -40,6 +40,7 @@ import {
   Users,
   ChevronsUpDown,
   Check,
+  ShieldAlert,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
@@ -62,6 +63,7 @@ import {
 // --- IMPORT THE SEPARATE MODAL COMPONENT ---
 import TeamSelectionDialog from "@/components/TeamSelectionDialog";
 import MaterialSelectionDialog from "@/components/MaterialSelectionDialog";
+import { usePermission } from "@/hooks/userPermission";
 
 // --- TYPES ---
 type WBSItemType = "phase" | "activity" | "task" | "subtask";
@@ -122,6 +124,9 @@ const WBSNode: React.FC<WBSNodeProps> = ({
   onShowToast,
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
+
+  const canEdit = usePermission("wbsManagement", "edit");
+  const canDelete = usePermission("wbsManagement", "delete");
 
   const children = useMemo(
     () => allwbs.filter((i) => i.parentId === item.id),
@@ -185,44 +190,51 @@ const WBSNode: React.FC<WBSNodeProps> = ({
           {item.endDate || "N/A"}
         </div>
         <div className="w-48 text-right pr-4">
-          <Button
-            variant="ghost"
-            size="icon"
-            title="Link Materials"
-            onClick={() => handleLinkMaterial(item)}
-          >
-            <Package className="h-4 w-4 text-blue-600" />
-            <MaterialSelectionDialog
-              isOpen={!!linkingMaterialItem}
-              onClose={() => setLinkingMaterialItem(null)}
-              wbsItem={linkingMaterialItem}
-            />
-          </Button>
+          {canEdit && (
+            <div>
+              <Button
+                variant="ghost"
+                size="icon"
+                title="Link Materials"
+                onClick={() => handleLinkMaterial(item)}
+              >
+                <Package className="h-4 w-4 text-blue-600" />
+              </Button>
 
-          <Button
-            variant="ghost"
-            size="icon"
-            title="Link Team"
-            onClick={() => onLinkTeam(item)} // Trigger Link Team
-          >
-            <Users className="h-4 w-4 text-green-600" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            title="Edit Item"
-            onClick={() => onEdit(item)}
-          >
-            <Pencil className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            title="Delete Item"
-            onClick={() => onDelete(item.id)}
-          >
-            <Trash2 className="h-4 w-4 text-destructive" />
-          </Button>
+              <MaterialSelectionDialog
+                isOpen={!!linkingMaterialItem}
+                onClose={() => setLinkingMaterialItem(null)}
+                wbsItem={linkingMaterialItem}
+              />
+
+              <Button
+                variant="ghost"
+                size="icon"
+                title="Link Team"
+                onClick={() => onLinkTeam(item)} // Trigger Link Team
+              >
+                <Users className="h-4 w-4 text-green-600" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                title="Edit Item"
+                onClick={() => onEdit(item)}
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+          {canDelete && (
+            <Button
+              variant="ghost"
+              size="icon"
+              title="Delete Item"
+              onClick={() => onDelete(item.id)}
+            >
+              <Trash2 className="h-4 w-4 text-destructive" />
+            </Button>
+          )}
         </div>
       </div>
       {/* Render children */}
@@ -248,6 +260,11 @@ export default function WBS() {
   const organisationId = localStorage.getItem("organisationId");
   const dispatch = useDispatch<AppDispatch>();
   const { wbs, loading } = useSelector((state: RootState) => state.wbs);
+
+  const canView = usePermission("wbsManagement", "view");
+  const canCreate = usePermission("wbsManagement", "create");
+  const canEdit = usePermission("wbsManagement", "edit");
+  const canDelete = usePermission("wbsManagement", "delete");
 
   const { projects, loading: projectLoading } = useSelector(
     (state: RootState) => state.projects
@@ -280,18 +297,15 @@ export default function WBS() {
     );
   }, [debouncedSearchTerm]);
 
-  // Helper to calculate duration based on start and end date
   const calculateDuration = (start: string, end: string) => {
     if (!start || !end) return 0;
     const startDate = new Date(start);
     const endDate = new Date(end);
-    
-    // Difference in milliseconds
+
     const diffTime = endDate.getTime() - startDate.getTime();
-    
-    // Convert to days (include start day by adding 1)
+
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-    
+
     return diffDays > 0 ? diffDays : 0;
   };
 
@@ -317,7 +331,6 @@ export default function WBS() {
     }
 
     if (editingItem) {
-      // @ts-ignore
       dispatch(updateWbsItem({ id: editingItem.id, data: formData }))
         .unwrap()
         .then(() => {
@@ -392,7 +405,6 @@ export default function WBS() {
     });
   };
 
-  // Open Team Link Modal
   const handleLinkTeam = (item: WBSItem) => {
     setLinkingItem(item);
   };
@@ -479,9 +491,22 @@ export default function WBS() {
     }
   }, [selectedProjectId, dispatch]);
 
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 p-4 md:p-6">
-      {/* --- HEADER SECTION --- */}
       <div className="flex flex-col md:flex-row items-center justify-between space-y-4 md:space-y-0">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-foreground">
@@ -583,14 +608,16 @@ export default function WBS() {
           {/* CREATE/EDIT DIALOG */}
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
-              <Button
-                onClick={openCreateDialog}
-                disabled={!selectedProjectId}
-                className="w-full md:w-auto"
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                New WBS Item
-              </Button>
+              {canCreate && (
+                <Button
+                  onClick={openCreateDialog}
+                  disabled={!selectedProjectId}
+                  className="w-full md:w-auto"
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  New WBS Item
+                </Button>
+              )}
             </DialogTrigger>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
@@ -604,7 +631,6 @@ export default function WBS() {
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
-                
                 <div className="space-y-2">
                   <Label>Project</Label>
                   <Input
@@ -708,8 +734,15 @@ export default function WBS() {
                       value={formData.startDate || ""}
                       onChange={(e) => {
                         const newStartDate = e.target.value;
-                        const newDuration = calculateDuration(newStartDate, formData.endDate || "");
-                        setFormData({ ...formData, startDate: newStartDate, duration: newDuration });
+                        const newDuration = calculateDuration(
+                          newStartDate,
+                          formData.endDate || ""
+                        );
+                        setFormData({
+                          ...formData,
+                          startDate: newStartDate,
+                          duration: newDuration,
+                        });
                       }}
                     />
                   </div>
@@ -721,8 +754,15 @@ export default function WBS() {
                       value={formData.endDate || ""}
                       onChange={(e) => {
                         const newEndDate = e.target.value;
-                        const newDuration = calculateDuration(formData.startDate || "", newEndDate);
-                        setFormData({ ...formData, endDate: newEndDate, duration: newDuration });
+                        const newDuration = calculateDuration(
+                          formData.startDate || "",
+                          newEndDate
+                        );
+                        setFormData({
+                          ...formData,
+                          endDate: newEndDate,
+                          duration: newDuration,
+                        });
                       }}
                     />
                   </div>

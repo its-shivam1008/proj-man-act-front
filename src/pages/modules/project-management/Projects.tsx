@@ -17,7 +17,7 @@ import {
   CommandGroup,
   CommandItem,
 } from "@/components/ui/command";
-import { Check, ChevronsUpDown, ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Search } from "lucide-react";
+import { Check, ChevronsUpDown, ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Search, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import {
@@ -58,6 +58,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { useDebounce } from "@/hooks/useDebounce";
+import { usePermission } from "@/hooks/userPermission";
 
 // ---------------- Types ----------------
 type ProjectStatus =
@@ -122,6 +123,11 @@ export default function Projects() {
     totalPages,
     totalProjects,
   } = useSelector((state: RootState) => state.projects);
+
+  const canView = usePermission('projects', 'view');
+  const canCreate = usePermission('projects', 'create');
+  const canEdit = usePermission('projects', 'edit');
+  const canDelete = usePermission('projects', 'delete');
 
   const [color, setColor] = useState("#212121");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -331,6 +337,16 @@ export default function Projects() {
     return found ? found.name : "Unknown Type";
   };
 
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
+        <p className="text-gray-600">You do not have the necessary permissions to view this page.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 p-4 md:p-6">
       {/* Header */}
@@ -340,7 +356,7 @@ export default function Projects() {
           <p className="text-muted-foreground">Manage all company projects.</p>
         </div>
 
-        <Button
+       {canCreate && <Button
           onClick={() => {
             resetForm();
             setIsDialogOpen(true);
@@ -349,7 +365,7 @@ export default function Projects() {
         >
           <Plus size={16} />
           New Project
-        </Button>
+        </Button>}
       </div>
 
       {/* Search + Filter */}
@@ -450,21 +466,21 @@ export default function Projects() {
                     </TableCell>
 
                     <TableCell className="text-right flex justify-end gap-2">
-                      <Button
+                      {canEdit && <Button
                         variant="ghost"
                         size="icon"
                         onClick={() => openEditDialog(p)}
                       >
                         <Pencil size={16} />
-                      </Button>
+                      </Button>}
 
-                      <Button
+                      {canDelete && <Button
                         variant="ghost"
                         size="icon"
                         onClick={() => handleDelete(p._id)}
                       >
                         <Trash2 size={16} className="text-red-500" />
-                      </Button>
+                      </Button>}
                     </TableCell>
                   </TableRow>
                 ))

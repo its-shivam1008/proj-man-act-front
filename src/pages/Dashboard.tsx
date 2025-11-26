@@ -15,9 +15,13 @@ import {
   TrendingDown,
   AlertTriangle,
   CheckCircle,
-  FolderKanban
+  FolderKanban,
+  ShieldAlert
 } from 'lucide-react';
 import { BASE_URL } from '@/utils/constants';
+import NotificationCenter from '../components/NotificationCenter';
+import { usePermission } from '@/hooks/userPermission';
+
 
 const Dashboard: React.FC = () => {
   const {
@@ -29,6 +33,8 @@ const Dashboard: React.FC = () => {
     productRevisions,
     repairOrders
   } = useData();
+
+  const canView = usePermission('dashboard', 'view');
 
   useEffect(() => {
     fetch(`${BASE_URL}/ok`)
@@ -149,15 +155,33 @@ const Dashboard: React.FC = () => {
     }
   ];
 
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
+        <p className="text-gray-600">You do not have the necessary permissions to view this page.</p>
+      </div>
+    );
+  }
+
+
   return (
     // <Layout>
       <div className="space-y-6">
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="mt-1 text-sm text-gray-600">
-            Overview of your supply chain operations and key metrics
-          </p>
+        {/* Header with Notification Center */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+            <p className="mt-1 text-sm text-gray-600">
+              Overview of your supply chain operations and key metrics
+            </p>
+          </div>
+          
+          {/* Notification Center Integration */}
+          <div className="flex items-center">
+             <NotificationCenter destination="dashboard" title="dashboardAlerts" />
+          </div>
         </div>
 
         {/* Stats */}

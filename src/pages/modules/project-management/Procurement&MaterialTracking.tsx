@@ -39,7 +39,7 @@ import { createNotification } from "@/redux/slices/notificationSlice";
 // import { Textarea } from "../../../components/ui/textarea";
 import {toast} from 'sonner';
 // Icons
-import { Plus, Edit2, Trash2, Truck, ShoppingCart, Check, ChevronsUpDown, ShoppingCartIcon } from "lucide-react";
+import { Plus, Edit2, Trash2, Truck, ShoppingCart, Check, ChevronsUpDown, ShoppingCartIcon, ShieldAlert } from "lucide-react";
 
 // Redux Actions
 import {
@@ -56,6 +56,7 @@ import { fetchMaterials, RawMaterial } from "@/redux/slices/rawmaterialSlice";
 
 // Hooks
 import { useDebounce } from "@/hooks/useDebounce";
+import { usePermission } from "@/hooks/userPermission";
 
 // --- Types ---
 type MRSItem = {
@@ -125,6 +126,11 @@ export default function ProcurementPage() {
         item: MRSItem;
         type: "INVENTORY" | "PURCHASE"; // To distinguish between the two buttons
     } | null>(null);
+
+    const canView = usePermission('procurementMaterialTracking', 'view');
+    const canCreate = usePermission('procurementMaterialTracking', 'create');
+    const canEdit = usePermission('procurementMaterialTracking', 'edit');
+    const canDelete = usePermission('procurementMaterialTracking', 'delete');
 
 
     const handleOpenRemarkDialog = (item: MRSItem, type: "INVENTORY" | "PURCHASE") => {
@@ -472,6 +478,16 @@ export default function ProcurementPage() {
         persistInventory(sample);
     };
 
+    if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
+        <p className="text-gray-600">You do not have the necessary permissions to view this page.</p>
+      </div>
+    );
+  }
+
     return (
         <div className="space-y-6 p-4 md:p-6">
             {/* Header with Project Selector */}
@@ -641,12 +657,12 @@ export default function ProcurementPage() {
                                     <TableCell>{m.requiredDate ? new Date(m.requiredDate).toLocaleDateString() : "—"}</TableCell>
                                     <TableCell>
                                         <div className="flex gap-2">
-                                            <Button size="icon" variant="ghost" onClick={() => openEdit(m)} disabled={mrsLoading || !!m.isWbsLinked}>
+                                            {canEdit && <Button size="icon" variant="ghost" onClick={() => openEdit(m)} disabled={mrsLoading || !!m.isWbsLinked}>
                                                 <Edit2 className="h-4 w-4" />
-                                            </Button>
-                                            <Button size="icon" variant="ghost" onClick={() => handleDelete(m.id || m._id!, m.isWbsLinked)} disabled={mrsLoading || !!m.isWbsLinked}>
+                                            </Button>}
+                                            {canDelete && <Button size="icon" variant="ghost" onClick={() => handleDelete(m.id || m._id!, m.isWbsLinked)} disabled={mrsLoading || !!m.isWbsLinked}>
                                                 <Trash2 className="h-4 w-4 text-red-600" />
-                                            </Button>
+                                            </Button>}
                                             <Button 
                                                 variant="ghost" 
                                                 onClick={() => handleOpenRemarkDialog(m, "PURCHASE")}
