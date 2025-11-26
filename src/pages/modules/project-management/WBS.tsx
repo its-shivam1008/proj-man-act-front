@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { parseISO, format, min, max } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RootState, AppDispatch } from "@/redux/store";
@@ -418,6 +419,51 @@ export default function WBS() {
     );
   }, [selectedProjectId, wbs]);
 
+  // Calculate min start date and max end date for selected project
+  const projectDateRange = useMemo(() => {
+    if (!selectedProjectId) return null;
+
+    // Filter WBS items for the selected project only
+    const projectWbsItems = wbs.filter((item) => {
+      const itemProjectId = item.projectId || (item as any)._id?.projectId || (item as any).projectId;
+      return itemProjectId === selectedProjectId;
+    });
+
+    if (projectWbsItems.length === 0) return null;
+
+    const datesWithStart = projectWbsItems
+      .filter((item) => item.startDate)
+      .map((item) => {
+        try {
+          return parseISO(item.startDate!);
+        } catch (e) {
+          return null;
+        }
+      })
+      .filter((date): date is Date => date !== null);
+
+    const datesWithEnd = projectWbsItems
+      .filter((item) => item.endDate)
+      .map((item) => {
+        try {
+          return parseISO(item.endDate!);
+        } catch (e) {
+          return null;
+        }
+      })
+      .filter((date): date is Date => date !== null);
+
+    if (datesWithStart.length === 0 && datesWithEnd.length === 0) return null;
+
+    const minStartDate = datesWithStart.length > 0 ? min(datesWithStart) : null;
+    const maxEndDate = datesWithEnd.length > 0 ? max(datesWithEnd) : null;
+
+    return {
+      minStartDate,
+      maxEndDate,
+    };
+  }, [selectedProjectId, wbs]);
+
   useEffect(() => {
     if (selectedProjectId) {
       setFormData((prev) => ({
@@ -444,6 +490,26 @@ export default function WBS() {
           <p className="text-muted-foreground">
             Manage project phases, activities, and tasks
           </p>
+          {projectDateRange && selectedProjectId && (
+            <div className="flex items-center gap-4 mt-2 text-sm">
+              {projectDateRange.minStartDate && (
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">Start:</span>
+                  <span className="font-semibold text-green-700">
+                    {format(projectDateRange.minStartDate, "MMM dd, yyyy")}
+                  </span>
+                </div>
+              )}
+              {projectDateRange.maxEndDate && (
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">End:</span>
+                  <span className="font-semibold text-red-700">
+                    {format(projectDateRange.maxEndDate, "MMM dd, yyyy")}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex w-full md:w-auto gap-4">
           <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>

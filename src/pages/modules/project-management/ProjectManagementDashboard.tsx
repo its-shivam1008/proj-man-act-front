@@ -1,14 +1,16 @@
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import { getFromStorage, STORAGE_KEYS } from "../../../utils/localStorage";
 import { Project, Budget, Milestone } from "../../../types/production";
-import { useEffect, useState } from "react";
-import { FolderKanban, DollarSign, TrendingUp, AlertCircle } from "lucide-react";
+import { useEffect, useState, useMemo } from "react";
+import { FolderKanban, DollarSign, TrendingUp, AlertCircle, Calendar } from "lucide-react";
+import { parseISO, min, max } from "date-fns";
 import { Badge } from "../../../components/ui/badge";
 import { Progress } from "../../../components/ui/progress";
 import { faker } from '@faker-js/faker'
 import { useDispatch, useSelector } from "react-redux";
 import { RootState, AppDispatch } from "../../../redux/store";
 import { fetchProjects } from "../../../redux/slices/projectSlice";
+import api from "../../../utils/axiosApi";
 import {
   GanttCreateMarkerTrigger,
   GanttFeatureItem,
@@ -236,6 +238,12 @@ export default function ProjectManagementDashboard() {
   // Get budgets from Redux (if available)
   const { budgets = [] } = useSelector((state: RootState) => state.budget);
   
+  // Get WBS from Redux to check for project dates
+  const { wbs: reduxWbs = [] } = useSelector((state: RootState) => state.wbs);
+  
+  // Local state to accumulate WBS from all projects
+  const [allWbsItems, setAllWbsItems] = useState<any[]>([]);
+  
   // Milestones still from localStorage for now
   const [milestones, setMilestones] = useState<Milestone[]>([]);
 
@@ -245,6 +253,45 @@ export default function ProjectManagementDashboard() {
       dispatch(fetchProjects({ page: 1, limit: 100, status: "all", search: "" }));
     }
   }, [organisationId, dispatch]);
+
+  // Fetch WBS for all projects to calculate dates
+  useEffect(() => {
+    if (projects.length > 0 && organisationId) {
+      // Fetch WBS for each project and accumulate results
+      const fetchAllWbs = async () => {
+        const wbsPromises = projects.map(async (project) => {
+          const projectId = project._id || project.id;
+          if (!projectId) return [];
+          
+          try {
+            const organisationId = localStorage.getItem("organisationId");
+            if (!organisationId) return [];
+            
+            const response = await api.get(`/wbs/get/${projectId}`, {
+              params: { organisationId },
+            });
+            
+            // Map WBS items and add projectId to each
+            return (response.data || []).map((item: any) => ({
+              ...item,
+              id: item._id || item.id,
+              projectId: projectId, // Ensure projectId is set
+            }));
+          } catch (error) {
+            console.error(`Error fetching WBS for project ${projectId}:`, error);
+            return [];
+          }
+        });
+        
+        const allWbs = await Promise.all(wbsPromises);
+        const flattenedWbs = allWbs.flat();
+        setAllWbsItems(flattenedWbs);
+        console.log("Fetched WBS for all projects:", flattenedWbs.length, "items");
+      };
+      
+      fetchAllWbs();
+    }
+  }, [projects, organisationId]);
 
   // Load milestones from localStorage
   useEffect(() => {
@@ -314,6 +361,128 @@ export default function ProjectManagementDashboard() {
   const totalBudget = projects.reduce((sum, p) => sum + (p.budget || 0), 0);
   const totalActualCost = projects.reduce((sum, p) => sum + (p.actualCost || 0), 0);
   const overBudgetCount = budgets.filter((b) => b.status === "over-budget").length;
+
+  // Convert projects to Gantt features format for timeline
+  // Show projects that have dates (from project or WBS)
+  const projectFeatures = useMemo(() => {
+    if (projects.length === 0) return [];
+    
+    console.log("Calculating timeline features:", {
+      projectsCount: projects.length,
+      wbsCount: allWbsItems.length,
+      wbsProjects: [...new Set(allWbsItems.map(w => w.projectId))]
+    });
+    
+    const features = projects
+      .map((project) => {
+        const projectId = project._id || project.id;
+        
+        // Check if project has WBS items with dates - use accumulated WBS from all projects
+        const projectWbsItems = allWbsItems.filter((item) => {
+          const itemProjectId = item.projectId || (item as any)._id?.projectId || (item as any).projectId;
+          // Convert both to strings for comparison
+          return String(itemProjectId) === String(projectId);
+        });
+        
+        console.log(`Project ${project.name} (${projectId}): Found ${projectWbsItems.length} WBS items, ${projectWbsItems.filter(i => i.startDate && i.endDate).length} with dates`);
+        
+        const wbsWithDates = projectWbsItems.filter(
+          (item) => item.startDate && item.endDate
+        );
+        
+        let startDate: Date | null = null;
+        let endDate: Date | null = null;
+        
+        // Priority 1: Use project dates if available
+        if (project.startDate && project.endDate) {
+          try {
+            startDate = parseISO(project.startDate);
+            endDate = parseISO(project.endDate);
+          } catch (e) {
+            console.error("Error parsing project dates:", e);
+          }
+        }
+        
+        // Priority 2: Use WBS dates if project dates not available
+        if ((!startDate || !endDate) && wbsWithDates.length > 0) {
+          const wbsStartDates = wbsWithDates
+            .map((item) => {
+              try {
+                return parseISO(item.startDate!);
+              } catch (e) {
+                return null;
+              }
+            })
+            .filter((date): date is Date => date !== null && !isNaN(date.getTime()));
+          
+          const wbsEndDates = wbsWithDates
+            .map((item) => {
+              try {
+                return parseISO(item.endDate!);
+              } catch (e) {
+                return null;
+              }
+            })
+            .filter((date): date is Date => date !== null && !isNaN(date.getTime()));
+          
+          if (wbsStartDates.length > 0 && wbsEndDates.length > 0) {
+            startDate = min(wbsStartDates);
+            endDate = max(wbsEndDates);
+          }
+        }
+        
+        // Skip if no dates found
+        if (!startDate || !endDate) {
+          return null;
+        }
+
+        // Ensure endDate is after startDate
+        if (endDate < startDate) {
+          // If end date is before start date, extend it
+          endDate = new Date(startDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+        }
+
+        // Determine status color based on project status
+        let statusColor = '#6B7280'; // Default grey
+        let statusName = 'Planned';
+        if (project.status === 'active') {
+          statusColor = '#F59E0B';
+          statusName = 'In Progress';
+        } else if (project.status === 'completed') {
+          statusColor = '#10B981';
+          statusName = 'Done';
+        } else if (project.status === 'planning') {
+          statusColor = '#6B7280';
+          statusName = 'Planned';
+        }
+
+        return {
+          id: project.id || project._id || '',
+          name: project.name || 'Unnamed Project',
+          startAt: startDate,
+          endAt: endDate,
+          status: {
+            id: project.status || 'planning',
+            name: statusName,
+            color: statusColor,
+          },
+          group: {
+            name: project.status || 'Other',
+          },
+        };
+      })
+      .filter((feature): feature is NonNullable<typeof feature> => feature !== null);
+    
+    console.log("Project Features for Timeline:", features.length, "projects with dates");
+    return features;
+  }, [projects, allWbsItems]);
+
+  const groupedProjectFeatures = groupBy(projectFeatures, 'group.name');
+  const sortedGroupedProjectFeatures = Object.fromEntries(
+    Object.entries(groupedProjectFeatures).sort(([nameA], [nameB]) =>
+      nameA.localeCompare(nameB)
+    )
+  );
 
   const getStatusColor = (status: Project["status"]) => {
     switch (status) {
@@ -422,35 +591,116 @@ export default function ProjectManagementDashboard() {
         </CardContent>
       </Card>
       <Timeline />
-      {/* Upcoming Milestones */}
+      
+      {/* Projects Timeline */}
       <Card>
         <CardHeader>
-          <CardTitle>Upcoming Milestones</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Calendar className="h-5 w-5" />
+            Projects Timeline
+          </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {milestones
-              .filter((m) => m.status === "pending")
-              .slice(0, 5)
-              .map((milestone) => {
-                const project = projects.find((p) => p.id === milestone.projectId);
-                return (
-                  <div key={milestone.id} className="flex items-center justify-between border-b border-border pb-3 last:border-0 last:pb-0">
-                    <div>
-                      <p className="font-medium text-foreground">{milestone.name}</p>
-                      <p className="text-sm text-muted-foreground">{project?.name}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium">₹{(milestone.value / 100000).toFixed(2)}L</p>
-                      <p className="text-xs text-muted-foreground">{new Date(milestone.dueDate).toLocaleDateString()}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            {milestones.filter((m) => m.status === "pending").length === 0 && (
-              <p className="text-center text-muted-foreground py-4">No upcoming milestones</p>
-            )}
-          </div>
+        <CardContent className="p-0">
+          {projectsLoading ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <Calendar className="h-12 w-12 mx-auto mb-2 opacity-20" />
+              <p>Loading projects...</p>
+            </div>
+          ) : projects.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <Calendar className="h-12 w-12 mx-auto mb-2 opacity-20" />
+              <p>No projects available to display on timeline.</p>
+            </div>
+          ) : projectFeatures.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <Calendar className="h-12 w-12 mx-auto mb-2 opacity-20" />
+              <p>No projects with dates available. Please add dates to projects or WBS items.</p>
+            </div>
+          ) : (
+            <GanttProvider
+              className="border"
+              range="monthly"
+              zoom={100}
+            >
+              <GanttSidebar>
+                {Object.entries(sortedGroupedProjectFeatures).map(([group, features]) => (
+                  <GanttSidebarGroup key={group} name={capitalize(group)}>
+                    {features.map((feature) => (
+                      <GanttSidebarItem
+                        feature={feature}
+                        key={feature.id}
+                        onSelectItem={(id) => {
+                          const project = projects.find((p) => (p.id || p._id) === id);
+                          if (project) {
+                            console.log(`Project selected: ${project.name}`);
+                          }
+                        }}
+                      />
+                    ))}
+                  </GanttSidebarGroup>
+                ))}
+              </GanttSidebar>
+              <GanttTimeline>
+                <GanttHeader />
+                <GanttFeatureList>
+                  {Object.entries(sortedGroupedProjectFeatures).map(([group, features]) => (
+                    <GanttFeatureListGroup key={group}>
+                      {features.map((feature) => (
+                        <div className="flex" key={feature.id}>
+                          <ContextMenu>
+                            <ContextMenuTrigger asChild>
+                              <button
+                                onClick={() => {
+                                  const project = projects.find((p) => (p.id || p._id) === feature.id);
+                                  if (project) {
+                                    console.log(`Project selected: ${project.name}`);
+                                  }
+                                }}
+                                type="button"
+                              >
+                                <GanttFeatureItem
+                                  onMove={(id, startAt, endAt) => {
+                                    console.log(`Move project: ${id} from ${startAt} to ${endAt}`);
+                                  }}
+                                  {...feature}
+                                >
+                                  <p className="flex-1 truncate text-xs font-medium">
+                                    {feature.name}
+                                  </p>
+                                </GanttFeatureItem>
+                              </button>
+                            </ContextMenuTrigger>
+                            <ContextMenuContent>
+                              <ContextMenuItem
+                                className="flex items-center gap-2"
+                                onClick={() => {
+                                  const project = projects.find((p) => (p.id || p._id) === feature.id);
+                                  if (project) {
+                                    console.log(`Project selected: ${project.name}`);
+                                  }
+                                }}
+                              >
+                                <EyeIcon className="text-muted-foreground" size={16} />
+                                View project
+                              </ContextMenuItem>
+                              <ContextMenuItem
+                                className="flex items-center gap-2"
+                                onClick={() => console.log(`Copy link: ${feature.id}`)}
+                              >
+                                <LinkIcon className="text-muted-foreground" size={16} />
+                                Copy link
+                              </ContextMenuItem>
+                            </ContextMenuContent>
+                          </ContextMenu>
+                        </div>
+                      ))}
+                    </GanttFeatureListGroup>
+                  ))}
+                </GanttFeatureList>
+                <GanttToday />
+              </GanttTimeline>
+            </GanttProvider>
+          )}
         </CardContent>
       </Card>
     </div>

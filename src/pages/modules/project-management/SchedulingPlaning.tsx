@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { RootState, AppDispatch } from "@/redux/store";
 import { fetchProjects } from "@/redux/slices/projectSlice";
 import { fetchWbsByProject, updateWbsItem } from "@/redux/slices/wbsSlice";
+import { fetchResources, ResourceAllocation } from "@/redux/slices/resourceSlice";
 import {
   Card,
   CardContent,
@@ -28,6 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -52,6 +54,10 @@ import {
   BellRing,
   Pencil,
   Save,
+  TrendingUp,
+  FileText,
+  Users,
+  BarChart3,
 } from "lucide-react";
 import { calculateCPM, CPMResult } from "@/components/CPM";
 import {
@@ -61,8 +67,29 @@ import {
   isBefore,
   parseISO,
   differenceInDays,
+  startOfWeek,
+  endOfWeek,
+  eachWeekOfInterval,
+  startOfMonth,
+  endOfMonth,
+  eachMonthOfInterval,
 } from "date-fns";
 import { toast } from "sonner";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
 
 // Gantt Imports
 import {
@@ -123,6 +150,9 @@ export default function SchedulingPlanning() {
   const { wbs, loading: wbsLoading } = useSelector(
     (state: RootState) => state.wbs
   );
+  const { resources, loading: resourcesLoading } = useSelector(
+    (state: RootState) => state.resources
+  );
   const [customSequences, setCustomSequences] = useState<
     Record<string, number>
   >(() => loadCustomSequences(null));
@@ -147,6 +177,8 @@ export default function SchedulingPlanning() {
   const [ganttView, setGanttView] = useState<"daily" | "weekly" | "monthly">(
     "monthly"
   );
+  const [activeTab, setActiveTab] = useState<"schedule" | "critical-path" | "workload" | "calendar">("schedule");
+  const [calendarView, setCalendarView] = useState<"month" | "week">("month");
 
   // Reminder Dialog State
   const [reminderDialogOpen, setReminderDialogOpen] = useState(false);
@@ -190,6 +222,7 @@ export default function SchedulingPlanning() {
   useEffect(() => {
     if (selectedProjectId) {
       dispatch(fetchWbsByProject(selectedProjectId));
+      dispatch(fetchResources(selectedProjectId));
       // Load custom sequences for this project from localStorage
       const loadedSequences = loadCustomSequences(selectedProjectId);
       setCustomSequences(loadedSequences);
@@ -217,6 +250,143 @@ export default function SchedulingPlanning() {
     () => projects.find((p) => p._id === selectedProjectId),
     [projects, selectedProjectId]
   );
+
+  // Workload Forecast Calculations
+  const projectResources = useMemo(
+    () => resources.filter((r) => r.projectId === selectedProjectId),
+    [resources, selectedProjectId]
+  );
+
+  const workloadByType = useMemo(() => {
+    const grouped: Record<string, { count: number; totalCost: number; totalDuration: number }> = {
+      manpower: { count: 0, totalCost: 0, totalDuration: 0 },
+      equipment: { count: 0, totalCost: 0, totalDuration: 0 },
+      material: { count: 0, totalCost: 0, totalDuration: 0 },
+    };
+
+    projectResources.forEach((res) => {
+      const type = res.resourceType;
+      if (grouped[type]) {
+        grouped[type].count += 1;
+        grouped[type].totalCost += res.totalCost || 0;
+        grouped[type].totalDuration += res.duration || 0;
+      }
+    });
+
+    return Object.entries(grouped).map(([type, data]) => ({
+      name: type.charAt(0).toUpperCase() + type.slice(1),
+      count: data.count,
+      cost: data.totalCost,
+      duration: data.totalDuration,
+    }));
+  }, [projectResources]);
+
+  const weeklyWorkload = useMemo(() => {
+    if (!selectedProject?.startDate || projectResources.length === 0) return [];
+
+    const startDate = parseISO(selectedProject.startDate);
+    const endDate = selectedProject.endDate
+      ? parseISO(selectedProject.endDate)
+      : addDays(startDate, 90);
+
+    const weeks = eachWeekOfInterval(
+      { start: startDate, end: endDate },
+      { weekStartsOn: 1 }
+    ).slice(0, 12); // Show next 12 weeks
+
+    return weeks.map((weekStart) => {
+      const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
+      const weekKey = format(weekStart, "MMM dd");
+
+      let manpower = 0;
+      let equipment = 0;
+      let material = 0;
+
+      projectResources.forEach((res) => {
+        const resStart = res.startDate ? parseISO(res.startDate) : null;
+        const resEnd = res.endDate ? parseISO(res.endDate) : null;
+
+        if (resStart && resEnd) {
+          // Check if resource allocation overlaps with this week
+          if (resStart <= weekEnd && resEnd >= weekStart) {
+            if (res.resourceType === "manpower") {
+              manpower += res.quantity || 0;
+            } else if (res.resourceType === "equipment") {
+              equipment += res.quantity || 0;
+            } else if (res.resourceType === "material") {
+              material += res.quantity || 0;
+            }
+          }
+        }
+      });
+
+      return {
+        week: weekKey,
+        Manpower: manpower,
+        Equipment: equipment,
+        Material: material,
+      };
+    });
+  }, [projectResources, selectedProject]);
+
+  // Calendar Events for Calendar Report
+  const calendarEvents = useMemo(() => {
+    const events: Array<{
+      date: Date;
+      title: string;
+      type: string;
+      status: string;
+      id: string;
+      isCritical?: boolean;
+    }> = [];
+
+    wbs.forEach((item) => {
+      if (item.startDate) {
+        events.push({
+          date: parseISO(item.startDate),
+          title: item.name,
+          type: item.type || "task",
+          status: item.status || "not-started",
+          id: item.id,
+          isCritical: cpmData?.criticalPathIds.includes(item.id) || false,
+        });
+      }
+      if (item.endDate && item.endDate !== item.startDate) {
+        events.push({
+          date: parseISO(item.endDate),
+          title: `${item.name} (End)`,
+          type: item.type || "task",
+          status: item.status || "not-started",
+          id: `${item.id}-end`,
+          isCritical: cpmData?.criticalPathIds.includes(item.id) || false,
+        });
+      }
+    });
+
+    // Add resource allocation dates
+    projectResources.forEach((res) => {
+      if (res.startDate) {
+        events.push({
+          date: parseISO(res.startDate),
+          title: `Resource: ${res.resourceName}`,
+          type: "resource",
+          status: "active",
+          id: `res-${res._id}`,
+        });
+      }
+      if (res.endDate) {
+        events.push({
+          date: parseISO(res.endDate),
+          title: `Resource End: ${res.resourceName}`,
+          type: "resource",
+          status: "completed",
+          id: `res-${res._id}-end`,
+        });
+      }
+    });
+
+    return events.sort((a, b) => a.date.getTime() - b.date.getTime());
+  }, [wbs, projectResources, cpmData]);
 
   // --- CPM Calculation ---
   useEffect(() => {
@@ -866,6 +1036,17 @@ export default function SchedulingPlanning() {
         </div>
       </div>
 
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "schedule" | "critical-path" | "workload" | "calendar")} className="w-full">
+        <TabsList className="grid w-full max-w-2xl grid-cols-4">
+          <TabsTrigger value="schedule">Schedule & Planning</TabsTrigger>
+          <TabsTrigger value="critical-path">Critical Path Report</TabsTrigger>
+          <TabsTrigger value="workload">Workload Forecast</TabsTrigger>
+          <TabsTrigger value="calendar">Project Calendar</TabsTrigger>
+        </TabsList>
+
+        {/* Schedule & Planning Tab */}
+        <TabsContent value="schedule" className="space-y-6 mt-6">
       {/* Main Content */}
       {wbsLoading && selectedProjectId ? (
         <div className="h-96 flex items-center justify-center">
@@ -1356,6 +1537,710 @@ export default function SchedulingPlanning() {
           )}
         </>
       )}
+        </TabsContent>
+
+        {/* Critical Path Report Tab */}
+        <TabsContent value="critical-path" className="space-y-6 mt-6">
+          {!selectedProjectId ? (
+            <Card className="h-96 flex items-center justify-center bg-slate-50 border-dashed">
+              <div className="text-center text-muted-foreground">
+                <TrendingUp className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>Please select a project to view the critical path report.</p>
+              </div>
+            </Card>
+          ) : cpmData && cpmData.criticalPathIds.length > 0 ? (
+            <Card className="border-2 border-red-200 bg-gradient-to-br from-red-50/30 to-white shadow-lg">
+              <CardHeader className="bg-gradient-to-r from-red-50 to-white border-b">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-red-100 rounded-lg">
+                      <TrendingUp className="w-6 h-6 text-red-600" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-xl font-bold text-red-900 flex items-center gap-2">
+                        Critical Path Report
+                        <Badge variant="destructive" className="ml-2">
+                          {cpmData.criticalPathIds.length} Tasks
+                        </Badge>
+                      </CardTitle>
+                      <CardDescription className="text-sm mt-1">
+                        Tasks on the critical path determine the minimum project duration
+                      </CardDescription>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm font-semibold text-red-700">
+                      Project Duration
+                    </div>
+                    <div className="text-2xl font-bold text-red-900">
+                      {cpmData.projectDuration} Days
+                    </div>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-6">
+                <div className="space-y-4">
+                  {/* Critical Path Tasks Table */}
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Order</TableHead>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Group</TableHead>
+                          <TableHead>Start Date</TableHead>
+                          <TableHead>End Date</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Duration</TableHead>
+                          <TableHead>Slack</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {cpmData.criticalPathIds.map((taskId, index) => {
+                          const task = wbs.find((t) => t.id === taskId);
+                          const cpmResult = cpmData.taskResults[taskId];
+                          if (!task || !cpmResult) return null;
+
+                          // Find parent/group name
+                          const parent = task.parentId
+                            ? wbs.find((t) => t.id === task.parentId)
+                            : null;
+                          const groupName = parent
+                            ? parent.name
+                            : task.type === "phase"
+                            ? "Phases & Milestones"
+                            : "General";
+
+                          return (
+                            <TableRow
+                              key={taskId}
+                              className="hover:bg-red-50/50 border-l-4 border-l-red-500"
+                            >
+                              <TableCell>
+                                <Badge
+                                  variant="destructive"
+                                  className="bg-red-600 text-white"
+                                >
+                                  {index + 1}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="font-medium">
+                                <div className="flex items-center gap-2">
+                                  <Zap className="w-4 h-4 text-red-600" />
+                                  {task.name}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="capitalize">
+                                  {task.type || "task"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {groupName}
+                              </TableCell>
+                              <TableCell>
+                                {(() => {
+                                  // Use actual WBS start date if available, otherwise use CPM calculated date
+                                  if (task.startDate) {
+                                    return format(parseISO(task.startDate), "MMM dd, yyyy");
+                                  }
+                                  // Only calculate from CPM if project has start date
+                                  if (selectedProject?.startDate) {
+                                    const projectStart = parseISO(selectedProject.startDate);
+                                    const startDate = addDays(projectStart, cpmResult.es);
+                                    return format(startDate, "MMM dd, yyyy");
+                                  }
+                                  return "-";
+                                })()}
+                              </TableCell>
+                              <TableCell>
+                                {(() => {
+                                  // Use actual WBS end date if available, otherwise use CPM calculated date
+                                  if (task.endDate) {
+                                    return format(parseISO(task.endDate), "MMM dd, yyyy");
+                                  }
+                                  // Only calculate from CPM if project has start date
+                                  if (selectedProject?.startDate) {
+                                    const projectStart = parseISO(selectedProject.startDate);
+                                    const endDate = addDays(projectStart, cpmResult.ef);
+                                    return format(endDate, "MMM dd, yyyy");
+                                  }
+                                  return "-";
+                                })()}
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant={
+                                    task.status === "completed"
+                                      ? "default"
+                                      : task.status === "in-progress"
+                                      ? "secondary"
+                                      : "outline"
+                                  }
+                                  className={
+                                    task.status === "completed"
+                                      ? "bg-green-600 text-white"
+                                      : task.status === "in-progress"
+                                      ? "bg-blue-600 text-white"
+                                      : ""
+                                  }
+                                >
+                                  {task.status || "not-started"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                {cpmResult.ef - cpmResult.es} days
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant="destructive"
+                                  className="bg-red-600 text-white"
+                                >
+                                  {cpmResult.slack <= 0.001
+                                    ? "0"
+                                    : `${cpmResult.slack.toFixed(1)} days`}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Critical Path Flow Visualization */}
+                  <div className="mt-6 p-4 bg-white rounded-lg border border-red-200">
+                    <div className="flex items-center gap-2 mb-3">
+                      <FileText className="w-5 h-5 text-red-600" />
+                      <h3 className="font-semibold text-red-900">
+                        Critical Path Flow
+                      </h3>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 p-3 bg-slate-50 rounded-lg overflow-x-auto">
+                      {cpmData.criticalPathIds.map((taskId, index) => {
+                        const task = wbs.find((t) => t.id === taskId);
+                        if (!task) return null;
+
+                        return (
+                          <React.Fragment key={taskId}>
+                            <div className="flex items-center gap-2">
+                              <div className="px-3 py-2 bg-red-500 text-white rounded-lg shadow-md font-semibold text-sm min-w-[120px] text-center border-2 border-red-600">
+                                <div className="font-bold">{index + 1}</div>
+                                <div className="text-xs truncate max-w-[100px]">
+                                  {task.name}
+                                </div>
+                                <div className="text-xs mt-1 opacity-90">
+                                  {cpmData.taskResults[taskId]?.ef -
+                                    cpmData.taskResults[taskId]?.es}{" "}
+                                  days
+                                </div>
+                              </div>
+                            </div>
+                            {index < cpmData.criticalPathIds.length - 1 && (
+                              <ArrowRight className="w-5 h-5 text-red-500 flex-shrink-0" />
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Summary Statistics */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
+                    <Card className="bg-gradient-to-br from-red-50 to-white border-red-200">
+                      <CardContent className="p-4">
+                        <div className="text-xs font-semibold text-muted-foreground uppercase mb-1">
+                          Total Critical Tasks
+                        </div>
+                        <div className="text-2xl font-bold text-red-700">
+                          {cpmData.criticalPathIds.length}
+                        </div>
+                      </CardContent>
+                    </Card>
+                    <Card className="bg-gradient-to-br from-red-50 to-white border-red-200">
+                      <CardContent className="p-4">
+                        <div className="text-xs font-semibold text-muted-foreground uppercase mb-1">
+                          Project Duration
+                        </div>
+                        <div className="text-2xl font-bold text-red-700">
+                          {cpmData.projectDuration} Days
+                        </div>
+                      </CardContent>
+                    </Card>
+                    <Card className="bg-gradient-to-br from-red-50 to-white border-red-200">
+                      <CardContent className="p-4">
+                        <div className="text-xs font-semibold text-muted-foreground uppercase mb-1">
+                          Total Tasks
+                        </div>
+                        <div className="text-2xl font-bold text-slate-700">
+                          {wbs.length}
+                        </div>
+                      </CardContent>
+                    </Card>
+                    <Card className="bg-gradient-to-br from-red-50 to-white border-red-200">
+                      <CardContent className="p-4">
+                        <div className="text-xs font-semibold text-muted-foreground uppercase mb-1">
+                          Critical Path %
+                        </div>
+                        <div className="text-2xl font-bold text-red-700">
+                          {wbs.length > 0
+                            ? Math.round(
+                                (cpmData.criticalPathIds.length / wbs.length) *
+                                  100
+                              )
+                            : 0}
+                          %
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="h-96 flex items-center justify-center bg-slate-50 border-dashed">
+              <div className="text-center text-muted-foreground">
+                <TrendingUp className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No critical path tasks found for this project.</p>
+              </div>
+            </Card>
+          )}
+        </TabsContent>
+
+        {/* Workload Forecast Report Tab */}
+        <TabsContent value="workload" className="space-y-6 mt-6">
+          {!selectedProjectId ? (
+            <Card className="h-96 flex items-center justify-center bg-slate-50 border-dashed">
+              <div className="text-center text-muted-foreground">
+                <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>Please select a project to view the workload forecast report.</p>
+              </div>
+            </Card>
+          ) : (
+            <Card className="border-2 border-blue-200 bg-gradient-to-br from-blue-50/30 to-white shadow-lg">
+              <CardHeader className="bg-gradient-to-r from-blue-50 to-white border-b">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-blue-100 rounded-lg">
+                      <Users className="w-6 h-6 text-blue-600" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-xl font-bold text-blue-900 flex items-center gap-2">
+                        Workload Forecast Report
+                        <Badge variant="outline" className="ml-2 border-blue-300 text-blue-700">
+                          {resources.length} Allocations
+                        </Badge>
+                      </CardTitle>
+                      <CardDescription className="text-sm mt-1">
+                        Resource allocation and workload distribution over time
+                      </CardDescription>
+                    </div>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-6">
+                {projectResources.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Users className="w-12 h-12 mx-auto mb-2 opacity-20" />
+                    <p>No resource allocations found. Add resources in the Resources page.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {/* Summary Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <Card className="bg-gradient-to-br from-blue-50 to-white border-blue-200">
+                        <CardContent className="p-4">
+                          <div className="text-xs font-semibold text-muted-foreground uppercase mb-1">
+                            Total Allocations
+                          </div>
+                          <div className="text-2xl font-bold text-blue-700">
+                            {projectResources.length}
+                          </div>
+                        </CardContent>
+                      </Card>
+                      <Card className="bg-gradient-to-br from-green-50 to-white border-green-200">
+                        <CardContent className="p-4">
+                          <div className="text-xs font-semibold text-muted-foreground uppercase mb-1">
+                            Total Cost
+                          </div>
+                          <div className="text-2xl font-bold text-green-700">
+                            ₹{projectResources.reduce((sum, r) => sum + (r.totalCost || 0), 0).toLocaleString('en-IN')}
+                          </div>
+                        </CardContent>
+                      </Card>
+                      <Card className="bg-gradient-to-br from-purple-50 to-white border-purple-200">
+                        <CardContent className="p-4">
+                          <div className="text-xs font-semibold text-muted-foreground uppercase mb-1">
+                            Resource Types
+                          </div>
+                          <div className="text-2xl font-bold text-purple-700">
+                            {workloadByType.filter((w) => w.count > 0).length}
+                          </div>
+                        </CardContent>
+                      </Card>
+                      <Card className="bg-gradient-to-br from-orange-50 to-white border-orange-200">
+                        <CardContent className="p-4">
+                          <div className="text-xs font-semibold text-muted-foreground uppercase mb-1">
+                            Avg Duration
+                          </div>
+                          <div className="text-2xl font-bold text-orange-700">
+                            {projectResources.length > 0
+                              ? Math.round(
+                                  projectResources.reduce((sum, r) => sum + (r.duration || 0), 0) /
+                                    projectResources.length
+                                )
+                              : 0}{" "}
+                            {projectResources[0]?.durationUnit || "days"}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    {/* Workload by Type Chart */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <BarChart3 className="w-5 h-5 text-blue-600" />
+                          Resource Distribution by Type
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <ResponsiveContainer width="100%" height={300}>
+                          <BarChart data={workloadByType.filter((w) => w.count > 0)}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="name" />
+                            <YAxis />
+                            <Tooltip />
+                            <Legend />
+                            <Bar dataKey="count" fill="#3b82f6" name="Allocations" />
+                            <Bar dataKey="cost" fill="#10b981" name="Total Cost (₹)" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </CardContent>
+                    </Card>
+
+                    {/* Resource Allocation Table */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Resource Allocations</CardTitle>
+                        <CardDescription>
+                          Detailed view of all resource allocations
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="overflow-x-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Resource</TableHead>
+                                <TableHead>Type</TableHead>
+                                <TableHead>WBS Task</TableHead>
+                                <TableHead>Quantity</TableHead>
+                                <TableHead>Duration</TableHead>
+                                <TableHead>Start Date</TableHead>
+                                <TableHead>End Date</TableHead>
+                                <TableHead>Total Cost</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {projectResources.slice(0, 10).map((res) => (
+                                <TableRow key={res._id}>
+                                  <TableCell className="font-medium">
+                                    {res.resourceName}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge variant="outline" className="capitalize">
+                                      {res.resourceType}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="text-sm text-muted-foreground">
+                                    {res.wbsName || "-"}
+                                  </TableCell>
+                                  <TableCell>
+                                    {res.quantity} {res.unit}
+                                  </TableCell>
+                                  <TableCell>
+                                    {res.duration} {res.durationUnit}
+                                  </TableCell>
+                                  <TableCell>
+                                    {res.startDate
+                                      ? format(parseISO(res.startDate), "MMM dd, yyyy")
+                                      : "-"}
+                                  </TableCell>
+                                  <TableCell>
+                                    {res.endDate
+                                      ? format(parseISO(res.endDate), "MMM dd, yyyy")
+                                      : "-"}
+                                  </TableCell>
+                                  <TableCell className="font-semibold">
+                                    ₹{res.totalCost.toLocaleString("en-IN")}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                          {projectResources.length > 10 && (
+                            <div className="text-center py-4 text-sm text-muted-foreground">
+                              Showing 10 of {projectResources.length} allocations
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        {/* Project Calendar Report Tab */}
+        <TabsContent value="calendar" className="space-y-6 mt-6">
+          {!selectedProjectId ? (
+            <Card className="h-96 flex items-center justify-center bg-slate-50 border-dashed">
+              <div className="text-center text-muted-foreground">
+                <CalendarIcon className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>Please select a project to view the calendar.</p>
+              </div>
+            </Card>
+          ) : (
+            <div className="space-y-6">
+              {/* Calendar View Controls */}
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center gap-2">
+                      <CalendarIcon className="w-5 h-5 text-blue-600" />
+                      Project Calendar Report
+                    </CardTitle>
+                    <div className="flex gap-2">
+                      <Select
+                        value={calendarView}
+                        onValueChange={(v: "month" | "week") => setCalendarView(v)}
+                      >
+                        <SelectTrigger className="w-[120px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="month">Month View</SelectItem>
+                          <SelectItem value="week">Week View</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <CardDescription>
+                    View all project events, tasks, milestones, and deadlines in calendar format
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {(() => {
+                    // Get current month/week dates
+                    const today = new Date();
+                    const currentMonth = today.getMonth();
+                    const currentYear = today.getFullYear();
+                    
+                    // Generate calendar days
+                    const generateCalendarDays = () => {
+                      const firstDay = new Date(currentYear, currentMonth, 1);
+                      const lastDay = new Date(currentYear, currentMonth + 1, 0);
+                      const startDate = startOfWeek(firstDay, { weekStartsOn: 1 });
+                      const endDate = endOfWeek(lastDay, { weekStartsOn: 1 });
+                      
+                      const days: Date[] = [];
+                      let current = new Date(startDate);
+                      
+                      while (current <= endDate) {
+                        days.push(new Date(current));
+                        current = addDays(current, 1);
+                      }
+                      
+                      return days;
+                    };
+
+                    const calendarDays = generateCalendarDays();
+                    const weekDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+                    return (
+                      <div className="space-y-4">
+                        {/* Month Header */}
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-xl font-bold">
+                            {format(new Date(currentYear, currentMonth, 1), "MMMM yyyy")}
+                          </h3>
+                          {selectedProject && (
+                            <div className="text-sm text-muted-foreground">
+                              Project: {selectedProject.name}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Calendar Grid */}
+                        <div className="border rounded-lg overflow-hidden">
+                          {/* Week Day Headers */}
+                          <div className="grid grid-cols-7 bg-slate-100 border-b">
+                            {weekDays.map((day) => (
+                              <div
+                                key={day}
+                                className="p-2 text-center font-semibold text-sm text-slate-700"
+                              >
+                                {day}
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Calendar Days */}
+                          <div className="grid grid-cols-7">
+                            {calendarDays.map((day, index) => {
+                              const dayEvents = calendarEvents.filter(
+                                (e) =>
+                                  format(e.date, "yyyy-MM-dd") === format(day, "yyyy-MM-dd")
+                              );
+                              const isCurrentMonth = day.getMonth() === currentMonth;
+                              const isToday =
+                                format(day, "yyyy-MM-dd") === format(today, "yyyy-MM-dd");
+
+                              return (
+                                <div
+                                  key={index}
+                                  className={`min-h-[100px] border-r border-b p-2 ${
+                                    !isCurrentMonth ? "bg-slate-50 opacity-50" : "bg-white"
+                                  } ${isToday ? "bg-blue-50 border-blue-300" : ""}`}
+                                >
+                                  <div
+                                    className={`text-sm font-semibold mb-1 ${
+                                      isToday
+                                        ? "text-blue-600"
+                                        : isCurrentMonth
+                                        ? "text-slate-900"
+                                        : "text-slate-400"
+                                    }`}
+                                  >
+                                    {format(day, "d")}
+                                  </div>
+                                  <div className="space-y-1">
+                                    {dayEvents.slice(0, 3).map((event) => (
+                                      <div
+                                        key={event.id}
+                                        className={`text-xs p-1 rounded truncate ${
+                                          event.isCritical
+                                            ? "bg-red-100 text-red-900 border border-red-300"
+                                            : event.type === "phase"
+                                            ? "bg-slate-800 text-white"
+                                            : event.type === "activity"
+                                            ? "bg-indigo-100 text-indigo-900"
+                                            : event.type === "resource"
+                                            ? "bg-green-100 text-green-900"
+                                            : "bg-blue-100 text-blue-900"
+                                        }`}
+                                        title={event.title}
+                                      >
+                                        {event.title.length > 15
+                                          ? `${event.title.substring(0, 15)}...`
+                                          : event.title}
+                                      </div>
+                                    ))}
+                                    {dayEvents.length > 3 && (
+                                      <div className="text-xs text-muted-foreground">
+                                        +{dayEvents.length - 3} more
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Legend */}
+                        <div className="flex flex-wrap gap-4 p-4 bg-slate-50 rounded-lg">
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 bg-slate-800 rounded"></div>
+                            <span className="text-sm">Phase</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 bg-indigo-100 border border-indigo-300 rounded"></div>
+                            <span className="text-sm">Activity</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 bg-blue-100 border border-blue-300 rounded"></div>
+                            <span className="text-sm">Task</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 bg-red-100 border border-red-300 rounded"></div>
+                            <span className="text-sm">Critical Path</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 bg-green-100 border border-green-300 rounded"></div>
+                            <span className="text-sm">Resource</span>
+                          </div>
+                        </div>
+
+                        {/* Events Summary */}
+                        <Card>
+                          <CardHeader>
+                            <CardTitle>Upcoming Events</CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                              {calendarEvents
+                                .filter((e) => e.date >= today)
+                                .slice(0, 10)
+                                .map((event) => (
+                                  <div
+                                    key={event.id}
+                                    className="flex items-center gap-3 p-2 border rounded-lg hover:bg-slate-50"
+                                  >
+                                    <div className="text-sm font-medium min-w-[100px]">
+                                      {format(event.date, "MMM dd, yyyy")}
+                                    </div>
+                                    <Badge
+                                      variant="outline"
+                                      className={`capitalize ${
+                                        event.isCritical
+                                          ? "border-red-300 text-red-700"
+                                          : event.type === "phase"
+                                          ? "bg-slate-800 text-white"
+                                          : event.type === "activity"
+                                          ? "bg-indigo-100 text-indigo-900"
+                                          : event.type === "resource"
+                                          ? "bg-green-100 text-green-900"
+                                          : "bg-blue-100 text-blue-900"
+                                      }`}
+                                    >
+                                      {event.type}
+                                    </Badge>
+                                    <div className="flex-1 text-sm">{event.title}</div>
+                                    <Badge
+                                      variant={
+                                        event.status === "completed"
+                                          ? "default"
+                                          : event.status === "in-progress"
+                                          ? "secondary"
+                                          : "outline"
+                                      }
+                                    >
+                                      {event.status}
+                                    </Badge>
+                                  </div>
+                                ))}
+                              {calendarEvents.filter((e) => e.date >= today).length === 0 && (
+                                <div className="text-center py-4 text-muted-foreground">
+                                  No upcoming events
+                                </div>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </div>
+                    );
+                  })()}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
 
       {/* Edit WBS Item Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>

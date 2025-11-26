@@ -11,10 +11,11 @@ import { fetchMRS } from "@/redux/slices/mrsSlice";
 import { fetchDailyProgress } from "@/redux/slices/dailyProgressSlice";
 import { fetchMilestones, fetchInvoices } from "@/redux/slices/billingSlice";
 import { Button } from "../../../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
+import { Badge } from "../../../components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -50,9 +51,12 @@ import {
   ComposedChart,
   Area,
 } from "recharts";
-import { Calendar, BarChart3, Filter, Plus, Trash2 } from "lucide-react";
+import { Calendar, BarChart3, Filter, Plus, Trash2, Activity, AlertCircle, CheckCircle2, TrendingUp, TrendingDown, DollarSign, GitCompare, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "../../../components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui/tabs";
 import { format, parseISO, startOfMonth, endOfMonth, eachMonthOfInterval, differenceInDays } from "date-fns";
+import api from "../../../utils/axiosApi";
+import { BASE_URL } from "../../../utils/constants";
 
 // -------------------------------
 // ⚙️ Types
@@ -91,6 +95,17 @@ export default function ReportsAnalytics() {
   const [form, setForm] = useState<Partial<Report>>({});
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [healthReport, setHealthReport] = useState<any>(null);
+  const [loadingHealthReport, setLoadingHealthReport] = useState(false);
+  const [profitabilityReport, setProfitabilityReport] = useState<any>(null);
+  const [loadingProfitabilityReport, setLoadingProfitabilityReport] = useState(false);
+  const [comparisonReport, setComparisonReport] = useState<any>(null);
+  const [loadingComparisonReport, setLoadingComparisonReport] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>("analytics");
+  const [allProjectsHealth, setAllProjectsHealth] = useState<any>(null);
+  const [loadingAllProjectsHealth, setLoadingAllProjectsHealth] = useState(false);
+  const [allProjectsProfitability, setAllProjectsProfitability] = useState<any>(null);
+  const [loadingAllProjectsProfitability, setLoadingAllProjectsProfitability] = useState(false);
 
   // Fetch projects on mount
   useEffect(() => {
@@ -118,6 +133,54 @@ export default function ReportsAnalytics() {
       dispatch(fetchWbsByProject(selectedProjectId));
     }
   }, [selectedProjectId, dispatch]);
+
+  // Fetch reports when organisationId changes
+  useEffect(() => {
+    if (organisationId) {
+      fetchHealthReport();
+      fetchProfitabilityReport();
+      fetchComparisonReport();
+      fetchAllProjectsHealth();
+      fetchAllProjectsProfitability();
+    }
+  }, [organisationId, selectedProjectId]);
+
+  // Fetch all projects health and profitability reports
+  const fetchAllProjectsHealth = async () => {
+    if (!organisationId) return;
+    
+    setLoadingAllProjectsHealth(true);
+    try {
+      const url = `${BASE_URL}/project-health-report?organisationId=${organisationId}`;
+      const response = await api.get(url);
+      if (response.data.success) {
+        setAllProjectsHealth(response.data.data);
+      }
+    } catch (error) {
+      console.error("Error fetching all projects health report:", error);
+      setAllProjectsHealth(null);
+    } finally {
+      setLoadingAllProjectsHealth(false);
+    }
+  };
+
+  const fetchAllProjectsProfitability = async () => {
+    if (!organisationId) return;
+    
+    setLoadingAllProjectsProfitability(true);
+    try {
+      const url = `${BASE_URL}/project-profitability-report?organisationId=${organisationId}`;
+      const response = await api.get(url);
+      if (response.data.success) {
+        setAllProjectsProfitability(response.data.data);
+      }
+    } catch (error) {
+      console.error("Error fetching all projects profitability report:", error);
+      setAllProjectsProfitability(null);
+    } finally {
+      setLoadingAllProjectsProfitability(false);
+    }
+  };
 
   useEffect(() => {
     setReports(getReports());
@@ -157,7 +220,7 @@ export default function ReportsAnalytics() {
     [projects, selectedProjectId]
   );
 
-  // Calculate costs similar to Budget page
+  // Calculate costs similar to Budget page - EXACT SAME LOGIC
   const costs = useMemo(() => {
     let materialCost = 0;
     let labourCost = 0;
@@ -237,6 +300,30 @@ export default function ReportsAnalytics() {
       }
     });
 
+    // C. Calculate from ALL MRS Items for selected project (price * quantity) - SAME AS BUDGET PAGE
+    if (selectedProjectId && mrsList && Array.isArray(mrsList) && mrsList.length > 0) {
+      mrsList.forEach((mrs: any) => {
+        if (!mrs) return;
+        
+        // Match project ID - include ALL MRS items for this project
+        const mrsProjectId = String(mrs.projectId || '');
+        const selectedId = String(selectedProjectId || '');
+        
+        if (mrsProjectId === selectedId) {
+          const quantity = Number(mrs.quantity) || 0;
+          const price = Number(mrs.price) || 0;
+          
+          // Calculate cost: price * quantity
+          const mrsMaterialCost = quantity * price;
+          
+          // Add to material cost if we have valid values
+          if (mrsMaterialCost > 0) {
+            materialCost += mrsMaterialCost;
+          }
+        }
+      });
+    }
+
     return {
       material: materialCost,
       labour: labourCost,
@@ -244,7 +331,7 @@ export default function ReportsAnalytics() {
       other: otherCost,
       total: materialCost + labourCost + equipmentCost + otherCost,
     };
-  }, [resources, wbs, rawMaterials, selectedProjectId]);
+  }, [resources, wbs, rawMaterials, mrsList, selectedProjectId]);
 
   // Calculate monthly cost data
   const costData = useMemo(() => {
@@ -703,6 +790,127 @@ export default function ReportsAnalytics() {
     }));
   }, [selectedProject, invoices, milestones, costs.total, selectedProjectId]);
 
+  // Fetch health report from API
+  const fetchHealthReport = async () => {
+    if (!organisationId) return;
+    
+    setLoadingHealthReport(true);
+    try {
+      const url = selectedProjectId
+        ? `${BASE_URL}/project-health-report/${selectedProjectId}?organisationId=${organisationId}`
+        : `${BASE_URL}/project-health-report?organisationId=${organisationId}`;
+      
+      const response = await api.get(url);
+      if (response.data.success) {
+        // If single project, response.data.data is the project health object
+        // If all projects, response.data.data has summary, projects, etc.
+        setHealthReport(response.data.data);
+      }
+    } catch (error) {
+      console.error("Error fetching health report:", error);
+      setHealthReport(null);
+    } finally {
+      setLoadingHealthReport(false);
+    }
+  };
+
+  // Fetch profitability report from API
+  const fetchProfitabilityReport = async () => {
+    if (!organisationId) return;
+    
+    setLoadingProfitabilityReport(true);
+    try {
+      const url = selectedProjectId
+        ? `${BASE_URL}/project-profitability-report/${selectedProjectId}?organisationId=${organisationId}`
+        : `${BASE_URL}/project-profitability-report?organisationId=${organisationId}`;
+      
+      const response = await api.get(url);
+      if (response.data.success) {
+        setProfitabilityReport(response.data.data);
+      }
+    } catch (error) {
+      console.error("Error fetching profitability report:", error);
+      setProfitabilityReport(null);
+    } finally {
+      setLoadingProfitabilityReport(false);
+    }
+  };
+
+  // Fetch comparison report from API
+  const fetchComparisonReport = async () => {
+    if (!organisationId) return;
+    
+    setLoadingComparisonReport(true);
+    try {
+      const url = `${BASE_URL}/project-comparison-report?organisationId=${organisationId}`;
+      const response = await api.get(url);
+      if (response.data.success && response.data.data) {
+        setComparisonReport(response.data.data);
+      } else {
+        setComparisonReport(null);
+      }
+    } catch (error: any) {
+      console.error("Error fetching comparison report:", error);
+      setComparisonReport(null);
+    } finally {
+      setLoadingComparisonReport(false);
+    }
+  };
+
+  // Get health status color
+  const getHealthStatusColor = (status: string) => {
+    switch (status) {
+      case "healthy":
+        return "text-green-600";
+      case "at-risk":
+        return "text-yellow-600";
+      case "critical":
+        return "text-red-600";
+      default:
+        return "text-gray-600";
+    }
+  };
+
+  // Get health status badge color
+  const getHealthStatusBadgeColor = (status: string) => {
+    switch (status) {
+      case "healthy":
+        return "bg-green-100 text-green-800";
+      case "at-risk":
+        return "bg-yellow-100 text-yellow-800";
+      case "critical":
+        return "bg-red-100 text-red-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  // Prepare health metrics data for chart
+  const healthMetricsData = useMemo(() => {
+    if (!healthReport) return [];
+
+    // If showing all projects, use summary breakdown
+    if (!selectedProjectId && healthReport.summary) {
+      return [
+        { name: "Healthy", value: healthReport.summary.healthyProjects || 0, color: "#22c55e" },
+        { name: "At Risk", value: healthReport.summary.atRiskProjects || 0, color: "#f59e0b" },
+        { name: "Critical", value: healthReport.summary.criticalProjects || 0, color: "#ef4444" },
+      ];
+    }
+
+    // Single project health data - healthReport is the project health object
+    if (selectedProjectId && healthReport.metrics) {
+      return [
+        { name: "Budget", score: healthReport.metrics?.budget?.score || 0, color: "#8884d8" },
+        { name: "Schedule", score: healthReport.metrics?.schedule?.score || 0, color: "#82ca9d" },
+        { name: "Progress", score: healthReport.metrics?.progress?.score || 0, color: "#ffc658" },
+        { name: "Resource", score: healthReport.metrics?.resource?.score || 0, color: "#ff7f50" },
+      ];
+    }
+
+    return [];
+  }, [healthReport, selectedProjectId]);
+
   const COLORS = ["#8884d8", "#82ca9d", "#ffc658", "#ff7f50"];
 
   return (
@@ -737,8 +945,19 @@ export default function ReportsAnalytics() {
         </div>
       </div>
 
-      {/* Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full max-w-2xl grid-cols-4">
+          <TabsTrigger value="analytics">Analytics Reports</TabsTrigger>
+          <TabsTrigger value="comparison">Project Comparison</TabsTrigger>
+          <TabsTrigger value="all-health">All Projects Health</TabsTrigger>
+          <TabsTrigger value="all-profitability">All Projects Profitability</TabsTrigger>
+        </TabsList>
+
+        {/* Analytics Tab */}
+        <TabsContent value="analytics" className="space-y-6 mt-6">
+          {/* Charts Section */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Cost vs Budget */}
         <Card className="h-[350px]">
           <CardHeader><CardTitle>Cost vs Budget</CardTitle></CardHeader>
@@ -747,8 +966,22 @@ export default function ReportsAnalytics() {
               <BarChart data={costData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
+                <YAxis 
+                  width={80}
+                  tickFormatter={(value) => {
+                    if (value >= 10000000) {
+                      return `${(value / 10000000).toFixed(1)}Cr`;
+                    } else if (value >= 100000) {
+                      return `${(value / 100000).toFixed(1)}L`;
+                    } else if (value >= 1000) {
+                      return `${(value / 1000).toFixed(0)}K`;
+                    }
+                    return value.toString();
+                  }}
+                />
+                <Tooltip 
+                  formatter={(value: number) => `₹${value.toLocaleString('en-IN')}`}
+                />
                 <Legend />
                 <Bar dataKey="Budget" fill="#8884d8" />
                 <Bar dataKey="Actual" fill="#82ca9d" />
@@ -949,7 +1182,696 @@ export default function ReportsAnalytics() {
             </ResponsiveContainer>
           </CardContent>
         </Card>
-      </div>
+
+        {/* Project Health Report */}
+        <Card className="h-[350px]">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Activity className="h-5 w-5" />
+                Project Health Report
+              </CardTitle>
+              {healthReport && selectedProjectId && (
+                <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getHealthStatusBadgeColor(healthReport.healthStatus)}`}>
+                  {healthReport.healthStatus?.toUpperCase() || "UNKNOWN"}
+                </span>
+              )}
+            </div>
+            {healthReport && selectedProjectId && (
+              <p className="text-sm text-muted-foreground mt-1">
+                Overall Score: <span className={`font-semibold ${getHealthStatusColor(healthReport.healthStatus)}`}>
+                  {healthReport.overallHealthScore?.toFixed(1) || 0}/100
+                </span>
+              </p>
+            )}
+            {healthReport && !selectedProjectId && healthReport.summary && (
+              <p className="text-sm text-muted-foreground mt-1">
+                Total Projects: {healthReport.summary.totalProjects} | 
+                Healthy: {healthReport.summary.healthyProjects} | 
+                At Risk: {healthReport.summary.atRiskProjects} | 
+                Critical: {healthReport.summary.criticalProjects}
+              </p>
+            )}
+          </CardHeader>
+          <CardContent className="h-[280px]">
+            {loadingHealthReport ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-2"></div>
+                  <p className="text-sm text-muted-foreground">Loading health report...</p>
+                </div>
+              </div>
+            ) : healthReport ? (
+              selectedProjectId ? (
+                // Single project health view
+                <div className="space-y-4">
+                  {/* Overall Health Score Gauge */}
+                  <div className="flex items-center justify-center">
+                    <div className="relative w-32 h-32">
+                      <svg className="transform -rotate-90 w-32 h-32">
+                        <circle
+                          cx="64"
+                          cy="64"
+                          r="56"
+                          stroke="currentColor"
+                          strokeWidth="8"
+                          fill="transparent"
+                          className="text-gray-200"
+                        />
+                        <circle
+                          cx="64"
+                          cy="64"
+                          r="56"
+                          stroke="currentColor"
+                          strokeWidth="8"
+                          fill="transparent"
+                          strokeDasharray={`${(healthReport.overallHealthScore || 0) * 3.51} 351`}
+                          className={getHealthStatusColor(healthReport.healthStatus).replace("text-", "stroke-")}
+                        />
+                      </svg>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="text-center">
+                          <div className={`text-2xl font-bold ${getHealthStatusColor(healthReport.healthStatus)}`}>
+                            {healthReport.overallHealthScore?.toFixed(0) || 0}
+                          </div>
+                          <div className="text-xs text-muted-foreground">Score</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Health Metrics Breakdown */}
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    {healthMetricsData.map((metric: any) => (
+                      <div key={metric.name} className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-muted-foreground">{metric.name}</span>
+                          <span className="font-semibold">{metric.score ? metric.score.toFixed(0) : metric.value || 0}</span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-1.5">
+                          <div
+                            className="h-1.5 rounded-full"
+                            style={{
+                              width: `${metric.score ? metric.score : 0}%`,
+                              backgroundColor: metric.color,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                // All projects summary view
+                <div className="space-y-4">
+                  <div className="flex items-center justify-center">
+                    <div className="relative w-32 h-32">
+                      <svg className="transform -rotate-90 w-32 h-32">
+                        <circle
+                          cx="64"
+                          cy="64"
+                          r="56"
+                          stroke="currentColor"
+                          strokeWidth="8"
+                          fill="transparent"
+                          className="text-gray-200"
+                        />
+                        <circle
+                          cx="64"
+                          cy="64"
+                          r="56"
+                          stroke="currentColor"
+                          strokeWidth="8"
+                          fill="transparent"
+                          strokeDasharray={`${(healthReport.summary.overallHealthScore || 0) * 3.51} 351`}
+                          className="stroke-blue-600"
+                        />
+                      </svg>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-blue-600">
+                            {healthReport.summary.overallHealthScore?.toFixed(0) || 0}
+                          </div>
+                          <div className="text-xs text-muted-foreground">Avg Score</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Project Status Distribution */}
+                  {healthMetricsData.length > 0 && (
+                    <ResponsiveContainer width="100%" height={120}>
+                      <BarChart data={healthMetricsData} layout="vertical">
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis type="number" />
+                        <YAxis dataKey="name" type="category" width={60} />
+                        <Tooltip />
+                        <Bar dataKey="value" fill="#8884d8" radius={[0, 4, 4, 0]}>
+                          {healthMetricsData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              )
+            ) : (
+              <div className="flex items-center justify-center h-full text-muted-foreground">
+                <div className="text-center">
+                  <AlertCircle className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No health data available</p>
+                  <p className="text-xs mt-1">Select a project to view health metrics</p>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Project Profitability Report */}
+        <Card className="h-[350px]">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <DollarSign className="h-5 w-5" />
+                Project Profitability Report
+              </CardTitle>
+              {profitabilityReport && selectedProjectId && (
+                <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                  profitabilityReport.isProfitable 
+                    ? "bg-green-100 text-green-800" 
+                    : "bg-red-100 text-red-800"
+                }`}>
+                  {profitabilityReport.isProfitable ? "PROFITABLE" : "LOSS"}
+                </span>
+              )}
+            </div>
+            {profitabilityReport && selectedProjectId && (
+              <p className="text-sm text-muted-foreground mt-1">
+                Profit: <span className={`font-semibold ${profitabilityReport.isProfitable ? "text-green-600" : "text-red-600"}`}>
+                  ₹{profitabilityReport.profit?.toLocaleString() || 0}
+                </span> | 
+                Margin: <span className={`font-semibold ${profitabilityReport.isProfitable ? "text-green-600" : "text-red-600"}`}>
+                  {profitabilityReport.profitMargin?.toFixed(1) || 0}%
+                </span>
+              </p>
+            )}
+            {profitabilityReport && !selectedProjectId && profitabilityReport.summary && (
+              <p className="text-sm text-muted-foreground mt-1">
+                Total Profit: ₹{profitabilityReport.summary.totalProfit?.toLocaleString() || 0} | 
+                Avg Margin: {profitabilityReport.summary.averageProfitMargin?.toFixed(1) || 0}% | 
+                Profitable: {profitabilityReport.summary.profitableProjects || 0}/{profitabilityReport.summary.totalProjects || 0}
+              </p>
+            )}
+          </CardHeader>
+          <CardContent className="h-[280px]">
+            {loadingProfitabilityReport ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-2"></div>
+                  <p className="text-sm text-muted-foreground">Loading profitability report...</p>
+                </div>
+              </div>
+            ) : profitabilityReport ? (
+              selectedProjectId ? (
+                // Single project profitability view
+                <div className="space-y-4">
+                  {/* Profit/Loss Display */}
+                  <div className="flex items-center justify-center">
+                    <div className={`text-center ${profitabilityReport.isProfitable ? "text-green-600" : "text-red-600"}`}>
+                      {profitabilityReport.isProfitable ? (
+                        <TrendingUp className="h-12 w-12 mx-auto mb-2" />
+                      ) : (
+                        <TrendingDown className="h-12 w-12 mx-auto mb-2" />
+                      )}
+                      <div className="text-3xl font-bold">
+                        ₹{Math.abs(profitabilityReport.profit || 0).toLocaleString()}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {profitabilityReport.isProfitable ? "Profit" : "Loss"}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Financial Metrics */}
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="space-y-1">
+                      <div className="text-muted-foreground">Revenue</div>
+                      <div className="font-semibold text-green-600">
+                        ₹{profitabilityReport.totalRevenue?.toLocaleString() || 0}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-muted-foreground">Cost</div>
+                      <div className="font-semibold text-red-600">
+                        ₹{profitabilityReport.totalCost?.toLocaleString() || 0}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-muted-foreground">Profit Margin</div>
+                      <div className={`font-semibold ${profitabilityReport.isProfitable ? "text-green-600" : "text-red-600"}`}>
+                        {profitabilityReport.profitMargin?.toFixed(1) || 0}%
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-muted-foreground">ROI</div>
+                      <div className={`font-semibold ${profitabilityReport.isProfitable ? "text-green-600" : "text-red-600"}`}>
+                        {profitabilityReport.roi?.toFixed(1) || 0}%
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                // All projects summary view
+                <div className="space-y-4">
+                  {/* Summary Metrics */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="text-center p-3 bg-green-50 rounded-lg">
+                      <div className="text-xs text-muted-foreground">Total Revenue</div>
+                      <div className="text-lg font-bold text-green-600">
+                        ₹{profitabilityReport.summary.totalRevenue?.toLocaleString() || 0}
+                      </div>
+                    </div>
+                    <div className="text-center p-3 bg-red-50 rounded-lg">
+                      <div className="text-xs text-muted-foreground">Total Cost</div>
+                      <div className="text-lg font-bold text-red-600">
+                        ₹{profitabilityReport.summary.totalCost?.toLocaleString() || 0}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Profit/Loss Summary */}
+                  <div className="text-center p-3 bg-blue-50 rounded-lg">
+                    <div className="text-xs text-muted-foreground mb-1">Net Profit</div>
+                    <div className={`text-2xl font-bold ${profitabilityReport.summary.totalProfit >= 0 ? "text-green-600" : "text-red-600"}`}>
+                      ₹{Math.abs(profitabilityReport.summary.totalProfit || 0).toLocaleString()}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Avg Margin: {profitabilityReport.summary.averageProfitMargin?.toFixed(1) || 0}%
+                    </div>
+                  </div>
+
+                  {/* Project Status */}
+                  <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t">
+                    <div className="text-center">
+                      <div className="text-green-600 font-bold text-lg">
+                        {profitabilityReport.summary.profitableProjects || 0}
+                      </div>
+                      <div className="text-muted-foreground">Profitable</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-red-600 font-bold text-lg">
+                        {profitabilityReport.summary.lossProjects || 0}
+                      </div>
+                      <div className="text-muted-foreground">Loss</div>
+                    </div>
+                  </div>
+                </div>
+              )
+            ) : (
+              <div className="flex items-center justify-center h-full text-muted-foreground">
+                <div className="text-center">
+                  <DollarSign className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No profitability data available</p>
+                  <p className="text-xs mt-1">Select a project to view profitability metrics</p>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+          </div>
+        </TabsContent>
+
+        {/* Comparison Tab */}
+        <TabsContent value="comparison" className="space-y-6 mt-6">
+          <div className="space-y-6">
+            {/* Project Comparison Report */}
+            <Card className="h-[600px]">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <GitCompare className="h-5 w-5" />
+                    Project Comparison Report
+                  </CardTitle>
+                  {comparisonReport && comparisonReport.summary && (
+                    <span className="px-2 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
+                      {comparisonReport.summary.totalProjects} Projects
+                    </span>
+                  )}
+                </div>
+                {comparisonReport && comparisonReport.summary && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Avg Progress: {comparisonReport.summary.averageProgress?.toFixed(1) || 0}% | 
+                    Profitable: {comparisonReport.summary.profitableProjects || 0}/{comparisonReport.summary.totalProjects || 0} | 
+                    On Track: {comparisonReport.summary.onTrackProjects || 0}/{comparisonReport.summary.totalProjects || 0}
+                  </p>
+                )}
+              </CardHeader>
+              <CardContent className="h-[530px]">
+                {loadingComparisonReport ? (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-2"></div>
+                      <p className="text-sm text-muted-foreground">Loading comparison report...</p>
+                    </div>
+                  </div>
+                ) : comparisonReport && comparisonReport.projects && comparisonReport.projects.length > 0 ? (
+                  <div className="space-y-4 h-full flex flex-col">
+                    {/* Comparison Chart - Budget vs Cost - Show ALL projects */}
+                    {comparisonReport.comparison?.budgetVsCost && comparisonReport.comparison.budgetVsCost.length > 0 && (
+                      <div className="flex-1 min-h-0">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart 
+                            data={comparisonReport.comparison.budgetVsCost}
+                            margin={{ top: 5, right: 10, left: 0, bottom: comparisonReport.projects.length > 5 ? 80 : 50 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis 
+                              dataKey="name" 
+                              angle={comparisonReport.projects.length > 5 ? -60 : -45}
+                              textAnchor="end"
+                              height={comparisonReport.projects.length > 5 ? 90 : 70}
+                              fontSize={comparisonReport.projects.length > 8 ? 8 : 9}
+                              interval={0}
+                            />
+                            <YAxis 
+                              width={60}
+                              tickFormatter={(value) => {
+                                if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
+                                if (value >= 1000) return `${(value / 1000).toFixed(0)}K`;
+                                return value.toString();
+                              }}
+                              fontSize={9}
+                            />
+                            <Tooltip 
+                              formatter={(value: number) => `₹${value.toLocaleString()}`}
+                              contentStyle={{ fontSize: '11px' }}
+                            />
+                            <Legend wrapperStyle={{ fontSize: '11px' }} />
+                            <Bar dataKey="Budget" fill="#8884d8" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="Cost" fill="#82ca9d" radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+
+                    {/* All Projects Comparison Table - Show ALL projects */}
+                    {comparisonReport.projects && comparisonReport.projects.length > 0 ? (
+                      <div className="pt-2 border-t max-h-[200px] overflow-y-auto">
+                        <div className="space-y-1 text-xs">
+                          <div className="grid grid-cols-5 gap-1 font-semibold text-muted-foreground pb-1 border-b sticky top-0 bg-white">
+                            <div className="truncate">Project</div>
+                            <div className="text-right">Budget</div>
+                            <div className="text-right">Cost</div>
+                            <div className="text-right">Profit</div>
+                            <div className="text-right">Progress</div>
+                          </div>
+                          {comparisonReport.projects.map((project: any, index: number) => (
+                            <div key={project.projectId || index} className="grid grid-cols-5 gap-1 p-1 hover:bg-gray-50 rounded text-xs">
+                              <div className="truncate font-medium" title={project.projectName}>
+                                {project.projectCode || project.projectName || `Project ${index + 1}`}
+                              </div>
+                              <div className="text-right text-blue-600">
+                                ₹{project.budget ? (project.budget / 1000).toFixed(0) : 0}K
+                              </div>
+                              <div className="text-right text-green-600">
+                                ₹{project.totalCost ? (project.totalCost / 1000).toFixed(0) : 0}K
+                              </div>
+                              <div className={`text-right ${project.profit >= 0 ? "text-green-600" : "text-red-600"}`}>
+                                ₹{project.profit ? (Math.abs(project.profit) / 1000).toFixed(0) : 0}K
+                              </div>
+                              <div className="text-right text-purple-600">
+                                {project.progress?.toFixed(0) || 0}%
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="pt-2 border-t text-center text-xs text-muted-foreground">
+                        No projects found for comparison
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center h-full text-muted-foreground">
+                    <div className="text-center">
+                      <GitCompare className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">No comparison data available</p>
+                      <p className="text-xs mt-1">Multiple projects needed for comparison</p>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* All Projects Health Tab */}
+        <TabsContent value="all-health" className="space-y-6 mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Activity className="h-5 w-5" />
+                All Projects Health Report
+              </CardTitle>
+              <CardDescription>
+                Health metrics for all projects in your organization
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingAllProjectsHealth ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+              ) : allProjectsHealth && allProjectsHealth.projects && allProjectsHealth.projects.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Project Name</TableHead>
+                        <TableHead>Code</TableHead>
+                        <TableHead>Overall Score</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Budget Health</TableHead>
+                        <TableHead>Schedule Health</TableHead>
+                        <TableHead>Progress Health</TableHead>
+                        <TableHead>Resource Health</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {allProjectsHealth.projects.map((project: any) => (
+                        <TableRow key={project.projectId || project._id}>
+                          <TableCell className="font-medium">
+                            {project.projectName || project.name || "N/A"}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {project.projectCode || project.code || "N/A"}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-lg">
+                                {project.overallHealthScore?.toFixed(1) || 0}
+                              </span>
+                              <span className="text-sm text-muted-foreground">/100</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              className={getHealthStatusBadgeColor(project.healthStatus)}
+                            >
+                              {project.healthStatus?.toUpperCase() || "UNKNOWN"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <div className="w-24 bg-slate-200 rounded-full h-2">
+                                <div
+                                  className="bg-purple-600 h-2 rounded-full"
+                                  style={{
+                                    width: `${project.metrics?.budget?.score || 0}%`,
+                                  }}
+                                />
+                              </div>
+                              <span className="text-sm font-medium w-8">
+                                {project.metrics?.budget?.score || 0}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <div className="w-24 bg-slate-200 rounded-full h-2">
+                                <div
+                                  className="bg-green-600 h-2 rounded-full"
+                                  style={{
+                                    width: `${project.metrics?.schedule?.score || 0}%`,
+                                  }}
+                                />
+                              </div>
+                              <span className="text-sm font-medium w-8">
+                                {project.metrics?.schedule?.score || 0}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <div className="w-24 bg-slate-200 rounded-full h-2">
+                                <div
+                                  className="bg-orange-600 h-2 rounded-full"
+                                  style={{
+                                    width: `${project.metrics?.progress?.score || 0}%`,
+                                  }}
+                                />
+                              </div>
+                              <span className="text-sm font-medium w-8">
+                                {project.metrics?.progress?.score || 0}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <div className="w-24 bg-slate-200 rounded-full h-2">
+                                <div
+                                  className="bg-red-600 h-2 rounded-full"
+                                  style={{
+                                    width: `${project.metrics?.resource?.score || 0}%`,
+                                  }}
+                                />
+                              </div>
+                              <span className="text-sm font-medium w-8">
+                                {project.metrics?.resource?.score || 0}
+                              </span>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Activity className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                  <p>No health data available for projects.</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* All Projects Profitability Tab */}
+        <TabsContent value="all-profitability" className="space-y-6 mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <DollarSign className="h-5 w-5" />
+                All Projects Profitability Report
+              </CardTitle>
+              <CardDescription>
+                Profitability metrics for all projects in your organization
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingAllProjectsProfitability ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+              ) : allProjectsProfitability && allProjectsProfitability.projects && allProjectsProfitability.projects.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Project Name</TableHead>
+                        <TableHead>Code</TableHead>
+                        <TableHead>Revenue</TableHead>
+                        <TableHead>Total Cost</TableHead>
+                        <TableHead>Profit/Loss</TableHead>
+                        <TableHead>Profit Margin</TableHead>
+                        <TableHead>ROI</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {allProjectsProfitability.projects.map((project: any) => (
+                        <TableRow key={project.projectId || project._id}>
+                          <TableCell className="font-medium">
+                            {project.projectName || project.name || "N/A"}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {project.projectCode || project.code || "N/A"}
+                          </TableCell>
+                          <TableCell className="font-semibold text-green-700">
+                            ₹{project.totalRevenue?.toLocaleString("en-IN") || 0}
+                          </TableCell>
+                          <TableCell className="font-semibold text-red-700">
+                            ₹{project.totalCost?.toLocaleString("en-IN") || 0}
+                          </TableCell>
+                          <TableCell
+                            className={`font-bold text-lg ${
+                              (project.profit || 0) >= 0
+                                ? "text-green-700"
+                                : "text-red-700"
+                            }`}
+                          >
+                            ₹{project.profit?.toLocaleString("en-IN") || 0}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                (project.profitMargin || 0) >= 0
+                                  ? "default"
+                                  : "destructive"
+                              }
+                              className={
+                                (project.profitMargin || 0) >= 0
+                                  ? "bg-green-100 text-green-800"
+                                  : "bg-red-100 text-red-800"
+                              }
+                            >
+                              {project.profitMargin?.toFixed(2) || 0}%
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                (project.roi || 0) >= 0
+                                  ? "default"
+                                  : "destructive"
+                              }
+                              className={
+                                (project.roi || 0) >= 0
+                                  ? "bg-blue-100 text-blue-800"
+                                  : "bg-red-100 text-red-800"
+                              }
+                            >
+                              {project.roi?.toFixed(2) || 0}%
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              className={
+                                project.isProfitable
+                                  ? "bg-green-100 text-green-800"
+                                  : "bg-red-100 text-red-800"
+                              }
+                            >
+                              {project.isProfitable ? "PROFITABLE" : "LOSS"}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">
+                  <DollarSign className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                  <p>No profitability data available for projects.</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       {/* Saved Reports CRUD Table */}
       {/* <Card>
