@@ -203,38 +203,45 @@ export default function AdvancedEquipmentRegistrationPage() {
   }
 
   // ---------- SAVE ----------
-  function saveForm() {
-    if (!form.name || !form.model) {
-      toast.error("Name and Model are required");
+  async function saveForm() {
+    if (!form.name) {
+      toast.error("Name is required");
       return;
     }
 
-    // UPDATE ---------------------
-    if (editing && editing._id) {
-      dispatch(
-        updateEquipment({
-          id: editing._id,
-          data: form,
-        })
-      );
-      toast.success("Equipment updated");
+    try {
+      // UPDATE ---------------------
+      if (editing && editing._id) {
+        await dispatch(
+          updateEquipment({
+            id: editing._id,
+            data: form,
+          })
+        ).unwrap();
+        toast.success("Equipment updated");
+      }
+
+      // CREATE ---------------------
+      else {
+        const newEq: Partial<Equipment> = {
+          ...form,
+          code: form.code || generateEquipmentCode(),
+          createdAt: new Date().toISOString(),
+        };
+
+        await dispatch(createEquipment(newEq)).unwrap();
+        toast.success("Equipment added");
+      }
+
+      // Refetch to ensure table is updated
+      dispatch(fetchEquipments({ page: 1, limit: 100 }));
+
+      setIsDialogOpen(false);
+      setEditing(null);
+      setForm({ frequency: "Monthly", depreciation: "Straight-line" });
+    } catch (error: any) {
+      toast.error(error || "Failed to save equipment");
     }
-
-    // CREATE ---------------------
-    else {
-      const newEq: Partial<Equipment> = {
-        ...form,
-        code: generateEquipmentCode(),
-        createdAt: new Date().toISOString(),
-      };
-
-      dispatch(createEquipment(newEq));
-      toast.success("Equipment added");
-    }
-
-    setIsDialogOpen(false);
-    setEditing(null);
-    setForm({ frequency: "Monthly", depreciation: "Straight-line" });
   }
 
   // ---------- FILES ----------
@@ -302,11 +309,11 @@ export default function AdvancedEquipmentRegistrationPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Code</TableHead>
+                  <TableHead>Equipment ID</TableHead>
                   <TableHead>Name</TableHead>
-                  <TableHead>Model</TableHead>
                   <TableHead>Category</TableHead>
                   <TableHead>Location</TableHead>
+                  <TableHead>Cost</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -316,9 +323,9 @@ export default function AdvancedEquipmentRegistrationPage() {
                   <TableRow key={eq._id}>
                     <TableCell>{eq.code}</TableCell>
                     <TableCell>{eq.name}</TableCell>
-                    <TableCell>{eq.model}</TableCell>
                     <TableCell>{eq.category}</TableCell>
                     <TableCell>{eq.location}</TableCell>
+                    <TableCell>{eq.cost ? `₹${eq.cost.toLocaleString()}` : '-'}</TableCell>
 
                     <TableCell>
                       <div className="flex gap-2">
@@ -379,18 +386,19 @@ export default function AdvancedEquipmentRegistrationPage() {
             }}
           >
             <div>
-              <Label>Name *</Label>
+              <Label>Equipment ID</Label>
               <Input
-                value={form.name || ""}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                value={form.code || ""}
+                onChange={(e) => setForm({ ...form, code: e.target.value })}
+                placeholder="Auto-generated if empty"
               />
             </div>
 
             <div>
-              <Label>Model *</Label>
+              <Label>Name *</Label>
               <Input
-                value={form.model || ""}
-                onChange={(e) => setForm({ ...form, model: e.target.value })}
+                value={form.name || ""}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
             </div>
 
@@ -407,6 +415,16 @@ export default function AdvancedEquipmentRegistrationPage() {
               <Input
                 value={form.location || ""}
                 onChange={(e) => setForm({ ...form, location: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <Label>Cost</Label>
+              <Input
+                type="number"
+                value={form.cost || ""}
+                onChange={(e) => setForm({ ...form, cost: parseFloat(e.target.value) || 0 })}
+                placeholder="0.00"
               />
             </div>
 

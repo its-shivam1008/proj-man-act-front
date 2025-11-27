@@ -41,6 +41,8 @@ import {
   updateResource,
   deleteResource,
 } from "@/redux/slices/resourceSlice";
+import { fetchEquipments } from "@/redux/slices/equipmentSlice";
+import { fetchMachineries } from "@/redux/slices/plantandmachinary/machinerySlice";
 import { usePermission } from "@/hooks/userPermission";
 
 // --- Define Types ---
@@ -49,7 +51,7 @@ interface ResourceAllocation {
   id: string;
   projectId: string;
   wbsId: string;
-  resourceType: "equipment"; // Restricted to equipment
+  resourceType: "equipment" | "machinery";
   resourceName: string;
   resourceId: string;
   quantity: string;
@@ -105,6 +107,8 @@ export default function Resources() {
     resources,
     loading: resourcesLoading,
   } = useSelector((state: RootState) => state.resources);
+  const { equipments } = useSelector((state: RootState) => state.equipment);
+  const { machineries } = useSelector((state: RootState) => state.machinery);
 
   const canView = usePermission('resources', 'view');
   const canCreate = usePermission('resources', 'create');
@@ -124,6 +128,9 @@ export default function Resources() {
     if (!projects.length) {
       dispatch(fetchProjects(DEFAULT_PROJECT_QUERY as any));
     }
+    // Fetch equipments and machineries for dropdown
+    dispatch(fetchEquipments({ page: 1, limit: 100 }));
+    dispatch(fetchMachineries({ page: 1, limit: 100 }));
   }, [dispatch, projects.length]);
 
   useEffect(() => {
@@ -232,7 +239,7 @@ export default function Resources() {
       projectId: selectedProjectId,
       wbsId: wbsItem.id ?? wbsItem._id,
       wbsName: wbsItem.name,
-      resourceType: "equipment", // Hardcoded to equipment
+      resourceType: formData.resourceType, // Use selected resource type
       resourceName: formData.resourceName.trim(),
       resourceId: formData.resourceId.trim(),
       quantity,
@@ -287,8 +294,35 @@ export default function Resources() {
     setFormData((prev) => ({
       ...prev,
       resourceType: value,
-      durationUnit: "hours", // Default for equipment
+      resourceName: "",
+      resourceId: "",
+      rate: "",
+      durationUnit: "hours",
     }));
+  };
+
+  const handleEquipmentSelect = (equipmentId: string) => {
+    const selectedEquipment = equipments.find((eq) => eq._id === equipmentId || eq.code === equipmentId);
+    if (selectedEquipment) {
+      setFormData((prev) => ({
+        ...prev,
+        resourceName: selectedEquipment.name,
+        resourceId: selectedEquipment.code,
+        rate: selectedEquipment.cost?.toString() || "",
+      }));
+    }
+  };
+
+  const handleMachinerySelect = (machineryId: string) => {
+    const selectedMachinery = machineries.find((m) => m._id === machineryId || m.code === machineryId);
+    if (selectedMachinery) {
+      setFormData((prev) => ({
+        ...prev,
+        resourceName: selectedMachinery.name,
+        resourceId: selectedMachinery.code,
+        rate: selectedMachinery.cost?.toString() || "",
+      }));
+    }
   };
 
   const handleProjectChange = (projectId: string) => {
@@ -296,9 +330,9 @@ export default function Resources() {
     resetForm();
   };
 
-  // Filter resources to only show Equipment in the table as well
+  // Show both Equipment and Machinery in the table
   const allocationsForView = selectedProjectId 
-    ? resources.filter((r) => r.resourceType === "equipment") 
+    ? resources.filter((r) => r.resourceType === "equipment" || r.resourceType === "machinery") 
     : [];
 
   useEffect(() => {
@@ -339,10 +373,10 @@ export default function Resources() {
       <div className="flex flex-col md:flex-row items-center justify-between space-y-4 md:space-y-0">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-foreground">
-            Equipment Planning & Allocation
+            Resource Planning & Allocation
           </h2>
           <p className="text-muted-foreground">
-            Create, update and delete equipment allocations.
+            Create, update and delete equipment and machinery allocations.
           </p>
         </div>
         <div className="flex w-full md:w-auto gap-4">
@@ -383,7 +417,7 @@ export default function Resources() {
                   {editingAllocation ? "Edit allocation" : "Create allocation"}
                 </DialogTitle>
                 <DialogDescription>
-                  Assign equipment to a specific WBS task.
+                  Assign equipment or machinery to a specific WBS task.
                 </DialogDescription>
               </DialogHeader>
 
@@ -421,13 +455,13 @@ export default function Resources() {
                     <Select
                       value={formData.resourceType}
                       onValueChange={(value) => handleResourceTypeChange(value)}
-                      disabled // Disabled since it's only equipment now
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Equipment" />
+                        <SelectValue placeholder="Select Type" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="equipment">Equipment</SelectItem>
+                        <SelectItem value="machinery">Machinery</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -435,23 +469,56 @@ export default function Resources() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Equipment Name *</Label>
-                    <Input
-                      value={formData.resourceName}
-                      onChange={(e) =>
-                        setFormData((prev) => ({ ...prev, resourceName: e.target.value }))
-                      }
-                      placeholder="e.g. Crane - 1"
-                    />
+                    <Label>
+                      {formData.resourceType === "machinery" ? "Machinery Name *" : "Equipment Name *"}
+                    </Label>
+                    <Select
+                      value={formData.resourceId || undefined}
+                      onValueChange={formData.resourceType === "machinery" ? handleMachinerySelect : handleEquipmentSelect}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder={formData.resourceType === "machinery" ? "Select Machinery" : "Select Equipment"}>
+                          {formData.resourceName || (formData.resourceType === "machinery" ? "Select Machinery" : "Select Equipment")}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {formData.resourceType === "machinery" ? (
+                          machineries.length ? (
+                            machineries.map((machinery) => (
+                              <SelectItem key={machinery._id || machinery.code} value={machinery._id || machinery.code}>
+                                {machinery.name} ({machinery.code})
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <div className="p-3 text-sm text-muted-foreground">
+                              No machinery available.
+                            </div>
+                          )
+                        ) : (
+                          equipments.length ? (
+                            equipments.map((equipment) => (
+                              <SelectItem key={equipment._id || equipment.code} value={equipment._id || equipment.code}>
+                                {equipment.name} ({equipment.code})
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <div className="p-3 text-sm text-muted-foreground">
+                              No equipment available.
+                            </div>
+                          )
+                        )}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Equipment Code / ID *</Label>
+                    <Label>
+                      {formData.resourceType === "machinery" ? "Machinery Code / ID *" : "Equipment Code / ID *"}
+                    </Label>
                     <Input
                       value={formData.resourceId}
-                      onChange={(e) =>
-                        setFormData((prev) => ({ ...prev, resourceId: e.target.value }))
-                      }
-                      placeholder="Unique identifier"
+                      disabled
+                      placeholder="Auto-filled"
+                      className="bg-gray-50"
                     />
                   </div>
                 </div>
@@ -473,10 +540,9 @@ export default function Resources() {
                     <Input
                       type="number"
                       value={formData.rate}
-                      onChange={(e) =>
-                        setFormData((prev) => ({ ...prev, rate: e.target.value }))
-                      }
-                      placeholder="1000"
+                      disabled
+                      placeholder="Auto-filled from equipment cost"
+                      className="bg-gray-50"
                     />
                   </div>
                   <div className="space-y-2">
@@ -629,7 +695,7 @@ export default function Resources() {
               ) : !allocationsForView.length ? (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
-                    No equipment allocations for this project yet.
+                    No resource allocations for this project yet.
                   </TableCell>
                 </TableRow>
               ) : (

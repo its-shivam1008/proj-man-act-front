@@ -69,7 +69,8 @@ const projectLinks = [
 
 const plantLinks = [
     { name: "P&M Dashboard", icon: FactoryIcon, key: "pmDashboard" },
-    { name: "Equipment Mgt", icon: Settings, key: "equipmentMgt" },
+    { name: "Equipment Mgt", icon: Settings, key: "equipmentMaster" },
+    { name: "Machinery Mgt", icon: Settings, key: "machineryManagement" },
     { name: "Preventive Maint.", icon: Wrench, key: "preventiveMaint" },
     { name: "Breakdown Mgt", icon: AlertTriangle, key: "breakdownMgt" },
     { name: "Spare Parts", icon: Package, key: "spareParts" },

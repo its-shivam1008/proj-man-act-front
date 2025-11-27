@@ -30,6 +30,7 @@ import purchaseAgreementReducer from "./slices/purchase/purchaseAgreementSlice";
 import notificationReducer from "./slices/notificationSlice"
 import masterDataReducer from "./slices/masterDataSlice";
 import equipmentReducer from "./slices/equipmentSlice";
+import machineryReducer from "./slices/plantandmachinary/machinerySlice";
 export const store = configureStore({
   reducer: {
     auth: authReducer,
@@ -63,6 +64,7 @@ export const store = configureStore({
     notification: notificationReducer,
     masterData: masterDataReducer,
     equipment: equipmentReducer,
+    machinery: machineryReducer,
   },
 });
 

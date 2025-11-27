@@ -129,7 +129,7 @@ export default function BudgetPage() {
          materialCost += cost;
       } else if (res.resourceType === "manpower") {
          labourCost += cost;
-      } else if (res.resourceType === "equipment") {
+      } else if (res.resourceType === "equipment" || res.resourceType === "machinery") {
         equipmentCost += cost;
       } else {
         otherCost += cost;

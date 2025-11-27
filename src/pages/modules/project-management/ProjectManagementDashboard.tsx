@@ -568,41 +568,6 @@ export default function ProjectManagementDashboard() {
         </Card>
       </div>
 
-      {/* Recent Projects */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Active Projects</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {projects
-              .filter((p) => p.status === "active" || p.status === "planning")
-              .slice(0, 5)
-              .map((project) => (
-                <div key={project.id} className="flex items-center justify-between border-b border-border pb-4 last:border-0 last:pb-0">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium text-foreground">{project.name}</p>
-                      <Badge variant="outline" className={getStatusColor(project.status)}>
-                        {project.status}
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {project.client} • {project.location}
-                    </p>
-                  </div>
-                  <div className="text-right space-y-2">
-                    <p className="text-sm font-medium">Progress: {project.progress}%</p>
-                    <Progress value={project.progress} className="w-32" />
-                  </div>
-                </div>
-              ))}
-            {projects.filter((p) => p.status === "active" || p.status === "planning").length === 0 && (
-              <p className="text-center text-muted-foreground py-4">No active projects</p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
       <Timeline />
       
       {/* Projects Timeline */}

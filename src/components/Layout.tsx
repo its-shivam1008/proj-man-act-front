@@ -274,6 +274,11 @@ const Layout: React.FC = () => {
       icon: Settings,
     },
     {
+      name: "Machinery Mgt",
+      href: "/plant-machinery/machinery",
+      icon: Settings,
+    },
+    {
       name: "Preventive Maint.",
       href: "/plant-machinery/preventive-maintenance",
       icon: Wrench,

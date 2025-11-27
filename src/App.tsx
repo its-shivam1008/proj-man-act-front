@@ -56,6 +56,7 @@ import PlantMachineryDashboard from "./pages/modules/plant-machinery/Dashboard";
 import EquipmentAllocationPage from "./pages/modules/plant-machinery/EquipmentAllocation";
 import EquipmentCostingPage from "./pages/modules/plant-machinery/EquipmentCosting";
 import EquipmentMaster from "./pages/modules/plant-machinery/EquipmentMaster";
+import MachineryManagement from "./pages/modules/plant-machinery/MachineryManagement";
 import FuelLubricantPage from "./pages/modules/plant-machinery/FuelLubricant";
 import PreventiveMaintenancePage from "./pages/modules/plant-machinery/PreventiveMaintenance";
 import PlantMachineryReportsPage from "./pages/modules/plant-machinery/Reports";
@@ -267,6 +268,10 @@ function App() {
               <Route
                 path="/plant-machinery/equipment"
                 element={<EquipmentMaster />}
+              />
+              <Route
+                path="/plant-machinery/machinery"
+                element={<MachineryManagement />}
               />
               <Route
                 path="/plant-machinery/preventive-maintenance"
