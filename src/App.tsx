@@ -96,6 +96,7 @@ import Operations, {
 } from "./pages/modules/Operations";
 import OperationsModule from "./pages/modules/Operations";
 import ReportingModule, { InventoryHistoryPage, MovesAnalysisPage, StockPage, ValuationPage } from "./pages/modules/ReportingModule";
+import Drawing from "./pages/modules/Drawing";
 function App() {
   useEffect(() => {
     ensureInitialized();
@@ -119,6 +120,7 @@ function App() {
               }
             >
               <Route path="/" element={<Dashboard />} />
+              <Route path="/drawing" element={<Drawing />} />
               <Route path="/permissions" element={<UserPermissionsPage />} />
               <Route path="/purchase" element={<Purchase />} />
               <Route path="/quality" element={<Quality />} />

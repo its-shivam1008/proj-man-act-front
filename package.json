@@ -39,6 +39,8 @@
     "lodash.groupby": "^4.6.0",
     "lodash.throttle": "^4.1.1",
     "lucide-react": "^0.344.0",
+    "onnxruntime-web": "^1.23.2",
+    "paddleocr": "^1.0.6",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.66.1",
@@ -49,6 +51,7 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
+    "tesseract.js": "^6.0.1",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
