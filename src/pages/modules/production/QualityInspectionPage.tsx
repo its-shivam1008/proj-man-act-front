@@ -1,5 +1,4 @@
-"use client";
-
+import { usePermission } from "@/hooks/userPermission";
 import { useEffect, useMemo, useState } from "react";
 import { storage, STORAGE_KEYS } from "../../../lib/storage";
 import {
@@ -43,7 +42,7 @@ import {
   Line,
   Legend,
 } from "recharts";
-import { Plus, Check, XCircle } from "lucide-react";
+import { Plus, Check, XCircle, ShieldAlert } from "lucide-react";
 
 const genId = (p = "id") => `${p}_${Math.random().toString(36).slice(2, 9)}`;
 const nowISO = () => new Date().toISOString();
@@ -57,6 +56,23 @@ const nowISO = () => new Date().toISOString();
  */
 
 export default function QualityInspectionPage() {
+  const canView = usePermission("qualityInspection", "view");
+  const canCreate = usePermission("qualityInspection", "create");
+  const canEdit = usePermission("qualityInspection", "edit");
+  const canDelete = usePermission("qualityInspection", "delete");
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
   // Local state mapped from storage
   const [plans, setPlans] = useState(() => storage.get(STORAGE_KEYS.QUALITY_PLANS, []));
   const [inspections, setInspections] = useState(() => storage.get(STORAGE_KEYS.INSPECTIONS, []));
@@ -369,7 +385,13 @@ export default function QualityInspectionPage() {
           <Card>
             <CardHeader className="flex justify-between items-center">
               <CardTitle>Inspection Plans</CardTitle>
-              <Button className="w-full md:w-40" onClick={() => { setForm({}); setDialogOpen(true); }}>+ New Plan</Button>
+              <Button
+                className="w-full md:w-40"
+                disabled={!canCreate}
+                onClick={() => canCreate && (setForm({}), setDialogOpen(true))}
+                className={!canCreate ? "opacity-50 cursor-not-allowed" : ""}
+              >
+                + New Plan</Button>
             </CardHeader>
             <CardContent>
               <Table>
@@ -404,7 +426,13 @@ export default function QualityInspectionPage() {
             <Card>
               <CardHeader className="flex justify-between items-center">
                 <CardTitle>Inspection Records</CardTitle>
-                <Button className="w-full md:w-40" onClick={() => { setForm({}); setDialogOpen(true); }}>+ New Inspection</Button>
+                <Button
+                  className="w-full md:w-40"
+                  disabled={!canCreate}
+                  onClick={() => canCreate && (setForm({}), setDialogOpen(true))}
+                  className={!canCreate ? "opacity-50 cursor-not-allowed" : ""}
+                >
+                  + New Inspection</Button>
               </CardHeader>
               <CardContent>
                 <Table>
@@ -459,10 +487,22 @@ export default function QualityInspectionPage() {
                             <TableCell>{it.batchNo}</TableCell>
                             <TableCell>{it.qty}</TableCell>
                             <TableCell className="grid grid-cols-2 gap-2">
-                              <Button className="w-full bg-green-600" onClick={() => acceptGrnBatch(it.grnId, it.productId, it.batchNo)}>
+                              <Button
+                                className="w-full bg-green-600"
+                                disabled={!canEdit}
+                                onClick={() => canEdit && acceptGrnBatch(it.grnId, it.productId, it.batchNo)}
+                                className={!canEdit ? "opacity-50 cursor-not-allowed" : "bg-green-600"}
+                              >
+
                                 <Check className="mr-2 h-4 w-4" /> Accept
                               </Button>
-                              <Button className="w-full bg-red-600" onClick={() => rejectGrnBatch(it.grnId, it.productId, it.batchNo)}>
+                              <Button
+                                className="w-full bg-red-600"
+                                disabled={!canEdit}
+                                onClick={() => canEdit && rejectGrnBatch(it.grnId, it.productId, it.batchNo)}
+                                className={!canEdit ? "opacity-50 cursor-not-allowed" : "bg-red-600"}
+                              >
+
                                 <XCircle className="mr-2 h-4 w-4" /> Reject
                               </Button>
                             </TableCell>
@@ -483,7 +523,13 @@ export default function QualityInspectionPage() {
           <Card>
             <CardHeader className="flex justify-between items-center">
               <CardTitle>Non-Conformance Reports</CardTitle>
-              <Button className="w-full md:w-40" onClick={() => { setForm({}); setDialogOpen(true); }}>+ New NCR</Button>
+              <Button
+                className="w-full md:w-40"
+                disabled={!canCreate}
+                onClick={() => canCreate && (setForm({}), setDialogOpen(true))}
+                className={!canCreate ? "opacity-50 cursor-not-allowed" : ""}
+              >
+                + New NCR</Button>
             </CardHeader>
             <CardContent>
               <Table>
@@ -517,7 +563,13 @@ export default function QualityInspectionPage() {
           <Card>
             <CardHeader className="flex justify-between items-center">
               <CardTitle>CAPA Actions</CardTitle>
-              <Button className="w-full md:w-40" onClick={() => { setForm({}); setDialogOpen(true); }}>+ New CAPA</Button>
+              <Button
+                className="w-full md:w-40"
+                disabled={!canCreate}
+                onClick={() => canCreate && (setForm({}), setDialogOpen(true))}
+                className={!canCreate ? "opacity-50 cursor-not-allowed" : ""}
+              >
+                + New CAPA</Button>
             </CardHeader>
             <CardContent>
               <Table>
@@ -600,12 +652,26 @@ export default function QualityInspectionPage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>New Record</DialogTitle></DialogHeader>
-          <div className="grid gap-3 py-3">{renderFormFields()}</div>
+          <div
+            className="grid gap-3 py-3"
+            style={{
+              pointerEvents: canCreate ? "auto" : "none",
+              opacity: canCreate ? 1 : 0.6,
+            }}
+          >
+            {renderFormFields()}
+          </div>
           <DialogFooter>
-            <Button className="w-full" onClick={addRecord}>Save</Button>
+            <Button
+              className="w-full"
+              disabled={!canCreate}
+              onClick={() => canCreate && addRecord()}
+            >
+              Save
+            </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+      </DialogContent>
+    </Dialog>
+    </div >
   );
 }

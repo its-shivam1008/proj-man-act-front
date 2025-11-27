@@ -1,7 +1,6 @@
-"use client";
-
+import { usePermission } from "@/hooks/userPermission";
 import React, { useState, useEffect, useMemo } from "react";
-import { Plus, Edit, Trash2, Search, Package, RefreshCcw } from "lucide-react";
+import { Plus, Edit, Trash2, Search, Package, RefreshCcw, ShieldAlert } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
@@ -47,6 +46,10 @@ interface BOM {
 
 // --- Main Component ---
 export default function AdvancedBOMPage() {
+  const canView = usePermission("bomManagement", "view");
+  const canCreate = usePermission("bomManagement", "create");
+  const canEdit = usePermission("bomManagement", "edit");
+  const canDelete = usePermission("bomManagement", "delete");
   const [boms, setBoms] = useState<BOM[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -61,37 +64,50 @@ export default function AdvancedBOMPage() {
     items: [],
   });
 
- useEffect(() => {
-  const savedBOMs = storage.get<BOM[]>(STORAGE_KEYS.BOMS, []);
-  const savedProducts = storage.get<Product[]>(STORAGE_KEYS.PRODUCTS, []);
-  const savedMaterials = storage.get<Material[]>(STORAGE_KEYS.MATERIALS, []);
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
+  useEffect(() => {
+    const savedBOMs = storage.get<BOM[]>(STORAGE_KEYS.BOMS, []);
+    const savedProducts = storage.get<Product[]>(STORAGE_KEYS.PRODUCTS, []);
+    const savedMaterials = storage.get<Material[]>(STORAGE_KEYS.MATERIALS, []);
 
-  // ✅ Add fallback demo data if none exist
-  const demoProducts = savedProducts.length
-    ? savedProducts
-    : [
+    // ✅ Add fallback demo data if none exist
+    const demoProducts = savedProducts.length
+      ? savedProducts
+      : [
         { id: "PRD-001", name: "Smartphone X" },
         { id: "PRD-002", name: "Laptop Pro" },
         { id: "PRD-003", name: "Bluetooth Speaker" },
       ];
 
-  const demoMaterials = savedMaterials.length
-    ? savedMaterials
-    : [
+    const demoMaterials = savedMaterials.length
+      ? savedMaterials
+      : [
         { id: "MAT-001", name: "Aluminium Body", unit: "pcs", costPerUnit: 120 },
         { id: "MAT-002", name: "Battery Pack", unit: "pcs", costPerUnit: 500 },
         { id: "MAT-003", name: "Display Panel", unit: "pcs", costPerUnit: 800 },
       ];
 
-  setBoms(savedBOMs);
-  setProducts(demoProducts);
-  setMaterials(demoMaterials);
+    setBoms(savedBOMs);
+    setProducts(demoProducts);
+    setMaterials(demoMaterials);
 
-  // persist demo data if missing
-  if (!savedProducts.length) storage.set(STORAGE_KEYS.PRODUCTS, demoProducts);
-  if (!savedMaterials.length) storage.set(STORAGE_KEYS.MATERIALS, demoMaterials);
-}, []);
- // Load from LocalStorage
+    // persist demo data if missing
+    if (!savedProducts.length) storage.set(STORAGE_KEYS.PRODUCTS, demoProducts);
+    if (!savedMaterials.length) storage.set(STORAGE_KEYS.MATERIALS, demoMaterials);
+  }, []);
+  // Load from LocalStorage
   useEffect(() => {
     const savedBOMs = storage.get<BOM[]>(STORAGE_KEYS.BOMS, []);
     const savedProducts = storage.get<Product[]>(STORAGE_KEYS.PRODUCTS, []);
@@ -237,7 +253,13 @@ export default function AdvancedBOMPage() {
         </div>
         <Dialog open={isDialogOpen} onOpenChange={(o) => { setIsDialogOpen(o); if (!o) resetForm(); }}>
           <DialogTrigger asChild>
-            <Button className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white">
+            <Button onClick={() => canCreate && setIsDialogOpen(true)}
+              disabled={!canCreate}
+              className={`bg-gradient-to-r text-white ${canCreate
+                ? "from-indigo-500 to-purple-600 hover:opacity-90"
+                : "from-gray-400 to-gray-500 cursor-not-allowed"
+                }`}
+            >
               <Plus className="w-4 h-4 mr-2" /> {editingBOM ? "Edit BOM" : "Create BOM"}
             </Button>
           </DialogTrigger>
@@ -276,9 +298,17 @@ export default function AdvancedBOMPage() {
               <div>
                 <div className="flex justify-between items-center mb-2">
                   <Label>Materials</Label>
-                  <Button type="button" size="sm" onClick={addItem} variant="outline">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => (editingBOM ? canEdit : canCreate) && addItem()}
+                    disabled={editingBOM ? !canEdit : !canCreate}
+                    variant="outline"
+                    className={editingBOM ? (canEdit ? "" : "opacity-50 cursor-not-allowed") : (canCreate ? "" : "opacity-50 cursor-not-allowed")}
+                  >
                     <Plus className="w-4 h-4 mr-1" /> Add
                   </Button>
+
                 </div>
                 <div className="space-y-2">
                   {formData.items.map((it, i) => (
@@ -303,9 +333,17 @@ export default function AdvancedBOMPage() {
                       />
                       <Input value={it.unit} className="w-20" disabled />
                       <span className="text-sm text-muted-foreground">₹{(it.cost || 0).toFixed(2)}</span>
-                      <Button type="button" size="icon" variant="destructive" onClick={() => removeItem(i)}>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="destructive"
+                        disabled={editingBOM ? !canEdit : !canCreate}
+                        onClick={() => (editingBOM ? canEdit : canCreate) && removeItem(i)}
+                        className={editingBOM ? (canEdit ? "" : "opacity-50 cursor-not-allowed") : (canCreate ? "" : "opacity-50 cursor-not-allowed")}
+                      >
                         <Trash2 className="w-4 h-4" />
                       </Button>
+
                     </motion.div>
                   ))}
                 </div>
@@ -316,7 +354,18 @@ export default function AdvancedBOMPage() {
                 )}
               </div>
 
-              <Button onClick={handleSave} className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white">
+              <Button
+                onClick={() => canCreate || canEdit ? handleSave() : null}
+                disabled={editingBOM ? !canEdit : !canCreate}
+                className={`w-full text-white ${editingBOM
+                  ? canEdit
+                    ? "bg-gradient-to-r from-indigo-500 to-purple-600"
+                    : "bg-gray-400 cursor-not-allowed"
+                  : canCreate
+                    ? "bg-gradient-to-r from-indigo-500 to-purple-600"
+                    : "bg-gray-400 cursor-not-allowed"
+                  }`}
+              >
                 {editingBOM ? "Update BOM" : "Save BOM"}
               </Button>
             </div>
@@ -357,12 +406,25 @@ export default function AdvancedBOMPage() {
                       <p className="text-sm text-muted-foreground">Version {b.version} • {b.id}</p>
                     </div>
                     <div className="flex gap-2 items-center">
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                        b.status === "active" ? "bg-green-100 text-green-700" :
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${b.status === "active" ? "bg-green-100 text-green-700" :
                         b.status === "draft" ? "bg-yellow-100 text-yellow-700" : "bg-gray-100 text-gray-600"
-                      }`}>{b.status}</span>
-                      <Button size="icon" variant="outline" onClick={() => handleEdit(b)}><Edit className="w-4 h-4" /></Button>
-                      <Button size="icon" variant="destructive" onClick={() => handleDelete(b.id)}><Trash2 className="w-4 h-4" /></Button>
+                        }`}>{b.status}</span>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        disabled={!canEdit}
+                        onClick={() => canEdit && handleEdit(b)}
+                        className={canEdit ? "" : "opacity-50 cursor-not-allowed"}
+                      >
+                        <Edit className="w-4 h-4" /></Button>
+                      <Button
+                        size="icon"
+                        variant="destructive"
+                        disabled={!canDelete}
+                        onClick={() => canDelete && handleDelete(b.id)}
+                        className={canDelete ? "" : "opacity-50 cursor-not-allowed"}
+                      >
+                        <Trash2 className="w-4 h-4" /></Button>
                     </div>
                   </div>
                 </CardHeader>

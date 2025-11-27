@@ -1,5 +1,4 @@
-"use client";
-
+import { usePermission } from "@/hooks/userPermission";
 import React, { useEffect, useMemo, useState } from "react";
 import { storage, STORAGE_KEYS } from "../../../lib/storage";
 import {
@@ -12,7 +11,7 @@ import { Label } from "../../../components/ui/label";
 import { Dialog, DialogHeader, DialogTitle, DialogFooter, DialogContent } from "../../../components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../../components/ui/tabs";
 import { Badge } from "../../../components/ui/badge";
-import { Plus, Download, Barcode, Package, RefreshCw, CheckCircle, FileText } from "lucide-react";
+import { Plus, Download, Barcode, Package, RefreshCw, CheckCircle, FileText, ShieldAlert } from "lucide-react";
 import {
     ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell
 } from "recharts";
@@ -21,6 +20,23 @@ import {
 const genId = (p = "id") => `${p}_${Math.random().toString(36).slice(2, 9)}`;
 
 export default function MaterialIssue() {
+    const canView = usePermission("materialIssueConsumption", "view");
+    const canCreate = usePermission("materialIssueConsumption", "create");
+    const canEdit = usePermission("materialIssueConsumption", "edit");
+    const canDelete = usePermission("materialIssueConsumption", "delete");
+    if (!canView) {
+        return (
+            <div className="text-center py-12 px-4">
+                <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                    Access Denied
+                </h3>
+                <p className="text-gray-600">
+                    You do not have the necessary permissions to view this page.
+                </p>
+            </div>
+        );
+    }
     const [issueSlips, setIssueSlips] = useState<any[]>([]);
     const [open, setOpen] = useState(false);
     const [form, setForm] = useState<any>({
@@ -186,7 +202,11 @@ export default function MaterialIssue() {
                     <h2 className="text-2xl font-bold">Material Issue & Consumption</h2>
                     <p className="text-muted-foreground">Issue raw materials to shop floor and record consumption.</p>
                 </div>
-                <Button onClick={() => setOpen(true)}>
+                <Button
+                    disabled={!canCreate}
+                    onClick={() => canCreate && setOpen(true)}
+                    className={canCreate ? "" : "opacity-50 cursor-not-allowed"}
+                >
                     <Plus className="mr-2 h-4 w-4" /> New Issue Slip
                 </Button>
             </div>
@@ -224,8 +244,27 @@ export default function MaterialIssue() {
                                             <TableCell>{s.autoBackflush ? <Badge>Auto</Badge> : "Manual"}</TableCell>
                                             <TableCell>
                                                 <div className="flex gap-2">
-                                                    <Button size="icon" variant="ghost" onClick={() => handleBackflush(s)} title="Backflush"><RefreshCw /></Button>
-                                                    <Button size="icon" variant="ghost" onClick={() => removeSlip(s.id)}><Package /></Button>
+                                                    <Button
+                                                        size="icon"
+                                                        variant="ghost"
+                                                        disabled={!canEdit}
+                                                        onClick={() => canEdit && handleBackflush(s)}
+                                                        className={canEdit ? "" : "opacity-50 cursor-not-allowed"}
+                                                        title="Backflush"
+                                                    >
+                                                        <RefreshCw />
+                                                    </Button>
+
+                                                    <Button
+                                                        size="icon"
+                                                        variant="ghost"
+                                                        disabled={!canDelete}
+                                                        onClick={() => canDelete && removeSlip(s.id)}
+                                                        className={canDelete ? "" : "opacity-50 cursor-not-allowed"}
+                                                    >
+                                                        <Package />
+                                                    </Button>
+
                                                 </div>
                                             </TableCell>
                                         </TableRow>
@@ -338,7 +377,13 @@ export default function MaterialIssue() {
             <Dialog open={open} onOpenChange={setOpen}>
                 <DialogContent className="max-w-2xl">
                     <DialogHeader><DialogTitle>New Material Issue Slip</DialogTitle></DialogHeader>
-                    <div className="space-y-3">
+                    <div
+                        className="space-y-3"
+                        style={{
+                            pointerEvents: canCreate ? "auto" : "none",
+                            opacity: canCreate ? 1 : 0.6,
+                        }}
+                    >
                         <div>
                             <Label>Work Order</Label>
                             <select
@@ -427,7 +472,13 @@ export default function MaterialIssue() {
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-                        <Button onClick={handleIssue}><CheckCircle className="mr-2 h-4 w-4" /> Issue Materials</Button>
+                        <Button
+                            disabled={!canCreate}
+                            onClick={() => canCreate && handleIssue()}
+                            className={canCreate ? "" : "opacity-50 cursor-not-allowed"}
+                        >
+
+                            <CheckCircle className="mr-2 h-4 w-4" /> Issue Materials</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>

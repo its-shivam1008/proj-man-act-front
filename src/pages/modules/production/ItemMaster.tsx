@@ -1,7 +1,6 @@
-"use client";
-
+import { usePermission } from "@/hooks/userPermission";
 import React, { useState, useEffect, useMemo } from "react";
-import { Plus, Edit2, Trash2, Package, Search, TrendingUp, RefreshCcw } from "lucide-react";
+import { Plus, Edit2, Trash2, Package, Search, TrendingUp, RefreshCcw, ShieldAlert } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 
@@ -42,6 +41,24 @@ interface ItemMaster {
 
 // --- Component ---
 export default function ItemMaster() {
+
+  const canView = usePermission("itemMaster", "view");
+  const canCreate = usePermission("itemMaster", "create");
+  const canEdit = usePermission("itemMaster", "edit");
+  const canDelete = usePermission("itemMaster", "delete");
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
   const [items, setItems] = useState<ItemMaster[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingItem, setEditingItem] = useState<ItemMaster | null>(null);
@@ -114,6 +131,23 @@ export default function ItemMaster() {
     resetForm();
   };
 
+  // if (editingItem && !canEdit) {
+  //   return (
+  //     <p className="text-center text-red-600 py-6">
+  //       You do not have permission to edit items.
+  //     </p>
+  //   );
+  // }
+
+  // // Create mode — need CREATE
+  // if (!editingItem && !canCreate) {
+  //   return (
+  //     <p className="text-center text-red-600 py-6">
+  //       You do not have permission to create items.
+  //     </p>
+  //   );
+  // }
+
   const handleEdit = (item: ItemMaster) => {
     setEditingItem(item);
     setFormData(item);
@@ -162,15 +196,21 @@ export default function ItemMaster() {
         </div>
         <div className="flex gap-3">
           <button
-            onClick={() => setShowForm(true)}
-            className="flex items-center gap-2 bg-black text-white px-4 py-2 rounded-lg  transition-all"
+            disabled={!canCreate}
+            onClick={() => canCreate && setShowForm(true)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg ${canCreate ? "bg-black text-white" : "bg-gray-400 text-white cursor-not-allowed"
+              }`}
           >
+
             <Plus size={18} /> Add Item
           </button>
           <button
-            onClick={resetAll}
-            className="flex items-center gap-2 border px-4 py-2 rounded-lg hover:bg-gray-50 transition-all"
+            disabled={!canDelete}
+            onClick={() => canDelete && resetAll()}
+            className={`flex items-center gap-2 border px-4 py-2 rounded-lg ${canDelete ? "hover:bg-gray-50" : "bg-gray-200 text-gray-500 cursor-not-allowed"
+              }`}
           >
+
             <RefreshCcw size={18} /> Reset
           </button>
         </div>
@@ -235,24 +275,22 @@ export default function ItemMaster() {
                     <td className="px-6 py-3">{item.itemName}</td>
                     <td className="px-6 py-3">
                       <span
-                        className={`px-2 py-1 text-xs rounded-full ${
-                          item.type === "raw"
-                            ? "bg-yellow-100 text-yellow-800"
-                            : item.type === "semi-finished"
+                        className={`px-2 py-1 text-xs rounded-full ${item.type === "raw"
+                          ? "bg-yellow-100 text-yellow-800"
+                          : item.type === "semi-finished"
                             ? "bg-blue-100 text-blue-800"
                             : "bg-green-100 text-green-800"
-                        }`}
+                          }`}
                       >
                         {item.type}
                       </span>
                     </td>
                     <td className="px-6 py-3">
                       <span
-                        className={`${
-                          item.stockQuantity <= item.reorderLevel
-                            ? "text-red-600 font-semibold"
-                            : "text-gray-800"
-                        }`}
+                        className={`${item.stockQuantity <= item.reorderLevel
+                          ? "text-red-600 font-semibold"
+                          : "text-gray-800"
+                          }`}
                       >
                         {item.stockQuantity}
                       </span>
@@ -262,10 +300,18 @@ export default function ItemMaster() {
                     <td className="px-6 py-3">{item.location}</td>
                     <td className="px-6 py-3">
                       <div className="flex gap-3">
-                        <button onClick={() => handleEdit(item)} className="text-indigo-600 hover:text-indigo-800">
+                        <button
+                          disabled={!canEdit}
+                          onClick={() => canEdit && handleEdit(item)}
+                          className={`${canEdit ? "text-indigo-600 hover:text-indigo-800" : "text-gray-400 cursor-not-allowed"}`}
+                        >
                           <Edit2 size={16} />
                         </button>
-                        <button onClick={() => handleDelete(item.id)} className="text-red-600 hover:text-red-800">
+                        <button
+                          disabled={!canDelete}
+                          onClick={() => canDelete && handleDelete(item.id)}
+                          className={`${canDelete ? "text-red-600 hover:text-red-800" : "text-gray-400 cursor-not-allowed"}`}
+                        >
                           <Trash2 size={16} />
                         </button>
                       </div>
@@ -296,7 +342,16 @@ export default function ItemMaster() {
               <h3 className="text-xl font-bold mb-4">
                 {editingItem ? "Edit Item" : "Add New Item"}
               </h3>
-              <form onSubmit={handleSubmit} className="space-y-4">
+
+              <form
+                onSubmit={handleSubmit}
+                className="space-y-4"
+                style={{
+                  pointerEvents: editingItem ? (canEdit ? "auto" : "none") : (canCreate ? "auto" : "none"),
+                  opacity: editingItem ? (canEdit ? 1 : 0.6) : (canCreate ? 1 : 0.6),
+                }}
+              >
+
                 <div className="grid grid-cols-2 gap-4">
                   <input
                     placeholder="Item Code"
@@ -381,8 +436,13 @@ export default function ItemMaster() {
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-black text-white rounded-lg "
+                    disabled={editingItem ? !canEdit : !canCreate}
+                    className={`px-4 py-2 rounded-lg text-white ${editingItem
+                      ? canEdit ? "bg-black" : "bg-gray-400 cursor-not-allowed"
+                      : canCreate ? "bg-black" : "bg-gray-400 cursor-not-allowed"
+                      }`}
                   >
+
                     {editingItem ? "Update" : "Create"}
                   </button>
                 </div>

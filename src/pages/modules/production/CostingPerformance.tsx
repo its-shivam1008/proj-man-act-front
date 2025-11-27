@@ -1,5 +1,4 @@
-"use client";
-
+import { usePermission } from "@/hooks/userPermission";
 import React, { useEffect, useMemo, useState } from "react";
 import { storage, STORAGE_KEYS } from "../../../lib/storage";
 import { Card, CardHeader, CardTitle, CardContent } from "../../../components/ui/card";
@@ -11,26 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../../components/ui/tabs";
 import { Badge } from "../../../components/ui/badge";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, LineChart, Line, PieChart, Pie, Cell, Legend } from "recharts";
-import { Plus, Edit2, Trash2, Download, Upload } from "lucide-react";
-
-/**
- * Advanced Costing & Performance Analysis
- *
- * - StandardCost: expected cost per unit (material, labour, machine, overhead)
- * - ActualCost: recorded actuals (linked to workOrderId or batch)
- * - Variance = Actual - Standard (absolute & percentage)
- * - KPIs computed from available data
- *
- * Storage keys used locally (under your storage helper):
- * - "COST_STANDARDS"
- * - "COST_ACTUALS"
- * - "PERF_METRICS"
- * - "COST_AUDIT" (optional)
- *
- * This component uses your existing `storage` helper imported above.
- */
-
-/* ----------------------------- Types ----------------------------- */
+import { Plus, Edit2, Trash2, Download, Upload, ShieldAlert } from "lucide-react";
 type StandardCost = {
   id: string;
   productId: string;
@@ -86,6 +66,26 @@ const sum = (arr: number[]) => arr.reduce((s, v) => s + Number(v || 0), 0);
 
 /* --------------------------- Component -------------------------- */
 export default function CostingPerformance() {
+
+
+  const canView = usePermission("costingPerformance", "view");
+  const canCreate = usePermission("costingPerformance", "create");
+  const canEdit = usePermission("costingPerformance", "edit");
+  const canDelete = usePermission("costingPerformance", "delete");
+
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
   // load from storage
   const [standards, setStandards] = useState<StandardCost[]>(() => storage.get<StandardCost[]>(KEYS.STANDARDS, []));
   const [actuals, setActuals] = useState<ActualCost[]>(() => storage.get<ActualCost[]>(KEYS.ACTUALS, []));
@@ -357,7 +357,14 @@ export default function CostingPerformance() {
         </div>
 
         <div className="flex gap-2">
-          <Button className="w-full" onClick={exportModule}><Download className="mr-2" />Export</Button>
+          <Button
+            className="w-full"
+            disabled={!canCreate && !canEdit} // or choose canEdit only
+            onClick={() => (canCreate || canEdit) && exportModule()}
+          >
+            <Download className="mr-2" />Export
+          </Button>
+
           <label className="w-full">
             <input id="costing-import" type="file" accept="application/json" className="hidden" onChange={() => importModule()} />
             <Button className="w-full"><Upload className="mr-2" />Import</Button>
@@ -438,7 +445,12 @@ export default function CostingPerformance() {
         <TabsContent value="standards">
           <div className="flex items-center justify-between mb-4 gap-2">
             <h2 className="text-xl font-semibold">Standard Costs</h2>
-            <Button className="w-full md:w-48" onClick={openNewStandard}><Plus className="mr-2" />New Standard</Button>
+            <Button
+              disabled={!canCreate}
+              onClick={() => canCreate && openNewActual()}
+              className={canCreate ? "" : "opacity-50 cursor-not-allowed"}
+            >
+              <Plus className="mr-2" />New Standard</Button>
           </div>
 
           <Card>
@@ -463,8 +475,22 @@ export default function CostingPerformance() {
                       </TableCell>
                       <TableCell>{s.updatedAt ? new Date(s.updatedAt).toLocaleString() : "—"}</TableCell>
                       <TableCell className="flex gap-2">
-                        <Button className="w-full" onClick={() => editStandard(s.id)}><Edit2 className="mr-2" />Edit</Button>
-                        <Button className="w-full" onClick={() => deleteStandard(s.id)}><Trash2 className="mr-2" />Delete</Button>
+                        <Button
+                          className="w-full"
+                          disabled={!canEdit}
+                          onClick={() => canEdit && editStandard(s.id)}
+                        >
+                          <Edit2 className="mr-2" />Edit
+                        </Button>
+
+                        <Button
+                          className="w-full"
+                          disabled={!canDelete}
+                          onClick={() => canDelete && deleteStandard(s.id)}
+                        >
+                          <Trash2 className="mr-2" />Delete
+                        </Button>
+
                       </TableCell>
                     </TableRow>
                   ))}
@@ -477,7 +503,14 @@ export default function CostingPerformance() {
         <TabsContent value="actuals">
           <div className="flex items-center justify-between mb-4 gap-2">
             <h2 className="text-xl font-semibold">Actual Costs (Production Runs)</h2>
-            <Button className="w-full md:w-48" onClick={openNewActual}><Plus className="mr-2" />New Actual</Button>
+            <Button
+              className="w-full md:w-48"
+              disabled={!canCreate}
+              onClick={() => canCreate && openNewActual()}
+            >
+              <Plus className="mr-2" />New Actual
+            </Button>
+
           </div>
 
           <Card>
@@ -504,8 +537,22 @@ export default function CostingPerformance() {
                       </TableCell>
                       <TableCell>{a.durationHours ?? "—"}</TableCell>
                       <TableCell className="flex gap-2">
-                        <Button className="w-full" onClick={() => editActual(a.id)}><Edit2 className="mr-2" />Edit</Button>
-                        <Button className="w-full" onClick={() => deleteActual(a.id)}><Trash2 className="mr-2" />Delete</Button>
+                        <Button
+                          className="w-full"
+                          disabled={!canEdit}
+                          onClick={() => canEdit && editActual(a.id)}
+                        >
+                          <Edit2 className="mr-2" />Edit
+                        </Button>
+
+                        <Button
+                          className="w-full"
+                          disabled={!canDelete}
+                          onClick={() => canDelete && deleteActual(a.id)}
+                        >
+                          <Trash2 className="mr-2" />Delete
+                        </Button>
+
                       </TableCell>
                     </TableRow>
                   ))}
@@ -518,7 +565,12 @@ export default function CostingPerformance() {
         <TabsContent value="metrics">
           <div className="flex items-center justify-between mb-4 gap-2">
             <h2 className="text-xl font-semibold">Performance Metrics</h2>
-            <Button className="w-full md:w-48" onClick={openNewMetric}><Plus className="mr-2" />New Metric</Button>
+            <Button
+              disabled={!canCreate}
+              onClick={() => canCreate && openNewMetric()}
+              className={canCreate ? "" : "opacity-50 cursor-not-allowed"}
+            >
+              <Plus className="mr-2" />New Metric</Button>
           </div>
 
           <Card>
@@ -545,8 +597,22 @@ export default function CostingPerformance() {
                       <TableCell>{m.machineUtilPct ?? "—"}</TableCell>
                       <TableCell>{m.labourEffPct ?? "—"}</TableCell>
                       <TableCell className="flex gap-2">
-                        <Button className="w-full" onClick={() => editMetric(m.id)}>Edit</Button>
-                        <Button className="w-full" onClick={() => deleteMetric(m.id)}>Delete</Button>
+                        <Button
+                          disabled={!canEdit}
+                          onClick={() => canEdit && editMetric(m.id)}
+                          className={canEdit ? "" : "opacity-50 cursor-not-allowed"}
+                        >
+                          Edit
+                        </Button>
+
+                        <Button
+                          disabled={!canDelete}
+                          onClick={() => canDelete && deleteMetric(m.id)}
+                          className={canDelete ? "" : "opacity-50 cursor-not-allowed"}
+                        >
+                          Delete
+                        </Button>
+
                       </TableCell>
                     </TableRow>
                   ))}
@@ -578,7 +644,13 @@ export default function CostingPerformance() {
             <Input type="number" value={stdForm.overheads ?? 0} onChange={(e) => setStdForm({ ...stdForm, overheads: Number(e.target.value) })} />
           </div>
           <DialogFooter>
-            <Button className="w-full" onClick={saveStandard}>Save Standard</Button>
+            <Button
+              className="w-full"
+              disabled={!(stdForm.id ? canEdit : canCreate)}
+              onClick={() => (stdForm.id ? canEdit : canCreate) && saveStandard()}
+            >
+              Save Standard
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -610,7 +682,13 @@ export default function CostingPerformance() {
             <Input value={actForm.remarks || ""} onChange={(e) => setActForm({ ...actForm, remarks: e.target.value })} />
           </div>
           <DialogFooter>
-            <Button className="w-full" onClick={saveActual}>Save Actual</Button>
+            <Button
+              className="w-full"
+              disabled={!(actForm.id ? canEdit : canCreate)}
+              onClick={() => (actForm.id ? canEdit : canCreate) && saveActual()}
+            >
+              Save Actual
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -636,7 +714,13 @@ export default function CostingPerformance() {
             <Input value={metricForm.notes || ""} onChange={(e) => setMetricForm({ ...metricForm, notes: e.target.value })} />
           </div>
           <DialogFooter>
-            <Button className="w-full" onClick={saveMetric}>Save Metric</Button>
+            <Button
+              className="w-full"
+              disabled={!(metricForm.id ? canEdit : canCreate)}
+              onClick={() => (metricForm.id ? canEdit : canCreate) && saveMetric()}
+            >
+              Save Metric
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

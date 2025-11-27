@@ -1,5 +1,4 @@
-"use client";
-
+import { usePermission } from "@/hooks/userPermission";
 import React, { useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { RootState, AppDispatch } from "@/redux/store";
@@ -10,7 +9,7 @@ import {
   fetchEquipments,
 } from "@/redux/slices/equipmentSlice";
 
-import { Save, Plus, Edit2, Trash2, Search, X } from "lucide-react";
+import { Save, Plus, Edit2, Trash2, Search, X, ShieldAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -87,6 +86,23 @@ function fileToDataUrl(file: File): Promise<string> {
 
 // ---------- MAIN COMPONENT ----------
 export default function AdvancedEquipmentRegistrationPage() {
+  const canView = usePermission("equipmentMaster", "view");
+  const canCreate = usePermission("equipmentMaster", "create");
+  const canEdit = usePermission("equipmentMaster", "edit");
+  const canDelete = usePermission("equipmentMaster", "delete");
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
   const dispatch = useDispatch<AppDispatch>();
   const equipments = useSelector(
     (state: RootState) => state.equipment.equipments
@@ -255,9 +271,14 @@ export default function AdvancedEquipmentRegistrationPage() {
       {/* HEADER */}
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Equipment Registration</h1>
-        <Button onClick={openAddDialog}>
+        <Button
+          disabled={!canCreate}
+          onClick={() => canCreate && openAddDialog()}
+          className={!canCreate ? "opacity-50 cursor-not-allowed" : ""}
+        >
           <Plus className="mr-2 h-4 w-4" /> Add Equipment
         </Button>
+
       </div>
 
       {/* TABLE CARD */}
@@ -304,15 +325,20 @@ export default function AdvancedEquipmentRegistrationPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => openEditDialog(eq)}
+                          disabled={!canEdit}
+                          onClick={() => canEdit && openEditDialog(eq)}
+                          className={!canEdit ? "opacity-50 cursor-not-allowed" : ""}
                         >
+
                           <Edit2 className="w-4 h-4" />
                         </Button>
 
                         <Button
                           variant="ghost"
                           size="sm"
+                          disabled={!canDelete}
                           onClick={() => {
+                            if (!canDelete) return;
                             if (!eq._id) {
                               toast.error("This item is not saved on server");
                               return;
@@ -320,7 +346,9 @@ export default function AdvancedEquipmentRegistrationPage() {
                             dispatch(deleteEquipment(eq._id));
                             toast.success("Deleted successfully");
                           }}
+                          className={!canDelete ? "opacity-50 cursor-not-allowed" : ""}
                         >
+
                           <Trash2 className="w-4 h-4 text-red-500" />
                         </Button>
                       </div>
@@ -343,7 +371,13 @@ export default function AdvancedEquipmentRegistrationPage() {
           </DialogHeader>
 
           {/* FORM FIELDS */}
-          <div className="grid grid-cols-2 gap-4">
+          <div
+            className="grid grid-cols-2 gap-4"
+            style={{
+              pointerEvents: editing ? (canEdit ? "auto" : "none") : (canCreate ? "auto" : "none"),
+              opacity: editing ? (canEdit ? 1 : 0.6) : (canCreate ? 1 : 0.6),
+            }}
+          >
             <div>
               <Label>Name *</Label>
               <Input
@@ -408,9 +442,13 @@ export default function AdvancedEquipmentRegistrationPage() {
               Cancel
             </Button>
 
-            <Button onClick={saveForm}>
+            <Button
+              disabled={editing ? !canEdit : !canCreate}
+              onClick={() => (editing ? canEdit : canCreate) && saveForm()}
+            >
               <Save className="mr-2 h-4 w-4" /> Save
             </Button>
+
           </DialogFooter>
         </DialogContent>
       </Dialog>

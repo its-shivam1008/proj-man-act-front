@@ -1,5 +1,4 @@
-"use client";
-
+import { usePermission } from "@/hooks/userPermission";
 import { useEffect, useState } from "react";
 import {
   Card,
@@ -21,6 +20,7 @@ import {
   AlertCircle,
   Gauge,
   Layers,
+  ShieldAlert,
 } from "lucide-react";
 import {
   BarChart,
@@ -39,6 +39,20 @@ import { Separator } from "../../../components/ui/separator";
 import { Progress } from "../../../components/ui/progress";
 
 export default function ReportsPage() {
+  const canView = usePermission("productionReports", "view");
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
   const [reportData, setReportData] = useState({
     totalOrders: 0,
     completedOrders: 0,
@@ -288,8 +302,8 @@ export default function ReportsPage() {
               value={
                 reportData.totalOrders > 0
                   ? Math.round(
-                      (reportData.completedOrders / reportData.totalOrders) * 100
-                    )
+                    (reportData.completedOrders / reportData.totalOrders) * 100
+                  )
                   : 0
               }
               suffix="%"
@@ -300,11 +314,11 @@ export default function ReportsPage() {
               value={
                 reportData.totalProduction > 0
                   ? Math.round(
-                      ((reportData.totalProduction -
-                        reportData.totalRejected) /
-                        reportData.totalProduction) *
-                        100
-                    )
+                    ((reportData.totalProduction -
+                      reportData.totalRejected) /
+                      reportData.totalProduction) *
+                    100
+                  )
                   : 0
               }
               suffix="%"

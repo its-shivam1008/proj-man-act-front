@@ -1,5 +1,4 @@
-"use client";
-
+import { usePermission } from "@/hooks/userPermission";
 import React, { useEffect, useMemo, useState } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../../components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
@@ -9,7 +8,7 @@ import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
 import { Badge } from "../../../components/ui/badge";
-import { AlertTriangle, Download, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, Download, Plus, ShieldAlert, Trash2 } from "lucide-react";
 
 import {
   ResponsiveContainer,
@@ -93,6 +92,24 @@ const safeGet = <T,>(key: string, def: T) => storage.get(key, def);
 
 /* ----------------------------- Component ----------------------------- */
 export default function PPCDashboard() {
+  const canView = usePermission("ppc", "view");
+  const canCreate = usePermission("ppc", "create");
+  const canEdit = usePermission("ppc", "edit");
+  const canDelete = usePermission("ppc", "delete");
+
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
   /* ----------------------------- Data states ----------------------------- */
   const [forecasts, setForecasts] = useState<Forecast[]>(() => safeGet(STORAGE_KEYS.FORECASTS, []));
   const [mps, setMps] = useState<MPS[]>(() => safeGet(STORAGE_KEYS.MPS_PLANS, []));
@@ -310,7 +327,8 @@ export default function PPCDashboard() {
         </div>
 
         <div className="flex gap-2">
-          <Button onClick={() => { /* quick export example: export MRP */ const csv = mrpLines.map((r) => `${r.materialId},${r.requiredQty},${r.availableQty},${r.shortageQty}`).join("\n"); const blob = new Blob([csv], { type: "text/csv" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `mrp_${new Date().toISOString().slice(0,10)}.csv`; a.click(); URL.revokeObjectURL(url); }}><Download className="mr-2 h-4 w-4" /> Export MRP</Button>
+          <Button onClick={() => { /* quick export example: export MRP */ const csv = mrpLines.map((r) => `${r.materialId},${r.requiredQty},${r.availableQty},${r.shortageQty}`).join("\n"); const blob = new Blob([csv], { type: "text/csv" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `mrp_${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(url); }}>
+            <Download className="mr-2 h-4 w-4" /> Export MRP</Button>
         </div>
       </div>
 
@@ -333,7 +351,12 @@ export default function PPCDashboard() {
                   <p className="text-sm text-muted-foreground">CRUD forecasts and visualize demand trends.</p>
                 </div>
                 <div className="flex gap-2">
-                  <Button onClick={openNewForecast}><Plus className="mr-2 h-4 w-4" /> New Forecast</Button>
+                  <Button
+                    disabled={!canCreate}
+                    onClick={() => canCreate && openNewForecast()}
+                    className={canCreate ? "" : "opacity-50 cursor-not-allowed"}
+                  >
+                    <Plus className="mr-2 h-4 w-4" /> New Forecast</Button>
                 </div>
               </div>
 
@@ -374,8 +397,22 @@ export default function PPCDashboard() {
                             <TableCell>{f.forecastQty}</TableCell>
                             <TableCell>
                               <div className="flex gap-2">
-                                <Button size="icon" variant="ghost" onClick={() => openEditForecast(f)}>✏️</Button>
-                                <Button size="icon" variant="ghost" onClick={() => deleteForecast(f.id)}>🗑</Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  disabled={!canEdit}
+                                  onClick={() => canEdit && openEditForecast(f)}
+                                  className={canEdit ? "" : "opacity-50 cursor-not-allowed"}
+                                >
+                                  ✏️</Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  disabled={!canDelete}
+                                  onClick={() => canDelete && deleteForecast(f.id)}
+                                  className={canDelete ? "" : "opacity-50 cursor-not-allowed"}
+                                >
+                                  🗑</Button>
                               </div>
                             </TableCell>
                           </TableRow>
@@ -396,8 +433,18 @@ export default function PPCDashboard() {
                   <p className="text-sm text-muted-foreground">Top-level planned production. Auto-generate from Forecast.</p>
                 </div>
                 <div className="flex gap-2">
-                  <Button onClick={openNewMps}><Plus className="mr-2 h-4 w-4" /> New MPS</Button>
-                  <Button variant="outline" onClick={generateMpsFromForecast}>Generate from Forecast</Button>
+                  <Button
+                    disabled={!canCreate}
+                    onClick={() => canCreate && openNewMps()}
+                    className={canCreate ? "" : "opacity-50 cursor-not-allowed"}
+                  >
+                    New MPS</Button>
+                  <Button
+                    variant="outline"
+                    disabled={!canCreate}
+                    onClick={() => canCreate && generateMpsFromForecast()}
+                    className={canCreate ? "" : "opacity-50 cursor-not-allowed"}
+                  >Generate from Forecast</Button>
                 </div>
               </div>
 
@@ -440,8 +487,22 @@ export default function PPCDashboard() {
                             <TableCell><Badge>{r.status || "planned"}</Badge></TableCell>
                             <TableCell>
                               <div className="flex gap-2">
-                                <Button size="icon" variant="ghost" onClick={() => openEditMps(r)}>✏️</Button>
-                                <Button size="icon" variant="ghost" onClick={() => deleteMps(r.id)}>🗑</Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  disabled={!canEdit}
+                                  onClick={() => canEdit && openEditMps(r)}
+                                  className={canEdit ? "" : "opacity-50 cursor-not-allowed"}
+                                >
+                                  ✏️</Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  disabled={!canDelete}
+                                  onClick={() => canDelete && deleteMps(r.id)}
+                                  className={canDelete ? "" : "opacity-50 cursor-not-allowed"}
+                                >
+                                  🗑</Button>
                               </div>
                             </TableCell>
                           </TableRow>
@@ -462,7 +523,12 @@ export default function PPCDashboard() {
                   <p className="text-sm text-muted-foreground">Calculate net materials from MPS and BOM, trigger PRs for shortages.</p>
                 </div>
                 <div className="flex gap-2">
-                  <Button onClick={runMrp}><Plus className="mr-2 h-4 w-4" /> Run MRP</Button>
+                  <Button
+                    disabled={!canCreate}
+                    onClick={() => canCreate && runMrp()}
+                    className={canCreate ? "" : "opacity-50 cursor-not-allowed"}
+                  >
+                    <Plus className="mr-2 h-4 w-4" /> Run MRP</Button>
                 </div>
               </div>
 
@@ -485,12 +551,23 @@ export default function PPCDashboard() {
                           <TableCell>{(items.find((it: any) => it.id === l.materialId)?.name) || l.materialId}</TableCell>
                           <TableCell>{l.requiredQty}</TableCell>
                           <TableCell>
-                            <Input type="number" value={l.availableQty} onChange={(e) => updateMrpAvailable(l.id, Number(e.target.value) || 0)} />
+                            <Input
+                              type="number"
+                              value={l.availableQty}
+                              disabled={!canEdit}
+                              onChange={(e) => canEdit && updateMrpAvailable(l.id, Number(e.target.value) || 0)}
+                              className={!canEdit ? "opacity-50 cursor-not-allowed" : ""}
+                            />
+
                           </TableCell>
                           <TableCell>{l.shortageQty}</TableCell>
                           <TableCell>
                             <div className="flex gap-2">
-                              <Button disabled={l.prCreated || l.shortageQty <= 0} onClick={() => createPrForLine(l.id)}>Create PR</Button>
+                              <Button
+                                disabled={!canCreate || l.prCreated || l.shortageQty <= 0}
+                                onClick={() => canCreate && createPrForLine(l.id)}
+                              >
+                                Create PR</Button>
                               {l.prCreated && <Badge>PR Created</Badge>}
                             </div>
                           </TableCell>
@@ -569,8 +646,19 @@ export default function PPCDashboard() {
                   <p className="text-sm text-muted-foreground">Create and manage planned orders. Auto-generate from MPS.</p>
                 </div>
                 <div className="flex gap-2">
-                  <Button onClick={openNewPo}><Plus className="mr-2 h-4 w-4" /> New Order</Button>
-                  <Button variant="outline" onClick={generatePoFromMps}>Generate from MPS</Button>
+                  <Button
+                    disabled={!canCreate}
+                    onClick={() => canCreate && openNewPo()}
+                    className={canCreate ? "" : "opacity-50 cursor-not-allowed"}
+                  >
+                    New Order</Button>
+                  <Button
+                    variant="outline"
+                    disabled={!canCreate}
+                    onClick={() => canCreate && generatePoFromMps()}
+                    className={canCreate ? "" : "opacity-50 cursor-not-allowed"}
+                  >
+                    Generate from MPS</Button>
                 </div>
               </div>
 
@@ -598,8 +686,24 @@ export default function PPCDashboard() {
                           <TableCell><Badge>{o.status || "planned"}</Badge></TableCell>
                           <TableCell>
                             <div className="flex gap-2">
-                              <Button size="icon" variant="ghost" onClick={() => openEditPo(o)}>✏️</Button>
-                              <Button size="icon" variant="ghost" onClick={() => deletePo(o.id)}>🗑</Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                disabled={!canEdit}
+                                onClick={() => canEdit && openEditPo(o)}
+                                className={canEdit ? "" : "opacity-50 cursor-not-allowed"}
+                              >
+                                ✏️</Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                disabled={!canDelete}
+                                onClick={() => canDelete && deletePo(o.id)}
+                                className={canDelete ? "" : "opacity-50 cursor-not-allowed"}
+                              >
+                                🗑
+                              </Button>
+
                             </div>
                           </TableCell>
                         </TableRow>
@@ -630,7 +734,11 @@ export default function PPCDashboard() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setForecastDialogOpen(false)}>Cancel</Button>
-            <Button onClick={saveForecast}>Save</Button>
+            <Button
+              disabled={editingForecast ? !canEdit : !canCreate}
+              onClick={() => (editingForecast ? canEdit : canCreate) && saveForecast()}
+            >
+              Save</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -649,7 +757,11 @@ export default function PPCDashboard() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setMpsDialogOpen(false)}>Cancel</Button>
-            <Button onClick={saveMps}>Save</Button>
+            <Button
+              disabled={editingMps ? !canEdit : !canCreate}
+              onClick={() => (editingMps ? canEdit : canCreate) && saveMps()}
+            >
+              Save</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -670,7 +782,11 @@ export default function PPCDashboard() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPoDialogOpen(false)}>Cancel</Button>
-            <Button onClick={savePo}>Save</Button>
+            <Button
+              disabled={editingPo ? !canEdit : !canCreate}
+              onClick={() => (editingPo ? canEdit : canCreate) && savePo()}
+            >
+              Save</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

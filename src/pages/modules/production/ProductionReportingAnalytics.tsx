@@ -1,5 +1,4 @@
-"use client";
-
+import { usePermission } from "@/hooks/userPermission";
 import React, { useEffect, useMemo, useState } from "react";
 import { storage, STORAGE_KEYS } from "../../../lib/storage";
 import {
@@ -47,7 +46,7 @@ import {
   Cell,
   Legend,
 } from "recharts";
-import { Plus, Download, Upload } from "lucide-react";
+import { Plus, Download, Upload, ShieldAlert } from "lucide-react";
 
 /* ============================================================
    Types
@@ -165,6 +164,25 @@ const nowISO = () => new Date().toISOString();
    Component
    ============================================================ */
 export default function ProductionReportingAnalytics() {
+
+
+  const canView = usePermission("productionReportingAnalytics", "view");
+  const canCreate = usePermission("productionReportingAnalytics", "create");
+  const canEdit = usePermission("productionReportingAnalytics", "edit");
+  const canDelete = usePermission("productionReportingAnalytics", "delete");
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
   const [tab, setTab] = useState("dashboard");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<any>({});
@@ -325,11 +343,22 @@ export default function ProductionReportingAnalytics() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button onClick={() => openDialog("DPR")}>
+          <Button
+            disabled={!canCreate}
+            onClick={() => canCreate && openDialog("DPR")}
+            className={!canCreate ? "opacity-50 cursor-not-allowed" : ""}
+          >
             <Plus className="mr-2" /> New DPR
           </Button>
-          <Button onClick={() => openDialog("WorkCenter")}>WorkCenter</Button>
-          <Button onClick={() => openDialog("Downtime")}>Downtime</Button>
+          <Button
+            disabled={!canCreate}
+            onClick={() => canCreate && openDialog("WorkCenter")}
+            className={!canCreate ? "opacity-50 cursor-not-allowed" : ""}
+          >WorkCenter</Button>
+          <Button
+            disabled={!canCreate}
+            onClick={() => canCreate && openDialog("Downtime")}
+            className={!canCreate ? "opacity-50 cursor-not-allowed" : ""}>Downtime</Button>
         </div>
       </div>
 
@@ -434,16 +463,33 @@ export default function ProductionReportingAnalytics() {
             <DialogTitle>Add {formType} Record</DialogTitle>
           </DialogHeader>
 
-          {renderForm(formType, form, setForm)}
+          <div
+            style={{
+              pointerEvents: form?.id
+                ? (canEdit ? "auto" : "none")
+                : (canCreate ? "auto" : "none"),
+              opacity: form?.id
+                ? (canEdit ? 1 : 0.6)
+                : (canCreate ? 1 : 0.6),
+            }}
+          >
+            {renderForm(formType, form, setForm)}
+          </div>
+
 
           <DialogFooter>
-            <Button className="w-full" onClick={handleSave}>
+            <Button
+              className="w-full"
+              disabled={form?.id ? !canEdit : !canCreate}
+              onClick={() => (form?.id ? canEdit : canCreate) && handleSave()}
+            >
               Save Record
             </Button>
+
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </div >
   );
 }
 

@@ -1,5 +1,4 @@
-"use client";
-
+import { usePermission } from "@/hooks/userPermission";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Card, CardHeader, CardTitle, CardContent,
@@ -16,6 +15,7 @@ import {
 import { Badge } from "../../../components/ui/badge";
 import {
   Download, Plus, Trash2, Play, Pause, Printer,
+  ShieldAlert,
 } from "lucide-react";
 import {
   ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend,
@@ -75,6 +75,25 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
    Main Component
 ----------------------------------- */
 export default function WorkOrdersAdvanced() {
+
+  const canView = usePermission("productOrders", "view");
+  const canCreate = usePermission("productOrders", "create");
+  const canEdit = usePermission("productOrders", "edit");
+  const canDelete = usePermission("productOrders", "delete");
+
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
   const [orders, setOrders] = useState<WorkOrder[]>(() => storage.get(STORAGE_KEYS.WORK_ORDERS, []));
   const [inventory, setInventory] = useState<Record<string, any>>(() => storage.get(STORAGE_KEYS.INVENTORY, {}));
   const boms = storage.get(STORAGE_KEYS.BOMS, []);
@@ -249,8 +268,21 @@ export default function WorkOrdersAdvanced() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button onClick={openNew}><Plus className="mr-2 h-4 w-4" /> New Order</Button>
-          <Button variant="outline" onClick={exportOrdersCSV}>
+          <Button
+            disabled={!canCreate}
+            onClick={() => canCreate && openNew()}
+            className={!canCreate ? "opacity-50 cursor-not-allowed" : ""}
+          >
+            <Plus className="mr-2 h-4 w-4" /> New Order
+          </Button>
+
+          <Button
+            variant="outline"
+            disabled={!canView}
+            onClick={() => canView && exportOrdersCSV()}
+            className={!canView ? "opacity-50 cursor-not-allowed" : ""}
+          >
+
             <Download className="mr-2 h-4 w-4" /> Export CSV
           </Button>
         </div>
@@ -291,8 +323,25 @@ export default function WorkOrdersAdvanced() {
                   <TableCell>{wo.plannedHours ?? "—"}</TableCell>
                   <TableCell>
                     <div className="flex gap-2">
-                      <Button size="icon" variant="ghost" onClick={() => openEdit(wo)}>✏️</Button>
-                      <Button size="icon" variant="ghost" onClick={() => remove(wo.id)}><Trash2 /></Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        disabled={!canEdit}
+                        onClick={() => canEdit && openEdit(wo)}
+                        className={!canEdit ? "opacity-50 cursor-not-allowed" : ""}
+                      >
+                        ✏️
+                      </Button>
+
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        disabled={!canDelete}
+                        onClick={() => canDelete && remove(wo.id)}
+                        className={!canDelete ? "opacity-50 cursor-not-allowed" : ""}
+                      >
+                        <Trash2 />
+                      </Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -308,7 +357,14 @@ export default function WorkOrdersAdvanced() {
           <DialogHeader>
             <DialogTitle>{editing ? "Edit Work Order" : "New Work Order"}</DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-3">
+          <div
+            className="grid grid-cols-2 gap-3"
+            style={{
+              pointerEvents: editing ? (canEdit ? "auto" : "none") : (canCreate ? "auto" : "none"),
+              opacity: editing ? (canEdit ? 1 : 0.6) : (canCreate ? 1 : 0.6),
+            }}
+          >
+
             <div>
               <Label>Product ID</Label>
               <Input value={form.productId || ""} onChange={(e) => setForm({ ...form, productId: e.target.value })} />
@@ -336,7 +392,13 @@ export default function WorkOrdersAdvanced() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={save}>Save</Button>
+            <Button
+              disabled={editing ? !canEdit : !canCreate}
+              onClick={() => (editing ? canEdit : canCreate) && save()}
+            >
+              Save
+            </Button>
+
           </DialogFooter>
         </DialogContent>
       </Dialog>

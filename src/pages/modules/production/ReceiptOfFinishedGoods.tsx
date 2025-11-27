@@ -1,5 +1,4 @@
-"use client";
-
+import { usePermission } from "@/hooks/userPermission";
 import React, { useEffect, useMemo, useState } from "react";
 import { storage, STORAGE_KEYS } from "../../../lib/storage";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
@@ -9,7 +8,7 @@ import { Label } from "../../../components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../../../components/ui/dialog";
 import { Badge } from "../../../components/ui/badge";
-import { Plus, Check, XCircle } from "lucide-react";
+import { Plus, Check, XCircle, ShieldAlert } from "lucide-react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 
 type InventoryMap = Record<
@@ -37,6 +36,23 @@ const genId = (p = "id") => `${p}_${Math.random().toString(36).slice(2, 9)}`;
 const nowISO = () => new Date().toISOString();
 
 export default function ReceiptOfFinishedGoods() {
+  const canView = usePermission("receipt", "view");
+  const canCreate = usePermission("receipt", "create");
+  const canEdit = usePermission("receipt", "edit");
+  const canDelete = usePermission("receipt", "delete");
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
   const [inventory, setInventory] = useState<InventoryMap>(() => storage.get(STORAGE_KEYS.INVENTORY, {}));
   const [wipInventory, setWipInventory] = useState<InventoryMap>(() => storage.get(STORAGE_KEYS.WIP_INVENTORY, {}));
   const [ledger, setLedger] = useState<any[]>(() => storage.get(STORAGE_KEYS.INVENTORY_LEDGER, []));
@@ -194,7 +210,13 @@ export default function ReceiptOfFinishedGoods() {
         <Label>Require Final QC</Label>
       </div>
 
-      <Button className=" bg-primary mt-3" onClick={() => setOpenDialog(true)}>
+      <Button
+        className="bg-primary mt-3"
+        disabled={!canCreate}
+        onClick={() => canCreate && setOpenDialog(true)}
+        className={!canCreate ? "opacity-50 cursor-not-allowed bg-gray-400" : "bg-primary"}
+      >
+
         <Plus className="mr-2 h-4 w-4" /> New Goods Receipt
       </Button>
 
@@ -204,7 +226,14 @@ export default function ReceiptOfFinishedGoods() {
           <DialogHeader>
             <DialogTitle>Create Goods Receipt Note</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-3">
+          <div
+            className="grid gap-3"
+            style={{
+              pointerEvents: canCreate ? "auto" : "none",
+              opacity: canCreate ? 1 : 0.6,
+            }}
+          >
+
             <div className="grid md:grid-cols-2 gap-3">
               <div>
                 <Label>Product ID</Label>
@@ -215,7 +244,11 @@ export default function ReceiptOfFinishedGoods() {
                 <Input type="number" value={manualQty as any} onChange={(e) => setManualQty(Number(e.target.value))} />
               </div>
             </div>
-            <Button className="w-full" onClick={addManualItem}>Add Item</Button>
+            <Button
+              className="w-full"
+              disabled={!canCreate}
+              onClick={() => canCreate && addManualItem()}
+            >Add Item</Button>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -272,12 +305,22 @@ export default function ReceiptOfFinishedGoods() {
                       <TableCell>{it.qty}</TableCell>
                       <TableCell><Badge>Pending</Badge></TableCell>
                       <TableCell className="flex gap-2">
-                        <Button className="w-full bg-green-600" onClick={() => updateBatchQC(it.productId, it.batchNo, "Accepted")}>
+                        <Button
+                          className="w-full bg-green-600"
+                          disabled={!canEdit}
+                          onClick={() => canEdit && updateBatchQC(it.productId, it.batchNo, "Accepted")}
+                        >
                           Accept
                         </Button>
-                        <Button className="w-full bg-red-600" onClick={() => updateBatchQC(it.productId, it.batchNo, "Rejected")}>
+
+                        <Button
+                          className="w-full bg-red-600"
+                          disabled={!canEdit}
+                          onClick={() => canEdit && updateBatchQC(it.productId, it.batchNo, "Rejected")}
+                        >
                           Reject
                         </Button>
+
                       </TableCell>
                     </TableRow>
                   ))

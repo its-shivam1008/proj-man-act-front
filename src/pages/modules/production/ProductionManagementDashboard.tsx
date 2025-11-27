@@ -1,5 +1,4 @@
-"use client";
-
+import { usePermission } from "@/hooks/userPermission";
 import React, { useEffect, useMemo, useState } from "react";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
@@ -7,7 +6,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
-import { Download, Clock, AlertTriangle, Activity } from "lucide-react";
+import { Download, Clock, AlertTriangle, Activity, ShieldAlert } from "lucide-react";
 import {
   ResponsiveContainer,
   LineChart,
@@ -68,6 +67,21 @@ const genId = (prefix = "id") => `${prefix}_${Math.random().toString(36).slice(2
 
 // ------------------- Component -------------------
 export default function ProductionAnalyticsDashboard() {
+  const canView = usePermission("productionReportingAnalytics", "view");
+
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
   const [production, setProduction] = useState<ProductionRecord[]>([]);
   const [downtime, setDowntime] = useState<DowntimeEvent[]>([]);
   const [quality, setQuality] = useState<QualityEvent[]>([]);
@@ -266,7 +280,11 @@ export default function ProductionAnalyticsDashboard() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button onClick={() => exportCSV(filteredProduction, "production_data")}>
+          <Button
+            disabled={!canView}
+            onClick={() => canView && exportCSV(filteredProduction, "production_data")}
+            className={!canView ? "opacity-50 cursor-not-allowed" : ""}
+          >
             <Download className="h-4 w-4 mr-2" /> Export CSV
           </Button>
         </div>
