@@ -1,136 +1,122 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import api from "@/utils/axiosApi";
-import { toast } from "sonner";
+import axiosApi from "@/utils/axiosApi";
 
-export interface Product {
-  _id?: string;
-  organisationId?: string;
-  name: string;
-  sku: string;
-  category: string;
-  unitCost: number;
-  quantity: number;
-  minStock: number;
-  location: string;
-  status: "in-stock" | "low-stock" | "out-of-stock";
-}
-
-interface ProductsState {
-  products: Product[];
+interface ProductState {
+  products: any[];
+  total: number;
+  page: number;
+  limit: number;
   loading: boolean;
   error: string | null;
 }
 
-const initialState: ProductsState = {
+const initialState: ProductState = {
   products: [],
+  total: 0,
+  page: 1,
+  limit: 10,
   loading: false,
   error: null,
 };
 
+// ✅ FETCH PRODUCTS with Pagination
 export const fetchProducts = createAsyncThunk(
-  "products/fetch",
-  async (_, { rejectWithValue }) => {
-    try {
-      const orgId = localStorage.getItem("organisationId");
-      if (!orgId) {
-        toast.error("No organisationId found");
-        return rejectWithValue("No organisationId found");
-      }
-
-      const res = await api.get(`/product/all/${orgId}`);
-
-      return res.data.products;
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || "Failed to fetch products";
-      toast.error(msg);
-      return rejectWithValue(msg);
-    }
-  }
-);
-
-export const addProduct = createAsyncThunk(
-  "products/add",
-  async (data: Product, { rejectWithValue }) => {
-    try {
-      const res = await api.post(`/product/create`, data);
-      toast.success("Product added successfully");
-      return res.data.product;
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || "Failed to add product";
-      toast.error(msg);
-      return rejectWithValue(msg);
-    }
-  }
-);
-
-export const updateProduct = createAsyncThunk(
-  "products/update",
+  "products/fetchProducts",
   async (
-    { id, data }: { id: string; data: Partial<Product> },
+    { page = 1, limit = 10 }: { page: number; limit: number }
+  ) => {
+    const orgId = localStorage.getItem("organisationId");
+
+    const response = await axiosApi.get(
+      `/inventory/product/all/${orgId}?page=${page}&limit=${limit}`
+    );
+
+    return response.data;
+  }
+);
+
+// ✅ CREATE PRODUCT
+export const addProduct = createAsyncThunk(
+  "products/addProduct",
+  async (data: any, { rejectWithValue }) => {
+    try {
+      const res = await axiosApi.post(`/inventory/product/create`, data);
+      return res.data;
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data || err.message);
+    }
+  }
+);
+
+// ✅ UPDATE PRODUCT
+export const updateProduct = createAsyncThunk(
+  "products/updateProduct",
+  async (
+    { id, data }: { id: string; data: any },
     { rejectWithValue }
   ) => {
     try {
-      const res = await api.put(`/product/update/${id}`, data);
-      toast.success("Product updated");
-      return res.data.product;
+      const res = await axiosApi.put(
+        `/product/update/${id}`,
+        data
+      );
+      return res.data;
     } catch (err: any) {
-      const msg = err?.response?.data?.message || "Failed to update product";
-      toast.error(msg);
-      return rejectWithValue(msg);
+      return rejectWithValue(err.response?.data || err.message);
     }
   }
 );
 
+// ✅ DELETE PRODUCT
 export const deleteProduct = createAsyncThunk(
-  "products/delete",
+  "products/deleteProduct",
   async (id: string, { rejectWithValue }) => {
     try {
-      await api.delete(`/product/delete/${id}`);
-      toast.success("Product deleted");
-      return id;
+      const res = await axiosApi.delete(
+        `/product/delete/${id}`
+      );
+      return res.data;
     } catch (err: any) {
-      const msg = err?.response?.data?.message || "Failed to delete product";
-      toast.error(msg);
-      return rejectWithValue(msg);
+      return rejectWithValue(err.response?.data || err.message);
     }
   }
 );
 
-const productsSlice = createSlice({
+const productSlice = createSlice({
   name: "products",
   initialState,
   reducers: {},
+
   extraReducers: (builder) => {
-    // FETCH
-    builder.addCase(fetchProducts.pending, (state) => {
-      state.loading = true;
-    });
-    builder.addCase(fetchProducts.fulfilled, (state, action) => {
-      state.loading = false;
-      state.products = action.payload || [];
-    });
-    builder.addCase(fetchProducts.rejected, (state, action) => {
-      state.loading = false;
-      state.error = action.payload as string;
+    // 🔹 Fetching Products
+    builder
+      .addCase(fetchProducts.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(fetchProducts.fulfilled, (state, action) => {
+        state.loading = false;
+        state.products = action.payload.products;
+        state.total = action.payload.total;
+        state.page = action.payload.page;
+        state.limit = action.payload.limit;
+      })
+      .addCase(fetchProducts.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || "Failed to load products";
+      });
+
+    // 🔹 Create Product
+    builder.addCase(addProduct.fulfilled, (state) => {
+      // Automatically re-fetch handled in component
     });
 
-    // ADD
-    builder.addCase(addProduct.fulfilled, (state, action) => {
-      state.products.unshift(action.payload);
-    });
+    // 🔹 Update Product
+    builder.addCase(updateProduct.fulfilled, (state) => { });
 
-    // UPDATE
-    builder.addCase(updateProduct.fulfilled, (state, action) => {
-      state.products = state.products.map((p) =>
-        p._id === action.payload._id ? action.payload : p
-      );
-    });
-
-    // DELETE
-    builder.addCase(deleteProduct.fulfilled, (state, action) => {
-      state.products = state.products.filter((p) => p._id !== action.payload);
-    });
+    // 🔹 Delete Product
+    builder.addCase(deleteProduct.fulfilled, (state) => { });
   },
 });
 
-export default productsSlice.reducer;
+export default productSlice.reducer;

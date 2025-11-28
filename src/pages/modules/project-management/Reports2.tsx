@@ -1,4 +1,4 @@
-"use client";
+import ActivityCostSheet from "@/components/reports/ActivityCostSheet";
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
@@ -58,6 +58,10 @@ import { format, parseISO, startOfMonth, endOfMonth, eachMonthOfInterval, differ
 import { usePermission } from "@/hooks/userPermission";
 import api from "../../../utils/axiosApi";
 import { BASE_URL } from "../../../utils/constants";
+import { Progress } from "@radix-ui/react-progress";
+import { fetchEquipments } from "@/redux/slices/equipmentSlice";
+import { fetchBudgetsByProject } from "@/redux/slices/budgetSlice";
+import { fetchActivityCost } from "@/redux/slices/activityCostSlice";
 
 // -------------------------------
 // ⚙️ Types
@@ -84,6 +88,9 @@ export default function ReportsAnalytics() {
   const organisationId = localStorage.getItem("organisationId") || "";
 
   // Redux Selectors
+ const { budgets, loading } = useSelector((state: RootState) => state.budget);
+
+
   const { projects } = useSelector((state: RootState) => state.projects);
   const { resources } = useSelector((state: RootState) => state.resources);
   const { wbs } = useSelector((state: RootState) => state.wbs);
@@ -107,6 +114,7 @@ export default function ReportsAnalytics() {
   const [loadingAllProjectsHealth, setLoadingAllProjectsHealth] = useState(false);
   const [allProjectsProfitability, setAllProjectsProfitability] = useState<any>(null);
   const [loadingAllProjectsProfitability, setLoadingAllProjectsProfitability] = useState(false);
+  const { activities, totals} = useSelector((s: RootState) => s.activityCost);
 
   // Fetch projects on mount
   useEffect(() => {
@@ -117,6 +125,7 @@ export default function ReportsAnalytics() {
       dispatch(fetchDailyProgress());
       dispatch(fetchMilestones());
       dispatch(fetchInvoices());
+      dispatch(fetchActivityCost(selectedProjectId));
     }
   }, [organisationId, dispatch]);
 
@@ -131,6 +140,8 @@ export default function ReportsAnalytics() {
   useEffect(() => {
     if (selectedProjectId) {
       dispatch(fetchResources(selectedProjectId));
+      dispatch(fetchEquipments());
+      dispatch(fetchBudgetsByProject(selectedProjectId));
       dispatch(fetchWbsByProject(selectedProjectId));
     }
   }, [selectedProjectId, dispatch]);
@@ -925,6 +936,63 @@ export default function ReportsAnalytics() {
       </div>
     );
   }
+// ---------------------------------------------------------
+// 🚀 FIX: Calculate Actual Costs per WBS from Resources
+// ---------------------------------------------------------
+const actualsByWbs = useMemo(() => {
+  const map = new Map<string, number>();
+
+  resources.forEach((res) => {
+    if (res.projectId === selectedProjectId && res.wbsId) {
+      const prev = map.get(res.wbsId) || 0;
+      map.set(res.wbsId, prev + Number(res.totalCost || 0));
+    }
+  });
+
+  return map;
+}, [resources, selectedProjectId]);
+
+// 2️⃣ Merge Budget + Actual + Variance
+const budgetVsActualData = useMemo(() => {
+  return budgets
+    .filter((b) => b.projectId === selectedProjectId)
+    .map((b) => {
+      const actual = b.wbsId ? actualsByWbs.get(b.wbsId) || 0 : 0;
+
+      return {
+        activity: b.activity || "N/A",
+        wbsId: b.wbsId,
+        plannedAmount: b.plannedAmount || 0,
+        actualAmount: actual,
+        variance: actual - (b.plannedAmount || 0),
+      };
+    });
+}, [budgets, actualsByWbs, selectedProjectId]);
+// const activityData = useMemo(() => {
+//   if (!wbs || !budgets) return [];
+
+//   const map = {};
+
+//   wbs.forEach((w) => {
+//     const planned = budgets
+//       .filter((b) => b.wbsId === w._id)
+//       .reduce((a, b) => a + (b.plannedAmount || 0), 0);
+
+//     const actual = budgets
+//       .filter((b) => b.wbsId === w._id)
+//       .reduce((a, b) => a + (b.actualAmount || 0), 0);
+
+//     map[w._id] = {
+//       activity: w.name,
+//       planned,
+//       actual,
+//       variance: actual - planned,
+//       variancePct: planned ? ((actual - planned) / planned) * 100 : 0,
+//     };
+//   });
+
+//   return Object.values(map);
+// }, [wbs, budgets]);
 
   return (
     <div className="space-y-6 p-6">
@@ -960,11 +1028,16 @@ export default function ReportsAnalytics() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full max-w-2xl grid-cols-4">
+        <TabsList className="flex justify-between items-center w-full max-w-2xl gap-5">
           <TabsTrigger value="analytics">Analytics Reports</TabsTrigger>
           <TabsTrigger value="comparison">Project Comparison</TabsTrigger>
           <TabsTrigger value="all-health">All Projects Health</TabsTrigger>
           <TabsTrigger value="all-profitability">All Projects Profitability</TabsTrigger>
+          <TabsTrigger value="resource-utilisation">Resource Utilisation</TabsTrigger>
+          {/* <TabsTrigger value="budget-vs-actual">Budget vs Actual Cost</TabsTrigger> */}
+          <TabsTrigger value="activity-cost">Activity-wise Cost Sheet</TabsTrigger>
+
+
         </TabsList>
 
         {/* Analytics Tab */}
@@ -1884,6 +1957,383 @@ export default function ReportsAnalytics() {
             </CardContent>
           </Card>
         </TabsContent>
+        <TabsContent value="resource-utilisation" className="space-y-8 mt-6">
+
+  {/* HEADER */}
+  <div className="flex items-center justify-between">
+    <div>
+      <h2 className="text-2xl font-bold tracking-tight">Resource Utilisation Report</h2>
+      <p className="text-muted-foreground">
+        Live analytics based on Material, Labour & Equipment consumption.
+      </p>
+    </div>
+
+    <Badge className="px-4 py-1 text-sm bg-blue-100 text-blue-700 rounded-full">
+      Project: {selectedProject?.name || "N/A"}
+    </Badge>
+  </div>
+
+  {/* KPI CARDS */}
+  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    {[
+      { label: "Material Cost", value: costs.material, color: "bg-emerald-500" },
+      { label: "Labour Cost", value: costs.labour, color: "bg-amber-500" },
+      { label: "Equipment Cost", value: costs.equipment, color: "bg-blue-500" },
+    ].map((item, i) => (
+      <Card key={i} className="border shadow-sm hover:shadow-md transition">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium">{item.label}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-end justify-between">
+            <p className="text-3xl font-bold">₹ {item.value.toLocaleString()}</p>
+
+            <span className="text-xs text-muted-foreground">
+              {Math.round((item.value / costs.total) * 100) || 0}% of total
+            </span>
+          </div>
+
+          {/* Animated Progress Bar */}
+          <div className="w-full mt-3 bg-gray-200 rounded-full h-2">
+            <div
+              className={`h-2 ${item.color} rounded-full transition-all`}
+              style={{
+                width: `${Math.round((item.value / costs.total) * 100)}%`,
+              }}
+            />
+          </div>
+        </CardContent>
+      </Card>
+    ))}
+  </div>
+
+  {/* PIE + BAR CHART COMBO */}
+  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+    {/* PIE CHART */}
+    <Card className="h-[380px]">
+      <CardHeader>
+        <CardTitle className="text-lg">Overall Utilisation Ratio</CardTitle>
+        <CardDescription>Percentage share of resources used</CardDescription>
+      </CardHeader>
+      <CardContent className="h-[300px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <defs>
+              <linearGradient id="materialGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="#34d399" />
+                <stop offset="100%" stopColor="#059669" />
+              </linearGradient>
+
+              <linearGradient id="labourGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="#fbbf24" />
+                <stop offset="100%" stopColor="#d97706" />
+              </linearGradient>
+
+              <linearGradient id="equipmentGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="#60a5fa" />
+                <stop offset="100%" stopColor="#3b82f6" />
+              </linearGradient>
+            </defs>
+
+            <Pie
+              data={resourceData}
+              dataKey="value"
+              nameKey="name"
+              outerRadius={110}
+              innerRadius={60}
+              paddingAngle={3}
+              stroke="none"
+              label
+            >
+              <Cell fill="url(#materialGrad)" />
+              <Cell fill="url(#labourGrad)" />
+              <Cell fill="url(#equipmentGrad)" />
+            </Pie>
+
+            <Tooltip formatter={(value, name, props) => [
+              `${value}% (₹${props.payload.actualCost.toLocaleString()})`,
+              name,
+            ]} />
+          </PieChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
+
+    {/* BAR CHART */}
+    <Card className="h-[380px]">
+      <CardHeader>
+        <CardTitle className="text-lg">Cost Breakdown (₹)</CardTitle>
+        <CardDescription>Actual spend by resource type</CardDescription>
+      </CardHeader>
+      <CardContent className="h-[300px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart
+            data={[
+              { name: "Material", cost: costs.material },
+              { name: "Labour", cost: costs.labour },
+              { name: "Equipment", cost: costs.equipment },
+            ]}
+          >
+            <CartesianGrid strokeDasharray="3 3" opacity={0.4} />
+            <XAxis dataKey="name" />
+            <YAxis tickFormatter={(v) => `₹${v.toLocaleString()}`} />
+
+            <Tooltip formatter={(v) => `₹${v.toLocaleString()}`} />
+
+            <Bar dataKey="cost" radius={[6, 6, 0, 0]}>
+              <Cell fill="url(#materialGrad)" />
+              <Cell fill="url(#labourGrad)" />
+              <Cell fill="url(#equipmentGrad)" />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
+
+  </div>
+
+  {/* DETAILED TABLE */}
+  <Card className="shadow-sm">
+    <CardHeader>
+      <CardTitle className="text-lg">Detailed Resource Report</CardTitle>
+      <CardDescription>Cost, category & utilisation %</CardDescription>
+    </CardHeader>
+
+    <CardContent>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Resource</TableHead>
+            <TableHead>Type</TableHead>
+            <TableHead>Actual Cost</TableHead>
+            <TableHead>Utilisation %</TableHead>
+          </TableRow>
+        </TableHeader>
+
+        <TableBody>
+          {resourceData.map((r, i) => (
+            <TableRow key={i}>
+              <TableCell className="font-medium">{r.name}</TableCell>
+              <TableCell>{r.name}</TableCell>
+              <TableCell>₹ {r.actualCost.toLocaleString()}</TableCell>
+
+              <TableCell>
+                <div className="flex items-center gap-2">
+                  <span>{r.value}%</span>
+                  {r.value > 40 ? (
+                    <TrendingUp className="w-4 h-4 text-green-600" />
+                  ) : (
+                    <TrendingDown className="w-4 h-4 text-red-600" />
+                  )}
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+
+      </Table>
+    </CardContent>
+  </Card>
+
+</TabsContent>
+
+<TabsContent value="budget-vs-actual" className="space-y-10">
+
+  {/* Header */}
+  <div className="flex items-center justify-between">
+    <div>
+      <h2 className="text-3xl font-bold tracking-tight">Budget vs Actual Report</h2>
+      <p className="text-muted-foreground text-sm">
+        Deep financial analysis with planned vs actual cost, variance trend, category breakdown & more.
+      </p>
+    </div>
+  </div>
+
+  {/* Loading */}
+  {loading && (
+    <div className="flex items-center justify-center py-20">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+    </div>
+  )}
+
+  {!loading && budgets.length === 0 && (
+    <Card>
+      <CardContent className="py-16 text-center text-muted-foreground">
+        No budget entries found for this project.
+      </CardContent>
+    </Card>
+  )}
+
+  {budgets.length > 0 && (
+    <>
+      {/* TOP KPIs */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+        {/* Total Planned */}
+        <Card className="border-none shadow-xl bg-gradient-to-br from-blue-100 to-blue-50">
+          <CardHeader><CardTitle>Planned Budget</CardTitle></CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">
+              ₹ {budgetVsActualData.reduce((a,b)=>a + (b.plannedAmount||0), 0).toLocaleString()}
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Total Actual */}
+        <Card className="border-none shadow-xl bg-gradient-to-br from-green-100 to-green-50">
+          <CardHeader><CardTitle>Actual Cost</CardTitle></CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">
+              ₹ {budgets.reduce((a,b)=>a + (b.actualAmount||0), 0).toLocaleString()}
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Variance */}
+        <Card className="border-none shadow-xl bg-gradient-to-br from-red-100 to-red-50">
+          <CardHeader><CardTitle>Total Variance</CardTitle></CardHeader>
+          <CardContent>
+            {(() => {
+              const planned = budgets.reduce((a,b)=>a + b.plannedAmount,0);
+              const actual = budgets.reduce((a,b)=>a + b.actualAmount,0);
+              const variance = actual - planned;
+              return (
+                <p className={`text-3xl font-bold ${variance>0?"text-red-700":"text-green-700"}`}>
+                  ₹ {variance.toLocaleString()}
+                </p>
+              );
+            })()}
+          </CardContent>
+        </Card>
+
+      </div>
+
+      {/* CHARTS */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+
+        {/* Bar Chart – Planned vs Actual */}
+        <Card className="shadow-xl rounded-xl">
+          <CardHeader>
+            <CardTitle className="text-lg">Planned vs Actual by Item</CardTitle>
+          </CardHeader>
+          <CardContent className="h-[340px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={budgets.map(b => ({
+                  name: b.description || "Item",
+                  planned: b.plannedAmount,
+                  actual: b.actualAmount
+                }))}
+              >
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+
+                <Bar dataKey="planned" fill="#60a5fa" radius={[6,6,0,0]}/>
+                <Bar dataKey="actual" fill="#34d399" radius={[6,6,0,0]}/>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        {/* Pie Chart – Variance Contribution */}
+        <Card className="shadow-xl rounded-xl">
+          <CardHeader>
+            <CardTitle className="text-lg">Variance Contribution</CardTitle>
+          </CardHeader>
+          <CardContent className="h-[340px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  innerRadius={60}
+                  outerRadius={110}
+                  data={budgets.map(b=>({
+                    name: b.description,
+                    value: Math.abs(b.variance)
+                  }))}
+                  label
+                  dataKey="value"
+                  nameKey="name"
+                >
+                  {budgets.map((_,i)=>
+                    <Cell key={i} fill={`hsl(${i*40},70%,55%)`} />
+                  )}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+      </div>
+
+      {/* DETAILED TABLE */}
+      <Card className="shadow-xl">
+        <CardHeader>
+          <CardTitle className="text-lg">Detailed Budget Breakdown</CardTitle>
+        </CardHeader>
+        
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Item</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead>Planned</TableHead>
+                <TableHead>Actual</TableHead>
+                <TableHead>Variance</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+
+            <TableBody>
+              {budgets.map((b)=>(
+                <TableRow key={b._id}>
+                  <TableCell>{b.description}</TableCell>
+                  <TableCell>{b.category}</TableCell>
+                  <TableCell>₹ {b.plannedAmount.toLocaleString()}</TableCell>
+                  <TableCell>₹ {b.actualAmount.toLocaleString()}</TableCell>
+
+                  <TableCell className={b.variance>0?"text-red-600":"text-green-600"}>
+                    ₹ {b.variance.toLocaleString()}
+                  </TableCell>
+
+                  <TableCell>
+                    <Badge
+                      className={
+                        b.status==="critical"
+                          ?"bg-red-200 text-red-800"
+                          :b.status==="over-budget"
+                          ?"bg-yellow-200 text-yellow-800"
+                          :"bg-green-200 text-green-800"
+                      }
+                    >
+                      {b.status}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+
+          </Table>
+        </CardContent>
+      </Card>
+    </>
+  )}
+
+</TabsContent>
+<TabsContent value="activity-cost">
+  <ActivityCostSheet selectedProjectId={selectedProjectId} />
+</TabsContent>
+
+
+
+
+
+
       </Tabs>
 
       {/* Saved Reports CRUD Table */}

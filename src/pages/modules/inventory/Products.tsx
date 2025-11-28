@@ -80,6 +80,8 @@ const Products: React.FC = () => {
       </div>
     );
   }
+  const [page, setPage] = useState(1);
+  const limit = 10;
 
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -92,11 +94,12 @@ const Products: React.FC = () => {
 
   useEffect(() => {
     if (orgId) {
-      dispatch(fetchProducts());
+      dispatch(fetchProducts({ page, limit }));
       dispatch(fetchWarehouses(orgId));
       dispatch(fetchStores({ page: 1, limit: 200 }));
     }
-  }, [dispatch, orgId]);
+  }, [dispatch, orgId, page]);
+
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -202,7 +205,7 @@ const Products: React.FC = () => {
           toast.success(
             editingProduct ? "Product updated!" : "Product created!"
           );
-          dispatch(fetchProducts());
+          dispatch(fetchProducts({page , limit}));
           setShowAddProductForm(false);
           setEditingProduct(null);
         } else {
@@ -219,7 +222,7 @@ const Products: React.FC = () => {
       dispatch(deleteProduct(id)).then((res: any) => {
         if (!res.error) {
           toast.success("Product deleted");
-          dispatch(fetchProducts());
+          dispatch(fetchProducts({page , limit}));
         }
       });
     }
@@ -249,13 +252,13 @@ const Products: React.FC = () => {
 
     const handleChange =
       (field: string) =>
-      (
-        e: React.ChangeEvent<
-          HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-        >
-      ) => {
-        setFormData((prev) => ({ ...prev, [field]: e.target.value }));
-      };
+        (
+          e: React.ChangeEvent<
+            HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+          >
+        ) => {
+          setFormData((prev) => ({ ...prev, [field]: e.target.value }));
+        };
 
     const onSubmit = (e: React.FormEvent) => {
       if (initialData && !canEdit) {
@@ -830,8 +833,31 @@ const Products: React.FC = () => {
                 </td>
               </tr>
             ))}
+
+
           </tbody>
         </table>
+        <div className="flex justify-between items-center mt-6 bg-white p-4 rounded-xl shadow">
+          <button
+            disabled={page === 1}
+            onClick={() => setPage((prev) => prev - 1)}
+            className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
+          >
+            Previous
+          </button>
+
+          <span className="font-medium">
+            Page {page}
+          </span>
+
+          <button
+            disabled={products.length < limit}
+            onClick={() => setPage((prev) => prev + 1)}
+            className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
+          >
+            Next
+          </button>
+        </div>
       </div>
 
       {/* Modals */}
