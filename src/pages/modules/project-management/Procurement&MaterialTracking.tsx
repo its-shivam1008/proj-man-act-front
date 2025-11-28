@@ -206,6 +206,7 @@ export default function ProcurementPage() {
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editing, setEditing] = useState<MRSItem | null>(null);
     const [form, setForm] = useState<Partial<MRSItem>>({ item: "", quantity: 1, price: 0, requiredDate: "" });
+    const [multipleItems, setMultipleItems] = useState<Partial<MRSItem>[]>([]);
     const [taskPopoverOpen, setTaskPopoverOpen] = useState(false);
     const [taskSearch, setTaskSearch] = useState("");
 
@@ -326,7 +327,31 @@ export default function ProcurementPage() {
     const openCreate = () => {
         setEditing(null);
         setForm({ item: "", quantity: 1, price: 0, requiredDate: "", projectId: selectedProjectId || undefined });
+        setMultipleItems([]);
         setIsDialogOpen(true);
+    };
+
+    const addMoreMRSItem = () => {
+        // Validate current form
+        if (!form.item?.trim() || form.quantity === undefined || form.quantity < 1) {
+            toast.error("Please fill Item and Quantity before adding more.");
+            return;
+        }
+
+        // Add current form to multipleItems
+        setMultipleItems([...multipleItems, { ...form }]);
+        
+        // Reset form for next item but keep project and task
+        setForm({
+            item: "",
+            quantity: 1,
+            price: 0,
+            requiredDate: "",
+            projectId: form.projectId,
+            task: form.task,
+        });
+        
+        toast.success(`${multipleItems.length + 1} item(s) ready to save. Fill in the next item.`);
     };
 
     const openEdit = (m: MRSItem) => {
@@ -340,30 +365,61 @@ export default function ProcurementPage() {
     };
 
     const handleSave = async () => {
-        if (!form.item?.trim() || form.quantity === undefined || form.quantity < 1) {
-            console.warn("Item and quantity are required");
+        // If editing, use single form
+        if (editing) {
+            if (!form.item?.trim() || form.quantity === undefined || form.quantity < 1) {
+                toast.error("Item and quantity are required");
+                return;
+            }
+            const cleanForm: Partial<MRSItem> = {
+                ...form,
+                item: form.item.trim(),
+                quantity: Number(form.quantity),
+                price: form.price ? Number(form.price) : undefined,
+                requiredDate: form.requiredDate ? form.requiredDate : undefined,
+                projectId: form.projectId || selectedProjectId || undefined, 
+            };
+            
+            await dispatch(updateMRS({ id: editing._id || editing.id, data: cleanForm }));
+            await dispatch(fetchMRS());
+            
+            setIsDialogOpen(false);
+            setEditing(null);
+            setForm({ item: "", quantity: 1, price: 0, requiredDate: "" });
             return;
         }
-        const cleanForm: Partial<MRSItem> = {
-            ...form,
-            item: form.item.trim(),
-            quantity: Number(form.quantity),
-            price: form.price ? Number(form.price) : undefined,
-            requiredDate: form.requiredDate ? form.requiredDate : undefined,
-            projectId: form.projectId || selectedProjectId || undefined, 
-        };
-        
-        if (editing) {
-            await dispatch(updateMRS({ id: editing._id || editing.id, data: cleanForm }));
-        } else {
-           await dispatch(createMRS(cleanForm));
+
+        // For creating - validate current form
+        if (!form.item?.trim() || form.quantity === undefined || form.quantity < 1) {
+            toast.error("Item and quantity are required");
+            return;
+        }
+
+        // Combine multipleItems with current form
+        const allItems = [...multipleItems, form];
+
+        // Save all items
+        for (const item of allItems) {
+            const cleanForm: Partial<MRSItem> = {
+                ...item,
+                item: item.item?.trim(),
+                quantity: Number(item.quantity),
+                price: item.price ? Number(item.price) : undefined,
+                requiredDate: item.requiredDate ? item.requiredDate : undefined,
+                projectId: item.projectId || selectedProjectId || undefined, 
+            };
+            
+            await dispatch(createMRS(cleanForm));
         }
         
-        // Refetch MRS list to ensure new item appears
+        // Refetch MRS list
         await dispatch(fetchMRS());
+        
+        toast.success(`${allItems.length} MRS item(s) created successfully.`);
         
         setIsDialogOpen(false);
         setEditing(null);
+        setMultipleItems([]);
         setForm({ item: "", quantity: 1, price: 0, requiredDate: "" });
     };
 
@@ -871,9 +927,22 @@ export default function ProcurementPage() {
                             <div><Label>Required Date</Label><Input type="date" value={form.requiredDate ? form.requiredDate.split("T")[0] : ""} onChange={(e) => setForm({ ...form, requiredDate: e.target.value })} /></div>
                         </div>
                     </div>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-                        <Button onClick={handleSave} disabled={mrsLoading}>{editing ? "Save Changes" : "Create Item"}</Button>
+                    <DialogFooter className="flex justify-between">
+                        {!editing && (
+                            <Button 
+                                type="button"
+                                variant="secondary" 
+                                onClick={addMoreMRSItem}
+                                disabled={mrsLoading}
+                            >
+                                <Plus className="mr-2 h-4 w-4" />
+                                Add More
+                            </Button>
+                        )}
+                        <div className="flex gap-2">
+                            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
+                            <Button onClick={handleSave} disabled={mrsLoading}>{editing ? "Save Changes" : "Create Item"}</Button>
+                        </div>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>

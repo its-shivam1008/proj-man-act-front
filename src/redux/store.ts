@@ -32,6 +32,7 @@ import masterDataReducer from "./slices/masterDataSlice";
 import equipmentReducer from "./slices/equipmentSlice";
 import activityCostReducer from "./slices/activityCostSlice";
 import machineryReducer from "./slices/plantandmachinary/machinerySlice";
+import materialMovementReducer from "./slices/materialMovementSlice";
 export const store = configureStore({
   reducer: {
     auth: authReducer,
@@ -67,6 +68,7 @@ export const store = configureStore({
     equipment: equipmentReducer,
     activityCost: activityCostReducer,
     machinery: machineryReducer,
+    materialMovement: materialMovementReducer,
   },
 });
 

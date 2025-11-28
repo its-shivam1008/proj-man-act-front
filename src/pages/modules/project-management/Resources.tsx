@@ -119,6 +119,7 @@ export default function Resources() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingAllocation, setEditingAllocation] = useState<ResourceAllocation | null>(null);
   const [formData, setFormData] = useState<AllocationFormState>(EMPTY_FORM);
+  const [multipleItems, setMultipleItems] = useState<AllocationFormState[]>([EMPTY_FORM]);
   const [submitting, setSubmitting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -166,13 +167,71 @@ export default function Resources() {
   const resetForm = () => {
     setEditingAllocation(null);
     setFormData(EMPTY_FORM);
+    setMultipleItems([EMPTY_FORM]);
     setSubmitting(false);
   };
 
   const openCreateDialog = () => {
     if (!selectedProjectId) return;
     resetForm();
+    // Initialize multipleItems with formData
+    setMultipleItems([{ ...EMPTY_FORM }]);
     setIsDialogOpen(true);
+  };
+
+  const addMoreItem = () => {
+    // Validate current form before adding more
+    if (
+      !formData.wbsId ||
+      !formData.resourceType ||
+      !formData.resourceName.trim() ||
+      !formData.resourceId.trim() ||
+      !formData.unit.trim() ||
+      !formData.quantity ||
+      !formData.rate ||
+      !formData.duration
+    ) {
+      toast({
+        title: "Validation error",
+        description: "Please fill all fields before adding more items.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Add current formData to multipleItems
+    setMultipleItems([...multipleItems, { ...formData }]);
+    
+    // Reset form for next item but keep WBS and resource type
+    // Clear resourceId and resourceName to reset the equipment selection
+    setFormData({
+      wbsId: formData.wbsId,
+      resourceType: formData.resourceType,
+      resourceName: "",
+      resourceId: "",
+      quantity: "",
+      rate: "",
+      unit: "",
+      duration: "",
+      durationUnit: "hours",
+    });
+    
+    toast({
+      title: "Item added",
+      description: `${multipleItems.length + 1} item(s) ready to save. Fill in the next item.`,
+    });
+  };
+
+  const removeItem = (index: number) => {
+    if (multipleItems.length > 1) {
+      setMultipleItems(multipleItems.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateItem = (index: number, field: keyof AllocationFormState, value: string) => {
+    const updated = [...multipleItems];
+    updated[index] = { ...updated[index], [field]: value };
+    setMultipleItems(updated);
   };
 
   const openEditDialog = (allocation: ResourceAllocation) => {
@@ -194,6 +253,90 @@ export default function Resources() {
   const handleSave = async () => {
     if (!selectedProjectId) return;
 
+    // If editing, use single form data
+    if (editingAllocation) {
+      if (
+        !formData.wbsId ||
+        !formData.resourceType ||
+        !formData.resourceName.trim() ||
+        !formData.resourceId.trim() ||
+        !formData.unit.trim() ||
+        !formData.quantity ||
+        !formData.rate ||
+        !formData.duration
+      ) {
+        toast({
+          title: "Validation error",
+          description: "Please fill every required field.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const wbsItem = projectWBSItems.find((item) => item.id === formData.wbsId || item._id === formData.wbsId);
+      if (!wbsItem) {
+        toast({
+          title: "Invalid WBS",
+          description: "Selected WBS item is not available.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const quantity = Number(formData.quantity);
+      const rate = Number(formData.rate);
+      const duration = Number(formData.duration);
+
+      if (Number.isNaN(quantity) || Number.isNaN(rate) || Number.isNaN(duration)) {
+        toast({
+          title: "Validation error",
+          description: "Quantity, rate and duration must be numeric.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Convert duration to hours if unit is days (1 day = 24 hours)
+      const durationInHours = formData.unit === "days" ? duration * 24 : duration;
+
+      const payload = {
+        projectId: selectedProjectId,
+        wbsId: wbsItem.id ?? wbsItem._id,
+        wbsName: wbsItem.name,
+        resourceType: formData.resourceType,
+        resourceName: formData.resourceName.trim(),
+        resourceId: formData.resourceId.trim(),
+        quantity,
+        rate,
+        unit: formData.unit.trim(),
+        duration,
+        durationUnit: formData.durationUnit.trim() || "hours",
+        totalCost: quantity * rate * durationInHours,
+        startDate: wbsItem.startDate,
+        endDate: wbsItem.endDate,
+        createdAt: editingAllocation?.createdAt ?? new Date().toISOString(),
+      };
+
+      setSubmitting(true);
+      try {
+        await dispatch(
+          updateResource({ id: editingAllocation._id!, data: payload })
+        ).unwrap();
+        toast({ title: "Success", description: "Allocation updated successfully." });
+        setIsDialogOpen(false);
+        resetForm();
+      } catch (err: any) {
+        toast({
+          title: "Request failed",
+          description: err ?? "Please try again later.",
+          variant: "destructive",
+        });
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    // For creating new allocations - validate current form
     if (
       !formData.wbsId ||
       !formData.resourceType ||
@@ -206,64 +349,54 @@ export default function Resources() {
     ) {
       toast({
         title: "Validation error",
-        description: "Please fill every required field.",
+        description: "Please fill all required fields.",
         variant: "destructive",
       });
       return;
     }
 
-    const wbsItem = projectWBSItems.find((item) => item.id === formData.wbsId || item._id === formData.wbsId);
-    if (!wbsItem) {
-      toast({
-        title: "Invalid WBS",
-        description: "Selected WBS item is not available.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const quantity = Number(formData.quantity);
-    const rate = Number(formData.rate);
-    const duration = Number(formData.duration);
-
-    if (Number.isNaN(quantity) || Number.isNaN(rate) || Number.isNaN(duration)) {
-      toast({
-        title: "Validation error",
-        description: "Quantity, rate and duration must be numeric.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const payload = {
-      projectId: selectedProjectId,
-      wbsId: wbsItem.id ?? wbsItem._id,
-      wbsName: wbsItem.name,
-      resourceType: formData.resourceType, // Use selected resource type
-      resourceName: formData.resourceName.trim(),
-      resourceId: formData.resourceId.trim(),
-      quantity,
-      rate,
-      unit: formData.unit.trim(),
-      duration,
-      durationUnit: formData.durationUnit.trim() || "hours",
-      totalCost: quantity * rate * duration,
-      startDate: wbsItem.startDate,
-      endDate: wbsItem.endDate,
-      createdAt: editingAllocation?.createdAt ?? new Date().toISOString(),
-    };
+    // Combine multipleItems with current formData
+    const allItems = [...multipleItems, formData];
 
     setSubmitting(true);
     try {
-      if (editingAllocation) {
-        await dispatch(
-          updateResource({ id: editingAllocation._id!, data: payload })
-        ).unwrap();
-        toast({ title: "Success", description: "Allocation updated successfully." });
-      } else {
+      // Save all items
+      for (const item of allItems) {
+        const wbsItem = projectWBSItems.find((w) => w.id === item.wbsId || w._id === item.wbsId);
+        if (!wbsItem) continue;
+
+        const quantity = Number(item.quantity);
+        const rate = Number(item.rate);
+        const duration = Number(item.duration);
+
+        // Convert duration to hours if unit is days (1 day = 24 hours)
+        const durationInHours = item.unit === "days" ? duration * 24 : duration;
+
+        const payload = {
+          projectId: selectedProjectId,
+          wbsId: wbsItem.id ?? wbsItem._id,
+          wbsName: wbsItem.name,
+          resourceType: item.resourceType,
+          resourceName: item.resourceName.trim(),
+          resourceId: item.resourceId.trim(),
+          quantity,
+          rate,
+          unit: item.unit.trim(),
+          duration,
+          durationUnit: item.durationUnit.trim() || "hours",
+          totalCost: quantity * rate * durationInHours,
+          startDate: wbsItem.startDate,
+          endDate: wbsItem.endDate,
+          createdAt: new Date().toISOString(),
+        };
+
         await dispatch(addResource(payload)).unwrap();
-        toast({ title: "Success", description: "Allocation created successfully." });
       }
+
+      toast({ 
+        title: "Success", 
+        description: `${allItems.length} allocation(s) created successfully.` 
+      });
       setIsDialogOpen(false);
       resetForm();
     } catch (err: any) {
@@ -560,10 +693,9 @@ export default function Resources() {
                     <Label>Duration Unit *</Label>
                     <Input
                       value={formData.durationUnit}
-                      onChange={(e) =>
-                        setFormData((prev) => ({ ...prev, durationUnit: e.target.value }))
-                      }
-                      placeholder="hours"
+                      disabled
+                      placeholder="Auto-synced with Unit"
+                      className="bg-gray-50"
                     />
                   </div>
                 </div>
@@ -571,13 +703,24 @@ export default function Resources() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Unit *</Label>
-                    <Input
+                    <Select
                       value={formData.unit}
-                      onChange={(e) =>
-                        setFormData((prev) => ({ ...prev, unit: e.target.value }))
+                      onValueChange={(value) =>
+                        setFormData((prev) => ({ 
+                          ...prev, 
+                          unit: value,
+                          durationUnit: value // Auto-sync Duration Unit with Unit
+                        }))
                       }
-                      placeholder="e.g. machine-hours"
-                    />
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select unit" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="hours">Hours</SelectItem>
+                        <SelectItem value="days">Days</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2">
                     <Label>Total Cost</Label>
@@ -593,13 +736,26 @@ export default function Resources() {
                 </div>
               </div>
 
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={submitting}>
-                  Cancel
-                </Button>
-                <Button onClick={handleSave} disabled={submitting}>
-                  {submitting ? "Saving..." : "Save Allocation"}
-                </Button>
+              <DialogFooter className="flex justify-between">
+                {!editingAllocation && (
+                  <Button 
+                    type="button"
+                    variant="secondary" 
+                    onClick={addMoreItem}
+                    disabled={submitting}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add More
+                  </Button>
+                )}
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={submitting}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleSave} disabled={submitting}>
+                    {submitting ? "Saving..." : "Save Allocation"}
+                  </Button>
+                </div>
               </DialogFooter>
             </DialogContent>
           </Dialog>

@@ -7,7 +7,7 @@ import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 // Import your actual reporting pages
 import Stock from '@/pages/modules/inventory/reporting/Stock';
 import InventoryHistory from '@/pages/modules/inventory/reporting/InventoryHistory';
-import MovesAnalysis from '@/pages/modules/inventory/reporting/MovesAnalysis';
+import MovesAnalysis from '@/pages/modules/project-management/MovesAnalysis';
 import Valuation from '@/pages/modules/inventory/reporting/Valuation';
 
 // Tab list without icons (R1 option)
