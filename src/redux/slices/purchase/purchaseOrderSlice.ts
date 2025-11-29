@@ -4,34 +4,59 @@ import { PurchaseOrder } from "@/types/purchase";
 
 export const fetchPurchaseOrders = createAsyncThunk(
   "purchaseOrders/fetchPurchaseOrders",
-  async (params: { page?: number; limit?: number; sort?: string; q?: string } = {}, { rejectWithValue }) => {
+  async (
+    params: { page?: number; limit?: number; sort?: string; q?: string } = {},
+    { rejectWithValue }
+  ) => {
     try {
       const { page = 1, limit = 10, sort, q } = params;
       const query = new URLSearchParams();
-      query.set('page', String(page));
-      query.set('limit', String(limit));
-      if (sort) query.set('sort', sort);
-      if (q) query.set('q', q);
+
+      query.set("page", String(page));
+      query.set("limit", String(limit));
+
+      if (sort) query.set("sort", sort);
+      if (q) query.set("q", q);
+
+      // 🔥 ADD organisationId HERE
+      const organisationId = localStorage.getItem("organisationId");
+      if (organisationId) query.set("organisationId", organisationId);
 
       const response = await api.get(`/purchase/orders?${query.toString()}`);
       return response.data;
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || "Failed to fetch purchase orders");
+      return rejectWithValue(
+        error.response?.data?.message || "Failed to fetch purchase orders"
+      );
     }
   }
 );
 
+
 export const createPurchaseOrder = createAsyncThunk(
   "purchaseOrders/createPurchaseOrder",
-  async (poData: Omit<PurchaseOrder, "id" | "createdAt" | "updatedAt">, { rejectWithValue }) => {
+  async (
+    poData: Omit<PurchaseOrder, "id" | "createdAt" | "updatedAt">,
+    { rejectWithValue }
+  ) => {
     try {
-      const response = await api.post("/purchase/orders", poData);
+      const organisationId = localStorage.getItem("organisationId");
+
+      const poPayload = {
+        ...poData,
+        organisationId,
+      };
+
+      const response = await api.post("/purchase/orders", poPayload);
       return response.data;
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || "Failed to create purchase order");
+      return rejectWithValue(
+        error.response?.data?.message || "Failed to create purchase order"
+      );
     }
   }
 );
+
 
 export const updatePurchaseOrder = createAsyncThunk(
   "purchaseOrders/updatePurchaseOrder",

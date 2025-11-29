@@ -53,6 +53,7 @@ export interface PurchaseOrderProductLine {
 export interface PurchaseOrder {
   id: string;
   poNumber: string;
+  organisationId: string;
   vendor: string; // Vendor Name
   vendorId?: string; // Vendor ID
   orderDate?: string;

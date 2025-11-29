@@ -2,12 +2,14 @@ import { usePermission } from "@/hooks/userPermission";
 import React, { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
+import { ClipLoader } from "react-spinners";
 import {
   fetchPurchaseOrders,
   createPurchaseOrder,
   updatePurchaseOrder,
   deletePurchaseOrder,
 } from "@/redux/slices/purchase/purchaseOrderSlice";
+import { fetchWarehouses } from '@/redux/slices/warehouseSlice'
 import { fetchVendors } from "@/redux/slices/purchase/vendorSlice";
 import { PurchaseOrder, PurchaseOrderProductLine } from "@/types/purchase";
 import {
@@ -27,6 +29,7 @@ import {
 import { toast } from "sonner";
 
 const PurchaseOrderComponent: React.FC = () => {
+  const [showUpdatePo, setShowUpdatePo] = useState(false);
   const canView = usePermission("purchaseOrders", "view");
   const canCreate = usePermission("purchaseOrders", "create");
   const canEdit = usePermission("purchaseOrders", "edit");
@@ -45,6 +48,7 @@ const PurchaseOrderComponent: React.FC = () => {
     );
   }
   const dispatch = useDispatch<AppDispatch>();
+  const [color, setColor] = useState("#212121");
   const { purchaseOrders, loading, error, meta } = useSelector(
     (state: RootState) => state.purchaseOrders
   );
@@ -54,15 +58,28 @@ const PurchaseOrderComponent: React.FC = () => {
   const [showViewPo, setShowViewPo] = useState(false);
   const [viewingPo, setViewingPo] = useState<PurchaseOrder | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const { warehouses } = useSelector((state: RootState) => state.warehouse);
 
   const [page, setPage] = useState<number>(1);
   const [limit, setLimit] = useState<number>(10);
   const [search, setSearch] = useState<string>("");
 
   useEffect(() => {
-    dispatch(fetchPurchaseOrders({ page, limit, q: search }));
+    const organisationId = localStorage.getItem("organisationId");
+
+    dispatch(
+      fetchPurchaseOrders({
+        page,
+        limit,
+        q: search,
+        organisationId,
+      })
+    );
+
     dispatch(fetchVendors());
+    dispatch(fetchWarehouses(localStorage.getItem("organisationId")));
   }, [dispatch, page, limit, search]);
+
 
   useEffect(() => {
     if (error) {
@@ -108,16 +125,28 @@ const PurchaseOrderComponent: React.FC = () => {
           createPurchaseOrder({
             ...formData,
             status: "draft",
+            organisationId: localStorage.getItem("organisationId"),
           })
         ).unwrap();
+
         toast.success("Purchase Order created");
-        dispatch(fetchPurchaseOrders({ page, limit, q: search }));
+
+        dispatch(
+          fetchPurchaseOrders({
+            page,
+            limit,
+            q: search,
+            organisationId: localStorage.getItem("organisationId"),
+          })
+        );
+
         setShowCreatePo(false);
       } catch (e) {
-        // handled
+        toast.error("Failed to create purchase order");
       } finally {
         setSubmitting(false);
       }
+
     };
     if (!canCreate) {
       return (
@@ -221,10 +250,15 @@ const PurchaseOrderComponent: React.FC = () => {
                     }
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
-                    <option>Warehouse A</option>
-                    <option>Warehouse B</option>
-                    <option>Warehouse C</option>
+                    <option value="">Select Warehouse</option>
+
+                    {warehouses?.map((wh) => (
+                      <option key={wh._id} value={wh.name}>
+                        {wh.name}
+                      </option>
+                    ))}
                   </select>
+
                 </div>
               </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -588,6 +622,262 @@ const PurchaseOrderComponent: React.FC = () => {
       </div>
     );
   };
+  const UpdatePoModal = () => {
+    if (!viewingPo) return null;
+
+    const [formData, setFormData] = useState({
+      poNo: viewingPo.poNo,
+      vendor: viewingPo.vendor,
+      vendorId: viewingPo.vendorId,
+      orderDate: viewingPo.orderDate?.split("T")[0] || "",
+      deliveryAddress: viewingPo.deliveryAddress,
+      warehouse: viewingPo.warehouse,
+      incoterms: viewingPo.incoterms,
+      deliveryMethod: viewingPo.deliveryMethod,
+      scheduledDeliveryDate: viewingPo.scheduledDeliveryDate
+        ? viewingPo.scheduledDeliveryDate.split("T")[0]
+        : "",
+      productLines: viewingPo.productLines || [],
+      responsibleUser: viewingPo.responsibleUser,
+      totalAmount: viewingPo.totalAmount,
+    });
+
+    const handleVendorChange = (e: any) => {
+      const vendorName = e.target.value;
+      const selected = vendors.find((v) => v.vendorName === vendorName);
+
+      setFormData({
+        ...formData,
+        vendor: vendorName,
+        vendorId: selected?._id || "",
+      });
+    };
+
+    const handleSubmit = async (e: any) => {
+      e.preventDefault();
+      setSubmitting(true);
+
+      try {
+        await dispatch(
+          updatePurchaseOrder({
+            id: viewingPo._id,
+            data: {
+              ...formData,
+              organisationId: localStorage.getItem("organisationId"),
+            },
+          })
+        ).unwrap();
+
+        toast.success("Purchase Order updated successfully");
+
+        dispatch(
+          fetchPurchaseOrders({
+            page,
+            limit,
+            q: search,
+            organisationId: localStorage.getItem("organisationId"),
+          })
+        );
+
+        setShowUpdatePo(false);
+        setViewingPo(null);
+      } catch (err) {
+        toast.error("Failed to update Purchase Order");
+      } finally {
+        setSubmitting(false);
+      }
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-40 overflow-y-auto z-50">
+        <div className="relative top-10 mx-auto p-6 bg-white rounded-lg shadow-lg w-11/12 md:w-4/5 lg:w-3/5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold">Update Purchase Order</h3>
+            <button
+              onClick={() => {
+                setShowUpdatePo(false);
+                setViewingPo(null);
+              }}
+              className="text-gray-600 hover:text-gray-800"
+            >
+              <X className="h-6 w-6" />
+            </button>
+          </div>
+
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* --- Same fields as Create Modal --- */}
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label>PO Number</label>
+                <input
+                  type="text"
+                  value={formData.poNo}
+                  onChange={(e) =>
+                    setFormData({ ...formData, poNo: e.target.value })
+                  }
+                  className="w-full border px-3 py-2 rounded"
+                />
+              </div>
+
+              <div>
+                <label>Vendor</label>
+                <select
+                  value={formData.vendor}
+                  onChange={handleVendorChange}
+                  className="w-full border px-3 py-2 rounded"
+                >
+                  <option value="">Select Vendor</option>
+                  {vendors.map((v) => (
+                    <option key={v._id} value={v.vendorName}>
+                      {v.vendorName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label>Order Date</label>
+                <input
+                  type="date"
+                  value={formData.orderDate}
+                  onChange={(e) =>
+                    setFormData({ ...formData, orderDate: e.target.value })
+                  }
+                  className="w-full border px-3 py-2 rounded"
+                />
+              </div>
+            </div>
+
+            {/* Address & Warehouse */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label>Delivery Address</label>
+                <textarea
+                  rows={2}
+                  value={formData.deliveryAddress}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      deliveryAddress: e.target.value,
+                    })
+                  }
+                  className="w-full border px-3 py-2 rounded"
+                ></textarea>
+              </div>
+
+              <div>
+                <label>Warehouse</label>
+                <select
+                  value={formData.warehouse}
+                  onChange={(e) =>
+                    setFormData({ ...formData, warehouse: e.target.value })
+                  }
+                  className="w-full border px-3 py-2 rounded"
+                >
+                  {warehouses?.map((wh) => (
+                    <option key={wh._id} value={wh.name}>
+                      {wh.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Product Lines */}
+            <div>
+              <label>Product Lines</label>
+              <div className="border p-3 rounded-lg">
+                {formData.productLines.map((line, index) => (
+                  <div
+                    key={index}
+                    className="grid grid-cols-5 gap-2 mb-2 text-sm"
+                  >
+                    <input
+                      type="text"
+                      value={line.product}
+                      onChange={(e) => {
+                        const updated = [...formData.productLines];
+                        updated[index].product = e.target.value;
+                        setFormData({ ...formData, productLines: updated });
+                      }}
+                      className="border px-2 py-1 rounded"
+                    />
+                    <input
+                      type="number"
+                      value={line.quantity}
+                      onChange={(e) => {
+                        const updated = [...formData.productLines];
+                        updated[index].quantity = Number(e.target.value);
+                        updated[index].subtotal =
+                          updated[index].unitPrice * updated[index].quantity;
+                        setFormData({ ...formData, productLines: updated });
+                      }}
+                      className="border px-2 py-1 rounded"
+                    />
+                    <input
+                      type="number"
+                      value={line.unitPrice}
+                      onChange={(e) => {
+                        const updated = [...formData.productLines];
+                        updated[index].unitPrice = Number(e.target.value);
+                        updated[index].subtotal =
+                          updated[index].quantity * updated[index].unitPrice;
+                        setFormData({ ...formData, productLines: updated });
+                      }}
+                      className="border px-2 py-1 rounded"
+                    />
+                    <input
+                      type="number"
+                      value={line.taxes}
+                      onChange={(e) => {
+                        const updated = [...formData.productLines];
+                        updated[index].taxes = Number(e.target.value);
+                        setFormData({ ...formData, productLines: updated });
+                      }}
+                      className="border px-2 py-1 rounded"
+                    />
+                    <input
+                      type="number"
+                      value={line.subtotal}
+                      disabled
+                      className="border px-2 py-1 bg-gray-100 rounded"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Buttons */}
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowUpdatePo(false);
+                  setViewingPo(null);
+                }}
+                className="px-4 py-2 border rounded"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="submit"
+                disabled={submitting}
+                className="px-4 py-2 bg-blue-600 text-white rounded flex items-center"
+              >
+                {submitting && (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                )}
+                Update Purchase Order
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -657,7 +947,13 @@ const PurchaseOrderComponent: React.FC = () => {
     setPage(1);
   };
 
-  if (loading && !purchaseOrders.length) return <div>Loading...</div>;
+  if (loading && !purchaseOrders.length) return <div className="flex justify-center items-center gap-2"><span>Loading </span><ClipLoader
+    color={color}
+    loading={loading}
+    size={15}
+    aria-label="Loading Spinner"
+    data-testid="loader"
+  /></div>;
 
   return (
     <div className="space-y-6">
@@ -757,28 +1053,59 @@ const PurchaseOrderComponent: React.FC = () => {
                       </span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium flex items-center gap-3">
+
+                    {/* VIEW */}
                     <button
                       onClick={() => {
                         setViewingPo(po);
                         setShowViewPo(true);
                       }}
-                      className="text-blue-600 hover:text-blue-900 mr-3"
+                      className="text-blue-600 hover:text-blue-900"
                     >
                       <Eye className="h-4 w-4" />
                     </button>
-                    <button className="text-purple-600 hover:text-purple-900 mr-3">
+
+                    {/* PACKAGE (GRN / RECEIVE) */}
+                    <button
+                      onClick={() => {
+                        // open GRN modal later if you create it
+                        console.log("Open Receive Goods Modal for:", po.poNo);
+                      }}
+                      className="text-purple-600 hover:text-purple-900"
+                    >
                       <Package className="h-4 w-4" />
                     </button>
+
+                    {/* EDIT */}
+                    <button
+                      disabled={!canEdit}
+                      onClick={() => {
+                        setViewingPo(po);
+                        setShowUpdatePo(true);
+                      }}
+                      className={`${canEdit
+                        ? "text-yellow-600 hover:text-yellow-700"
+                        : "text-gray-400 cursor-not-allowed"
+                        }`}
+                    >
+                      <Edit className="h-4 w-4" />
+                    </button>
+
+                    {/* DELETE */}
                     <button
                       disabled={!canDelete}
                       onClick={() => canDelete && handleDeletePurchasePrder(po._id)}
-                      className={`${canDelete ? "text-red-600 hover:text-red-900" : "text-gray-400 cursor-not-allowed"}`}
+                      className={`${canDelete
+                        ? "text-red-600 hover:text-red-900"
+                        : "text-gray-400 cursor-not-allowed"
+                        }`}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
 
                   </td>
+
                 </tr>
               ))}
             </tbody>
@@ -875,6 +1202,7 @@ const PurchaseOrderComponent: React.FC = () => {
           </div>
         )}
       </div>
+      {showUpdatePo && <UpdatePoModal />}
 
       {showCreatePo && <CreatePoForm />}
       {showViewPo && <ViewPoModal />}
