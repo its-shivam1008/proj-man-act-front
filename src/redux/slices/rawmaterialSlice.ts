@@ -30,22 +30,21 @@ const initialState: RawMaterialState = {
 };
 
 export const fetchMaterials = createAsyncThunk(
-  "raw/fetch",
-  async (_, { rejectWithValue }) => {
-    try {
-      const organisationId = localStorage.getItem("organisationId");
-      if (!organisationId) return rejectWithValue("No organisationId found");
+  "rawMaterials/fetch",
+  async ({ page = 1, limit = 10 }: { page: number; limit: number }) => {
+    const orgId = localStorage.getItem("organisationId");
 
-      const res = await api.get(`/raw/all/`, {
-        headers: { organisationid: organisationId },
-      });
+    const res = await api.get(
+      `/raw/all/?page=${page}&limit=${limit}`,
+      {
+        headers: { organisationId: orgId },
+      }
+    );
 
-      return res.data;
-    } catch (error: any) {
-      return rejectWithValue(error?.response?.data?.message || "Failed to fetch materials");
-    }
+    return res.data;
   }
 );
+
 
 
 export const addMaterial = createAsyncThunk(
@@ -106,7 +105,15 @@ export const deleteMaterial = createAsyncThunk(
 
 const rawMaterialSlice = createSlice({
   name: "rawMaterials",
-  initialState,
+  initialState: {
+    materials: [],
+    total: 0,
+    page: 1,
+    limit: 10,
+    loading: false,
+    error: null,
+  }
+  ,
   reducers: {},
   extraReducers: (builder) => {
     builder
@@ -114,37 +121,32 @@ const rawMaterialSlice = createSlice({
         state.loading = true;
         state.error = null;
       })
+
       .addCase(fetchMaterials.fulfilled, (state, action) => {
         state.loading = false;
-
-        state.materials = action.payload.materials || [];
-        state.currentPage = action.payload.currentPage || 1;
-        state.totalPages = action.payload.totalPages || 1;
-        state.totalMaterials = action.payload.totalMaterials || state.materials.length;
+        state.materials = action.payload.materials;
+        state.total = action.payload.total;
+        state.page = action.payload.page;
+        state.limit = action.payload.limit;
       })
+
       .addCase(fetchMaterials.rejected, (state, action) => {
         state.loading = false;
-
-        if (action.payload !== "No organisationId found") {
-          state.error = action.payload as string;
-        } else {
-          state.materials = [];
-        }
+        state.error = action.error.message;
       })
-
       .addCase(addMaterial.fulfilled, (state, action) => {
         state.materials.push(action.payload);
       })
 
-      .addCase(updateMaterial.fulfilled, (state, action) => {
-        const index = state.materials.findIndex((m) => m._id === action.payload._id);
-        if (index !== -1) state.materials[index] = action.payload;
-      })
+    .addCase(updateMaterial.fulfilled, (state, action) => {
+      const index = state.materials.findIndex((m) => m._id === action.payload._id);
+      if (index !== -1) state.materials[index] = action.payload;
+    })
 
-      .addCase(deleteMaterial.fulfilled, (state, action) => {
-        state.materials = state.materials.filter((m) => m._id !== action.payload);
-      });
-  },
+    .addCase(deleteMaterial.fulfilled, (state, action) => {
+      state.materials = state.materials.filter((m) => m._id !== action.payload);
+    });
+},
 });
 
 export default rawMaterialSlice.reducer;

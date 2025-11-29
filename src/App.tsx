@@ -97,6 +97,7 @@ import Operations, {
 import OperationsModule from "./pages/modules/Operations";
 import ReportingModule, { InventoryHistoryPage, MovesAnalysisPage, StockPage, ValuationPage } from "./pages/modules/ReportingModule";
 import Drawing from "./pages/modules/Drawing";
+import InventoryMasterData from "./pages/modules/inventory/InventoryMasterData";
 function App() {
   useEffect(() => {
     ensureInitialized();
@@ -142,6 +143,7 @@ function App() {
               <Route path="/inventory/stores" element={<StoresManagement />} />
             
               <Route path="/inventory/form-builder" element={<FormBuilder />} />
+              <Route path="/inventory/masterdata" element={<InventoryMasterData/>} />
 
               {/* <Route path="/inventory/manufacturing" element={<Manufacturing />} /> */}
               {/* <Route path="/inventory/maintenance" element={<Maintenance />} /> */}

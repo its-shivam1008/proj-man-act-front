@@ -37,9 +37,13 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Eye, Edit, Trash2, Plus, Warehouse, ShieldAlert } from "lucide-react";
 
-import { RawMaterial } from "@/redux/rawMaterialSlice";
+import { RawMaterial } from "@/redux/slices/rawmaterialSlice";
 
 export default function RawMaterialMaster() {
+
+  const [page, setPage] = useState(1);
+  const limit = 10;
+  const hasPrev = page > 1;
   const canView = usePermission("rawMaterials", "view");
   const canCreate = usePermission("rawMaterials", "create");
   const canEdit = usePermission("rawMaterials", "edit");
@@ -47,10 +51,9 @@ export default function RawMaterialMaster() {
   const dispatch = useDispatch<any>();
 
   // Redux State
-  const { materials, loading } = useSelector(
-    (state: RootState) => state.rawMaterials
-  );
-
+  const { materials, total, page: currentPage, limit: perPage, loading } =
+    useSelector((state: RootState) => state.rawMaterials);
+  const hasNext = page * limit < total;
   const [viewItem, setViewItem] = useState<RawMaterial | null>(null);
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
@@ -75,10 +78,11 @@ export default function RawMaterialMaster() {
 
   // Fetch on mount
   useEffect(() => {
-    dispatch(fetchMaterials());
-  }, [dispatch]);
-
+    dispatch(fetchMaterials({ page, limit }));
+  }, [dispatch, page, limit]);
+  const isSearching = search.trim() !== "";
   const filtered = useMemo(() => {
+
     const q = search.trim().toLowerCase();
     if (!q) return materials;
     return materials.filter(
@@ -90,9 +94,15 @@ export default function RawMaterialMaster() {
 
   const onSubmit = async (data: RawMaterial) => {
     if (editing) {
-      dispatch(updateMaterial({ id: editing._id!, data }));
+      dispatch(updateMaterial({ id: editing._id!, data })).then(() => {
+        dispatch(fetchMaterials({ page, limit }));
+      });
+
     } else {
-      dispatch(addMaterial(data));
+      dispatch(addMaterial(data)).then(() => {
+        dispatch(fetchMaterials({ page, limit }));
+      });
+
     }
 
     reset();
@@ -293,7 +303,17 @@ export default function RawMaterialMaster() {
                     <button disabled={!canDelete} title="Delete">
                       <Trash2
                         className="h-4 w-4 cursor-pointer text-red-500"
-                        onClick={() => dispatch(deleteMaterial(m._id!))}
+                        onClick={() =>
+                          dispatch(deleteMaterial(m._id!)).then(() => {
+                            dispatch(fetchMaterials({ page, limit })).then((res: any) => {
+                              const items = res.payload?.materials || [];
+                              if (items.length === 0 && page > 1) {
+                                setPage((p) => p - 1);
+                              }
+                            });
+                          })
+                        }
+
                       />
                     </button>
                   </TableCell>
@@ -301,6 +321,27 @@ export default function RawMaterialMaster() {
               ))}
             </TableBody>
           </Table>
+          <div className="flex justify-between items-center mt-6 bg-white p-4 rounded-xl shadow">
+            <button
+              disabled={!hasPrev}
+              onClick={() => setPage((prev) => prev - 1)}
+              className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
+            >
+              Previous
+            </button>
+
+            <span>Page {page}</span>
+
+            <button
+              disabled={!hasNext}
+              onClick={() => setPage((prev) => prev + 1)}
+              className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+
+
 
           {/* View Modal */}
           <Dialog

@@ -12,31 +12,15 @@ export interface Warehouse {
 }
 
 export const fetchWarehouses = createAsyncThunk(
-  "warehouse/fetch",
-  async (args: any, { rejectWithValue }) => {
-    const { page, limit, search, type } = args;
-
-    try {
-      const organisationId = localStorage.getItem("organisationId");
-
-      const res = await api.get(`/getall/warehouse`, {
-        params: {
-          organisationId,
-          page,
-          limit,
-          search,
-          type,
-        },
-      });
-
-      return res.data; // { warehouses, currentPage, totalPages, totalWarehouses }
-    } catch (error: any) {
-      return rejectWithValue(
-        error?.response?.data?.message || "Failed to fetch warehouses."
-      );
-    }
+  "warehouse/fetchWarehouses",
+  async ({ page = 1, limit = 10 }: { page: number; limit: number }) => {
+    const res = await api.get(
+      `/getall/warehouse?page=${page}&limit=${limit}`
+    );
+    return res.data;  // { warehouses, total, page, limit }
   }
 );
+
 
 
 export const addWarehouse = createAsyncThunk(
@@ -96,29 +80,23 @@ const warehouseSlice = createSlice({
     warehouses: [],
     loading: false,
     error: null,
-
-    // Pagination state exactly like your project slice
-    currentPage: 1,
-    totalPages: 1,
-    totalWarehouses: 0,
+    total: 0,
+    page: 1,
+    limit: 10,
   },
   reducers: {},
   extraReducers: (builder) => {
     builder
-    
+
       .addCase(fetchWarehouses.pending, (state) => {
         state.loading = true;
       })
       .addCase(fetchWarehouses.fulfilled, (state, action) => {
-        state.warehouses = (action.payload.warehouses || []).map((w: any) => ({
-    id: w._id,
-    ...w,
-}));
-
-        state.currentPage = action.payload.currentPage;
-        state.totalPages = action.payload.totalPages;
-        state.totalWarehouses = action.payload.totalWarehouses;
         state.loading = false;
+        state.warehouses = action.payload.warehouses;
+        state.total = action.payload.total;
+        state.page = action.payload.page;
+        state.limit = action.payload.limit;
       })
       .addCase(fetchWarehouses.rejected, (state, action) => {
         state.loading = false;

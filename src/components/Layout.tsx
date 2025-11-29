@@ -1,6 +1,6 @@
 import React from "react";
 // Import 'Link' and 'useLocation' from 'react-router-dom', not 'href' or 'Outlet'
-import { Link, useLocation, Outlet, useNavigate } from "react-router-dom";
+import { Link, useLocation, Outlet, useNavigate, href } from "react-router-dom";
 // import { useAuth } from '../contexts/AuthContext';
 import {
   Home,
@@ -39,6 +39,7 @@ import {
   Truck,
   FileTextIcon,
   Paintbrush,
+  DatabaseZap,
 } from "lucide-react";
 import {} from "@/redux/slices/authSlice";
 // --- ADD these imports for shadcn/ui Accordion ---
@@ -191,6 +192,7 @@ const Layout: React.FC = () => {
       icon: TrendingUp,
     },
     { name: "Settings", href: "/inventory/settings", icon: Settings },
+    {name:"Master Data" , href:"/inventory/masterdata" , icon:DatabaseZap}
   ];
 
   // Links for the Purchase Module (tabs converted to pages)

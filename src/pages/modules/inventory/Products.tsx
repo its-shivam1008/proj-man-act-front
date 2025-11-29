@@ -7,6 +7,7 @@ import {
   addProduct,
   updateProduct,
   deleteProduct,
+  transferStock,
 } from "@/redux/slices/productSlice";
 import { fetchWarehouses } from "@/redux/slices/warehouseSlice";
 import { fetchStores } from "@/redux/slices/storageSlice";
@@ -32,6 +33,7 @@ import {
   Building2,
   Store,
   ShieldAlert,
+  Truck,
 } from "lucide-react";
 
 interface Product {
@@ -59,6 +61,11 @@ interface Product {
 }
 
 const Products: React.FC = () => {
+  const [viewWarehouse, setViewWarehouse] = useState(null);
+  const [warehouseListModal, setWarehouseListModal] = useState([]);
+  const [selectedWarehouse, setSelectedWarehouse] = useState(null);
+
+  const [transferModal, setTransferModal] = useState(null);
   const canView = usePermission("products", "view");
   const canCreate = usePermission("products", "create");
   const canEdit = usePermission("products", "edit");
@@ -80,6 +87,12 @@ const Products: React.FC = () => {
       </div>
     );
   }
+  const getWarehouseCountForProduct = (productId: string) => {
+    return warehouses.filter((w) =>
+      w.products.some((p) => p.productId === productId)
+    ).length;
+  };
+
   const [page, setPage] = useState(1);
   const limit = 10;
 
@@ -205,7 +218,7 @@ const Products: React.FC = () => {
           toast.success(
             editingProduct ? "Product updated!" : "Product created!"
           );
-          dispatch(fetchProducts({page , limit}));
+          dispatch(fetchProducts({ page, limit }));
           setShowAddProductForm(false);
           setEditingProduct(null);
         } else {
@@ -222,7 +235,7 @@ const Products: React.FC = () => {
       dispatch(deleteProduct(id)).then((res: any) => {
         if (!res.error) {
           toast.success("Product deleted");
-          dispatch(fetchProducts({page , limit}));
+          dispatch(fetchProducts({ page, limit }));
         }
       });
     }
@@ -601,6 +614,301 @@ const Products: React.FC = () => {
     );
   };
 
+
+  const WarehouseViewModal = ({ warehouse }) => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 space-y-4">
+        <div className="flex justify-between items-center border-b pb-3">
+          <h2 className="text-xl font-bold">{warehouse.name}</h2>
+          <button onClick={() => setViewWarehouse(null)}>
+            <X className="h-6 w-6 text-gray-600" />
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <p><strong>Type:</strong> {warehouse.type}</p>
+          <p><strong>Location:</strong> {warehouse.location}</p>
+          <p><strong>Capacity:</strong> {warehouse.capacity}</p>
+
+          <div className="mt-3">
+            <strong>Products Stored:</strong>
+            <ul className="list-disc ml-6 mt-2 text-gray-700">
+              {warehouse.products?.map((p, i) => (
+                <li key={i}>
+                  {p.productName} — {p.quantity} qty
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
+        <div className="flex justify-end">
+          <button
+            onClick={() => setViewWarehouse(null)}
+            className="px-6 py-2 bg-gray-600 text-white rounded-lg"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+  const WarehouseListModal = ({ list }) => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 space-y-4">
+        <div className="flex justify-between items-center border-b pb-3">
+          <h2 className="text-xl font-bold">Warehouses Containing Product</h2>
+          <button onClick={() => setWarehouseListModal([])}>
+            <X className="h-6 w-6 text-gray-600" />
+          </button>
+        </div>
+
+        <div className="space-y-3 max-h-80 overflow-y-auto">
+          {list.map((w) => (
+            <button
+              key={w._id}
+              onClick={() => setSelectedWarehouse(w)}
+              className="w-full text-left p-3 border rounded-md hover:bg-gray-100"
+            >
+              <strong>{w.name}</strong>
+              <p className="text-sm text-gray-600">{w.location}</p>
+            </button>
+          ))}
+        </div>
+
+        <div className="flex justify-end">
+          <button
+            onClick={() => setWarehouseListModal([])}
+            className="px-6 py-2 bg-gray-600 text-white rounded-lg"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+  const WarehouseDetailsModal = ({ warehouse }) => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 space-y-4">
+        <div className="flex justify-between items-center border-b pb-3">
+          <h2 className="text-xl font-bold">{warehouse.name}</h2>
+          <button onClick={() => setSelectedWarehouse(null)}>
+            <X className="h-6 w-6 text-gray-600" />
+          </button>
+        </div>
+
+        <p><strong>Type:</strong> {warehouse.type}</p>
+        <p><strong>Location:</strong> {warehouse.location}</p>
+        <p><strong>Capacity:</strong> {warehouse.capacity}</p>
+
+        <div className="mt-3">
+          <strong>Products Stored:</strong>
+          <ul className="list-disc ml-6 mt-2 text-gray-700">
+            {warehouse.products.map((p) => (
+              <li key={p.productId}>
+                {p.productName} — {p.quantity} qty
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="flex justify-end">
+          <button
+            onClick={() => setSelectedWarehouse(null)}
+            className="px-6 py-2 bg-gray-600 text-white rounded-lg"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const StockTransferModal = ({ product, onClose }) => {
+    const dispatch = useDispatch();
+    const { warehouses } = useSelector((s: RootState) => s.warehouse);
+
+    const [form, setForm] = useState({
+      fromWarehouse: "",
+      toWarehouse: "",
+      quantity: "",
+      transportType: "Truck",
+      vehicleNo: "",
+      driverName: "",
+      transportTime: "",
+      notes: ""
+    });
+
+    const handleChange = (field) => (e) => {
+      setForm({ ...form, [field]: e.target.value });
+    };
+
+    const handleSubmit = async () => {
+      // 1️⃣ Validate FROM Warehouse selected
+      if (!form.fromWarehouse) {
+        toast.error("Please select Source Warehouse");
+        return;
+      }
+
+      // 2️⃣ Validate TO Warehouse selected
+      if (!form.toWarehouse) {
+        toast.error("Please select Destination Warehouse");
+        return;
+      }
+
+      // 3️⃣ They cannot be same
+      if (form.fromWarehouse === form.toWarehouse) {
+        toast.error("Source & Destination warehouse cannot be same");
+        return;
+      }
+
+      // 4️⃣ Validate quantity
+      if (!form.quantity || Number(form.quantity) <= 0) {
+        toast.error("Enter a valid quantity");
+        return;
+      }
+
+      // 5️⃣ Get source warehouse data
+      const sourceWarehouse = warehouses.find(
+        (w) => w._id === form.fromWarehouse
+      );
+
+      if (!sourceWarehouse) {
+        toast.error("Invalid source warehouse selected");
+        return;
+      }
+
+      // 6️⃣ Find product in that warehouse
+      const productEntry = sourceWarehouse.products?.find(
+        (p) => p.productId === product._id
+      );
+
+      // If product not found in warehouse
+      if (!productEntry) {
+        toast.error("This product does not exist in the selected warehouse");
+        return;
+      }
+
+      // 7️⃣ Check if quantity available
+      if (Number(form.quantity) > productEntry.quantity) {
+        toast.error(
+          `Only ${productEntry.quantity} units available in this warehouse`
+        );
+        return;
+      }
+
+      // 8️⃣ If all good → call API
+      const payload = {
+        organisationId: localStorage.getItem("organisationId"),
+        productId: product._id,
+        ...form,
+        quantity: Number(form.quantity),
+        organisationId: localStorage.getItem("organisationId"), // Optional but recommended
+      };
+
+      const res: any = await dispatch(transferStock(payload));
+
+      if (!res.error) {
+        toast.success("Stock transferred!");
+        onClose();
+        dispatch(fetchProducts({ page: 1, limit: 10 }));
+      } else {
+        toast.error(res.payload?.message || "Failed");
+      }
+    };
+
+
+    return (
+      <div className="fixed inset-0 backdrop-brightness-90 flex items-center justify-center z-50">
+        <div className="bg-white border p-6 rounded-lg w-full max-w-lg space-y-4">
+
+          <h2 className="text-xl font-bold">Shift Stock - {product.name}</h2>
+
+          <select
+            className="w-full p-3 border rounded"
+            value={form.fromWarehouse}
+            onChange={handleChange("fromWarehouse")}
+          >
+            <option value="">Select From Warehouse</option>
+            {warehouses.map((w) => (
+              <option key={w._id} value={w._id}>{w.name}</option>
+            ))}
+          </select>
+
+          <select
+            className="w-full p-3 border rounded"
+            value={form.toWarehouse}
+            onChange={handleChange("toWarehouse")}
+          >
+            <option value="">Select To Warehouse</option>
+            {warehouses.map((w) => (
+              <option key={w._id} value={w._id}>{w.name}</option>
+            ))}
+          </select>
+
+          <input
+            type="number"
+            placeholder="Quantity"
+            className="w-full p-3 border rounded"
+            value={form.quantity}
+            onChange={handleChange("quantity")}
+          />
+
+          <select
+            value={form.transportType}
+            onChange={handleChange("transportType")}
+            className="w-full p-3 border rounded"
+          >
+            <option>Truck</option>
+            <option>Tempo</option>
+            <option>Courier</option>
+            <option>Pickup</option>
+            <option>Other</option>
+          </select>
+
+          <input
+            type="datetime-local"
+            className="w-full p-3 border rounded"
+            value={form.transportTime}
+            onChange={handleChange("transportTime")}
+          />
+
+          <input
+            type="text"
+            placeholder="Vehicle No"
+            className="w-full p-3 border rounded"
+            value={form.vehicleNo}
+            onChange={handleChange("vehicleNo")}
+          />
+
+          <input
+            type="text"
+            placeholder="Driver Name"
+            className="w-full p-3 border rounded"
+            value={form.driverName}
+            onChange={handleChange("driverName")}
+          />
+
+          <textarea
+            placeholder="Transport Notes"
+            className="w-full p-3 border rounded"
+            value={form.notes}
+            onChange={handleChange("notes")}
+          />
+
+          <div className="flex justify-end gap-3">
+            <button onClick={onClose} className="px-4 py-2 bg-gray-300 rounded">
+              Cancel
+            </button>
+            <button onClick={handleSubmit} className="px-4 py-2 bg-blue-600 text-white rounded">
+              Transfer
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // VIEW MODAL
   const ViewProductModal = ({ item }: { item: Product }) => (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -755,6 +1063,9 @@ const Products: React.FC = () => {
                 Status
               </th>
               <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
+                Warehouses
+              </th>
+              <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
                 Actions
               </th>
             </tr>
@@ -793,15 +1104,34 @@ const Products: React.FC = () => {
                 <td className="px-6 py-4 text-sm font-bold text-gray-900">
                   ${(item.quantity * Number(item.unitCost)).toLocaleString()}
                 </td>
-                <td className="px-6 py-4">
+                <td className="px-4 py-4 whitespace-nowrap">
+
                   <span
-                    className={`inline-flex px-3 py-1 text-xs font-bold rounded-full ${getStatusColor(
+                    className={`inline-flex px-3 py-1 text-xs w-full font-bold rounded-full ${getStatusColor(
                       item.status
                     )}`}
                   >
                     {item.status.replace(/-/g, " ")}
                   </span>
                 </td>
+                <td className="px-6 py-6 text-sm font-medium text-blue-700">
+                  <button
+                    className="flex items-center gap-2 underline hover:text-blue-900"
+                    onClick={() => {
+                      const list = warehouses.filter(w =>
+                        w.products.some(p => p.productId === item._id)
+                      );
+                      setWarehouseListModal(list);
+                    }}
+                  >
+                    <span>{getWarehouseCountForProduct(item._id)}</span>
+                    <span>warehouses</span>
+                  </button>
+                </td>
+
+
+
+
                 <td className="px-6 py-4 text-sm">
                   <div className="flex items-center space-x-4">
                     <button
@@ -821,6 +1151,19 @@ const Products: React.FC = () => {
                     >
                       <Edit className="h-5 w-5" />
                     </button>
+                    <button
+                      className="text-purple-600 hover:text-purple-800"
+                      onClick={() => setTransferModal(item)}
+                    >
+                      <Truck />
+                    </button>
+                    {transferModal && (
+                      <StockTransferModal
+                        product={transferModal}
+                        onClose={() => setTransferModal(null)}
+                      />
+                    )}
+
 
                     <button
                       disabled={!canCreate}
@@ -831,6 +1174,7 @@ const Products: React.FC = () => {
                     </button>
                   </div>
                 </td>
+
               </tr>
             ))}
 
@@ -865,6 +1209,16 @@ const Products: React.FC = () => {
         <ProductForm initialData={editingProduct || undefined} />
       )}
       {viewingProduct && <ViewProductModal item={viewingProduct} />}
+      {viewWarehouse && <WarehouseViewModal warehouse={viewWarehouse} />}
+      {warehouseListModal.length > 0 && (
+        <WarehouseListModal list={warehouseListModal} />
+      )}
+
+      {selectedWarehouse && (
+        <WarehouseDetailsModal warehouse={selectedWarehouse} />
+      )}
+
+
     </div>
   );
 };

@@ -22,9 +22,7 @@ const initialState: ProductState = {
 // ✅ FETCH PRODUCTS with Pagination
 export const fetchProducts = createAsyncThunk(
   "products/fetchProducts",
-  async (
-    { page = 1, limit = 10 }: { page: number; limit: number }
-  ) => {
+  async ({ page = 1, limit = 10 }: { page: number; limit: number }) => {
     const orgId = localStorage.getItem("organisationId");
 
     const response = await axiosApi.get(
@@ -51,15 +49,9 @@ export const addProduct = createAsyncThunk(
 // ✅ UPDATE PRODUCT
 export const updateProduct = createAsyncThunk(
   "products/updateProduct",
-  async (
-    { id, data }: { id: string; data: any },
-    { rejectWithValue }
-  ) => {
+  async ({ id, data }: { id: string; data: any }, { rejectWithValue }) => {
     try {
-      const res = await axiosApi.put(
-        `/product/update/${id}`,
-        data
-      );
+      const res = await axiosApi.put(`/product/update/${id}`, data);
       return res.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data || err.message);
@@ -72,9 +64,31 @@ export const deleteProduct = createAsyncThunk(
   "products/deleteProduct",
   async (id: string, { rejectWithValue }) => {
     try {
-      const res = await axiosApi.delete(
-        `/product/delete/${id}`
-      );
+      const res = await axiosApi.delete(`/product/delete/${id}`);
+      return res.data;
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data || err.message);
+    }
+  }
+);
+export const transferStock = createAsyncThunk(
+  "products/transferStock",
+  async (
+    payload: {
+      productId: string;
+      fromWarehouse: string;
+      toWarehouse: string;
+      quantity: number;
+      transportType?: string;
+      vehicleNo?: string;
+      driverName?: string;
+      transportTime?: string;
+      notes?: string;
+    },
+    { rejectWithValue }
+  ) => {
+    try {
+      const res = await axiosApi.post("/inventory/stock/transfer", payload);
       return res.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data || err.message);
@@ -108,14 +122,37 @@ const productSlice = createSlice({
 
     // 🔹 Create Product
     builder.addCase(addProduct.fulfilled, (state) => {
-      // Automatically re-fetch handled in component
+      // re-fetch handled in component
+    });
+    builder.addCase(addProduct.rejected, (state, action) => {
+      state.error = (action.payload as any)?.message || action.error.message || null;
     });
 
     // 🔹 Update Product
-    builder.addCase(updateProduct.fulfilled, (state) => { });
+    builder.addCase(updateProduct.fulfilled, (state) => {});
+    builder.addCase(updateProduct.rejected, (state, action) => {
+      state.error = (action.payload as any)?.message || action.error.message || null;
+    });
 
     // 🔹 Delete Product
-    builder.addCase(deleteProduct.fulfilled, (state) => { });
+    builder.addCase(deleteProduct.fulfilled, (state) => {});
+    builder.addCase(deleteProduct.rejected, (state, action) => {
+      state.error = (action.payload as any)?.message || action.error.message || null;
+    });
+
+    // 🔹 Transfer Stock
+    builder
+      .addCase(transferStock.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(transferStock.fulfilled, (state /*, action */) => {
+        state.loading = false;
+      })
+      .addCase(transferStock.rejected, (state, action) => {
+        state.loading = false;
+        state.error = (action.payload as any)?.message || action.error.message || "Transfer failed";
+      });
   },
 });
 
