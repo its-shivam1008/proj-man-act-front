@@ -195,6 +195,7 @@ const Drawing: React.FC = () => {
   const [progress, setProgress] = useState(0);
   const [showDebug, setShowDebug] = useState(false);
   const [activeTab, setActiveTab] = useState<'scan' | 'master'>('scan');
+  const [enablePreprocessing, setEnablePreprocessing] = useState(true);
 
   // Data State
   const [masterData, setMasterData] = useState<MasterPair[]>([]);
@@ -251,18 +252,27 @@ const Drawing: React.FC = () => {
     setProgress(10);
 
     try {
-      // 1. Preprocessing
-      setStatus('Preprocessing with OpenCV (Adaptive Thresholding)...');
-      // Small timeout to allow UI to update
-      await new Promise(r => setTimeout(r, 100)); 
+      let imageToScan = selectedImage; // Default to raw image
+
+      // ONLY run OpenCV if the checkbox is checked
+      if (enablePreprocessing) {
+        setStatus('Preprocessing with OpenCV (Adaptive Thresholding)...');
+        // Small timeout to allow UI to update
+        await new Promise(r => setTimeout(r, 100)); 
+        
+        const cleanImage = await processImageOpenCV(selectedImage);
+        setProcessedImage(cleanImage);
+        imageToScan = cleanImage; // Update target to processed image
+      } else {
+        setStatus('Skipping Preprocessing...');
+        setProcessedImage(null); // Clear previous processed images
+      }
       
-      const cleanImage = await processImageOpenCV(selectedImage);
-      setProcessedImage(cleanImage);
       setProgress(40);
 
-      // 2. Tesseract OCR
+      // 2. Tesseract OCR (Scanning the chosen image variable)
       setStatus('Extracting Text...');
-      const result = await Tesseract.recognize(cleanImage, 'eng', {
+      const result = await Tesseract.recognize(imageToScan, 'eng', {
         logger: m => {
           if (m.status === 'recognizing text') {
             setProgress(40 + (m.progress * 50));
@@ -270,6 +280,7 @@ const Drawing: React.FC = () => {
         }
       });
 
+      // ... rest of the function remains the same ...
       const text = result.data.text;
       setRawText(text);
       setProgress(90);
@@ -285,7 +296,7 @@ const Drawing: React.FC = () => {
         id: Date.now(),
         originalText: text,
         matches: matches,
-        preview: selectedImage,
+        preview: imageToScan, // Save the version we actually scanned
         confidence: result.data.confidence,
         timestamp: new Date().toLocaleString()
       };
@@ -561,7 +572,25 @@ const Drawing: React.FC = () => {
                 onChange={handleImageUpload} 
               />
             </div>
-
+            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200 mb-4">
+              <div className="flex items-center h-5">
+                <input
+                  id="preprocessing-toggle"
+                  type="checkbox"
+                  checked={enablePreprocessing}
+                  onChange={(e) => setEnablePreprocessing(e.target.checked)}
+                  className="w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer"
+                />
+              </div>
+              <div className="text-sm">
+                <label htmlFor="preprocessing-toggle" className="font-medium text-gray-700 cursor-pointer">
+                  Enable Image Enhancements
+                </label>
+                <p className="text-gray-500 text-xs">
+                  Use for noisy blueprints. Uncheck for clean digital images.
+                </p>
+              </div>
+            </div>
             <button
               onClick={runOCR}
               disabled={!selectedImage || isProcessing}

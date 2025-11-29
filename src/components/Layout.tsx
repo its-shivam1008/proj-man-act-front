@@ -85,7 +85,7 @@ const Layout: React.FC = () => {
     { name: "Repair", href: "/repair", icon: Wrench },
     { name: "Barcode", href: "/barcode", icon: ScanLine },
     { name: "Permissions", href: "/permissions", icon: UserRound },
-    // { name: "Drawing", href: "/drawing", icon: Paintbrush },
+    { name: "Drawing", href: "/drawing", icon: Paintbrush },
   ];
 
   // Links for the Production Module

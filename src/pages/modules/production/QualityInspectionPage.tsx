@@ -386,10 +386,9 @@ export default function QualityInspectionPage() {
             <CardHeader className="flex justify-between items-center">
               <CardTitle>Inspection Plans</CardTitle>
               <Button
-                className="w-full md:w-40"
                 disabled={!canCreate}
                 onClick={() => canCreate && (setForm({}), setDialogOpen(true))}
-                className={!canCreate ? "opacity-50 cursor-not-allowed" : ""}
+                className={`${!canCreate ? "opacity-50 cursor-not-allowed" : ""} w-full md:w-40`}
               >
                 + New Plan</Button>
             </CardHeader>
@@ -427,10 +426,9 @@ export default function QualityInspectionPage() {
               <CardHeader className="flex justify-between items-center">
                 <CardTitle>Inspection Records</CardTitle>
                 <Button
-                  className="w-full md:w-40"
                   disabled={!canCreate}
                   onClick={() => canCreate && (setForm({}), setDialogOpen(true))}
-                  className={!canCreate ? "opacity-50 cursor-not-allowed" : ""}
+                  className={`${!canCreate ? "opacity-50 cursor-not-allowed" : ""} w-full md:w-40`}
                 >
                   + New Inspection</Button>
               </CardHeader>
@@ -488,19 +486,17 @@ export default function QualityInspectionPage() {
                             <TableCell>{it.qty}</TableCell>
                             <TableCell className="grid grid-cols-2 gap-2">
                               <Button
-                                className="w-full bg-green-600"
                                 disabled={!canEdit}
                                 onClick={() => canEdit && acceptGrnBatch(it.grnId, it.productId, it.batchNo)}
-                                className={!canEdit ? "opacity-50 cursor-not-allowed" : "bg-green-600"}
+                                className={`${!canEdit ? "opacity-50 cursor-not-allowed" : "bg-green-600"} w-full bg-green-600`}
                               >
 
                                 <Check className="mr-2 h-4 w-4" /> Accept
                               </Button>
                               <Button
-                                className="w-full bg-red-600"
                                 disabled={!canEdit}
                                 onClick={() => canEdit && rejectGrnBatch(it.grnId, it.productId, it.batchNo)}
-                                className={!canEdit ? "opacity-50 cursor-not-allowed" : "bg-red-600"}
+                                className={`${!canEdit ? "opacity-50 cursor-not-allowed" : "bg-red-600"} w-full bg-red-600`}
                               >
 
                                 <XCircle className="mr-2 h-4 w-4" /> Reject
@@ -524,10 +520,9 @@ export default function QualityInspectionPage() {
             <CardHeader className="flex justify-between items-center">
               <CardTitle>Non-Conformance Reports</CardTitle>
               <Button
-                className="w-full md:w-40"
                 disabled={!canCreate}
                 onClick={() => canCreate && (setForm({}), setDialogOpen(true))}
-                className={!canCreate ? "opacity-50 cursor-not-allowed" : ""}
+                className={`${!canCreate ? "opacity-50 cursor-not-allowed" : ""} w-full md:w-40`}
               >
                 + New NCR</Button>
             </CardHeader>
@@ -564,10 +559,9 @@ export default function QualityInspectionPage() {
             <CardHeader className="flex justify-between items-center">
               <CardTitle>CAPA Actions</CardTitle>
               <Button
-                className="w-full md:w-40"
                 disabled={!canCreate}
                 onClick={() => canCreate && (setForm({}), setDialogOpen(true))}
-                className={!canCreate ? "opacity-50 cursor-not-allowed" : ""}
+                className={`${!canCreate ? "opacity-50 cursor-not-allowed" : ""} w-full md:w-40`}
               >
                 + New CAPA</Button>
             </CardHeader>
