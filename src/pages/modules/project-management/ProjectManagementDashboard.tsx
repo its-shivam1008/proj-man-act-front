@@ -568,7 +568,7 @@ export default function ProjectManagementDashboard() {
         </Card>
       </div>
 
-      <Timeline />
+      {/* <Timeline /> */}
       
       {/* Projects Timeline */}
       <Card>

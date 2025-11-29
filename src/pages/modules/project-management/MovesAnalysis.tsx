@@ -681,7 +681,7 @@ export default function MovesAnalysis() {
                 <TableHead>Quantity</TableHead>
                 <TableHead>Source</TableHead>
                 <TableHead>Destination</TableHead>
-                <TableHead>WBS Task</TableHead>
+                <TableHead>WBS</TableHead>
                 <TableHead>Reference</TableHead>
                 <TableHead>Cost</TableHead>
                 {canDelete && <TableHead>Actions</TableHead>}
@@ -725,7 +725,25 @@ export default function MovesAnalysis() {
                     <TableCell>{movement.source || "-"}</TableCell>
                     <TableCell>{movement.destination || "-"}</TableCell>
                     <TableCell>{movement.wbsTaskName || "-"}</TableCell>
-                    <TableCell>{movement.referenceNumber || "-"}</TableCell>
+                    <TableCell>
+                      {(() => {
+                        // Check if projectId is populated object (from backend populate)
+                        if (movement.projectId && typeof movement.projectId === 'object') {
+                          return (movement.projectId as any).name || "-";
+                        }
+                        
+                        // Check if projectId is string and find in projects list
+                        if (movement.projectId && typeof movement.projectId === 'string') {
+                          const project = projects.find((p) => p._id === movement.projectId);
+                          if (project) {
+                            return project.name;
+                          }
+                        }
+                        
+                        // Fallback to reference number or dash
+                        return movement.referenceNumber || "-";
+                      })()}
+                    </TableCell>
                     <TableCell>₹{(movement.totalCost || 0).toLocaleString()}</TableCell>
                     {canDelete && (
                       <TableCell>

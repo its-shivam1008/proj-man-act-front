@@ -24,6 +24,9 @@ export interface Machinery {
   warranty?: string;
   purchaseDate?: string;
   cost?: number;
+  quantity?: number;
+  unitCost?: number;
+  totalAmount?: number;
   serialNumber?: string;
   department?: string;
   capacity?: string;

@@ -1,6 +1,7 @@
 import React from "react";
 // Import 'Link' and 'useLocation' from 'react-router-dom', not 'href' or 'Outlet'
 import { Link, useLocation, Outlet, useNavigate, href } from "react-router-dom";
+import NotificationHeader from "./NotificationHeader";
 // import { useAuth } from '../contexts/AuthContext';
 import {
   Home,
@@ -513,6 +514,12 @@ const Layout: React.FC = () => {
 
       {/* Main Content */}
       <div className="pl-64">
+        {/* Notification Header */}
+        <div className="sticky top-0 z-40 bg-white border-b border-gray-200 px-4 py-3 flex justify-between items-center">
+          <h1 className="text-xl font-semibold text-gray-900">SCM Pro</h1>
+          <NotificationHeader />
+        </div>
+        
         <main className="py-6">
           <div className="w-full px-4 sm:px-6 lg:px-8">
             <Outlet />

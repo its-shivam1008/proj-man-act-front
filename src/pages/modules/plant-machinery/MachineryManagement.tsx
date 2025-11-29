@@ -63,6 +63,9 @@ interface Machinery {
   warranty?: string;
   purchaseDate?: string;
   cost?: number;
+  quantity?: number;
+  unitCost?: number;
+  totalAmount?: number;
   category?: string;
   serialNumber?: string;
   location?: string;
@@ -70,10 +73,10 @@ interface Machinery {
   capacity?: string;
   powerRating?: string;
   operatingHours?: number;
-  frequency?: MaintenanceFrequency;
+  frequency?: string;
   insurance?: string;
-  depreciation?: DepreciationMethod;
-  status?: MachineryStatus;
+  depreciation?: string;
+  status?: string;
   documents?: StoredFile[];
   createdAt: string;
 }
@@ -130,6 +133,9 @@ export default function MachineryManagementPage() {
   const [form, setForm] = useState<Partial<Machinery>>({
     frequency: "Monthly",
     depreciation: "Straight-line",
+    quantity: 0,
+    unitCost: 0,
+    totalAmount: 0,
     status: "Active",
   });
 
@@ -184,7 +190,13 @@ export default function MachineryManagementPage() {
   // ---------- OPEN ADD ----------
   function openAddDialog() {
     setEditing(null);
-    setForm({ frequency: "Monthly", depreciation: "Straight-line" });
+    setForm({ 
+      frequency: "Monthly", 
+      depreciation: "Straight-line",
+      quantity: 0,
+      unitCost: 0,
+      totalAmount: 0
+    });
     setIsDialogOpen(true);
   }
 
@@ -306,6 +318,9 @@ export default function MachineryManagementPage() {
                   <TableHead>Category</TableHead>
                   <TableHead>Location</TableHead>
                   <TableHead>Cost</TableHead>
+                  <TableHead>Quantity</TableHead>
+                  <TableHead>Unit Cost</TableHead>
+                  <TableHead>Total Amount</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -319,6 +334,13 @@ export default function MachineryManagementPage() {
                     <TableCell>{machinery.location}</TableCell>
                     <TableCell>
                       {machinery.cost ? `₹${machinery.cost.toLocaleString()}` : "-"}
+                    </TableCell>
+                    <TableCell>{machinery.quantity || "-"}</TableCell>
+                    <TableCell>
+                      {machinery.unitCost ? `₹${machinery.unitCost.toLocaleString()}` : "-"}
+                    </TableCell>
+                    <TableCell>
+                      {machinery.totalAmount ? `₹${machinery.totalAmount.toLocaleString()}` : "-"}
                     </TableCell>
 
                     <TableCell>
@@ -429,6 +451,53 @@ export default function MachineryManagementPage() {
                   setForm({ ...form, cost: parseFloat(e.target.value) || 0 })
                 }
                 placeholder="0.00"
+              />
+            </div>
+
+            <div>
+              <Label>Quantity</Label>
+              <Input
+                type="number"
+                value={form.quantity || ""}
+                onChange={(e) => {
+                  const quantity = parseFloat(e.target.value) || 0;
+                  const unitCost = form.unitCost || 0;
+                  setForm({ 
+                    ...form, 
+                    quantity,
+                    totalAmount: quantity * unitCost
+                  });
+                }}
+                placeholder="0"
+              />
+            </div>
+
+            <div>
+              <Label>Unit Cost</Label>
+              <Input
+                type="number"
+                value={form.unitCost || ""}
+                onChange={(e) => {
+                  const unitCost = parseFloat(e.target.value) || 0;
+                  const quantity = form.quantity || 0;
+                  setForm({ 
+                    ...form, 
+                    unitCost,
+                    totalAmount: quantity * unitCost
+                  });
+                }}
+                placeholder="0.00"
+              />
+            </div>
+
+            <div>
+              <Label>Total Amount</Label>
+              <Input
+                type="number"
+                value={form.totalAmount || 0}
+                disabled
+                className="bg-gray-100"
+                placeholder="Auto-calculated"
               />
             </div>
 

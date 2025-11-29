@@ -11,6 +11,7 @@ import {
 } from "@/redux/slices/productSlice";
 import { fetchWarehouses } from "@/redux/slices/warehouseSlice";
 import { fetchStores } from "@/redux/slices/storageSlice";
+import { fetchInventoryMaster } from "@/redux/slices/inventoryMasterSlice";
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/userPermission";
 
@@ -105,11 +106,18 @@ const Products: React.FC = () => {
 
   const orgId = localStorage.getItem("organisationId");
 
+  // Get categories from inventory master
+  const { category: categories } = useSelector(
+    (state: RootState) => state.inventoryMaster
+  );
+
   useEffect(() => {
     if (orgId) {
       dispatch(fetchProducts({ page, limit }));
       dispatch(fetchWarehouses(orgId));
       dispatch(fetchStores({ page: 1, limit: 200 }));
+      // Fetch categories from Master Data
+      dispatch(fetchInventoryMaster({ type: "category", page: 1, limit: 100 }));
     }
   }, [dispatch, orgId, page]);
 
@@ -361,14 +369,25 @@ const Products: React.FC = () => {
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
                     Category *
                   </label>
-                  <input
+                  <select
                     required
-                    type="text"
                     value={formData.category}
                     onChange={handleChange("category")}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="e.g. Raw Materials"
-                  />
+                  >
+                    <option value="">Select Category</option>
+                    {categories && categories.length > 0 ? (
+                      categories.map((cat: any) => (
+                        <option key={cat._id} value={cat.name}>
+                          {cat.name}
+                        </option>
+                      ))
+                    ) : (
+                      <option value="" disabled>
+                        No categories available. Add in Master Data.
+                      </option>
+                    )}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -732,6 +751,7 @@ const Products: React.FC = () => {
       fromWarehouse: "",
       toWarehouse: "",
       quantity: "",
+      transportCost: "",
       transportType: "Truck",
       vehicleNo: "",
       driverName: "",
@@ -780,12 +800,22 @@ const Products: React.FC = () => {
 
       // 6️⃣ Find product in that warehouse
       const productEntry = sourceWarehouse.products?.find(
-        (p) => p.productId === product._id
+        (p) => p.productId === product._id || p.productId === product.id
       );
 
       // If product not found in warehouse
       if (!productEntry) {
-        toast.error("This product does not exist in the selected warehouse");
+        // Find which warehouses have this product
+        const warehousesWithProduct = warehouses.filter((w) =>
+          w.products?.some((p) => p.productId === product._id || p.productId === product.id)
+        );
+        
+        if (warehousesWithProduct.length > 0) {
+          const warehouseNames = warehousesWithProduct.map((w) => w.name).join(", ");
+          toast.error(`This product is available in: ${warehouseNames}. Please select correct source warehouse.`);
+        } else {
+          toast.error("This product does not exist in any warehouse. Please add stock first.");
+        }
         return;
       }
 
@@ -809,6 +839,26 @@ const Products: React.FC = () => {
       const res: any = await dispatch(transferStock(payload));
 
       if (!res.error) {
+        // Save transfer history to localStorage
+        const transfers = JSON.parse(localStorage.getItem('STOCK_TRANSFERS') || '[]');
+        const transportCost = Number(form.transportCost) || 0;
+        const quantity = Number(form.quantity) || 0;
+        const totalTransportCost = transportCost * quantity;
+        
+        transfers.unshift({
+          date: new Date().toISOString(),
+          productName: product.name,
+          fromWarehouse: sourceWarehouse.name,
+          toWarehouse: warehouses.find((w) => w._id === form.toWarehouse)?.name || 'Unknown',
+          quantity: form.quantity,
+          transportCost: transportCost,
+          totalTransportCost: totalTransportCost,
+          transportType: form.transportType,
+          vehicleNo: form.vehicleNo,
+          driverName: form.driverName,
+        });
+        localStorage.setItem('STOCK_TRANSFERS', JSON.stringify(transfers.slice(0, 50))); // Keep last 50
+
         toast.success("Stock transferred!");
         onClose();
         dispatch(fetchProducts({ page: 1, limit: 10 }));
@@ -852,7 +902,27 @@ const Products: React.FC = () => {
             className="w-full p-3 border rounded"
             value={form.quantity}
             onChange={handleChange("quantity")}
+            min="0"
+            autoComplete="off"
           />
+
+          <input
+            type="number"
+            placeholder="Transport Cost (₹)"
+            className="w-full p-3 border rounded"
+            value={form.transportCost}
+            onChange={handleChange("transportCost")}
+            min="0"
+            step="0.01"
+            autoComplete="off"
+          />
+
+          <div className="bg-blue-50 p-3 rounded border border-blue-200">
+            <p className="text-sm text-gray-600">Total Transport Cost:</p>
+            <p className="text-xl font-bold text-blue-600">
+              ₹{((Number(form.quantity) || 0) * (Number(form.transportCost) || 0)).toLocaleString()}
+            </p>
+          </div>
 
           <select
             value={form.transportType}
@@ -1028,10 +1098,17 @@ const Products: React.FC = () => {
             className="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
           >
             <option value="all">All Categories</option>
-            <option>Raw Materials</option>
-            <option>Components</option>
-            <option>Finished Goods</option>
-            <option>Consumables</option>
+            {categories && categories.length > 0 ? (
+              categories.map((cat: any) => (
+                <option key={cat._id} value={cat.name}>
+                  {cat.name}
+                </option>
+              ))
+            ) : (
+              <option value="" disabled>
+                No categories available
+              </option>
+            )}
           </select>
         </div>
       </div>
@@ -1202,6 +1279,59 @@ const Products: React.FC = () => {
             Next
           </button>
         </div>
+      </div>
+
+      {/* Stock Transfer History */}
+      <div className="bg-white rounded-xl shadow-md overflow-hidden mt-6">
+        <div className="p-6 border-b">
+          <h2 className="text-xl font-bold text-gray-900">Stock Transfer History</h2>
+          <p className="text-sm text-gray-600 mt-1">Recent stock movements between warehouses</p>
+        </div>
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Date & Time</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Product</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">From</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">To</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Quantity</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Transport Cost</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Total Transport Cost</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Transport</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Vehicle</th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {(() => {
+              const transfers = JSON.parse(localStorage.getItem('STOCK_TRANSFERS') || '[]');
+              return transfers.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
+                    No transfer history available
+                  </td>
+                </tr>
+              ) : (
+                transfers.slice(0, 10).map((transfer: any, idx: number) => (
+                  <tr key={idx} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 text-sm text-gray-900">
+                      {new Date(transfer.date).toLocaleString()}
+                    </td>
+                    <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                      {transfer.productName}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{transfer.fromWarehouse}</td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{transfer.toWarehouse}</td>
+                    <td className="px-6 py-4 text-sm font-bold text-gray-900">{transfer.quantity}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900">₹{(transfer.transportCost || 0).toLocaleString()}</td>
+                    <td className="px-6 py-4 text-sm font-bold text-green-600">₹{(transfer.totalTransportCost || 0).toLocaleString()}</td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{transfer.transportType}</td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{transfer.vehicleNo || '-'}</td>
+                  </tr>
+                ))
+              );
+            })()}
+          </tbody>
+        </table>
       </div>
 
       {/* Modals */}

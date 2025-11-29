@@ -1,9 +1,9 @@
 import { usePermission } from "@/hooks/userPermission";
 import React, { useEffect, useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 
 import { useDispatch, useSelector } from "react-redux";
-import { RootState } from "@/redux/store";
+import { RootState, AppDispatch } from "@/redux/store";
 
 import {
   fetchMaterials,
@@ -11,6 +11,8 @@ import {
   updateMaterial,
   deleteMaterial,
 } from "@/redux/slices/rawmaterialSlice";
+
+import { fetchInventoryMaster } from "@/redux/slices/inventoryMasterSlice";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +34,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -63,6 +73,7 @@ export default function RawMaterialMaster() {
     register,
     handleSubmit,
     reset,
+    control,
     formState: { errors },
   } = useForm<RawMaterial>({
     defaultValues: {
@@ -73,12 +84,20 @@ export default function RawMaterialMaster() {
       unitCost: 0,
       reorderLevel: 0,
       trackInventory: true,
+      hsn: "",
     },
   });
+
+  // Get HSN codes from inventory master
+  const { hsn: hsnCodes } = useSelector(
+    (state: RootState) => state.inventoryMaster
+  );
 
   // Fetch on mount
   useEffect(() => {
     dispatch(fetchMaterials({ page, limit }));
+    // Fetch HSN codes
+    dispatch(fetchInventoryMaster({ type: "hsn", page: 1, limit: 100 }));
   }, [dispatch, page, limit]);
   const isSearching = search.trim() !== "";
   const filtered = useMemo(() => {
@@ -199,7 +218,35 @@ export default function RawMaterialMaster() {
 
                 <div>
                   <Label>HSN</Label>
-                  <Input {...register("hsn")} />
+                  <Controller
+                    name="hsn"
+                    control={control}
+                    render={({ field }) => (
+                      <Select
+                        value={field.value || ""}
+                        onValueChange={field.onChange}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select HSN Code">
+                            {field.value || "Select HSN Code"}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          {hsnCodes && hsnCodes.length > 0 ? (
+                            hsnCodes.map((hsn: any) => (
+                              <SelectItem key={hsn._id} value={hsn.hsnNumber}>
+                                {hsn.hsnNumber} - {hsn.taxPercent}%
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <div className="p-3 text-sm text-muted-foreground">
+                              No HSN codes available. Add them in Master Data.
+                            </div>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
                 </div>
 
                 <div>

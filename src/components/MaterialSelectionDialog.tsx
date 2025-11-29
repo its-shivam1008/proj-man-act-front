@@ -189,21 +189,48 @@ export default function MaterialSelectionDialog({
           )
         );
       } else {
-        await api.post("/wbs/link-materials", {
-          wbsId,
-          materials: [{ materialId, quantity: qtyNum, unit }],
-        });
+        // Check if material already exists in saved materials
+        const existingMaterial = savedMaterials.find(
+          (m) => m.materialId === materialId
+        );
 
-        const found = materials.find((m) => m._id === materialId);
-        setSavedMaterials((prev) => [
-          ...prev,
-          {
-            materialId,
-            name: found?.name || materialInput.item!.name,
-            quantity: qtyNum,
-            unit,
-          },
-        ]);
+        if (existingMaterial) {
+          // Material already exists - add to existing quantity
+          const newQuantity = Number(existingMaterial.quantity) + qtyNum;
+
+          // Update existing material without unlinking (prevents return movement)
+          await api.post("/wbs/link-materials", {
+            wbsId,
+            materials: [{ materialId, quantity: newQuantity, unit }],
+            updateExisting: true, // Flag to update existing material
+          });
+
+          // Update UI
+          setSavedMaterials((prev) =>
+            prev.map((p) =>
+              p.materialId === materialId
+                ? { ...p, quantity: newQuantity }
+                : p
+            )
+          );
+        } else {
+          // New material - add normally
+          await api.post("/wbs/link-materials", {
+            wbsId,
+            materials: [{ materialId, quantity: qtyNum, unit }],
+          });
+
+          const found = materials.find((m) => m._id === materialId);
+          setSavedMaterials((prev) => [
+            ...prev,
+            {
+              materialId,
+              name: found?.name || materialInput.item!.name,
+              quantity: qtyNum,
+              unit,
+            },
+          ]);
+        }
       }
 
       if (wbsItem?.projectId) {
@@ -405,7 +432,7 @@ export default function MaterialSelectionDialog({
                             Return
                           </Button>
 
-                          <Button
+                          {/* <Button
                             variant="outline"
                             size="sm"
                             onClick={(e) => {
@@ -426,7 +453,7 @@ export default function MaterialSelectionDialog({
                             }}
                           >
                             <Trash />
-                          </Button>
+                          </Button> */}
                         </div>
                       </div>
 
