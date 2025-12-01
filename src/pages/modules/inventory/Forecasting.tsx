@@ -77,10 +77,10 @@ const Forecasting: React.FC = () => {
   const [showViewForm, setShowViewForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewingId, setViewingId] = useState<string | null>(null);
-
+  const orgId = localStorage.getItem('organisationId');
   useEffect(() => {
     dispatch(getForecasts());
-    dispatch(fetchProducts());
+    dispatch(fetchProducts(orgId));
   }, [dispatch]);
 
   const filteredForecastItems = forecastItems.filter(

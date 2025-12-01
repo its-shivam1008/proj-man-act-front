@@ -72,9 +72,9 @@ const Receipt: React.FC = () => {
   const [viewingReceipt, setViewingReceipt] = useState<ReceiptItem | null>(
     null
   );
-
+  const orgId = localStorage.getItem('organisationId');
   useEffect(() => {
-    dispatch(fetchProducts());
+    dispatch(fetchProducts(orgId));
     dispatch(fetchReceipts());
     dispatch(fetchWarehouses({ page: 1, limit: 200 }));
     dispatch(fetchVendors());
@@ -122,6 +122,15 @@ const Receipt: React.FC = () => {
     if (!warehouseId) return "—";
     const wh = warehouses.find((w: any) => w._id === warehouseId);
     return wh ? `${wh.name} (${wh.location})` : "—";
+  };
+  const handleDelete = (id: string) => {
+    if (!confirm("Are you sure you want to delete this receipt?")) return;
+
+    dispatch(deleteReceipt(id)).then(() => {
+      dispatch(fetchReceipts());
+    });
+
+    toast.success("Receipt deleted");
   };
 
   const handleClose = () => {
@@ -174,9 +183,9 @@ const Receipt: React.FC = () => {
 
     const handleChange =
       (field: string) =>
-      (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        setFormData((prev) => ({ ...prev, [field]: e.target.value }));
-      };
+        (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+          setFormData((prev) => ({ ...prev, [field]: e.target.value }));
+        };
 
     const onSubmit = (e: React.FormEvent) => {
       e.preventDefault();
@@ -355,15 +364,14 @@ const Receipt: React.FC = () => {
                 type="submit"
                 disabled={initialData ? !canEdit : !canCreate}
                 className={`px-6 py-3 rounded-lg text-white 
-    ${
-      initialData
-        ? canEdit
-          ? "bg-blue-600 hover:bg-blue-700"
-          : "bg-gray-400 cursor-not-allowed"
-        : canCreate
-        ? "bg-blue-600 hover:bg-blue-700"
-        : "bg-gray-400 cursor-not-allowed"
-    }`}
+    ${initialData
+                    ? canEdit
+                      ? "bg-blue-600 hover:bg-blue-700"
+                      : "bg-gray-400 cursor-not-allowed"
+                    : canCreate
+                      ? "bg-blue-600 hover:bg-blue-700"
+                      : "bg-gray-400 cursor-not-allowed"
+                  }`}
               >
                 {initialData ? "Update Receipt" : "Create Receipt"}
               </button>
@@ -439,7 +447,7 @@ const Receipt: React.FC = () => {
       </div>
     );
   };
-if (!canView) {
+  if (!canView) {
     return (
       <div className="text-center py-12 px-4">
         <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
@@ -468,11 +476,10 @@ if (!canView) {
           disabled={!canCreate}
           onClick={() => canCreate && setShowCreateForm(true)}
           className={`px-5 py-3 rounded-lg flex items-center gap-2
-    ${
-      canCreate
-        ? "bg-blue-600 text-white hover:bg-blue-700"
-        : "bg-gray-400 text-white cursor-not-allowed"
-    }`}
+    ${canCreate
+              ? "bg-blue-600 text-white hover:bg-blue-700"
+              : "bg-gray-400 text-white cursor-not-allowed"
+            }`}
         >
           <Plus className="h-5 w-5" /> New Receipt
         </button>
@@ -642,11 +649,10 @@ if (!canView) {
                           canEdit &&
                           (setEditingReceipt(r), setShowUpdateForm(true))
                         }
-                        className={`${
-                          canEdit
+                        className={`${canEdit
                             ? "text-blue-600"
                             : "text-gray-400 cursor-not-allowed"
-                        }`}
+                          }`}
                       >
                         <Edit className="h-5 w-5" />
                       </button>
@@ -663,11 +669,10 @@ if (!canView) {
                       <button
                         disabled={!canDelete}
                         onClick={() => canDelete && handleDelete(r._id)}
-                        className={`${
-                          canDelete
+                        className={`${canDelete
                             ? "text-red-600"
                             : "text-gray-400 cursor-not-allowed"
-                        }`}
+                          }`}
                       >
                         <Trash2 className="h-5 w-5" />
                       </button>

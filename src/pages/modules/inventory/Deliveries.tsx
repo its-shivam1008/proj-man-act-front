@@ -93,10 +93,10 @@ const Deliveries: React.FC = () => {
   const [viewingDelivery, setViewingDelivery] = useState<DeliveryItem | null>(
     null
   );
-
+  const orgId = localStorage.getItem('organisationId');
   useEffect(() => {
     dispatch(getAllDeliveries());
-    dispatch(fetchProducts());
+    dispatch(fetchProducts(orgId));
     dispatch(fetchWarehouses({ page: 1, limit: 200 }));
   }, [dispatch]);
 

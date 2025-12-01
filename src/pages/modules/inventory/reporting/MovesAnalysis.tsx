@@ -83,9 +83,9 @@ const MovesAnalysis: React.FC = () => {
   const [showUpdateForm, setShowUpdateForm] = useState(false);
   const [selectedItem, setSelectedItem] = useState<MovesAnalysisType | null>(null);
   // Form state moved inside form components - old state removed
-
+  const orgId = localStorage.getItem('organisationId');
   useEffect(() => {
-    dispatch(fetchProducts());
+    dispatch(fetchProducts(orgId));
     dispatch(fetchMovesAnalysis());
   }, [dispatch]);
 

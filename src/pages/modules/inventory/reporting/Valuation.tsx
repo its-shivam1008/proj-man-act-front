@@ -74,7 +74,16 @@ const Valuation: React.FC = () => {
     method: 'FIFO',
     notes: ''
   });
-  const [updateForm, setUpdateForm] = useState<FormData>({});
+  const [updateForm, setUpdateForm] = useState<FormData>({
+    date: "",
+    reference: "",
+    productId: "",
+    quantity: 0,
+    unitValue: 0,
+    method: "FIFO",
+    notes: ""
+  });
+
 
   useEffect(() => {
     dispatch(fetchProducts());
@@ -682,14 +691,12 @@ const Valuation: React.FC = () => {
           </p>
         </div>
         <button
-          type="submit"
+          onClick={() => setShowCreateForm(true)}
           disabled={!canCreate}
-          className={`px-4 py-2 rounded-lg text-white ${canCreate ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-400 cursor-not-allowed"
-            }`}
+          className={`px-4 py-2 rounded-lg text-white ${canCreate ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-400 cursor-not-allowed"}`}
         >
           Add Valuation
         </button>
-
       </div>
 
       {/* Stats Cards */}

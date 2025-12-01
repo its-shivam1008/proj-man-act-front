@@ -86,10 +86,10 @@ const ScrapManagement: React.FC = () => {
 
   const [creating, setCreating] = useState(false);
   const [updating, setUpdating] = useState(false);
-
+  const orgId = localStorage.getItem('organisationId')
   useEffect(() => {
     dispatch(getScrapOrders());
-    dispatch(fetchProducts());
+    dispatch(fetchProducts(orgId));
   }, [dispatch]);
 
   const selectedCreateProduct = useMemo(

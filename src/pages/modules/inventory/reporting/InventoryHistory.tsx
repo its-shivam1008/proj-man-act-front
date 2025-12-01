@@ -88,9 +88,9 @@ const InventoryHistory: React.FC = () => {
   };
 
   // Form state moved inside form components - old state removed
-
+const orgId = localStorage.getItem('organisationId')
   useEffect(() => {
-    dispatch(fetchProducts());
+    dispatch(fetchProducts(orgId));
     dispatch(fetchInventoryHistory());
   }, [dispatch]);
 
