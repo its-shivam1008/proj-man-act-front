@@ -34,6 +34,19 @@ export const createMRS = createAsyncThunk<MRSItem, Partial<MRSItem>>(
   }
 );
 
+export const createBulkMRS = createAsyncThunk<MRSItem[], Partial<MRSItem>[]>(
+  "mrs/createBulkMRS",
+  async (data, { rejectWithValue }) => {
+    try {
+      const res = await api.post(`/create/mrs/bulk`, data);
+      return res.data.data as MRSItem[];
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data || err.message);
+    }
+  }
+);
+
+
 export const updateMRS = createAsyncThunk<
   MRSItem,
   { id: string; data: Partial<MRSItem> }
@@ -91,6 +104,9 @@ const mrsSlice = createSlice({
       })
       .addCase(createMRS.fulfilled, (state, action: PayloadAction<MRSItem>) => {
         state.list.push(action.payload);
+      })
+      .addCase(createBulkMRS.fulfilled, (state, action) => {
+        state.list.push(...action.payload);
       })
       .addCase(updateMRS.fulfilled, (state, action: PayloadAction<MRSItem>) => {
         const updated = action.payload;
