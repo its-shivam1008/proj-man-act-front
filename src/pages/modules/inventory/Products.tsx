@@ -833,7 +833,6 @@ const Products: React.FC = () => {
         productId: product._id,
         ...form,
         quantity: Number(form.quantity),
-        organisationId: localStorage.getItem("organisationId"), // Optional but recommended
       };
 
       const res: any = await dispatch(transferStock(payload));

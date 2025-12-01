@@ -211,10 +211,9 @@ export default function ReceiptOfFinishedGoods() {
       </div>
 
       <Button
-        className="bg-primary mt-3"
         disabled={!canCreate}
         onClick={() => canCreate && setOpenDialog(true)}
-        className={!canCreate ? "opacity-50 cursor-not-allowed bg-gray-400" : "bg-primary"}
+        className={`${!canCreate ? "opacity-50 cursor-not-allowed bg-gray-400" : "bg-primary"} mt-3`}
       >
 
         <Plus className="mr-2 h-4 w-4" /> New Goods Receipt
