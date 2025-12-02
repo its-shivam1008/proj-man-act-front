@@ -179,9 +179,9 @@ const Dashboard: React.FC = () => {
           </div>
           
           {/* Notification Center Integration */}
-          <div className="flex items-center">
+          {/* <div className="flex items-center">
              <NotificationCenter destination="dashboard" title="dashboardAlerts" />
-          </div>
+          </div> */}
         </div>
 
         {/* Stats */}

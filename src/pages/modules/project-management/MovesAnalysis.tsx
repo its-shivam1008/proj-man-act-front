@@ -52,6 +52,8 @@ import {
 import { fetchMovements, fetchMovementSummary, createMovement, deleteMovement } from "@/redux/slices/materialMovementSlice";
 import { fetchProjects } from "@/redux/slices/projectSlice";
 import { fetchMaterials } from "@/redux/slices/rawmaterialSlice";
+import { fetchProducts } from "@/redux/slices/productSlice";
+import { fetchWarehouses } from "@/redux/slices/warehouseSlice";
 import { fetchWbsByProject } from "@/redux/slices/wbsSlice";
 import { fetchMRS } from "@/redux/slices/mrsSlice";
 import { format, parseISO } from "date-fns";
@@ -82,6 +84,8 @@ export default function MovesAnalysis() {
   const { movements, loading, summary } = useSelector((state: RootState) => state.materialMovement);
   const { projects } = useSelector((state: RootState) => state.projects);
   const { materials: rawMaterials } = useSelector((state: RootState) => state.rawMaterials);
+  const { products } = useSelector((state: RootState) => state.products);
+  const { warehouses } = useSelector((state: RootState) => state.warehouse);
   const { wbs } = useSelector((state: RootState) => state.wbs);
   const { list: mrsList } = useSelector((state: RootState) => state.mrs);
 
@@ -91,13 +95,31 @@ export default function MovesAnalysis() {
   const [searchTerm, setSearchTerm] = useState("");
   const [dateRange, setDateRange] = useState({ start: "", end: "" });
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isProductDialogOpen, setIsProductDialogOpen] = useState(false);
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const [itemType, setItemType] = useState<"material" | "product">("material");
   
   // Form State
   const [form, setForm] = useState({
+    projectId: "",
     materialId: "",
     movementType: "inbound" as "inbound" | "outbound" | "return" | "transfer",
     quantity: 0,
+    source: "",
+    destination: "",
+    wbsTaskId: "",
+    referenceNumber: "",
+    remarks: "",
+    movementDate: new Date().toISOString().split("T")[0],
+  });
+
+  // Product Form State
+  const [productForm, setProductForm] = useState({
+    projectId: "",
+    productId: "",
+    movementType: "transfer" as "inbound" | "outbound" | "return" | "transfer",
+    quantity: 0,
+    unitCost: 0,
     source: "",
     destination: "",
     wbsTaskId: "",
@@ -111,12 +133,22 @@ export default function MovesAnalysis() {
     if (organisationId) {
       dispatch(fetchProjects({ page: 1, limit: 100 }));
       dispatch(fetchMaterials());
+      dispatch(fetchProducts({ page: 1, limit: 100 }));
+      dispatch(fetchWarehouses(organisationId));
       dispatch(fetchMRS());
     } else {
       console.error("No organisationId found in localStorage");
       toast.error("Organisation ID not found. Please login again.");
     }
   }, [organisationId, dispatch]);
+
+  // Debug: Log raw materials, products, and movements
+  useEffect(() => {
+    console.log("Raw Materials:", rawMaterials);
+    console.log("Products:", products);
+    console.log("All Movements:", movements);
+    console.log("Form Movement Date:", form.movementDate);
+  }, [rawMaterials, products, movements, form.movementDate]);
 
   // Fetch movements when filters change
   useEffect(() => {
@@ -166,61 +198,146 @@ export default function MovesAnalysis() {
     return wbs.filter((item) => item.projectId === selectedProjectId);
   }, [wbs, selectedProjectId]);
 
+  // Get WBS tasks for form's selected project
+  const formWbsTasks = useMemo(() => {
+    const projectId = itemType === "material" ? form.projectId : productForm.projectId;
+    if (!projectId) return [];
+    return wbs.filter((item) => item.projectId === projectId);
+  }, [wbs, form.projectId, productForm.projectId, itemType]);
+
+  // Fetch WBS when form project selected
+  useEffect(() => {
+    const projectId = itemType === "material" ? form.projectId : productForm.projectId;
+    if (projectId) {
+      dispatch(fetchWbsByProject(projectId));
+    }
+  }, [form.projectId, productForm.projectId, itemType, dispatch]);
+
   // Handle form submission
   const handleSave = async () => {
-    if (!form.materialId || !form.quantity || form.quantity <= 0) {
-      toast.error("Please select material and enter valid quantity");
-      return;
-    }
+    if (itemType === "material") {
+      // Material Movement
+      if (!form.materialId || !form.quantity || form.quantity <= 0) {
+        toast.error("Please select material and enter valid quantity");
+        return;
+      }
 
-    const material = rawMaterials.find((m) => m._id === form.materialId);
-    if (!material) {
-      toast.error("Material not found");
-      return;
-    }
+      const material = rawMaterials.find((m) => m._id === form.materialId);
+      if (!material) {
+        toast.error("Material not found");
+        return;
+      }
 
-    const wbsTask = form.wbsTaskId ? projectWbsTasks.find((w) => w.id === form.wbsTaskId) : null;
+      const wbsTask = form.wbsTaskId ? formWbsTasks.find((w) => w.id === form.wbsTaskId) : null;
 
-    const data = {
-      organisationId,
-      projectId: selectedProjectId || undefined,
-      materialId: form.materialId,
-      materialName: material.name,
-      movementType: form.movementType,
-      quantity: form.quantity,
-      unit: material.unitOfMeasure,
-      source: form.source,
-      destination: form.destination,
-      wbsTaskId: form.wbsTaskId || undefined,
-      wbsTaskName: wbsTask?.name || "",
-      referenceNumber: form.referenceNumber,
-      remarks: form.remarks,
-      movementDate: form.movementDate,
-      unitCost: material.unitCost || 0,
-      totalCost: (material.unitCost || 0) * form.quantity,
-    };
+      const data = {
+        organisationId,
+        projectId: form.projectId || undefined,
+        materialId: form.materialId,
+        materialName: material.name,
+        movementType: form.movementType,
+        quantity: form.quantity,
+        unit: material.unitOfMeasure,
+        source: form.source,
+        destination: form.destination,
+        wbsTaskId: form.wbsTaskId || undefined,
+        wbsTaskName: wbsTask?.name || "",
+        referenceNumber: form.referenceNumber,
+        remarks: form.remarks,
+        movementDate: form.movementDate,
+        unitCost: material.unitCost || 0,
+        totalCost: (material.unitCost || 0) * form.quantity,
+        itemType: "material",
+      };
 
-    try {
-      await dispatch(createMovement(data)).unwrap();
-      toast.success("Material movement recorded successfully");
-      setIsDialogOpen(false);
-      resetForm();
-      
-      // Refetch movements
-      const params: any = { organisationId };
-      if (selectedProjectId) params.projectId = selectedProjectId;
-      dispatch(fetchMovements(params));
-      dispatch(fetchMovementSummary(params));
-    } catch (error: any) {
-      toast.error(error.message || "Failed to record movement");
+      try {
+        await dispatch(createMovement(data)).unwrap();
+        toast.success("Material movement recorded successfully");
+        setIsDialogOpen(false);
+        resetForm();
+        
+        // Refetch movements
+        const params: any = { organisationId };
+        if (selectedProjectId) params.projectId = selectedProjectId;
+        dispatch(fetchMovements(params));
+        dispatch(fetchMovementSummary(params));
+      } catch (error: any) {
+        toast.error(error.message || "Failed to record movement");
+      }
+    } else {
+      // Product Movement
+      if (!productForm.productId || !productForm.quantity || productForm.quantity <= 0) {
+        toast.error("Please select product and enter valid quantity");
+        return;
+      }
+
+      const product = products.find((p) => p._id === productForm.productId);
+      if (!product) {
+        toast.error("Product not found");
+        return;
+      }
+
+      const wbsTask = productForm.wbsTaskId ? formWbsTasks.find((w) => w.id === productForm.wbsTaskId) : null;
+
+      const data = {
+        organisationId,
+        projectId: productForm.projectId || undefined,
+        materialId: productForm.productId, // Using materialId field for product ID
+        materialName: product.name,
+        movementType: productForm.movementType,
+        quantity: productForm.quantity,
+        unit: "units", // Products don't have unit of measure, using default
+        source: productForm.source,
+        destination: productForm.destination,
+        wbsTaskId: productForm.wbsTaskId || undefined,
+        wbsTaskName: wbsTask?.name || "",
+        referenceNumber: productForm.referenceNumber,
+        remarks: productForm.remarks,
+        movementDate: productForm.movementDate,
+        unitCost: productForm.unitCost || 0, // Use manual unit cost
+        totalCost: (productForm.unitCost || 0) * productForm.quantity,
+        itemType: "product",
+      };
+
+      try {
+        await dispatch(createMovement(data)).unwrap();
+        toast.success("Product movement recorded successfully");
+        setIsDialogOpen(false);
+        resetProductForm();
+        
+        // Refetch movements
+        const params: any = { organisationId };
+        if (selectedProjectId) params.projectId = selectedProjectId;
+        dispatch(fetchMovements(params));
+        dispatch(fetchMovementSummary(params));
+      } catch (error: any) {
+        toast.error(error.message || "Failed to record movement");
+      }
     }
   };
 
   const resetForm = () => {
     setForm({
+      projectId: "",
       materialId: "",
       movementType: "inbound",
       quantity: 0,
+      source: "",
+      destination: "",
+      wbsTaskId: "",
+      referenceNumber: "",
+      remarks: "",
+      movementDate: new Date().toISOString().split("T")[0],
+    });
+  };
+
+  const resetProductForm = () => {
+    setProductForm({
+      projectId: "",
+      productId: "",
+      movementType: "transfer",
+      quantity: 0,
+      unitCost: 0,
       source: "",
       destination: "",
       wbsTaskId: "",
@@ -272,10 +389,12 @@ export default function MovesAnalysis() {
     const inboundMovements = movements.filter((m) => m.movementType === "inbound");
     const outboundMovements = movements.filter((m) => m.movementType === "outbound");
     const returnMovements = movements.filter((m) => m.movementType === "return");
+    const transferMovements = movements.filter((m) => m.movementType === "transfer");
 
     const inboundQty = inboundMovements.reduce((sum, m) => sum + (m.quantity || 0), 0);
     const outboundQty = outboundMovements.reduce((sum, m) => sum + (m.quantity || 0), 0);
     const returnQty = returnMovements.reduce((sum, m) => sum + (m.quantity || 0), 0);
+    const transferQty = transferMovements.reduce((sum, m) => sum + (m.quantity || 0), 0);
 
     const totalValue = movements.reduce((sum, m) => sum + (m.totalCost || 0), 0);
 
@@ -287,9 +406,11 @@ export default function MovesAnalysis() {
       inboundCount: inboundMovements.length,
       outboundCount: outboundMovements.length,
       returnCount: returnMovements.length,
+      transferCount: transferMovements.length,
       inboundQty,
       outboundQty,
       returnQty,
+      transferQty,
       totalValue,
       uniqueMaterials: uniqueMaterialIds.size,
     });
@@ -300,9 +421,11 @@ export default function MovesAnalysis() {
       inboundCount: inboundMovements.length,
       outboundCount: outboundMovements.length,
       returnCount: returnMovements.length,
+      transferCount: transferMovements.length,
       inboundQty,
       outboundQty,
       returnQty,
+      transferQty,
       totalValue,
     };
   }, [movements]);
@@ -316,7 +439,7 @@ export default function MovesAnalysis() {
       const date = m.movementDate ? format(parseISO(m.movementDate), "dd MMM") : "Unknown";
       
       if (!dateMap.has(date)) {
-        dateMap.set(date, { inbound: 0, outbound: 0, return: 0 });
+        dateMap.set(date, { inbound: 0, outbound: 0, return: 0, transfer: 0 });
       }
 
       const data = dateMap.get(date)!;
@@ -326,6 +449,8 @@ export default function MovesAnalysis() {
         data.outbound += m.quantity || 0;
       } else if (m.movementType === "return") {
         data.return += m.quantity || 0;
+      } else if (m.movementType === "transfer") {
+        data.transfer += m.quantity || 0;
       }
     });
 
@@ -336,6 +461,7 @@ export default function MovesAnalysis() {
         Inbound: Math.round(data.inbound * 100) / 100,
         Outbound: Math.round(data.outbound * 100) / 100,
         Return: Math.round(data.return * 100) / 100,
+        Transfer: Math.round(data.transfer * 100) / 100,
       }))
       .slice(-7); // Show last 7 days
   }, [movements]);
@@ -376,36 +502,116 @@ export default function MovesAnalysis() {
               </DialogTrigger>
               <DialogContent className="max-w-2xl">
                 <DialogHeader>
-                  <DialogTitle>Record Material Movement</DialogTitle>
+                  <DialogTitle>Record Movement</DialogTitle>
                 </DialogHeader>
                 <div className="grid grid-cols-2 gap-4 py-4">
                   <div className="col-span-2">
-                    <Label>Material *</Label>
-                    <Select value={form.materialId} onValueChange={(value) => setForm({ ...form, materialId: value })}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select material" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {rawMaterials.map((mat) => (
-                          <SelectItem key={mat._id} value={mat._id!}>
-                            {mat.name} ({mat.unitOfMeasure})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div>
-                    <Label>Movement Type *</Label>
-                    <Select value={form.movementType} onValueChange={(value: any) => setForm({ ...form, movementType: value })}>
+                    <Label>Item Type *</Label>
+                    <Select value={itemType} onValueChange={(value: "material" | "product") => {
+                      setItemType(value);
+                      setForm({ ...form, materialId: "" });
+                      setProductForm({ ...productForm, productId: "" });
+                    }}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="inbound">Inbound (Receive)</SelectItem>
-                        <SelectItem value="outbound">Outbound (Issue)</SelectItem>
-                        <SelectItem value="return">Return</SelectItem>
-                        <SelectItem value="transfer">Transfer</SelectItem>
+                        <SelectItem value="material">Raw Material</SelectItem>
+                        <SelectItem value="product">Product</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {itemType === "material" && (
+                    <div className="col-span-2">
+                      <Label>Project (Optional)</Label>
+                      <Select 
+                        value={form.projectId || undefined} 
+                        onValueChange={(value) => setForm({ ...form, projectId: value, wbsTaskId: "" })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select project (optional)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {projects.map((proj) => (
+                            <SelectItem key={proj._id} value={proj._id}>
+                              {proj.code} - {proj.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  <div className="col-span-2">
+                    <Label>{itemType === "material" ? "Material" : "Product"} *</Label>
+                    {itemType === "material" ? (
+                      <Select value={form.materialId} onValueChange={(value) => setForm({ ...form, materialId: value })}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select material" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {rawMaterials.length === 0 ? (
+                            <div className="px-2 py-6 text-center text-sm text-muted-foreground">
+                              No materials available. Please add materials first.
+                            </div>
+                          ) : (
+                            rawMaterials.map((mat) => (
+                              <SelectItem key={mat._id} value={mat._id!}>
+                                {mat.name} ({mat.unitOfMeasure})
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Select value={productForm.productId} onValueChange={(value) => setProductForm({ ...productForm, productId: value })}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select product" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {products.length === 0 ? (
+                            <div className="px-2 py-6 text-center text-sm text-muted-foreground">
+                              No products available. Please add products first.
+                            </div>
+                          ) : (
+                            products.map((prod) => (
+                              <SelectItem key={prod._id} value={prod._id!}>
+                                {prod.name} (SKU: {prod.sku})
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+
+                  <div>
+                    <Label>Movement Type *</Label>
+                    <Select 
+                      value={itemType === "material" ? form.movementType : productForm.movementType} 
+                      onValueChange={(value: any) => {
+                        if (itemType === "material") {
+                          setForm({ ...form, movementType: value });
+                        } else {
+                          setProductForm({ ...productForm, movementType: value });
+                        }
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {itemType === "material" ? (
+                          <>
+                            <SelectItem value="inbound">Inbound (Receive)</SelectItem>
+                            <SelectItem value="outbound">Outbound (Issue)</SelectItem>
+                            <SelectItem value="return">Return</SelectItem>
+                            <SelectItem value="transfer">Transfer</SelectItem>
+                          </>
+                        ) : (
+                          <SelectItem value="transfer">Transfer</SelectItem>
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
@@ -414,51 +620,134 @@ export default function MovesAnalysis() {
                     <Label>Quantity *</Label>
                     <Input
                       type="number"
-                      value={form.quantity || ""}
-                      onChange={(e) => setForm({ ...form, quantity: parseFloat(e.target.value) || 0 })}
+                      value={itemType === "material" ? (form.quantity || "") : (productForm.quantity || "")}
+                      onChange={(e) => {
+                        const qty = parseFloat(e.target.value) || 0;
+                        if (itemType === "material") {
+                          setForm({ ...form, quantity: qty });
+                        } else {
+                          setProductForm({ ...productForm, quantity: qty });
+                        }
+                      }}
                       placeholder="0"
                     />
                   </div>
 
+                  {itemType === "product" && (
+                    <div>
+                      <Label>Unit Cost (₹)</Label>
+                      <Input
+                        type="number"
+                        value={productForm.unitCost || ""}
+                        onChange={(e) => setProductForm({ ...productForm, unitCost: parseFloat(e.target.value) || 0 })}
+                        placeholder="0.00"
+                        step="0.01"
+                      />
+                    </div>
+                  )}
+
+                  {itemType === "product" && productForm.quantity > 0 && productForm.unitCost > 0 && (
+                    <div className="col-span-2">
+                      <Label>Total Cost</Label>
+                      <div className="text-2xl font-bold text-blue-600">
+                        ₹{(productForm.quantity * productForm.unitCost).toLocaleString()}
+                      </div>
+                    </div>
+                  )}
+
                   <div>
                     <Label>Source</Label>
-                    <Input
-                      value={form.source}
-                      onChange={(e) => setForm({ ...form, source: e.target.value })}
-                      placeholder="e.g., Vendor, Warehouse"
-                    />
+                    {itemType === "product" ? (
+                      <Select
+                        value={productForm.source}
+                        onValueChange={(value) => setProductForm({ ...productForm, source: value })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select warehouse" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {warehouses.map((wh) => (
+                            <SelectItem key={wh._id} value={wh.name}>
+                              {wh.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        value={form.source}
+                        onChange={(e) => setForm({ ...form, source: e.target.value })}
+                        placeholder="e.g., Vendor, Warehouse"
+                      />
+                    )}
                   </div>
 
                   <div>
                     <Label>Destination</Label>
-                    <Input
-                      value={form.destination}
-                      onChange={(e) => setForm({ ...form, destination: e.target.value })}
-                      placeholder="e.g., Site, Project"
-                    />
+                    {itemType === "product" ? (
+                      <Select
+                        value={productForm.destination}
+                        onValueChange={(value) => setProductForm({ ...productForm, destination: value })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select warehouse" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {warehouses.map((wh) => (
+                            <SelectItem key={wh._id} value={wh.name}>
+                              {wh.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        value={form.destination}
+                        onChange={(e) => setForm({ ...form, destination: e.target.value })}
+                        placeholder="e.g., Site, Project"
+                      />
+                    )}
                   </div>
 
-                  <div className="col-span-2">
-                    <Label>WBS Task (Optional)</Label>
-                    <Select value={form.wbsTaskId} onValueChange={(value) => setForm({ ...form, wbsTaskId: value })}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select WBS task" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {projectWbsTasks.map((task) => (
-                          <SelectItem key={task.id} value={task.id}>
-                            {task.name} ({task.type})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  {itemType === "material" && (
+                    <div className="col-span-2">
+                      <Label>WBS Task (Optional)</Label>
+                      <Select 
+                        value={form.wbsTaskId} 
+                        onValueChange={(value) => setForm({ ...form, wbsTaskId: value })}
+                        disabled={!form.projectId}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={form.projectId ? "Select WBS task" : "Select project first"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {formWbsTasks.length === 0 ? (
+                            <div className="px-2 py-6 text-center text-sm text-muted-foreground">
+                              No WBS tasks available for this project
+                            </div>
+                          ) : (
+                            formWbsTasks.map((task) => (
+                              <SelectItem key={task.id} value={task.id}>
+                                {task.name} ({task.type})
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
 
                   <div>
                     <Label>Reference Number</Label>
                     <Input
-                      value={form.referenceNumber}
-                      onChange={(e) => setForm({ ...form, referenceNumber: e.target.value })}
+                      value={itemType === "material" ? form.referenceNumber : productForm.referenceNumber}
+                      onChange={(e) => {
+                        if (itemType === "material") {
+                          setForm({ ...form, referenceNumber: e.target.value });
+                        } else {
+                          setProductForm({ ...productForm, referenceNumber: e.target.value });
+                        }
+                      }}
                       placeholder="PO/GRN/Invoice No."
                     />
                   </div>
@@ -467,22 +756,34 @@ export default function MovesAnalysis() {
                     <Label>Movement Date</Label>
                     <Input
                       type="date"
-                      value={form.movementDate}
-                      onChange={(e) => setForm({ ...form, movementDate: e.target.value })}
+                      value={itemType === "material" ? form.movementDate : productForm.movementDate}
+                      disabled
+                      className="bg-gray-100 cursor-not-allowed"
                     />
                   </div>
 
                   <div className="col-span-2">
                     <Label>Remarks</Label>
                     <Input
-                      value={form.remarks}
-                      onChange={(e) => setForm({ ...form, remarks: e.target.value })}
+                      value={itemType === "material" ? form.remarks : productForm.remarks}
+                      onChange={(e) => {
+                        if (itemType === "material") {
+                          setForm({ ...form, remarks: e.target.value });
+                        } else {
+                          setProductForm({ ...productForm, remarks: e.target.value });
+                        }
+                      }}
                       placeholder="Additional notes"
                     />
                   </div>
                 </div>
                 <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+                  <Button variant="outline" onClick={() => {
+                    setIsDialogOpen(false);
+                    resetForm();
+                    resetProductForm();
+                    setItemType("material");
+                  }}>
                     Cancel
                   </Button>
                   <Button onClick={handleSave}>Save Movement</Button>
@@ -494,7 +795,7 @@ export default function MovesAnalysis() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Movements</CardTitle>
@@ -515,7 +816,7 @@ export default function MovesAnalysis() {
           <CardContent>
             <div className="text-2xl font-bold text-green-600">{metrics.inboundCount}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              {metrics.inboundQty.toFixed(2)} units received
+              {metrics.inboundQty.toFixed(2)} units
             </p>
           </CardContent>
         </Card>
@@ -530,7 +831,37 @@ export default function MovesAnalysis() {
           <CardContent>
             <div className="text-2xl font-bold text-red-600">{metrics.outboundCount}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              {metrics.outboundQty.toFixed(2)} units issued
+              {metrics.outboundQty.toFixed(2)} units
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <RotateCcw className="h-4 w-4 text-blue-600" />
+              Return
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-600">{metrics.returnCount}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {metrics.returnQty.toFixed(2)} units
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <Package className="h-4 w-4 text-yellow-600" />
+              Transfer
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-yellow-600">{metrics.transferCount}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {metrics.transferQty.toFixed(2)} units
             </p>
           </CardContent>
         </Card>
@@ -541,7 +872,7 @@ export default function MovesAnalysis() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">₹{metrics.totalValue.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground mt-1">{metrics.uniqueMaterials} unique materials</p>
+            <p className="text-xs text-muted-foreground mt-1">{metrics.uniqueMaterials} items</p>
           </CardContent>
         </Card>
       </div>
@@ -550,7 +881,7 @@ export default function MovesAnalysis() {
       <Card>
         <CardHeader>
           <CardTitle>Inbound/Outbound Trends</CardTitle>
-          <p className="text-sm text-muted-foreground">Material movement trends over time</p>
+          <p className="text-sm text-muted-foreground">Material & Product movement trends over time</p>
         </CardHeader>
         <CardContent>
           {chartData.length > 0 ? (
@@ -564,6 +895,7 @@ export default function MovesAnalysis() {
                 <Bar dataKey="Inbound" fill="#22c55e" name="Inbound (Received)" />
                 <Bar dataKey="Outbound" fill="#ef4444" name="Outbound (Issued)" />
                 <Bar dataKey="Return" fill="#3b82f6" name="Return" />
+                <Bar dataKey="Transfer" fill="#eab308" name="Transfer" />
               </BarChart>
             </ResponsiveContainer>
           ) : (
@@ -677,7 +1009,8 @@ export default function MovesAnalysis() {
               <TableRow>
                 <TableHead>Date</TableHead>
                 <TableHead>Type</TableHead>
-                <TableHead>Material</TableHead>
+                <TableHead>Item Type</TableHead>
+                <TableHead>Item Name</TableHead>
                 <TableHead>Quantity</TableHead>
                 <TableHead>Source</TableHead>
                 <TableHead>Destination</TableHead>
@@ -716,6 +1049,11 @@ export default function MovesAnalysis() {
                           {getMovementTypeIcon(movement.movementType)}
                           {movement.movementType}
                         </span>
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={(movement as any).itemType === "product" ? "default" : "secondary"}>
+                        {(movement as any).itemType === "product" ? "Product" : "Material"}
                       </Badge>
                     </TableCell>
                     <TableCell className="font-medium">{movement.materialName}</TableCell>

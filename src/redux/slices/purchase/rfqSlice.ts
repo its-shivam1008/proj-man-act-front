@@ -63,8 +63,9 @@ export const sendRFQ = createAsyncThunk(
   async (id: string, { rejectWithValue }) => {
     try {
       const response = await api.post(`/purchase/rfq/${id}/send`);
+      console.log("sendRFQ response:", response.data);
       // Expect backend to return something like { success: true, message, rfq? }
-      return { id, data: response.data };
+      return { id, rfq: response.data.rfq, data: response.data };
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.message || "Failed to send RFQ");
     }
@@ -170,17 +171,20 @@ const rfqSlice = createSlice({
       })
       .addCase(sendRFQ.fulfilled, (state, action) => {
         state.loading = false;
-        // if backend returned updated RFQ, replace it. Otherwise mark status as 'sent'
+        console.log("sendRFQ.fulfilled payload:", action.payload);
+        
         const id = action.payload.id;
-        const returnedRfq = action.payload.data?.rfq ?? action.payload.data?.purchaseOrder ?? null;
+        const returnedRfq = action.payload.rfq;
 
         const index = state.rfqs.findIndex(r => (r.id ?? (r as any)._id) === id);
+        console.log("Found RFQ at index:", index, "RFQ ID:", id);
+        
         if (index !== -1) {
           if (returnedRfq) {
-            // Normalize id field naming
-            state.rfqs[index] = returnedRfq;
+            console.log("Updating RFQ with returned data:", returnedRfq);
+            state.rfqs[index] = { ...returnedRfq, id: returnedRfq._id || returnedRfq.id };
           } else {
-            // fallback: optimistic update to status
+            console.log("No RFQ returned, setting status to sent");
             state.rfqs[index] = { ...state.rfqs[index], status: 'sent' } as RFQ;
           }
         }

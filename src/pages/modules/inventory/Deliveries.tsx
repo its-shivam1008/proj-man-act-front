@@ -489,10 +489,10 @@ const Deliveries: React.FC = () => {
         </div>
         <div className="flex items-center gap-4">
           {/* Added Notification Center */}
-          <NotificationCenter
+          {/* <NotificationCenter
             destination="delivery.inventory"
             title="Inventory Notifications"
-          />
+          /> */}
 
           <button
             disabled={!canCreate}

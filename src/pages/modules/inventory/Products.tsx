@@ -12,6 +12,7 @@ import {
 import { fetchWarehouses } from "@/redux/slices/warehouseSlice";
 import { fetchStores } from "@/redux/slices/storageSlice";
 import { fetchInventoryMaster } from "@/redux/slices/inventoryMasterSlice";
+import { createMovement } from "@/redux/slices/materialMovementSlice";
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/userPermission";
 
@@ -857,6 +858,35 @@ const Products: React.FC = () => {
           driverName: form.driverName,
         });
         localStorage.setItem('STOCK_TRANSFERS', JSON.stringify(transfers.slice(0, 50))); // Keep last 50
+
+        // Create material movement record for product transfer
+        try {
+          const movementData = {
+            organisationId: localStorage.getItem("organisationId"),
+            materialId: product._id,
+            materialName: product.name,
+            movementType: "transfer",
+            quantity: Number(form.quantity),
+            unit: "units",
+            source: sourceWarehouse.name,
+            destination: warehouses.find((w) => w._id === form.toWarehouse)?.name || 'Unknown',
+            referenceNumber: `TRANSFER-${form.vehicleNo || Date.now()}`,
+            remarks: `Stock transfer via ${form.transportType}. Vehicle: ${form.vehicleNo || 'N/A'}. Driver: ${form.driverName || 'N/A'}`,
+            movementDate: new Date().toISOString().split("T")[0],
+            unitCost: transportCost, // Transport cost per unit
+            totalCost: totalTransportCost, // Total transport cost
+            itemType: "product",
+          };
+
+          console.log("Creating product transfer movement:", movementData);
+
+          // Use Redux action to create movement
+          await dispatch(createMovement(movementData)).unwrap();
+          console.log("Product transfer movement created successfully");
+        } catch (error) {
+          console.error("Failed to create movement record:", error);
+          // Don't show error to user as transfer was successful
+        }
 
         toast.success("Stock transferred!");
         onClose();
