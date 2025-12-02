@@ -204,7 +204,7 @@ export default function WorkCentersPageAdvanced() {
         >
           <DialogTrigger asChild>
             <Button
-              className="text-white"
+              // className="text-white"
               disabled={!canCreate}
               onClick={() => canCreate && setIsDialogOpen(true)}
               className={!canCreate ? "opacity-50 cursor-not-allowed" : "text-white"}

@@ -45,7 +45,7 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import { Eye, Edit, Trash2, Plus, Warehouse, ShieldAlert } from "lucide-react";
+import { Eye, Edit, Trash2, Plus, Warehouse, ShieldAlert, Package } from "lucide-react";
 
 import { RawMaterial } from "@/redux/slices/rawmaterialSlice";
 
@@ -93,11 +93,93 @@ export default function RawMaterialMaster() {
     (state: RootState) => state.inventoryMaster
   );
 
+  // Notification state
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
+
+  // Fetch notifications
+  const fetchNotifications = async () => {
+    setLoadingNotifications(true);
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+      const url = `${apiUrl}/notifications/list?destination=inventory.raw-materials&status=unread`;
+      
+      console.log('Fetching notifications from:', url);
+      console.log('Token:', localStorage.getItem('token') ? 'Present' : 'Missing');
+      
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log('Response status:', response.status);
+      console.log('Response headers:', response.headers);
+      
+      if (!response.ok) {
+        const text = await response.text();
+        console.error('Failed to fetch notifications:', response.status, text);
+        setNotifications([]);
+        return;
+      }
+      
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('Response is not JSON:', text.substring(0, 200));
+        setNotifications([]);
+        return;
+      }
+      
+      const data = await response.json();
+      console.log('Fetched notifications:', data);
+      
+      if (Array.isArray(data)) {
+        const filtered = data.filter((n: any) => n.type === 'rawMaterialPurchase' && n.inviteResponse === 'pending');
+        console.log('Filtered notifications:', filtered);
+        setNotifications(filtered);
+      } else {
+        setNotifications([]);
+      }
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+      setNotifications([]);
+    } finally {
+      setLoadingNotifications(false);
+    }
+  };
+
+  // Handle accept/reject
+  const handleMaterialResponse = async (notificationId: string, response: 'accepted' | 'rejected') => {
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/purchase/orders/material-response`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ notificationId, response })
+      });
+      
+      if (res.ok) {
+        // Refresh notifications and materials
+        fetchNotifications();
+        dispatch(fetchMaterials({ page, limit }));
+      }
+    } catch (error) {
+      console.error('Error responding to material purchase:', error);
+    }
+  };
+
   // Fetch on mount
   useEffect(() => {
+    console.log('Raw Material page mounted, fetching data...');
     dispatch(fetchMaterials({ page, limit }));
     // Fetch HSN codes
     dispatch(fetchInventoryMaster({ type: "hsn", page: 1, limit: 100 }));
+    // Fetch notifications
+    fetchNotifications();
   }, [dispatch, page, limit]);
   const isSearching = search.trim() !== "";
   const filtered = useMemo(() => {
@@ -159,6 +241,51 @@ export default function RawMaterialMaster() {
   }
   return (
     <div className="p-6 space-y-6">
+      {/* Purchase Notifications */}
+      {notifications.length > 0 && (
+        <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-lg shadow-sm">
+          <h3 className="text-lg font-semibold text-blue-900 mb-3 flex items-center gap-2">
+            <Package className="h-5 w-5" />
+            New Material Purchase Orders ({notifications.length})
+          </h3>
+          <div className="space-y-3">
+            {notifications.map((notification) => (
+              <div key={notification._id} className="bg-white p-4 rounded-lg border border-blue-200 flex items-center justify-between">
+                <div className="flex-1">
+                  <p className="font-medium text-gray-900">{notification.materialData?.product}</p>
+                  <div className="text-sm text-gray-600 mt-1 grid grid-cols-2 gap-2">
+                    <span>Quantity: <strong>{notification.materialData?.quantity}</strong></span>
+                    <span>Unit Price: <strong>₹{notification.materialData?.unitPrice}</strong></span>
+                    {notification.materialData?.itemCode && (
+                      <span>Item Code: <strong>{notification.materialData.itemCode}</strong></span>
+                    )}
+                    {notification.materialData?.unitOfMeasure && (
+                      <span>UoM: <strong>{notification.materialData.unitOfMeasure}</strong></span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-2 ml-4">
+                  <Button
+                    size="sm"
+                    onClick={() => handleMaterialResponse(notification._id, 'accepted')}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    Accept
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => handleMaterialResponse(notification._id, 'rejected')}
+                  >
+                    Reject
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold flex gap-2 items-center">
           <Warehouse /> Raw Material / Item Master

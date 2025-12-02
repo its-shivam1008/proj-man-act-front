@@ -43,11 +43,27 @@ export interface RFQ {
 }
 
 export interface PurchaseOrderProductLine {
+  itemType?: "material" | "product";
   product: string;
   quantity: number;
   unitPrice: number;
   taxes: number;
   subtotal: number;
+  // Raw Material specific fields
+  itemCode?: string;
+  unitOfMeasure?: string;
+  hsn?: string;
+  gstPercent?: number;
+  valuationMethod?: string;
+  reorderLevel?: number;
+  technicalSpecs?: string;
+  // Product specific fields
+  productType?: string;
+  category?: string;
+  sku?: string;
+  barcode?: string;
+  warehouseLocation?: string;
+  description?: string;
 }
 
 export interface PurchaseOrder {

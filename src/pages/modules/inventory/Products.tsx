@@ -105,7 +105,80 @@ const Products: React.FC = () => {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [viewingProduct, setViewingProduct] = useState<Product | null>(null);
 
+  // Notification state
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
+
   const orgId = localStorage.getItem("organisationId");
+
+  // Fetch notifications
+  const fetchNotifications = async () => {
+    setLoadingNotifications(true);
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+      const url = `${apiUrl}/notifications/list?destination=inventory.products&status=unread`;
+      
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        setNotifications([]);
+        return;
+      }
+      
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        setNotifications([]);
+        return;
+      }
+      
+      const data = await response.json();
+      
+      if (Array.isArray(data)) {
+        const filtered = data.filter((n: any) => n.type === 'productPurchase' && n.inviteResponse === 'pending');
+        setNotifications(filtered);
+      } else {
+        setNotifications([]);
+      }
+    } catch (error) {
+      console.error('Error fetching product notifications:', error);
+      setNotifications([]);
+    } finally {
+      setLoadingNotifications(false);
+    }
+  };
+
+  // Handle accept/reject
+  const handleProductResponse = async (notificationId: string, response: 'accepted' | 'rejected') => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+      const res = await fetch(`${apiUrl}/purchase/orders/product-response`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ notificationId, response })
+      });
+      
+      if (res.ok) {
+        // Refresh notifications and products
+        fetchNotifications();
+        dispatch(fetchProducts({ page, limit }));
+        if (orgId) {
+          dispatch(fetchWarehouses(orgId));
+        }
+        toast.success(`Product ${response === 'accepted' ? 'added successfully' : 'rejected'}`);
+      }
+    } catch (error) {
+      console.error('Error responding to product purchase:', error);
+      toast.error('Failed to process response');
+    }
+  };
 
   // Get categories from inventory master
   const { category: categories } = useSelector(
@@ -119,6 +192,8 @@ const Products: React.FC = () => {
       dispatch(fetchStores({ page: 1, limit: 200 }));
       // Fetch categories from Master Data
       dispatch(fetchInventoryMaster({ type: "category", page: 1, limit: 100 }));
+      // Fetch notifications
+      fetchNotifications();
     }
   }, [dispatch, orgId, page]);
 
@@ -1078,6 +1153,53 @@ const Products: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 p-2">
+      {/* Purchase Notifications */}
+      {notifications.length > 0 && (
+        <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-lg shadow-sm mb-6">
+          <h3 className="text-lg font-semibold text-blue-900 mb-3 flex items-center gap-2">
+            <Package className="h-5 w-5" />
+            New Product Purchase Orders ({notifications.length})
+          </h3>
+          <div className="space-y-3">
+            {notifications.map((notification) => (
+              <div key={notification._id} className="bg-white p-4 rounded-lg border border-blue-200 flex items-center justify-between">
+                <div className="flex-1">
+                  <p className="font-medium text-gray-900">{notification.materialData?.product}</p>
+                  <div className="text-sm text-gray-600 mt-1 grid grid-cols-3 gap-2">
+                    <span>Quantity: <strong>{notification.materialData?.quantity}</strong></span>
+                    <span>Unit Price: <strong>₹{notification.materialData?.unitPrice}</strong></span>
+                    <span>Category: <strong>{notification.materialData?.category || 'N/A'}</strong></span>
+                    {notification.materialData?.sku && (
+                      <span>SKU: <strong>{notification.materialData.sku}</strong></span>
+                    )}
+                    {notification.materialData?.warehouseLocation && (
+                      <span>Warehouse: <strong>{notification.materialData.warehouseLocation}</strong></span>
+                    )}
+                    {notification.materialData?.barcode && (
+                      <span>Barcode: <strong>{notification.materialData.barcode}</strong></span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-2 ml-4">
+                  <button
+                    onClick={() => handleProductResponse(notification._id, 'accepted')}
+                    className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium"
+                  >
+                    Accept
+                  </button>
+                  <button
+                    onClick={() => handleProductResponse(notification._id, 'rejected')}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex justify-between items-center mb-8">
         <div>

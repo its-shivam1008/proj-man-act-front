@@ -11,6 +11,8 @@ import {
 } from "@/redux/slices/purchase/purchaseOrderSlice";
 import { fetchWarehouses } from '@/redux/slices/warehouseSlice'
 import { fetchVendors } from "@/redux/slices/purchase/vendorSlice";
+import { fetchMaterials } from "@/redux/slices/rawmaterialSlice";
+import { fetchInventoryMaster } from "@/redux/slices/inventoryMasterSlice";
 import { PurchaseOrder, PurchaseOrderProductLine } from "@/types/purchase";
 import {
   Plus,
@@ -53,6 +55,8 @@ const PurchaseOrderComponent: React.FC = () => {
     (state: RootState) => state.purchaseOrders
   );
   const { vendors } = useSelector((state: RootState) => state.vendors);
+  const { materials: rawMaterials } = useSelector((state: RootState) => state.rawMaterials);
+  const { category: categories } = useSelector((state: RootState) => state.inventoryMaster);
 
   const [showCreatePo, setShowCreatePo] = useState(false);
   const [showViewPo, setShowViewPo] = useState(false);
@@ -78,6 +82,8 @@ const PurchaseOrderComponent: React.FC = () => {
 
     dispatch(fetchVendors());
     dispatch(fetchWarehouses(localStorage.getItem("organisationId")));
+    dispatch(fetchMaterials());
+    dispatch(fetchInventoryMaster({ type: "category", page: 1, limit: 100 }));
   }, [dispatch, page, limit, search]);
 
 
@@ -88,6 +94,7 @@ const PurchaseOrderComponent: React.FC = () => {
   }, [error]);
 
   const CreatePoForm = () => {
+    const [itemType, setItemType] = useState<"rawMaterial" | "product">("rawMaterial");
     const [formData, setFormData] = useState({
       poNo: "",
       vendor: "", // This will be the vendor name for now, matching UI
@@ -98,6 +105,7 @@ const PurchaseOrderComponent: React.FC = () => {
       incoterms: "FOB",
       deliveryMethod: "Truck",
       scheduledDeliveryDate: "",
+      itemType: "rawMaterial" as "rawMaterial" | "product",
       productLines: [
         { product: "", quantity: 0, unitPrice: 0, taxes: 0, subtotal: 0 },
       ] as PurchaseOrderProductLine[],
@@ -172,7 +180,28 @@ const PurchaseOrderComponent: React.FC = () => {
               </button>
             </div>
             <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Item Type
+                  </label>
+                  <select
+                    value={itemType}
+                    onChange={(e) => {
+                      const newType = e.target.value as "rawMaterial" | "product";
+                      setItemType(newType);
+                      setFormData({ 
+                        ...formData, 
+                        itemType: newType,
+                        productLines: [{ product: "", quantity: 0, unitPrice: 0, taxes: 0, subtotal: 0 }]
+                      });
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="rawMaterial">Raw Material</option>
+                    <option value="product">Product</option>
+                  </select>
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     PO Number
@@ -221,7 +250,7 @@ const PurchaseOrderComponent: React.FC = () => {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Delivery Address
@@ -238,27 +267,6 @@ const PurchaseOrderComponent: React.FC = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="Enter delivery address"
                   ></textarea>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Warehouse
-                  </label>
-                  <select
-                    value={formData.warehouse}
-                    onChange={(e) =>
-                      setFormData({ ...formData, warehouse: e.target.value })
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="">Select Warehouse</option>
-
-                    {warehouses?.map((wh) => (
-                      <option key={wh._id} value={wh.name}>
-                        {wh.name}
-                      </option>
-                    ))}
-                  </select>
-
                 </div>
               </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -318,85 +326,387 @@ const PurchaseOrderComponent: React.FC = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Product Lines
+                  {itemType === "rawMaterial" ? "Material Lines" : "Product Lines"}
                 </label>
                 <div className="border border-gray-300 rounded-lg p-4">
-                  <div className="grid grid-cols-5 gap-2 mb-2 text-sm font-medium text-gray-700">
-                    <div>Product</div>
-                    <div>Quantity</div>
-                    <div>Unit Price</div>
-                    <div>Taxes (%)</div>
-                    <div>Subtotal</div>
-                  </div>
-                  {formData.productLines.map((line, index) => (
-                    <div key={index} className="grid grid-cols-5 gap-2 mb-2">
-                      <input
-                        type="text"
-                        value={line.product}
-                        onChange={(e) => {
-                          const newLines = [...formData.productLines];
-                          newLines[index].product = e.target.value;
-                          setFormData({ ...formData, productLines: newLines });
-                        }}
-                        className="px-2 py-1 border border-gray-300 rounded"
-                        placeholder="Product name"
-                        required
-                      />
-                      <input
-                        type="number"
-                        value={line.quantity}
-                        onChange={(e) => {
-                          const newLines = [...formData.productLines];
-                          newLines[index].quantity =
-                            parseInt(e.target.value) || 0;
-                          newLines[index].subtotal =
-                            newLines[index].quantity *
-                            newLines[index].unitPrice;
-                          setFormData({ ...formData, productLines: newLines });
-                        }}
-                        className="px-2 py-1 border border-gray-300 rounded"
-                        placeholder="Qty"
-                        required
-                      />
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={line.unitPrice}
-                        onChange={(e) => {
-                          const newLines = [...formData.productLines];
-                          newLines[index].unitPrice =
-                            parseFloat(e.target.value) || 0;
-                          newLines[index].subtotal =
-                            newLines[index].quantity *
-                            newLines[index].unitPrice;
-                          setFormData({ ...formData, productLines: newLines });
-                        }}
-                        className="px-2 py-1 border border-gray-300 rounded"
-                        placeholder="Price"
-                        required
-                      />
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={line.taxes}
-                        onChange={(e) => {
-                          const newLines = [...formData.productLines];
-                          newLines[index].taxes =
-                            parseFloat(e.target.value) || 0;
-                          setFormData({ ...formData, productLines: newLines });
-                        }}
-                        className="px-2 py-1 border border-gray-300 rounded"
-                        placeholder="Tax %"
-                      />
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={line.subtotal}
-                        className="px-2 py-1 border border-gray-300 rounded bg-gray-50"
-                        disabled
-                      />
-                    </div>
-                  ))}
+                  {itemType === "rawMaterial" ? (
+                    // Raw Material Fields
+                    <>
+                      {formData.productLines.map((line, index) => (
+                        <div key={index} className="border-b pb-4 mb-4 last:border-b-0">
+                          <div className="grid grid-cols-3 gap-3 mb-3">
+                            <div>
+                              <label className="text-xs font-medium text-gray-600">Material Name *</label>
+                              <input
+                                type="text"
+                                value={line.product}
+                                onChange={(e) => {
+                                  const newLines = [...formData.productLines];
+                                  newLines[index].product = e.target.value;
+                                  setFormData({ ...formData, productLines: newLines });
+                                }}
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                placeholder="Enter material name"
+                                required
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-gray-600">Item Code</label>
+                              <input
+                                type="text"
+                                value={line.itemCode || ""}
+                                onChange={(e) => {
+                                  const newLines = [...formData.productLines];
+                                  newLines[index].itemCode = e.target.value;
+                                  setFormData({ ...formData, productLines: newLines });
+                                }}
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                placeholder="Item code"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-gray-600">Unit of Measure *</label>
+                              <input
+                                type="text"
+                                value={line.unitOfMeasure || ""}
+                                onChange={(e) => {
+                                  const newLines = [...formData.productLines];
+                                  newLines[index].unitOfMeasure = e.target.value;
+                                  setFormData({ ...formData, productLines: newLines });
+                                }}
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                placeholder="e.g., kg, pcs"
+                                required
+                              />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-4 gap-3 mb-3">
+                            <div>
+                              <label className="text-xs font-medium text-gray-600">HSN</label>
+                              <input
+                                type="text"
+                                value={line.hsn || ""}
+                                onChange={(e) => {
+                                  const newLines = [...formData.productLines];
+                                  newLines[index].hsn = e.target.value;
+                                  setFormData({ ...formData, productLines: newLines });
+                                }}
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                placeholder="HSN code"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-gray-600">GST %</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={line.gstPercent || ""}
+                                onChange={(e) => {
+                                  const newLines = [...formData.productLines];
+                                  newLines[index].gstPercent = parseFloat(e.target.value) || 0;
+                                  setFormData({ ...formData, productLines: newLines });
+                                }}
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                placeholder="GST %"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-gray-600">Valuation Method</label>
+                              <select
+                                value={line.valuationMethod || "FIFO"}
+                                onChange={(e) => {
+                                  const newLines = [...formData.productLines];
+                                  newLines[index].valuationMethod = e.target.value;
+                                  setFormData({ ...formData, productLines: newLines });
+                                }}
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                              >
+                                <option value="FIFO">FIFO</option>
+                                <option value="WEIGHTED_AVG">Weighted Avg</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-gray-600">Reorder Level</label>
+                              <input
+                                type="number"
+                                value={line.reorderLevel || ""}
+                                onChange={(e) => {
+                                  const newLines = [...formData.productLines];
+                                  newLines[index].reorderLevel = parseInt(e.target.value) || 0;
+                                  setFormData({ ...formData, productLines: newLines });
+                                }}
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                placeholder="Reorder level"
+                              />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-4 gap-3 mb-3">
+                            <div>
+                              <label className="text-xs font-medium text-gray-600">Quantity *</label>
+                              <input
+                                type="number"
+                                value={line.quantity}
+                                onChange={(e) => {
+                                  const newLines = [...formData.productLines];
+                                  newLines[index].quantity = parseInt(e.target.value) || 0;
+                                  newLines[index].subtotal = newLines[index].quantity * newLines[index].unitPrice;
+                                  setFormData({ ...formData, productLines: newLines });
+                                }}
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                placeholder="Qty"
+                                required
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-gray-600">Unit Price *</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={line.unitPrice}
+                                onChange={(e) => {
+                                  const newLines = [...formData.productLines];
+                                  newLines[index].unitPrice = parseFloat(e.target.value) || 0;
+                                  newLines[index].subtotal = newLines[index].quantity * newLines[index].unitPrice;
+                                  setFormData({ ...formData, productLines: newLines });
+                                }}
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                placeholder="Price"
+                                required
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-gray-600">Taxes (%)</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={line.taxes}
+                                onChange={(e) => {
+                                  const newLines = [...formData.productLines];
+                                  newLines[index].taxes = parseFloat(e.target.value) || 0;
+                                  setFormData({ ...formData, productLines: newLines });
+                                }}
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                placeholder="Tax %"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-gray-600">Subtotal</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={line.subtotal}
+                                className="w-full px-2 py-1 border border-gray-300 rounded bg-gray-50 text-sm"
+                                disabled
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-gray-600">Technical Specs</label>
+                            <textarea
+                              rows={2}
+                              value={line.technicalSpecs || ""}
+                              onChange={(e) => {
+                                const newLines = [...formData.productLines];
+                                newLines[index].technicalSpecs = e.target.value;
+                                setFormData({ ...formData, productLines: newLines });
+                              }}
+                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                              placeholder="Technical specifications"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    // Product Fields (Complete)
+                    <>
+                      {formData.productLines.map((line, index) => (
+                        <div key={index} className="border-b pb-4 mb-4 last:border-b-0">
+                          <div className="grid grid-cols-3 gap-3 mb-3">
+                            <div>
+                              <label className="text-xs font-medium text-gray-600">Product Name *</label>
+                              <input
+                                type="text"
+                                value={line.product}
+                                onChange={(e) => {
+                                  const newLines = [...formData.productLines];
+                                  newLines[index].product = e.target.value;
+                                  setFormData({ ...formData, productLines: newLines });
+                                }}
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                placeholder="Enter product name"
+                                required
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-gray-600">Product Type</label>
+                              <select
+                                value={line.productType || "goods"}
+                                onChange={(e) => {
+                                  const newLines = [...formData.productLines];
+                                  newLines[index].productType = e.target.value;
+                                  setFormData({ ...formData, productLines: newLines });
+                                }}
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                              >
+                                <option value="goods">Goods</option>
+                                <option value="services">Services</option>
+                                <option value="combo">Combo</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-gray-600">Category</label>
+                              <select
+                                value={line.category || ""}
+                                onChange={(e) => {
+                                  const newLines = [...formData.productLines];
+                                  newLines[index].category = e.target.value;
+                                  setFormData({ ...formData, productLines: newLines });
+                                }}
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                              >
+                                <option value="">Select Category</option>
+                                {categories && categories.length > 0 ? (
+                                  categories.map((cat: any) => (
+                                    <option key={cat._id} value={cat.name}>
+                                      {cat.name}
+                                    </option>
+                                  ))
+                                ) : (
+                                  <option value="" disabled>
+                                    No categories available
+                                  </option>
+                                )}
+                              </select>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-3 gap-3 mb-3">
+                            <div>
+                              <label className="text-xs font-medium text-gray-600">SKU / Reference Code</label>
+                              <input
+                                type="text"
+                                value={line.sku || ""}
+                                onChange={(e) => {
+                                  const newLines = [...formData.productLines];
+                                  newLines[index].sku = e.target.value;
+                                  setFormData({ ...formData, productLines: newLines });
+                                }}
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                placeholder="SKU code"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-gray-600">Barcode</label>
+                              <input
+                                type="text"
+                                value={line.barcode || ""}
+                                onChange={(e) => {
+                                  const newLines = [...formData.productLines];
+                                  newLines[index].barcode = e.target.value;
+                                  setFormData({ ...formData, productLines: newLines });
+                                }}
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                placeholder="Barcode"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-gray-600">Warehouse</label>
+                              <select
+                                value={line.warehouseLocation || ""}
+                                onChange={(e) => {
+                                  const newLines = [...formData.productLines];
+                                  newLines[index].warehouseLocation = e.target.value;
+                                  setFormData({ ...formData, productLines: newLines });
+                                }}
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                              >
+                                <option value="">Select Warehouse</option>
+                                {warehouses?.map((wh) => (
+                                  <option key={wh._id} value={wh.name}>
+                                    {wh.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                          <div className="mb-3">
+                            <label className="text-xs font-medium text-gray-600">Description</label>
+                            <textarea
+                              rows={2}
+                              value={line.description || ""}
+                              onChange={(e) => {
+                                const newLines = [...formData.productLines];
+                                newLines[index].description = e.target.value;
+                                setFormData({ ...formData, productLines: newLines });
+                              }}
+                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                              placeholder="Product description"
+                            />
+                          </div>
+                          <div className="grid grid-cols-4 gap-3">
+                            <div>
+                              <label className="text-xs font-medium text-gray-600">Quantity *</label>
+                              <input
+                                type="number"
+                                value={line.quantity}
+                                onChange={(e) => {
+                                  const newLines = [...formData.productLines];
+                                  newLines[index].quantity = parseInt(e.target.value) || 0;
+                                  newLines[index].subtotal = newLines[index].quantity * newLines[index].unitPrice;
+                                  setFormData({ ...formData, productLines: newLines });
+                                }}
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                placeholder="Qty"
+                                required
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-gray-600">Unit Price *</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={line.unitPrice}
+                                onChange={(e) => {
+                                  const newLines = [...formData.productLines];
+                                  newLines[index].unitPrice = parseFloat(e.target.value) || 0;
+                                  newLines[index].subtotal = newLines[index].quantity * newLines[index].unitPrice;
+                                  setFormData({ ...formData, productLines: newLines });
+                                }}
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                placeholder="Price"
+                                required
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-gray-600">Taxes (%)</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={line.taxes}
+                                onChange={(e) => {
+                                  const newLines = [...formData.productLines];
+                                  newLines[index].taxes = parseFloat(e.target.value) || 0;
+                                  setFormData({ ...formData, productLines: newLines });
+                                }}
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                placeholder="Tax %"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-gray-600">Subtotal</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={line.subtotal}
+                                className="w-full px-2 py-1 border border-gray-300 rounded bg-gray-50 text-sm"
+                                disabled
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </>
+                  )}
                   <button
                     type="button"
                     onClick={() =>
@@ -414,9 +724,9 @@ const PurchaseOrderComponent: React.FC = () => {
                         ],
                       })
                     }
-                    className="text-blue-600 hover:text-blue-800 text-sm"
+                    className="text-blue-600 hover:text-blue-800 text-sm mt-2"
                   >
-                    + Add Product Line
+                    + Add {itemType === "rawMaterial" ? "Material" : "Product"} Line
                   </button>
                 </div>
               </div>
@@ -503,7 +813,15 @@ const PurchaseOrderComponent: React.FC = () => {
               </button>
             </div>
             <div className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Item Type
+                  </label>
+                  <p className="text-sm text-gray-900">
+                    {viewingPo.itemType === "product" ? "Product" : "Raw Material"}
+                  </p>
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Vendor
@@ -579,11 +897,11 @@ const PurchaseOrderComponent: React.FC = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Product Lines
+                  {viewingPo.itemType === "product" ? "Product Lines" : "Material Lines"}
                 </label>
                 <div className="border border-gray-300 rounded-lg p-4">
                   <div className="grid grid-cols-5 gap-2 mb-2 text-sm font-medium text-gray-700">
-                    <div>Product</div>
+                    <div>{viewingPo.itemType === "product" ? "Product" : "Material"}</div>
                     <div>Quantity</div>
                     <div>Unit Price</div>
                     <div>Taxes (%)</div>
@@ -601,7 +919,7 @@ const PurchaseOrderComponent: React.FC = () => {
                       <div>${line.subtotal}</div>
                     </div>
                   )) || (
-                      <p className="text-sm text-gray-500">No product lines</p>
+                      <p className="text-sm text-gray-500">No {viewingPo.itemType === "product" ? "product" : "material"} lines</p>
                     )}
                 </div>
               </div>
@@ -625,6 +943,9 @@ const PurchaseOrderComponent: React.FC = () => {
   const UpdatePoModal = () => {
     if (!viewingPo) return null;
 
+    const [itemType, setItemType] = useState<"rawMaterial" | "product">(
+      viewingPo.itemType || "rawMaterial"
+    );
     const [formData, setFormData] = useState({
       poNo: viewingPo.poNo,
       vendor: viewingPo.vendor,
@@ -637,6 +958,7 @@ const PurchaseOrderComponent: React.FC = () => {
       scheduledDeliveryDate: viewingPo.scheduledDeliveryDate
         ? viewingPo.scheduledDeliveryDate.split("T")[0]
         : "",
+      itemType: viewingPo.itemType || "rawMaterial" as "rawMaterial" | "product",
       productLines: viewingPo.productLines || [],
       responsibleUser: viewingPo.responsibleUser,
       totalAmount: viewingPo.totalAmount,
@@ -708,7 +1030,27 @@ const PurchaseOrderComponent: React.FC = () => {
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* --- Same fields as Create Modal --- */}
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <div>
+                <label>Item Type</label>
+                <select
+                  value={itemType}
+                  onChange={(e) => {
+                    const newType = e.target.value as "rawMaterial" | "product";
+                    setItemType(newType);
+                    setFormData({ 
+                      ...formData, 
+                      itemType: newType,
+                      productLines: [{ product: "", quantity: 0, unitPrice: 0, taxes: 0, subtotal: 0 }]
+                    });
+                  }}
+                  className="w-full border px-3 py-2 rounded"
+                >
+                  <option value="rawMaterial">Raw Material</option>
+                  <option value="product">Product</option>
+                </select>
+              </div>
+
               <div>
                 <label>PO Number</label>
                 <input
@@ -787,8 +1129,15 @@ const PurchaseOrderComponent: React.FC = () => {
 
             {/* Product Lines */}
             <div>
-              <label>Product Lines</label>
+              <label>{itemType === "rawMaterial" ? "Material Lines" : "Product Lines"}</label>
               <div className="border p-3 rounded-lg">
+                <div className="grid grid-cols-5 gap-2 mb-2 text-sm font-medium text-gray-700">
+                  <div>{itemType === "rawMaterial" ? "Material Name" : "Product Name"}</div>
+                  <div>Quantity</div>
+                  <div>Unit Price</div>
+                  <div>Taxes (%)</div>
+                  <div>Subtotal</div>
+                </div>
                 {formData.productLines.map((line, index) => (
                   <div
                     key={index}
@@ -803,6 +1152,7 @@ const PurchaseOrderComponent: React.FC = () => {
                         setFormData({ ...formData, productLines: updated });
                       }}
                       className="border px-2 py-1 rounded"
+                      placeholder={itemType === "rawMaterial" ? "Enter material name" : "Enter product name"}
                     />
                     <input
                       type="number"
@@ -846,6 +1196,27 @@ const PurchaseOrderComponent: React.FC = () => {
                     />
                   </div>
                 ))}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFormData({
+                      ...formData,
+                      productLines: [
+                        ...formData.productLines,
+                        {
+                          product: "",
+                          quantity: 0,
+                          unitPrice: 0,
+                          taxes: 0,
+                          subtotal: 0,
+                        },
+                      ],
+                    })
+                  }
+                  className="text-blue-600 hover:text-blue-800 text-sm mt-2"
+                >
+                  + Add {itemType === "rawMaterial" ? "Material" : "Product"} Line
+                </button>
               </div>
             </div>
 
