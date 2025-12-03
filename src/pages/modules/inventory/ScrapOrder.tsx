@@ -86,11 +86,24 @@ const ScrapManagement: React.FC = () => {
 
   const [creating, setCreating] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [localScrapOrders, setLocalScrapOrders] = useState<any[]>([]);
   const orgId = localStorage.getItem('organisationId')
+  
   useEffect(() => {
     dispatch(getScrapOrders());
     dispatch(fetchProducts(orgId));
+    
+    // Load scrap orders from localStorage
+    const stored = localStorage.getItem('SCRAP_ORDERS');
+    if (stored) {
+      setLocalScrapOrders(JSON.parse(stored));
+    }
   }, [dispatch]);
+  
+  // Merge Redux scrap orders with localStorage scrap orders
+  const allScrapOrders = useMemo(() => {
+    return [...localScrapOrders, ...scrapOrders];
+  }, [localScrapOrders, scrapOrders]);
 
   const selectedCreateProduct = useMemo(
     () => products.find((p: any) => p._id === createForm.productId) || null,
@@ -210,6 +223,15 @@ const ScrapManagement: React.FC = () => {
     } catch (err: any) {
       toast.error(err?.message || "Failed");
     }
+  };
+  
+  // DELETE LOCAL (from localStorage)
+  const handleDeleteLocal = (index: number) => {
+    if (!confirm("Delete this scrap order?")) return;
+    const updated = localScrapOrders.filter((_, i) => i !== index);
+    setLocalScrapOrders(updated);
+    localStorage.setItem('SCRAP_ORDERS', JSON.stringify(updated));
+    toast.success("Scrap order deleted");
   };
   if (!canView) {
     return (
@@ -379,13 +401,18 @@ const ScrapManagement: React.FC = () => {
 
               {/* BODY */}
               <TableBody>
-                {scrapOrders.map((order: any, index: number) => {
+                {allScrapOrders.map((order: any, index: number) => {
                   const product =
                     products.find((p: any) => p._id === order.productId) || {};
+                  
+                  // For localStorage items, use productName directly
+                  const productName = order.productName || product.name || "Unknown";
+                  const productSku = product.sku || order.sku || "N/A";
+                  const productStock = product.quantity ?? order.stock ?? 0;
 
                   return (
                     <TableRow
-                      key={order._id}
+                      key={order._id || order.id || index}
                       className={`
                 transition-all hover:bg-gray-50/80 
                 ${index % 2 === 0 ? "bg-white" : "bg-gray-50/50"}
@@ -393,12 +420,12 @@ const ScrapManagement: React.FC = () => {
                     >
                       {/* PRODUCT */}
                       <TableCell className="font-medium text-gray-900">
-                        {product.name || "Unknown"}
+                        {productName}
                       </TableCell>
 
                       {/* SKU */}
                       <TableCell className="text-gray-600">
-                        {product.sku || "N/A"}
+                        {productSku}
                       </TableCell>
 
                       {/* QTY */}
@@ -408,7 +435,7 @@ const ScrapManagement: React.FC = () => {
 
                       {/* STOCK */}
                       <TableCell className="text-gray-800">
-                        {product.quantity ?? 0}
+                        {productStock}
                       </TableCell>
 
                       {/* REASON */}
@@ -434,7 +461,9 @@ const ScrapManagement: React.FC = () => {
 
                       {/* DATE */}
                       <TableCell className="text-gray-600 text-sm">
-                        {format(new Date(order.date), "PP")}
+                        {order.date ? format(new Date(order.date), "PP") : 
+                         order.rejectedDate ? format(new Date(order.rejectedDate), "PP") : 
+                         'N/A'}
                       </TableCell>
 
                       {/* ACTIONS */}
@@ -450,7 +479,7 @@ const ScrapManagement: React.FC = () => {
                         </Button>
 
                         {/* APPROVE */}
-                        {order.status === "pending" && (
+                        {order.status === "pending" && order._id && (
                           <Button
                             size="sm"
                             className="bg-green-600 hover:bg-green-700 text-white px-3"
@@ -461,15 +490,17 @@ const ScrapManagement: React.FC = () => {
                         )}
 
                         {/* EDIT */}
-                        <Button
-                        disabled={!canEdit}
-                          size="icon"
-                          variant="ghost"
-                          className="h-8 w-8 hover:bg-indigo-50 text-indigo-600"
-                          onClick={() => openEdit(order)}
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </Button>
+                        {order._id && (
+                          <Button
+                          disabled={!canEdit}
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8 hover:bg-indigo-50 text-indigo-600"
+                            onClick={() => openEdit(order)}
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </Button>
+                        )}
 
                         {/* DELETE */}
                         <Button
@@ -477,7 +508,7 @@ const ScrapManagement: React.FC = () => {
                           size="icon"
                           variant="destructive"
                           className="h-8 w-8"
-                          onClick={() => handleDelete(order._id)}
+                          onClick={() => order._id ? handleDelete(order._id) : handleDeleteLocal(index)}
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>

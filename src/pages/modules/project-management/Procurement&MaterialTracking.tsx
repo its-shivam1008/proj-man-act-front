@@ -156,15 +156,27 @@ export default function ProcurementPage() {
             : "rfq.purchase";        // Clicked "Send" button
 
         try {
+            // Create notification with complete item details
             await dispatch(createNotification({
                 source,
                 destination,
                 remark: remarkText,
                 itemId: item.id || item._id,
-                itemName: item.item
+                itemName: item.item,
+                materialData: {
+                    item: item.item,
+                    sourceTask: item.task || 'N/A',
+                    quantity: item.quantity,
+                    unit: item.unit || 'units',
+                    requiredDate: item.requiredDate || new Date().toISOString(),
+                    sentDate: new Date().toISOString(),
+                    projectId: item.projectId || selectedProjectId,
+                    projectName: selectedProject?.name || 'N/A',
+                    status: item.status || 'sent'
+                }
             })).unwrap();
 
-            toast.success(`Notification sent to ${destination}`);
+            toast.success(`Notification sent to ${type === "INVENTORY" ? "Delivery Management" : "Purchase"}`);
             setRemarkDialogOpen(false);
             setNotificationTarget(null);
         } catch (error) {
@@ -189,6 +201,7 @@ export default function ProcurementPage() {
 
     // Local State
     const [inventory, setInventory] = useState<InventoryItem[]>([]);
+    const [mrsStatusSync, setMrsStatusSync] = useState<Record<string, string>>({});
     
     // Pagination State
     const [mrsPage, setMrsPage] = useState(1);
@@ -215,7 +228,25 @@ export default function ProcurementPage() {
         dispatch(fetchMRS());
         dispatch(fetchMaterials()); // Fetch Raw Materials to map names
         setInventory(getInventory());
+        
+        // Load MRS status sync from localStorage
+        const syncData = localStorage.getItem('MRS_STATUS_SYNC');
+        if (syncData) {
+            setMrsStatusSync(JSON.parse(syncData));
+        }
     }, [dispatch]);
+    
+    // Refresh MRS status sync periodically
+    useEffect(() => {
+        const interval = setInterval(() => {
+            const syncData = localStorage.getItem('MRS_STATUS_SYNC');
+            if (syncData) {
+                setMrsStatusSync(JSON.parse(syncData));
+            }
+        }, 2000); // Check every 2 seconds
+        
+        return () => clearInterval(interval);
+    }, []);
 
     // Fetch Projects when search changes
     useEffect(() => {
@@ -490,6 +521,26 @@ export default function ProcurementPage() {
             toast.warning(`Material "${m.item}" not found in Raw Material master list. Stock: 0`);
         }
     };
+    
+    const handleItemReceived = (m: MRSItem) => {
+        // Mark item as received
+        const syncData = JSON.parse(localStorage.getItem('MRS_STATUS_SYNC') || '{}');
+        syncData[m.item] = 'received';
+        localStorage.setItem('MRS_STATUS_SYNC', JSON.stringify(syncData));
+        setMrsStatusSync(syncData);
+        
+        // Update delivery status to delivered
+        const materialRequests = JSON.parse(localStorage.getItem('MATERIAL_REQUESTS') || '[]');
+        const updatedRequests = materialRequests.map((req: any) => {
+            if (req.item === m.item && req.status === 'in-transit') {
+                return { ...req, status: 'delivered' };
+            }
+            return req;
+        });
+        localStorage.setItem('MATERIAL_REQUESTS', JSON.stringify(updatedRequests));
+        
+        toast.success(`${m.item} marked as received and delivery status updated to delivered`);
+    };
 
     // --- Material Status Tracker ---
     const materialStatus = useMemo(() => {
@@ -702,13 +753,33 @@ export default function ProcurementPage() {
                                     </TableCell>
                                     <TableCell>{m.quantity}</TableCell>
                                     <TableCell>
-                                        <Button 
-                                            size="sm" 
-                                            variant="outline" // Changed styling slightly to look clickable
-                                            onClick={() => handleOpenRemarkDialog(m, "INVENTORY")}
-                                        >
-                                            Sent
-                                        </Button>
+                                        {mrsStatusSync[m.item] === 'in-transit' ? (
+                                            <Button 
+                                                size="sm" 
+                                                variant="default"
+                                                className="bg-green-600 hover:bg-green-700"
+                                                onClick={() => handleItemReceived(m)}
+                                            >
+                                                Item Received
+                                            </Button>
+                                        ) : mrsStatusSync[m.item] === 'received' ? (
+                                            <Button 
+                                                size="sm" 
+                                                variant="outline"
+                                                disabled
+                                                className="bg-gray-100"
+                                            >
+                                                Received ✓
+                                            </Button>
+                                        ) : (
+                                            <Button 
+                                                size="sm" 
+                                                variant="outline"
+                                                onClick={() => handleOpenRemarkDialog(m, "INVENTORY")}
+                                            >
+                                                Sent
+                                            </Button>
+                                        )}
                                     </TableCell>
                                     <TableCell>{m.requiredDate ? new Date(m.requiredDate).toLocaleDateString() : "—"}</TableCell>
                                     <TableCell>

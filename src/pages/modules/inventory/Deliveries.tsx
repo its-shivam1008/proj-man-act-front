@@ -18,6 +18,7 @@ import {
 import { fetchProducts } from "@/redux/slices/productSlice";
 import { fetchWarehouses } from "@/redux/slices/warehouseSlice";
 import NotificationCenter from "@/components/NotificationCenter";
+import { toast } from "sonner";
 
 import {
   Truck,
@@ -58,6 +59,15 @@ const Deliveries: React.FC = () => {
   const canEdit = usePermission("deliveries", "edit");
   const canDelete = usePermission("deliveries", "delete");
   const dispatch = useDispatch();
+  
+  // Notification state
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
+  
+  // Material Requests state
+  const [materialRequests, setMaterialRequests] = useState<any[]>([]);
+  const [editingRequest, setEditingRequest] = useState<any>(null);
+  const [showEditStatusDialog, setShowEditStatusDialog] = useState(false);
       if (!canView) {
       return (
         <div className="text-center py-12 px-4">
@@ -94,11 +104,154 @@ const Deliveries: React.FC = () => {
     null
   );
   const orgId = localStorage.getItem('organisationId');
+  
+  // Fetch notifications
+  const fetchNotifications = async () => {
+    setLoadingNotifications(true);
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+      const url = `${apiUrl}/notifications/list?destination=delivery.inventory&status=unread`;
+      
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        setNotifications([]);
+        return;
+      }
+      
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        setNotifications([]);
+        return;
+      }
+      
+      const data = await response.json();
+      console.log('Fetched notifications:', data); // Debug log
+      
+      if (Array.isArray(data)) {
+        const filtered = data.filter((n: any) => n.inviteResponse === 'pending');
+        console.log('Filtered notifications:', filtered); // Debug log
+        setNotifications(filtered);
+      } else {
+        setNotifications([]);
+      }
+    } catch (error) {
+      console.error('Error fetching delivery notifications:', error);
+      setNotifications([]);
+    } finally {
+      setLoadingNotifications(false);
+    }
+  };
+  
+  // Handle accept/reject
+  const handleDeliveryResponse = async (notificationId: string, response: 'accepted' | 'rejected', notification?: any) => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+      
+      // If accepted, add to material requests table
+      if (response === 'accepted' && notification?.materialData) {
+        const newRequest = {
+          id: Date.now().toString(),
+          item: notification.materialData.item || 'Unknown Item',
+          sourceTask: notification.materialData.sourceTask || 'N/A',
+          quantity: notification.materialData.quantity || 0,
+          unit: notification.materialData.unit || 'units',
+          requiredDate: notification.materialData.requiredDate,
+          sentDate: notification.materialData.sentDate,
+          projectName: notification.materialData.projectName || 'N/A',
+          remark: notification.remark || '',
+          status: 'ready',
+          acceptedAt: new Date().toISOString()
+        };
+        
+        const currentRequests = [...materialRequests, newRequest];
+        saveMaterialRequests(currentRequests);
+      }
+      
+      const res = await fetch(`${apiUrl}/notifications/${notificationId}/respond`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ response })
+      });
+      
+      if (res.ok) {
+        fetchNotifications();
+        toast.success(`Material request ${response === 'accepted' ? 'accepted and added to table' : 'rejected'}`);
+      }
+    } catch (error) {
+      console.error('Error responding to delivery request:', error);
+      toast.error('Failed to process response');
+    }
+  };
+  
+  // Handle status update
+  const handleUpdateStatus = (newStatus: string) => {
+    if (!editingRequest) return;
+    
+    const updatedRequests = materialRequests.map(req => 
+      req.id === editingRequest.id ? { ...req, status: newStatus } : req
+    );
+    saveMaterialRequests(updatedRequests);
+    
+    // Update MRS status sync
+    if (newStatus === 'in-transit') {
+      const mrsStatusSync = JSON.parse(localStorage.getItem('MRS_STATUS_SYNC') || '{}');
+      mrsStatusSync[editingRequest.item] = 'in-transit';
+      localStorage.setItem('MRS_STATUS_SYNC', JSON.stringify(mrsStatusSync));
+    }
+    
+    setShowEditStatusDialog(false);
+    setEditingRequest(null);
+    toast.success(`Status updated to ${newStatus}`);
+  };
+  
+  // Handle delete request
+  const handleDeleteRequest = (id: string) => {
+    if (!confirm('Delete this material request?')) return;
+    
+    const updatedRequests = materialRequests.filter(req => req.id !== id);
+    saveMaterialRequests(updatedRequests);
+    toast.success('Material request deleted');
+  };
+  
+  // Fetch material requests from localStorage
+  const fetchMaterialRequests = () => {
+    const stored = localStorage.getItem('MATERIAL_REQUESTS');
+    if (stored) {
+      setMaterialRequests(JSON.parse(stored));
+    }
+  };
+  
+  // Save material requests to localStorage
+  const saveMaterialRequests = (requests: any[]) => {
+    localStorage.setItem('MATERIAL_REQUESTS', JSON.stringify(requests));
+    setMaterialRequests(requests);
+  };
+  
   useEffect(() => {
     dispatch(getAllDeliveries());
     dispatch(fetchProducts(orgId));
     dispatch(fetchWarehouses({ page: 1, limit: 200 }));
+    fetchNotifications();
+    fetchMaterialRequests();
   }, [dispatch]);
+  
+  // Auto-refresh material requests to sync with MRS updates
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchMaterialRequests();
+    }, 2000); // Refresh every 2 seconds
+    
+    return () => clearInterval(interval);
+  }, []);
 
   const filteredDeliveries = deliveries.filter((d: DeliveryItem) => {
     const matchesSearch =
@@ -477,6 +630,71 @@ const Deliveries: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Material Request Notifications */}
+      {notifications.length > 0 && (
+        <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-lg shadow-sm">
+          <h3 className="text-lg font-semibold text-blue-900 mb-3 flex items-center gap-2">
+            <Package className="h-5 w-5" />
+            New Material Requests from MRS ({notifications.length})
+          </h3>
+          <div className="space-y-3">
+            {notifications.map((notification) => (
+              <div key={notification._id} className="bg-white p-4 rounded-lg border border-blue-200">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <p className="font-medium text-gray-900 mb-2">{notification.materialData?.item || 'Unknown Item'}</p>
+                    <div className="text-sm text-gray-600 grid grid-cols-2 md:grid-cols-4 gap-2">
+                      <div>
+                        <span className="font-medium">Source Task:</span>
+                        <p className="text-gray-800">{notification.materialData?.sourceTask || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <span className="font-medium">Quantity:</span>
+                        <p className="text-gray-800">{notification.materialData?.quantity} {notification.materialData?.unit || 'units'}</p>
+                      </div>
+                      <div>
+                        <span className="font-medium">Required Date:</span>
+                        <p className="text-gray-800">{notification.materialData?.requiredDate ? new Date(notification.materialData.requiredDate).toLocaleDateString() : 'N/A'}</p>
+                      </div>
+                      <div>
+                        <span className="font-medium">Sent Date:</span>
+                        <p className="text-gray-800">{notification.materialData?.sentDate ? new Date(notification.materialData.sentDate).toLocaleDateString() : 'N/A'}</p>
+                      </div>
+                    </div>
+                    {notification.materialData?.projectName && (
+                      <div className="mt-2 text-sm">
+                        <span className="font-medium text-gray-600">Project:</span>
+                        <span className="ml-2 text-gray-800">{notification.materialData.projectName}</span>
+                      </div>
+                    )}
+                    {notification.remark && (
+                      <div className="mt-2 text-sm">
+                        <span className="font-medium text-gray-600">Remark:</span>
+                        <span className="ml-2 text-gray-800">{notification.remark}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex gap-2 ml-4">
+                    <button
+                      onClick={() => handleDeliveryResponse(notification._id, 'accepted', notification)}
+                      className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium"
+                    >
+                      Accept
+                    </button>
+                    <button
+                      onClick={() => handleDeliveryResponse(notification._id, 'rejected', notification)}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -792,8 +1010,479 @@ const Deliveries: React.FC = () => {
       {showViewForm && viewingDelivery && (
         <ViewDeliveryForm item={viewingDelivery} />
       )}
+      
+      {/* Material Requests Table */}
+      {materialRequests.length > 0 && (
+        <div className="bg-white shadow rounded-lg overflow-hidden mt-6">
+          <div className="p-6 border-b">
+            <h2 className="text-xl font-bold text-gray-900">Accepted Material Requests</h2>
+            <p className="text-sm text-gray-600 mt-1">Material requests accepted from MRS</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Source Task</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Project</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Required Date</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sent Date</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {materialRequests.map((request) => (
+                  <tr key={request.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 text-sm font-medium text-gray-900">{request.item}</td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{request.sourceTask}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900">{request.quantity} {request.unit}</td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{request.projectName}</td>
+                    <td className="px-6 py-4 text-sm text-gray-600">
+                      {request.requiredDate ? new Date(request.requiredDate).toLocaleDateString() : 'N/A'}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-600">
+                      {request.sentDate ? new Date(request.sentDate).toLocaleDateString() : 'N/A'}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-3 py-1 text-xs font-semibold rounded-full ${
+                        request.status === 'ready' ? 'bg-blue-100 text-blue-800' :
+                        request.status === 'in-transit' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-green-100 text-green-800'
+                      }`}>
+                        {request.status.replace('-', ' ')}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => {
+                            setEditingRequest(request);
+                            setShowEditStatusDialog(true);
+                          }}
+                          className="text-yellow-600 hover:text-yellow-800"
+                          title="Edit Status"
+                        >
+                          <Edit className="h-5 w-5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteRequest(request.id)}
+                          className="text-red-600 hover:text-red-800"
+                          title="Delete Request"
+                        >
+                          <Trash2 className="h-5 w-5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      
+      {/* Edit Status Dialog */}
+      {showEditStatusDialog && editingRequest && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-gray-900">Update Status</h3>
+              <button onClick={() => setShowEditStatusDialog(false)} className="text-gray-500 hover:text-gray-700">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600 mb-4">Select new status for: <strong>{editingRequest.item}</strong></p>
+              
+              <button
+                onClick={() => handleUpdateStatus('ready')}
+                className="w-full px-4 py-3 text-left border rounded-lg hover:bg-blue-50 hover:border-blue-500"
+              >
+                <span className="px-3 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                  Ready
+                </span>
+              </button>
+              
+              <button
+                onClick={() => handleUpdateStatus('in-transit')}
+                className="w-full px-4 py-3 text-left border rounded-lg hover:bg-yellow-50 hover:border-yellow-500"
+              >
+                <span className="px-3 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                  In Transit
+                </span>
+              </button>
+              
+              <button
+                onClick={() => handleUpdateStatus('delivered')}
+                className="w-full px-4 py-3 text-left border rounded-lg hover:bg-green-50 hover:border-green-500"
+              >
+                <span className="px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                  Delivered
+                </span>
+              </button>
+            </div>
+            
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setShowEditStatusDialog(false)}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Stock Transfer History */}
+      <StockTransferHistory />
     </div>
   );
 };
 
 export default Deliveries;
+
+
+// Stock Transfer History Section Component
+const StockTransferHistory = () => {
+  const [transfers, setTransfers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showEditForm, setShowEditForm] = useState(false);
+  const [editingTransfer, setEditingTransfer] = useState<any>(null);
+  
+  // Add permission hooks
+  const canEdit = usePermission("deliveries", "edit");
+  const canDelete = usePermission("deliveries", "delete");
+
+  useEffect(() => {
+    fetchTransfers();
+  }, []);
+
+  const fetchTransfers = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/stock-transfers`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setTransfers(data.transfers || []);
+      }
+    } catch (error) {
+      console.error('Error fetching transfers:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this transfer?')) return;
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/stock-transfers/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (response.ok) {
+        fetchTransfers();
+      }
+    } catch (error) {
+      console.error('Error deleting transfer:', error);
+    }
+  };
+
+  const handleEdit = (transfer: any) => {
+    setEditingTransfer(transfer);
+    setShowEditForm(true);
+  };
+
+  const getStatusBadge = (status: string) => {
+    const colors = {
+      ready: 'bg-blue-100 text-blue-800',
+      'in-transit': 'bg-yellow-100 text-yellow-800',
+      delivered: 'bg-green-100 text-green-800'
+    };
+    return colors[status] || 'bg-gray-100 text-gray-800';
+  };
+
+  // Edit Transfer Form Component
+  const EditTransferForm = ({ transfer, onClose, onSuccess }: { transfer: any; onClose: () => void; onSuccess: () => void }) => {
+    const [formData, setFormData] = useState({
+      productName: transfer.productName || '',
+      fromWarehouseName: transfer.fromWarehouseName || transfer.fromWarehouse || '',
+      toWarehouseName: transfer.toWarehouseName || transfer.toWarehouse || '',
+      quantity: transfer.quantity || 0,
+      transportType: transfer.transportType || 'Truck',
+      vehicleNo: transfer.vehicleNo || '',
+      driverName: transfer.driverName || '',
+      transportCost: transfer.transportCost || 0,
+      notes: transfer.notes || '',
+      status: transfer.status || 'ready'
+    });
+    const [loading, setLoading] = useState(false);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setLoading(true);
+      
+      try {
+        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/stock-transfers/${transfer._id}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify(formData)
+        });
+        
+        if (response.ok) {
+          onSuccess();
+          onClose();
+        }
+      } catch (error) {
+        console.error('Error updating transfer:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-bold text-gray-900">Edit Transfer</h3>
+            <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Product Name *</label>
+                <input
+                  type="text"
+                  value={formData.productName}
+                  onChange={(e) => setFormData({ ...formData, productName: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity *</label>
+                <input
+                  type="number"
+                  value={formData.quantity}
+                  onChange={(e) => setFormData({ ...formData, quantity: parseInt(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">From Warehouse *</label>
+                <input
+                  type="text"
+                  value={formData.fromWarehouseName}
+                  onChange={(e) => setFormData({ ...formData, fromWarehouseName: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">To Warehouse *</label>
+                <input
+                  type="text"
+                  value={formData.toWarehouseName}
+                  onChange={(e) => setFormData({ ...formData, toWarehouseName: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Transport Type</label>
+                <select
+                  value={formData.transportType}
+                  onChange={(e) => setFormData({ ...formData, transportType: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="Truck">Truck</option>
+                  <option value="Tempo">Tempo</option>
+                  <option value="Courier">Courier</option>
+                  <option value="Pickup">Pickup</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Number</label>
+                <input
+                  type="text"
+                  value={formData.vehicleNo}
+                  onChange={(e) => setFormData({ ...formData, vehicleNo: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Driver Name</label>
+                <input
+                  type="text"
+                  value={formData.driverName}
+                  onChange={(e) => setFormData({ ...formData, driverName: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Transport Cost</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={formData.transportCost}
+                  onChange={(e) => setFormData({ ...formData, transportCost: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Status *</label>
+              <select
+                value={formData.status}
+                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                required
+              >
+                <option value="ready">Ready</option>
+                <option value="in-transit">In Transit</option>
+                <option value="delivered">Delivered</option>
+              </select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+              <textarea
+                rows={3}
+                value={formData.notes}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            
+            <div className="flex justify-end gap-3 pt-4">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {loading ? 'Updating...' : 'Update Transfer'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="bg-white rounded-xl shadow-md p-6 mt-6">
+      <h2 className="text-xl font-bold text-gray-900 mb-4">Stock Transfer History</h2>
+      <p className="text-sm text-gray-600 mb-4">Recent stock movements between warehouses</p>
+      
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date & Time</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">From</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">To</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Transport Cost</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Cost</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Transport</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vehicle</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {loading ? (
+              <tr><td colSpan={11} className="text-center py-4">Loading...</td></tr>
+            ) : transfers.length === 0 ? (
+              <tr><td colSpan={11} className="text-center py-4 text-gray-500">No transfers found</td></tr>
+            ) : (
+              transfers.map((transfer) => (
+                <tr key={transfer._id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 text-sm text-gray-900">
+                    {new Date(transfer.createdAt).toLocaleString()}
+                  </td>
+                  <td className="px-4 py-3 text-sm font-medium text-gray-900">{transfer.productName}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{transfer.fromWarehouseName || transfer.fromWarehouse || 'N/A'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{transfer.toWarehouseName || transfer.toWarehouse || 'N/A'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-900">{transfer.quantity}</td>
+                  <td className="px-4 py-3 text-sm text-gray-900">₹{transfer.transportCost || 0}</td>
+                  <td className="px-4 py-3 text-sm font-medium text-green-600">
+                    ₹{(transfer.transportCost || 0) * (transfer.quantity || 1)}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{transfer.transportType || 'Truck'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{transfer.vehicleNo || '-'}</td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(transfer.status || 'ready')}`}>
+                      {(transfer.status || 'ready').replace('-', ' ')}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => handleEdit(transfer)}
+                        className="text-yellow-600 hover:text-yellow-800"
+                        title="Edit Transfer"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </button>
+                      <button 
+                        onClick={() => handleDelete(transfer._id)} 
+                        className="text-red-600 hover:text-red-800"
+                        title="Delete Transfer"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+      
+      {/* Edit Transfer Form Modal */}
+      {showEditForm && editingTransfer && (
+        <EditTransferForm
+          transfer={editingTransfer}
+          onClose={() => {
+            setShowEditForm(false);
+            setEditingTransfer(null);
+          }}
+          onSuccess={fetchTransfers}
+        />
+      )}
+    </div>
+  );
+};

@@ -13,6 +13,7 @@ import {
 } from "@/redux/slices/rawmaterialSlice";
 
 import { fetchInventoryMaster } from "@/redux/slices/inventoryMasterSlice";
+import { createMovement } from "@/redux/slices/materialMovementSlice";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -96,6 +97,12 @@ export default function RawMaterialMaster() {
   // Notification state
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
+  
+  // Reject dialog state
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [rejectingNotification, setRejectingNotification] = useState<any>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectRemark, setRejectRemark] = useState('');
 
   // Fetch notifications
   const fetchNotifications = async () => {
@@ -151,8 +158,15 @@ export default function RawMaterialMaster() {
   };
 
   // Handle accept/reject
-  const handleMaterialResponse = async (notificationId: string, response: 'accepted' | 'rejected') => {
+  const handleMaterialResponse = async (notificationId: string, response: 'accepted' | 'rejected', notification?: any) => {
     try {
+      // If rejected, open dialog to get reason
+      if (response === 'rejected') {
+        setRejectingNotification(notification);
+        setShowRejectDialog(true);
+        return;
+      }
+      
       const res = await fetch(`${import.meta.env.VITE_API_URL}/purchase/orders/material-response`, {
         method: 'POST',
         headers: {
@@ -169,6 +183,90 @@ export default function RawMaterialMaster() {
       }
     } catch (error) {
       console.error('Error responding to material purchase:', error);
+    }
+  };
+  
+  // Handle reject with reason
+  const handleRejectWithReason = async () => {
+    if (!rejectReason.trim()) {
+      alert('Please enter a reason for rejection');
+      return;
+    }
+    
+    try {
+      // Add to scrap orders
+      const scrapOrder = {
+        productName: rejectingNotification?.materialData?.material || rejectingNotification?.materialData?.product || 'Unknown Material',
+        sku: rejectingNotification?.materialData?.itemCode || rejectingNotification?.materialData?.sku || 'N/A',
+        quantity: rejectingNotification?.materialData?.quantity || 0,
+        stock: 0,
+        reason: rejectReason,
+        remark: rejectRemark,
+        scrapLocation: 'Rejected from Purchase Order - Raw Material',
+        category: rejectingNotification?.materialData?.category || 'N/A',
+        hsn: rejectingNotification?.materialData?.hsn || 'N/A',
+        unitPrice: rejectingNotification?.materialData?.unitPrice || 0,
+        rejectedDate: new Date().toISOString(),
+        status: 'pending'
+      };
+      
+      console.log('Saving scrap order:', scrapOrder); // Debug log
+      
+      // Save to localStorage for Scrap Orders page
+      const scrapOrders = JSON.parse(localStorage.getItem('SCRAP_ORDERS') || '[]');
+      scrapOrders.unshift(scrapOrder);
+      localStorage.setItem('SCRAP_ORDERS', JSON.stringify(scrapOrders));
+      
+      // Create material movement for outbound (rejection)
+      const movementData = {
+        organisationId: localStorage.getItem("organisationId"),
+        materialName: scrapOrder.productName,
+        movementType: "outbound",
+        quantity: scrapOrder.quantity,
+        unit: rejectingNotification?.materialData?.unitOfMeasure || "units",
+        source: "Purchase Order",
+        destination: "Scrap - Rejected",
+        referenceNumber: `REJECT-${Date.now()}`,
+        remarks: `Rejected: ${rejectReason}. ${rejectRemark}`,
+        movementDate: new Date().toISOString().split("T")[0],
+        unitCost: scrapOrder.unitPrice,
+        totalCost: scrapOrder.unitPrice * scrapOrder.quantity,
+        itemType: "material",
+      };
+      
+      console.log("Creating movement with data:", movementData); // Debug log
+      
+      try {
+        const result = await dispatch(createMovement(movementData)).unwrap();
+        console.log("Outbound movement created successfully:", result);
+        alert("Movement created successfully! Check Move Analysis page.");
+      } catch (error) {
+        console.error("Failed to create movement record:", error);
+        alert(`Failed to create movement: ${error.message || error}`);
+      }
+      
+      // Mark notification as rejected
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/purchase/orders/material-response`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ notificationId: rejectingNotification._id, response: 'rejected' })
+      });
+      
+      if (res.ok) {
+        fetchNotifications();
+        dispatch(fetchMaterials({ page, limit }));
+        setShowRejectDialog(false);
+        setRejectingNotification(null);
+        setRejectReason('');
+        setRejectRemark('');
+        alert('Material purchase rejected and added to scrap orders');
+      }
+    } catch (error) {
+      console.error('Error rejecting material purchase:', error);
+      alert('Failed to reject material purchase');
     }
   };
 
@@ -267,7 +365,7 @@ export default function RawMaterialMaster() {
                 <div className="flex gap-2 ml-4">
                   <Button
                     size="sm"
-                    onClick={() => handleMaterialResponse(notification._id, 'accepted')}
+                    onClick={() => handleMaterialResponse(notification._id, 'accepted', notification)}
                     className="bg-green-600 hover:bg-green-700"
                   >
                     Accept
@@ -275,7 +373,7 @@ export default function RawMaterialMaster() {
                   <Button
                     size="sm"
                     variant="destructive"
-                    onClick={() => handleMaterialResponse(notification._id, 'rejected')}
+                    onClick={() => handleMaterialResponse(notification._id, 'rejected', notification)}
                   >
                     Reject
                   </Button>
@@ -563,6 +661,66 @@ export default function RawMaterialMaster() {
           </Dialog>
         </CardContent>
       </Card>
+      
+      {/* Reject Dialog */}
+      {showRejectDialog && rejectingNotification && (
+        <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Reject Material Purchase</DialogTitle>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-gray-600 mb-2">Material: <strong>{rejectingNotification.materialData?.material}</strong></p>
+                <p className="text-sm text-gray-600">Quantity: <strong>{rejectingNotification.materialData?.quantity}</strong></p>
+              </div>
+              
+              <div>
+                <Label htmlFor="reason">Reason for Rejection *</Label>
+                <Input
+                  id="reason"
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  placeholder="e.g., Damaged, Wrong specification, etc."
+                  required
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="remark">Additional Remark</Label>
+                <Textarea
+                  id="remark"
+                  rows={3}
+                  value={rejectRemark}
+                  onChange={(e) => setRejectRemark(e.target.value)}
+                  placeholder="Any additional details..."
+                />
+              </div>
+            </div>
+            
+            <div className="flex justify-end gap-3 mt-6">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowRejectDialog(false);
+                  setRejectingNotification(null);
+                  setRejectReason('');
+                  setRejectRemark('');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleRejectWithReason}
+              >
+                Reject & Add to Scrap
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

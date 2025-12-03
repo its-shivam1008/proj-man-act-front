@@ -108,6 +108,12 @@ const Products: React.FC = () => {
   // Notification state
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
+  
+  // Reject dialog state
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [rejectingNotification, setRejectingNotification] = useState<any>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectRemark, setRejectRemark] = useState('');
 
   const orgId = localStorage.getItem("organisationId");
 
@@ -153,8 +159,15 @@ const Products: React.FC = () => {
   };
 
   // Handle accept/reject
-  const handleProductResponse = async (notificationId: string, response: 'accepted' | 'rejected') => {
+  const handleProductResponse = async (notificationId: string, response: 'accepted' | 'rejected', notification?: any) => {
     try {
+      // If rejected, open dialog to get reason
+      if (response === 'rejected') {
+        setRejectingNotification(notification);
+        setShowRejectDialog(true);
+        return;
+      }
+      
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000';
       const res = await fetch(`${apiUrl}/purchase/orders/product-response`, {
         method: 'POST',
@@ -177,6 +190,94 @@ const Products: React.FC = () => {
     } catch (error) {
       console.error('Error responding to product purchase:', error);
       toast.error('Failed to process response');
+    }
+  };
+  
+  // Handle reject with reason
+  const handleRejectWithReason = async () => {
+    if (!rejectReason.trim()) {
+      toast.error('Please enter a reason for rejection');
+      return;
+    }
+    
+    try {
+      // Add to scrap orders
+      const scrapOrder = {
+        productName: rejectingNotification?.materialData?.product || 'Unknown Product',
+        sku: rejectingNotification?.materialData?.sku || 'N/A',
+        quantity: rejectingNotification?.materialData?.quantity || 0,
+        stock: 0,
+        reason: rejectReason,
+        remark: rejectRemark,
+        scrapLocation: 'Rejected from Purchase Order - Product',
+        category: rejectingNotification?.materialData?.category || 'N/A',
+        barcode: rejectingNotification?.materialData?.barcode || '',
+        unitPrice: rejectingNotification?.materialData?.unitPrice || 0,
+        rejectedDate: new Date().toISOString(),
+        status: 'pending'
+      };
+      
+      console.log('Saving product scrap order:', scrapOrder); // Debug log
+      
+      // Save to localStorage for Scrap Orders page
+      const scrapOrders = JSON.parse(localStorage.getItem('SCRAP_ORDERS') || '[]');
+      scrapOrders.unshift(scrapOrder);
+      localStorage.setItem('SCRAP_ORDERS', JSON.stringify(scrapOrders));
+      
+      // Create material movement for outbound (rejection)
+      const movementData = {
+        organisationId: localStorage.getItem("organisationId"),
+        materialName: scrapOrder.productName,
+        movementType: "outbound",
+        quantity: scrapOrder.quantity,
+        unit: "units",
+        source: "Purchase Order",
+        destination: "Scrap - Rejected",
+        referenceNumber: `REJECT-${Date.now()}`,
+        remarks: `Rejected: ${rejectReason}. ${rejectRemark}`,
+        movementDate: new Date().toISOString().split("T")[0],
+        unitCost: scrapOrder.unitPrice,
+        totalCost: scrapOrder.unitPrice * scrapOrder.quantity,
+        itemType: "product",
+      };
+      
+      console.log("Creating product movement with data:", movementData); // Debug log
+      
+      try {
+        const result = await dispatch(createMovement(movementData)).unwrap();
+        console.log("Outbound movement created successfully:", result);
+        toast.success("Movement created successfully! Check Move Analysis page.");
+      } catch (error) {
+        console.error("Failed to create movement record:", error);
+        toast.error(`Failed to create movement: ${error.message || error}`);
+      }
+      
+      // Mark notification as rejected
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+      const res = await fetch(`${apiUrl}/purchase/orders/product-response`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ notificationId: rejectingNotification._id, response: 'rejected' })
+      });
+      
+      if (res.ok) {
+        fetchNotifications();
+        dispatch(fetchProducts({ page, limit }));
+        if (orgId) {
+          dispatch(fetchWarehouses(orgId));
+        }
+        setShowRejectDialog(false);
+        setRejectingNotification(null);
+        setRejectReason('');
+        setRejectRemark('');
+        toast.success('Product purchase rejected and added to scrap orders');
+      }
+    } catch (error) {
+      console.error('Error rejecting product purchase:', error);
+      toast.error('Failed to reject product purchase');
     }
   };
 
@@ -1182,13 +1283,13 @@ const Products: React.FC = () => {
                 </div>
                 <div className="flex gap-2 ml-4">
                   <button
-                    onClick={() => handleProductResponse(notification._id, 'accepted')}
+                    onClick={() => handleProductResponse(notification._id, 'accepted', notification)}
                     className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium"
                   >
                     Accept
                   </button>
                   <button
-                    onClick={() => handleProductResponse(notification._id, 'rejected')}
+                    onClick={() => handleProductResponse(notification._id, 'rejected', notification)}
                     className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium"
                   >
                     Reject
@@ -1498,7 +1599,75 @@ const Products: React.FC = () => {
       {selectedWarehouse && (
         <WarehouseDetailsModal warehouse={selectedWarehouse} />
       )}
-
+      
+      {/* Reject Dialog */}
+      {showRejectDialog && rejectingNotification && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-gray-900">Reject Product Purchase</h3>
+              <button onClick={() => {
+                setShowRejectDialog(false);
+                setRejectingNotification(null);
+                setRejectReason('');
+                setRejectRemark('');
+              }} className="text-gray-500 hover:text-gray-700">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-gray-600 mb-2">Product: <strong>{rejectingNotification.materialData?.product}</strong></p>
+                <p className="text-sm text-gray-600">Quantity: <strong>{rejectingNotification.materialData?.quantity}</strong></p>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Reason for Rejection *</label>
+                <input
+                  type="text"
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500"
+                  placeholder="e.g., Damaged, Wrong specification, etc."
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Additional Remark</label>
+                <textarea
+                  rows={3}
+                  value={rejectRemark}
+                  onChange={(e) => setRejectRemark(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500"
+                  placeholder="Any additional details..."
+                />
+              </div>
+            </div>
+            
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowRejectDialog(false);
+                  setRejectingNotification(null);
+                  setRejectReason('');
+                  setRejectRemark('');
+                }}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRejectWithReason}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+              >
+                Reject & Add to Scrap
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

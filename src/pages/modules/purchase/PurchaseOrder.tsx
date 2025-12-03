@@ -56,7 +56,7 @@ const PurchaseOrderComponent: React.FC = () => {
   );
   const { vendors } = useSelector((state: RootState) => state.vendors);
   const { materials: rawMaterials } = useSelector((state: RootState) => state.rawMaterials);
-  const { category: categories } = useSelector((state: RootState) => state.inventoryMaster);
+  const { category: categories, hsn: hsnCodes } = useSelector((state: RootState) => state.inventoryMaster);
 
   const [showCreatePo, setShowCreatePo] = useState(false);
   const [showViewPo, setShowViewPo] = useState(false);
@@ -84,6 +84,7 @@ const PurchaseOrderComponent: React.FC = () => {
     dispatch(fetchWarehouses(localStorage.getItem("organisationId")));
     dispatch(fetchMaterials());
     dispatch(fetchInventoryMaster({ type: "category", page: 1, limit: 100 }));
+    dispatch(fetchInventoryMaster({ type: "hsn", page: 1, limit: 100 }));
   }, [dispatch, page, limit, search]);
 
 
@@ -204,7 +205,7 @@ const PurchaseOrderComponent: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    PO Number
+                    PO Number <span className="text-gray-400 text-xs">(Optional)</span>
                   </label>
                   <input
                     type="text"
@@ -213,8 +214,7 @@ const PurchaseOrderComponent: React.FC = () => {
                       setFormData({ ...formData, poNo: e.target.value })
                     }
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Auto-generated"
-                    required
+                    placeholder="Leave empty for auto-generation"
                   />
                 </div>
                 <div>
@@ -383,8 +383,7 @@ const PurchaseOrderComponent: React.FC = () => {
                           <div className="grid grid-cols-4 gap-3 mb-3">
                             <div>
                               <label className="text-xs font-medium text-gray-600">HSN</label>
-                              <input
-                                type="text"
+                              <select
                                 value={line.hsn || ""}
                                 onChange={(e) => {
                                   const newLines = [...formData.productLines];
@@ -392,8 +391,20 @@ const PurchaseOrderComponent: React.FC = () => {
                                   setFormData({ ...formData, productLines: newLines });
                                 }}
                                 className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                                placeholder="HSN code"
-                              />
+                              >
+                                <option value="">Select HSN Code</option>
+                                {hsnCodes && hsnCodes.length > 0 ? (
+                                  hsnCodes.map((hsn: any) => (
+                                    <option key={hsn._id} value={hsn.hsnNumber}>
+                                      {hsn.hsnNumber} - {hsn.taxPercent}%
+                                    </option>
+                                  ))
+                                ) : (
+                                  <option value="" disabled>
+                                    No HSN codes available
+                                  </option>
+                                )}
+                              </select>
                             </div>
                             <div>
                               <label className="text-xs font-medium text-gray-600">GST %</label>
@@ -582,7 +593,9 @@ const PurchaseOrderComponent: React.FC = () => {
                           </div>
                           <div className="grid grid-cols-3 gap-3 mb-3">
                             <div>
-                              <label className="text-xs font-medium text-gray-600">SKU / Reference Code</label>
+                              <label className="text-xs font-medium text-gray-600">
+                                SKU / Reference Code <span className="text-gray-400">(Auto-generated)</span>
+                              </label>
                               <input
                                 type="text"
                                 value={line.sku || ""}
@@ -592,7 +605,7 @@ const PurchaseOrderComponent: React.FC = () => {
                                   setFormData({ ...formData, productLines: newLines });
                                 }}
                                 className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                                placeholder="SKU code"
+                                placeholder="Leave empty for auto-generation"
                               />
                             </div>
                             <div>

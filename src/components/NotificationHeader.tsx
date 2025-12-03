@@ -108,6 +108,27 @@ export default function NotificationHeader() {
     dispatch(respondToInvite({ notificationId, response }));
   };
 
+  const handleMarkAsRead = async (notificationId: string) => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+      const response = await fetch(`${apiUrl}/notifications/mark-read`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ notificationId })
+      });
+
+      if (response.ok) {
+        // Refresh notifications
+        fetchNotificationHelper();
+      }
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
+  };
+
   const unreadCount = filteredNotifications.filter((n: any) => n.status === "unread").length;
 
   return (
@@ -247,11 +268,23 @@ export default function NotificationHeader() {
                            </div>
                         )}
                         
-                        {!isInvite && notification.source && (
-                          <div className="flex items-center gap-2 mt-1">
-                            <Badge variant="outline" className="text-[10px] h-5 px-2 font-medium text-gray-600 bg-gray-50 border-gray-200">
-                              {notification.source}
-                            </Badge>
+                        {!isInvite && (
+                          <div className="flex items-center justify-between gap-2 mt-2">
+                            {notification.source && (
+                              <Badge variant="outline" className="text-[10px] h-5 px-2 font-medium text-gray-600 bg-gray-50 border-gray-200">
+                                {notification.source}
+                              </Badge>
+                            )}
+                            {notification.status === "unread" && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-3 text-xs text-blue-600 hover:bg-blue-50"
+                                onClick={() => handleMarkAsRead(notification._id)}
+                              >
+                                <Check className="h-3 w-3 mr-1" /> Mark as Read
+                              </Button>
+                            )}
                           </div>
                         )}
                       </div>
