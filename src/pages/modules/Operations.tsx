@@ -34,7 +34,7 @@ export default function OperationsModule() {
       
 
       {/* Sub-tabs */}
-      <div className="sticky  z-30 bg-white border-b">
+      {/* <div className="sticky  z-30 bg-white border-b">
         <nav className="max-w-full mx-0 px-0 sm:px-0">
           <div className="flex gap-6 overflow-x-auto py-3 px-1">
             {tabItems.map((t) => {
@@ -58,7 +58,7 @@ export default function OperationsModule() {
             })}
           </div>
         </nav>
-      </div>
+      </div> */}
 
       {/* Subpage container: your nested routes will render here */}
       <div className="pt-4">

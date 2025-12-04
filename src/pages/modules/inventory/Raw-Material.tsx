@@ -438,7 +438,28 @@ export default function RawMaterialMaster() {
 
                 <div>
                   <Label>Unit of Measure</Label>
-                  <Input {...register("unitOfMeasure", { required: true })} />
+                  <Controller
+                    name="unitOfMeasure"
+                    control={control}
+                    rules={{ required: true }}
+                    render={({ field }) => (
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select Unit" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="kg">kg</SelectItem>
+                          <SelectItem value="gm">gm</SelectItem>
+                          <SelectItem value="mg">mg</SelectItem>
+                          <SelectItem value="km">km</SelectItem>
+                          <SelectItem value="meter">meter</SelectItem>
+                          <SelectItem value="liter">liter</SelectItem>
+                          <SelectItem value="ml">ml</SelectItem>
+                          <SelectItem value="pcs">pcs</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
                 </div>
 
                 <div>

@@ -68,6 +68,9 @@ const Deliveries: React.FC = () => {
   const [materialRequests, setMaterialRequests] = useState<any[]>([]);
   const [editingRequest, setEditingRequest] = useState<any>(null);
   const [showEditStatusDialog, setShowEditStatusDialog] = useState(false);
+  
+  // Stock Transfers state (lifted from child component for stats)
+  const [stockTransfers, setStockTransfers] = useState<any[]>([]);
       if (!canView) {
       return (
         <div className="text-center py-12 px-4">
@@ -712,7 +715,7 @@ const Deliveries: React.FC = () => {
             title="Inventory Notifications"
           /> */}
 
-          <button
+          {false && <button
             disabled={!canCreate}
             onClick={() => canCreate && setShowCreateForm(true)}
             className={`flex items-center gap-2 px-5 py-3 rounded-lg
@@ -723,7 +726,7 @@ const Deliveries: React.FC = () => {
     }`}
           >
             <Plus className="h-5 w-5" /> New Delivery
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -733,7 +736,9 @@ const Deliveries: React.FC = () => {
           <Truck className="h-10 w-10 text-gray-600" />
           <div>
             <p className="text-sm text-gray-500">Total Deliveries</p>
-            <p className="text-2xl font-bold">{deliveries.length}</p>
+            <p className="text-2xl font-bold">
+              {materialRequests.length + stockTransfers.length}
+            </p>
           </div>
         </div>
         <div className="bg-white p-6 rounded-lg shadow flex items-center gap-4">
@@ -741,7 +746,8 @@ const Deliveries: React.FC = () => {
           <div>
             <p className="text-sm text-gray-500">In Transit</p>
             <p className="text-2xl font-bold">
-              {deliveries.filter((d: any) => d.status === "in-transit").length}
+              {materialRequests.filter((r: any) => r.status === "in-transit").length + 
+               stockTransfers.filter((t: any) => t.status === "in-transit").length}
             </p>
           </div>
         </div>
@@ -750,7 +756,8 @@ const Deliveries: React.FC = () => {
           <div>
             <p className="text-sm text-gray-500">Delivered</p>
             <p className="text-2xl font-bold">
-              {deliveries.filter((d: any) => d.status === "delivered").length}
+              {materialRequests.filter((r: any) => r.status === "delivered").length + 
+               stockTransfers.filter((t: any) => t.status === "delivered").length}
             </p>
           </div>
         </div>
@@ -759,7 +766,8 @@ const Deliveries: React.FC = () => {
           <div>
             <p className="text-sm text-gray-500">High Priority</p>
             <p className="text-2xl font-bold">
-              {deliveries.filter((d: any) => d.priority === "high").length}
+              {materialRequests.filter((r: any) => r.priority === "high").length + 
+               stockTransfers.filter((t: any) => t.priority === "high").length}
             </p>
           </div>
         </div>
@@ -805,7 +813,7 @@ const Deliveries: React.FC = () => {
         </div>
       </div>
 
-      <div className="bg-white shadow rounded-lg overflow-hidden">
+      {false && <div className="bg-white shadow rounded-lg overflow-hidden">
         <div className="max-h-[450px] overflow-y-auto overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50 sticky top-0 z-10">
@@ -1000,7 +1008,7 @@ const Deliveries: React.FC = () => {
             </tbody>
           </table>
         </div>
-      </div>
+      </div>}
 
       {/* Modals */}
       {showCreateForm && <DeliveryForm />}
@@ -1012,8 +1020,7 @@ const Deliveries: React.FC = () => {
       )}
       
       {/* Material Requests Table */}
-      {materialRequests.length > 0 && (
-        <div className="bg-white shadow rounded-lg overflow-hidden mt-6">
+      <div className="bg-white shadow rounded-lg overflow-hidden mt-6">
           <div className="p-6 border-b">
             <h2 className="text-xl font-bold text-gray-900">Accepted Material Requests</h2>
             <p className="text-sm text-gray-600 mt-1">Material requests accepted from MRS</p>
@@ -1033,7 +1040,13 @@ const Deliveries: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {materialRequests.map((request) => (
+                {materialRequests.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                      No material requests found. Accepted requests from MRS will appear here.
+                    </td>
+                  </tr>
+                ) : materialRequests.map((request) => (
                   <tr key={request.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 text-sm font-medium text-gray-900">{request.item}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">{request.sourceTask}</td>
@@ -1076,12 +1089,12 @@ const Deliveries: React.FC = () => {
                       </div>
                     </td>
                   </tr>
-                ))}
+                ))
+                }
               </tbody>
             </table>
           </div>
         </div>
-      )}
       
       {/* Edit Status Dialog */}
       {showEditStatusDialog && editingRequest && (
@@ -1138,7 +1151,7 @@ const Deliveries: React.FC = () => {
       )}
       
       {/* Stock Transfer History */}
-      <StockTransferHistory />
+      <StockTransferHistory onTransfersUpdate={setStockTransfers} />
     </div>
   );
 };
@@ -1147,7 +1160,7 @@ export default Deliveries;
 
 
 // Stock Transfer History Section Component
-const StockTransferHistory = () => {
+const StockTransferHistory = ({ onTransfersUpdate }: { onTransfersUpdate: (transfers: any[]) => void }) => {
   const [transfers, setTransfers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
@@ -1169,7 +1182,9 @@ const StockTransferHistory = () => {
       });
       if (response.ok) {
         const data = await response.json();
-        setTransfers(data.transfers || []);
+        const fetchedTransfers = data.transfers || [];
+        setTransfers(fetchedTransfers);
+        onTransfersUpdate(fetchedTransfers); // Update parent component
       }
     } catch (error) {
       console.error('Error fetching transfers:', error);

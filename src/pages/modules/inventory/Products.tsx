@@ -1534,7 +1534,7 @@ const Products: React.FC = () => {
       </div>
 
       {/* Stock Transfer History */}
-      <div className="bg-white rounded-xl shadow-md overflow-hidden mt-6">
+      {false && <div className="bg-white rounded-xl shadow-md overflow-hidden mt-6">
         <div className="p-6 border-b">
           <h2 className="text-xl font-bold text-gray-900">Stock Transfer History</h2>
           <p className="text-sm text-gray-600 mt-1">Recent stock movements between warehouses</p>
@@ -1584,7 +1584,7 @@ const Products: React.FC = () => {
             })()}
           </tbody>
         </table>
-      </div>
+      </div>}
 
       {/* Modals */}
       {showAddProductForm && (

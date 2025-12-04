@@ -11,6 +11,7 @@ import {
 } from "../../../../redux/slices/stockReportSlice";
 import { fetchProducts } from "../../../../redux/slices/productSlice";
 import { fetchWarehouses } from "../../../../redux/slices/warehouseSlice";
+import { fetchMaterials } from "../../../../redux/slices/rawmaterialSlice";
 import {
   Package,
   Plus,
@@ -65,38 +66,85 @@ const Stock: React.FC = () => {
       </div>
     );
   }
+  const rawMaterialsState = useSelector((state: RootState) => state.rawMaterials);
+  const rawMaterials: any[] = rawMaterialsState?.materials || [];
+
   useEffect(() => {
     dispatch(fetchStockReports());
-    dispatch(fetchProducts());
+    dispatch(fetchProducts({ page: 1, limit: 1000 }));
     dispatch(fetchWarehouses({ page: 1, limit: 100 }));
+    dispatch(fetchMaterials({ page: 1, limit: 1000 }));
   }, [dispatch]);
 
   const safeStockReports = Array.isArray(stockReports) ? stockReports : [];
   const safeProducts = Array.isArray(products) ? products : [];
   const safeWarehouses = Array.isArray(warehouses) ? warehouses : [];
+  const safeRawMaterials = Array.isArray(rawMaterials) ? rawMaterials : [];
 
-  const filteredStockReports = safeStockReports.filter((report) => {
-    const itemId =
-      typeof report.itemId === "string"
-        ? report.itemId
-        : report.itemId?._id || report.itemId?.id || "";
-    const item = safeProducts.find((i) => i._id === itemId || i.id === itemId);
-    const itemName =
-      item?.name ||
-      (typeof report.itemId === "object" && report.itemId?.name) ||
-      "";
-    const matchesSearch = itemName
-      .toLowerCase()
-      .includes(searchTerm.toLowerCase());
-    const matchesCategory =
-      categoryFilter === "all" || report.category === categoryFilter;
-    const matchesWarehouse =
-      warehouseFilter === "all" || report.warehouse === warehouseFilter;
-    const matchesProductType =
-      productTypeFilter === "all" || report.productType === productTypeFilter;
-    return (
-      matchesSearch && matchesCategory && matchesWarehouse && matchesProductType
-    );
+  // Combine products and raw materials for display
+  const combinedStock = useMemo(() => {
+    const productItems = safeProducts.map(p => {
+      const unitPrice = p.unitCost || p.salesPrice || p.unitPrice || p.sellingPrice || p.costPrice || p.price || 0;
+      const quantity = p.quantity || 0;
+      return {
+        _id: p._id || p.id,
+        itemType: 'Product',
+        itemName: p.name,
+        quantity: quantity,
+        unitPrice: unitPrice,
+        totalAmount: quantity * unitPrice,
+        inStock: quantity > 0,
+        date: p.createdAt || new Date().toISOString(),
+        category: p.category || 'Product',
+        warehouse: p.warehouseLocation || p.warehouse || ''
+      };
+    });
+
+    const materialItems = safeRawMaterials.map(m => ({
+      _id: m._id,
+      itemType: 'Raw Material',
+      itemName: m.name,
+      quantity: m.quantity || 0,
+      unitPrice: m.unitCost || 0,
+      totalAmount: (m.quantity || 0) * (m.unitCost || 0),
+      inStock: (m.quantity || 0) > 0,
+      date: m.createdAt || new Date().toISOString(),
+      category: 'Raw Material'
+    }));
+
+    return [...productItems, ...materialItems];
+  }, [safeProducts, safeRawMaterials]);
+
+  const filteredStock = combinedStock.filter((item) => {
+    const matchesSearch = item.itemName.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = categoryFilter === "all" || item.itemType === categoryFilter;
+    
+    // Warehouse filtering (only for products)
+    const matchesWarehouse = warehouseFilter === "all" || 
+      item.itemType !== "Product" || 
+      (item as any).warehouse === warehouseFilter;
+    
+    // Date filtering
+    let matchesDate = true;
+    if (monthFilter !== "all") {
+      const itemDate = new Date(item.date);
+      const now = new Date();
+      
+      if (monthFilter === "this-month") {
+        matchesDate = itemDate.getMonth() === now.getMonth() && itemDate.getFullYear() === now.getFullYear();
+      } else if (monthFilter === "last-month") {
+        const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1);
+        matchesDate = itemDate.getMonth() === lastMonth.getMonth() && itemDate.getFullYear() === lastMonth.getFullYear();
+      } else if (monthFilter === "this-quarter") {
+        const quarter = Math.floor(now.getMonth() / 3);
+        const itemQuarter = Math.floor(itemDate.getMonth() / 3);
+        matchesDate = itemQuarter === quarter && itemDate.getFullYear() === now.getFullYear();
+      } else if (monthFilter === "this-year") {
+        matchesDate = itemDate.getFullYear() === now.getFullYear();
+      }
+    }
+    
+    return matchesSearch && matchesCategory && matchesWarehouse && matchesDate;
   });
 
   const handleCloseForms = useCallback(() => {
@@ -592,7 +640,7 @@ const Stock: React.FC = () => {
               <div className="ml-5">
                 <p className="text-sm font-medium text-gray-500">Total Items</p>
                 <p className="text-2xl font-semibold text-gray-900">
-                  {safeProducts.length}
+                  {filteredStock.length}
                 </p>
               </div>
             </div>
@@ -608,12 +656,8 @@ const Stock: React.FC = () => {
                 <p className="text-sm font-medium text-gray-500">Total Value</p>
                 <p className="text-2xl font-semibold text-gray-900">
                   $
-                  {safeProducts
-                    .reduce(
-                      (sum, product) =>
-                        sum + (product.quantity || 0) * (product.unitCost || 0),
-                      0
-                    )
+                  {filteredStock
+                    .reduce((sum, item) => sum + item.totalAmount, 0)
                     .toLocaleString()}
                 </p>
               </div>
@@ -631,11 +675,7 @@ const Stock: React.FC = () => {
                   Low Stock Items
                 </p>
                 <p className="text-2xl font-semibold text-gray-900">
-                  {
-                    safeProducts.filter(
-                      (product) => product.status === "low-stock"
-                    ).length
-                  }
+                  {filteredStock.filter(item => !item.inStock).length}
                 </p>
               </div>
             </div>
@@ -649,7 +689,16 @@ const Stock: React.FC = () => {
               </div>
               <div className="ml-5">
                 <p className="text-sm font-medium text-gray-500">This Month</p>
-                <p className="text-2xl font-semibold text-gray-900">15</p>
+                <p className="text-2xl font-semibold text-gray-900">
+                  {(() => {
+                    const now = new Date();
+                    return combinedStock.filter(item => {
+                      const itemDate = new Date(item.date);
+                      return itemDate.getMonth() === now.getMonth() && 
+                             itemDate.getFullYear() === now.getFullYear();
+                    }).length;
+                  })()}
+                </p>
               </div>
             </div>
           </div>
@@ -658,7 +707,7 @@ const Stock: React.FC = () => {
 
       {/* Filters */}
       <div className="bg-white shadow rounded-lg p-6">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
           <div className="relative">
             <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
             <input
@@ -671,48 +720,47 @@ const Stock: React.FC = () => {
           </div>
           <select
             value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
+            onChange={(e) => {
+              setCategoryFilter(e.target.value);
+              // Reset warehouse filter when category changes
+              if (e.target.value !== "Product") {
+                setWarehouseFilter("all");
+              }
+            }}
             className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
             <option value="all">All Categories</option>
-            <option value="Raw Materials">Raw Materials</option>
-            <option value="Components">Components</option>
-            <option value="Finished Goods">Finished Goods</option>
+            <option value="Product">Product</option>
+            <option value="Raw Material">Raw Material</option>
           </select>
           <select
             value={monthFilter}
             onChange={(e) => setMonthFilter(e.target.value)}
             className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
+            <option value="all">All Time</option>
             <option value="this-month">This Month</option>
             <option value="last-month">Last Month</option>
             <option value="this-quarter">This Quarter</option>
-            <option value="custom">Custom Range</option>
+            <option value="this-year">This Year</option>
           </select>
           <select
             value={warehouseFilter}
             onChange={(e) => setWarehouseFilter(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            disabled={categoryFilter !== "Product"}
+            className={`border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+              categoryFilter !== "Product" ? "bg-gray-100 cursor-not-allowed opacity-50" : ""
+            }`}
           >
             <option value="all">All Warehouses</option>
             {safeWarehouses.map((warehouse: any) => (
               <option
                 key={warehouse._id || warehouse.id}
-                value={warehouse._id || warehouse.id}
+                value={warehouse.name}
               >
                 {warehouse.name}
               </option>
             ))}
-          </select>
-          <select
-            value={productTypeFilter}
-            onChange={(e) => setProductTypeFilter(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option value="all">All Types</option>
-            <option value="goods">Goods</option>
-            <option value="services">Services</option>
-            <option value="combo">Combo</option>
           </select>
         </div>
       </div>
@@ -723,30 +771,30 @@ const Stock: React.FC = () => {
           <thead className="bg-gray-50">
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Item Type
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Item Name
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Unit Cost
+                Quantity
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Total Value
+                Unit Price
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Incoming Qty
+                Total Amount
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Outgoing Qty
+                Stock
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Current Stock
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
+                Date
               </th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {loading ? (
+            {loading || productsLoading ? (
               <tr>
                 <td
                   colSpan={7}
@@ -755,91 +803,52 @@ const Stock: React.FC = () => {
                   Loading...
                 </td>
               </tr>
-            ) : filteredStockReports.length === 0 ? (
+            ) : filteredStock.length === 0 ? (
               <tr>
                 <td
                   colSpan={7}
                   className="px-6 py-4 text-center text-sm text-gray-500"
                 >
-                  No stock reports found
+                  No stock items found
                 </td>
               </tr>
             ) : (
-              filteredStockReports.map((report) => {
-                const itemId =
-                  typeof report.itemId === "string"
-                    ? report.itemId
-                    : report.itemId?._id || report.itemId?.id || "";
-                const product = safeProducts.find(
-                  (i) => i._id === itemId || i.id === itemId
-                );
-                const currentStock =
-                  (product?.quantity || 0) +
-                  report.incomingQuantity -
-                  report.outgoingQuantity;
-                const totalValue = currentStock * report.unitCost;
-                return (
+              filteredStock.map((item) => (
                   <tr
-                    key={report._id || report.itemId}
+                    key={item._id}
                     className="hover:bg-gray-50"
                   >
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                        item.itemType === 'Product' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
+                      }`}>
+                        {item.itemType}
+                      </span>
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {product?.name ||
-                        (typeof report.itemId === "object" &&
-                          report.itemId?.name) ||
-                        "Unknown Item"}
+                      {item.itemName}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      ${report.unitCost.toFixed(2)}
+                      {item.quantity}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      ${item.unitPrice.toFixed(2)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      ${totalValue.toLocaleString()}
+                      ${item.totalAmount.toLocaleString()}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600">
-                      +{report.incomingQuantity}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                        item.inStock ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                      }`}>
+                        {item.inStock ? 'In Stock' : 'Out of Stock'}
+                      </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600">
-                      -{report.outgoingQuantity}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {currentStock}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <button
-                        className="text-blue-600 hover:text-blue-900 mr-3"
-                        onClick={() => handleView(report._id || "")}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </button>
-                      <button
-                        disabled={!canEdit}
-                        onClick={() => canEdit && handleEdit(report._id || "")}
-                        className={`${
-                          canEdit
-                            ? "text-blue-600"
-                            : "text-gray-400 cursor-not-allowed"
-                        }`}
-                      >
-                        <Edit className="h-5 w-5" />
-                      </button>
-
-                      <button
-                        disabled={!canDelete}
-                        onClick={() =>
-                          canDelete && handleDelete(report._id || "")
-                        }
-                        className={`${
-                          canDelete
-                            ? "text-red-600"
-                            : "text-gray-400 cursor-not-allowed"
-                        }`}
-                      >
-                        <Trash2 className="h-5 w-5" />
-                      </button>
-                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {new Date(item.date).toLocaleDateString()}
+                    </td>  
                   </tr>
-                );
-              })
+              ))
             )}
           </tbody>
         </table>

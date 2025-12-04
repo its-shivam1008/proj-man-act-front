@@ -12,7 +12,6 @@ import { fetchMaterials } from "@/redux/slices/rawmaterialSlice";
 import { fetchWbsByProject } from "@/redux/slices/wbsSlice";
 import api from "@/utils/axiosApi";
 import { Input } from "@/components/ui/input";
-import { X, Trash } from "lucide-react";
 
 type MaterialItem = {
   _id: string;
@@ -82,7 +81,7 @@ export default function MaterialSelectionDialog({
 
   useEffect(() => {
     if (isOpen) {
-      dispatch(fetchMaterials());
+      dispatch(fetchMaterials({ page: 1, limit: 100 }));
       if (isUpdateMode && wbsItem?.linkedMaterials) {
         const prefilled = wbsItem.linkedMaterials.map((link: any) => {
           const details = (materials || []).find(
@@ -110,6 +109,7 @@ export default function MaterialSelectionDialog({
       setIsEditingMode(false);
     }
   }, [isOpen, wbsItem, isUpdateMode]);
+  // Sync savedMaterials with wbsItem.linkedMaterials whenever they change
   useEffect(() => {
     if (!isOpen) return;
 
@@ -135,8 +135,11 @@ export default function MaterialSelectionDialog({
         .filter(Boolean);
 
       setSavedMaterials(prefilled);
+    } else if (isOpen && isUpdateMode && wbsItem?.linkedMaterials?.length === 0) {
+      // If no linked materials, clear the list
+      setSavedMaterials([]);
     }
-  }, [isOpen, materials, wbsItem]);
+  }, [isOpen, materials, wbsItem, wbsItem?.linkedMaterials, isUpdateMode]);
 
   const openMaterialModalForAdd = (m: MaterialItem) => {
     setMaterialInput({
@@ -173,19 +176,24 @@ export default function MaterialSelectionDialog({
       setMaterialInput((s) => ({ ...s, submitting: true }));
 
       if (materialInput.isEditing) {
+        // For editing, we need to unlink and relink
         await api.post("/wbs/unlink-material", {
           wbsId,
           materialId,
         });
 
-        await api.post("/wbs/link-materials", {
+        const response = await api.post("/wbs/link-materials", {
           wbsId,
           materials: [{ materialId, quantity: qtyNum, unit }],
         });
 
+        // Update UI from backend response
+        const found = materials.find((m) => m._id === materialId);
         setSavedMaterials((prev) =>
           prev.map((p) =>
-            p.materialId === materialId ? { ...p, quantity: qtyNum, unit } : p
+            p.materialId === materialId 
+              ? { ...p, name: found?.name || p.name, quantity: qtyNum, unit } 
+              : p
           )
         );
       } else {
@@ -198,14 +206,15 @@ export default function MaterialSelectionDialog({
           // Material already exists - add to existing quantity
           const newQuantity = Number(existingMaterial.quantity) + qtyNum;
 
-          // Update existing material without unlinking (prevents return movement)
-          await api.post("/wbs/link-materials", {
+          // Send only the NEW TOTAL quantity to backend
+          // Backend will calculate the difference and deduct only additional stock
+          const response = await api.post("/wbs/link-materials", {
             wbsId,
             materials: [{ materialId, quantity: newQuantity, unit }],
             updateExisting: true, // Flag to update existing material
           });
 
-          // Update UI
+          // Update UI with new total
           setSavedMaterials((prev) =>
             prev.map((p) =>
               p.materialId === materialId
@@ -215,7 +224,7 @@ export default function MaterialSelectionDialog({
           );
         } else {
           // New material - add normally
-          await api.post("/wbs/link-materials", {
+          const response = await api.post("/wbs/link-materials", {
             wbsId,
             materials: [{ materialId, quantity: qtyNum, unit }],
           });
@@ -233,10 +242,13 @@ export default function MaterialSelectionDialog({
         }
       }
 
+      // Refetch materials to get updated stock (this will update the left side list)
+      dispatch(fetchMaterials({ page: 1, limit: 100 }));
+      
+      // Refetch WBS data to get updated linkedMaterials
       if (wbsItem?.projectId) {
         dispatch(fetchWbsByProject(wbsItem.projectId));
       }
-      dispatch(fetchMaterials());
 
       // close modal
       setMaterialInput({
@@ -267,7 +279,7 @@ export default function MaterialSelectionDialog({
       if (wbsItem?.projectId) {
         dispatch(fetchWbsByProject(wbsItem.projectId));
       }
-      dispatch(fetchMaterials());
+      dispatch(fetchMaterials({ page: 1, limit: 100 }));
     } catch (err) {
       console.error("Delete failed", err);
     }
@@ -311,7 +323,7 @@ export default function MaterialSelectionDialog({
       if (wbsItem?.projectId) {
         dispatch(fetchWbsByProject(wbsItem.projectId));
       }
-      dispatch(fetchMaterials());
+      dispatch(fetchMaterials({ page: 1, limit: 100 }));
 
       setReturnModal({ open: false, item: null, submitting: false });
     } catch (err) {
@@ -529,12 +541,9 @@ export default function MaterialSelectionDialog({
               <label className="text-xs font-medium">Unit</label>
               <Input
                 value={materialInput.item?.unit ?? ""}
-                onChange={(e) =>
-                  setMaterialInput((s) => ({
-                    ...s,
-                    item: s.item ? { ...s.item, unit: e.target.value } : s.item,
-                  }))
-                }
+                disabled
+                readOnly
+                className="bg-gray-100 cursor-not-allowed"
                 placeholder="Unit (e.g., kg)"
               />
             </div>

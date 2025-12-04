@@ -165,11 +165,11 @@ const Layout: React.FC = () => {
       href: "/inventory/operations/scrap-order",
       icon: FileText,
     },
-    {
-      name: "Receipts",
-      href: "/inventory/operations/receipt",
-      icon: ReceiptIndianRupee,
-    },
+    // {
+    //   name: "Receipts",
+    //   href: "/inventory/operations/receipt",
+    //   icon: ReceiptIndianRupee,
+    // },
     { name: "Stock", href: "/inventory/reporting/stock", icon: Package },
     {
       name: "Inventory History",

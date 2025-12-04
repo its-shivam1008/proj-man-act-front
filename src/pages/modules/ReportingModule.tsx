@@ -32,13 +32,13 @@ export default function ReportingModule() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
+      {/* <div>
         <h1 className="text-2xl font-semibold text-gray-900">Reporting</h1>
         <p className="text-sm text-gray-500 mt-1">Analyze stock, movements, valuation and history.</p>
-      </div>
+      </div> */}
 
       {/* Sub-tabs */}
-      <div className="sticky top-14 z-30 bg-white border-b">
+      {/* <div className="sticky top-14 z-30 bg-white border-b">
         <nav className="max-w-full">
           <div className="flex gap-6 overflow-x-auto py-3 px-1">
             {reportTabs.map((t) => (
@@ -59,7 +59,7 @@ export default function ReportingModule() {
             ))}
           </div>
         </nav>
-      </div>
+      </div> */}
 
       {/* Subpage Content */}
       <div className="pt-4">

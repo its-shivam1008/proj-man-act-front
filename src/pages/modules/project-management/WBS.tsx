@@ -137,6 +137,14 @@ const WBSNode: React.FC<WBSNodeProps> = ({
 
   const [linkingMaterialItem, setLinkingMaterialItem] = useState(null);
 
+  // Get the latest version of the linking material item from allwbs
+  const currentLinkingMaterialItem = useMemo(() => {
+    if (!linkingMaterialItem) return null;
+    // Find the updated item from allwbs array
+    const updatedItem = allwbs.find((i) => i.id === (linkingMaterialItem as any).id);
+    return updatedItem || linkingMaterialItem;
+  }, [linkingMaterialItem, allwbs]);
+
   const getStatusColor = (status: wbstatus) => {
     const colors: Record<wbstatus, string> = {
       "not-started": "bg-gray-100 text-gray-800 border-gray-200",
@@ -210,7 +218,7 @@ const WBSNode: React.FC<WBSNodeProps> = ({
               <MaterialSelectionDialog
                 isOpen={!!linkingMaterialItem}
                 onClose={() => setLinkingMaterialItem(null)}
-                wbsItem={linkingMaterialItem}
+                wbsItem={currentLinkingMaterialItem}
               />
 
               <Button

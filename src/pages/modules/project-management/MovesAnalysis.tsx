@@ -136,8 +136,8 @@ export default function MovesAnalysis() {
       dispatch(fetchProducts({ page: 1, limit: 100 }));
       dispatch(fetchWarehouses(organisationId));
       dispatch(fetchMRS());
-      dispatch(fetchMovements()); // Fetch movements
-      dispatch(fetchMovementSummary()); // Fetch summary
+      dispatch(fetchMovements({ organisationId })); // Fetch movements with organisationId
+      dispatch(fetchMovementSummary({ organisationId })); // Fetch summary with organisationId
     } else {
       console.error("No organisationId found in localStorage");
       toast.error("Organisation ID not found. Please login again.");

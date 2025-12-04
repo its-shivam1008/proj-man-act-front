@@ -366,8 +366,7 @@ const PurchaseOrderComponent: React.FC = () => {
                             </div>
                             <div>
                               <label className="text-xs font-medium text-gray-600">Unit of Measure *</label>
-                              <input
-                                type="text"
+                              <select
                                 value={line.unitOfMeasure || ""}
                                 onChange={(e) => {
                                   const newLines = [...formData.productLines];
@@ -375,9 +374,18 @@ const PurchaseOrderComponent: React.FC = () => {
                                   setFormData({ ...formData, productLines: newLines });
                                 }}
                                 className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                                placeholder="e.g., kg, pcs"
                                 required
-                              />
+                              >
+                                <option value="">Select Unit</option>
+                                <option value="kg">kg</option>
+                                <option value="gm">gm</option>
+                                <option value="mg">mg</option>
+                                <option value="km">km</option>
+                                <option value="meter">meter</option>
+                                <option value="liter">liter</option>
+                                <option value="ml">ml</option>
+                                <option value="pcs">pcs</option>
+                              </select>
                             </div>
                           </div>
                           <div className="grid grid-cols-4 gap-3 mb-3">
