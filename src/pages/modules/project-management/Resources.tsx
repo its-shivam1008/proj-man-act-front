@@ -122,9 +122,8 @@ export default function Resources() {
   const [multipleItems, setMultipleItems] = useState<AllocationFormState[]>([EMPTY_FORM]);
   const [submitting, setSubmitting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-
+  const [search, setSearch] = useState("");
   const PAGE_SIZE = 10;
-
   useEffect(() => {
     if (!projects.length) {
       dispatch(fetchProjects(DEFAULT_PROJECT_QUERY as any));
@@ -143,9 +142,10 @@ export default function Resources() {
   useEffect(() => {
     if (selectedProjectId) {
       dispatch(fetchWbsByProject(selectedProjectId));
-      dispatch(fetchResources(selectedProjectId));
+      dispatch(fetchResources({ projectId: selectedProjectId, search }));
     }
-  }, [dispatch, selectedProjectId]);
+  }, [dispatch, selectedProjectId, search]);
+
 
   const selectedProject = useMemo(() => {
     return projects.find((p: any) => (p._id ?? p.id) === selectedProjectId);
@@ -201,7 +201,7 @@ export default function Resources() {
 
     // Add current formData to multipleItems
     setMultipleItems([...multipleItems, { ...formData }]);
-    
+
     // Reset form for next item but keep WBS and resource type
     // Clear resourceId and resourceName to reset the equipment selection
     setFormData({
@@ -215,7 +215,7 @@ export default function Resources() {
       duration: "",
       durationUnit: "hours",
     });
-    
+
     toast({
       title: "Item added",
       description: `${multipleItems.length + 1} item(s) ready to save. Fill in the next item.`,
@@ -393,9 +393,9 @@ export default function Resources() {
         await dispatch(addResource(payload)).unwrap();
       }
 
-      toast({ 
-        title: "Success", 
-        description: `${allItems.length} allocation(s) created successfully.` 
+      toast({
+        title: "Success",
+        description: `${allItems.length} allocation(s) created successfully.`
       });
       setIsDialogOpen(false);
       resetForm();
@@ -464,8 +464,8 @@ export default function Resources() {
   };
 
   // Show both Equipment and Machinery in the table
-  const allocationsForView = selectedProjectId 
-    ? resources.filter((r) => r.resourceType === "equipment" || r.resourceType === "machinery") 
+  const allocationsForView = selectedProjectId
+    ? resources.filter((r) => r.resourceType === "equipment" || r.resourceType === "machinery")
     : [];
 
   useEffect(() => {
@@ -706,8 +706,8 @@ export default function Resources() {
                     <Select
                       value={formData.unit}
                       onValueChange={(value) =>
-                        setFormData((prev) => ({ 
-                          ...prev, 
+                        setFormData((prev) => ({
+                          ...prev,
                           unit: value,
                           durationUnit: value // Auto-sync Duration Unit with Unit
                         }))
@@ -738,9 +738,9 @@ export default function Resources() {
 
               <DialogFooter className="flex justify-between">
                 {!editingAllocation && (
-                  <Button 
+                  <Button
                     type="button"
-                    variant="secondary" 
+                    variant="secondary"
                     onClick={addMoreItem}
                     disabled={submitting}
                   >
@@ -792,22 +792,20 @@ export default function Resources() {
             </div>
             <div className="flex items-center space-x-3">
               <div
-                className={`p-3 rounded-full ${
-                  (selectedProject.actualCost ?? 0) > (selectedProject.budget ?? 0)
-                    ? "bg-red-100 text-red-600"
-                    : "bg-green-100 text-green-600"
-                }`}
+                className={`p-3 rounded-full ${(selectedProject.actualCost ?? 0) > (selectedProject.budget ?? 0)
+                  ? "bg-red-100 text-red-600"
+                  : "bg-green-100 text-green-600"
+                  }`}
               >
                 <AlertTriangle className="h-6 w-6" />
               </div>
               <div>
                 <Label className="text-sm">Remaining Budget</Label>
                 <p
-                  className={`text-2xl font-bold ${
-                    (selectedProject.actualCost ?? 0) > (selectedProject.budget ?? 0)
-                      ? "text-red-600"
-                      : "text-green-600"
-                  }`}
+                  className={`text-2xl font-bold ${(selectedProject.actualCost ?? 0) > (selectedProject.budget ?? 0)
+                    ? "text-red-600"
+                    : "text-green-600"
+                    }`}
                 >
                   ₹ {((selectedProject.budget ?? 0) - (selectedProject.actualCost ?? 0)).toLocaleString()}
                 </p>
@@ -819,7 +817,17 @@ export default function Resources() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Resource Allocations</CardTitle>
+          <div className="flex justify-between items-center">
+            <CardTitle>Resource Allocations</CardTitle>
+            <Input
+              placeholder="Search Resource..."
+              className="w-64"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
+
         </CardHeader>
         <CardContent>
           <Table>

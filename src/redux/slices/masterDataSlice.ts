@@ -12,18 +12,43 @@ interface MasterState {
   clients: MasterItem[];
   departments: MasterItem[];
   projectTypes: MasterItem[];
+  paginatedList: MasterItem[],
   loading: boolean;
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  search:string;
+  loadingPaginated:boolean;
 }
 
 const initialState: MasterState = {
   clients: [],
   departments: [],
   projectTypes: [],
+  paginatedList: [],
+  page: 1,
+  limit: 10,
+  total: 0,
+  totalPages: 1,
+  search: "",
+  loadingPaginated: false,
+
   loading: false,
 };
 
 // Helper type for args
 type MasterType = "client" | "department" | "project-type";
+export const fetchPaginatedMaster = createAsyncThunk(
+  "masterData/fetchPaginated",
+  async ({ type, page = 1, limit = 10, search = "" }) => {
+    const res = await api.get(`/master/${type}/paginated`, {
+      params: { page, limit, search },
+    });
+    return { type, ...res.data };
+  }
+);
+
 
 // Fetch
 export const fetchMasterData = createAsyncThunk(
@@ -64,10 +89,35 @@ export const deleteMasterItem = createAsyncThunk(
 const masterDataSlice = createSlice({
   name: "masterData",
   initialState,
-  reducers: {},
+ reducers: {
+    setSearchText(state, action) {
+      state.search = action.payload;
+      state.page = 1;
+    },
+    setPage(state, action) {
+      state.page = action.payload;
+    }
+},
+
   extraReducers: (builder) => {
     builder
       // Fetch
+      .addCase(fetchPaginatedMaster.pending, (state) => {
+        state.loadingPaginated = true;
+      })
+      .addCase(fetchPaginatedMaster.fulfilled, (state, action) => {
+        const { data, total, totalPages, page, limit, type } = action.payload;
+
+        // store paginated list separately 
+        state.paginatedList = data;
+        state.total = total;
+        state.totalPages = totalPages;
+        state.page = page;
+        state.limit = limit;
+        state.search = state.search;
+
+        state.loadingPaginated = false;
+      })
       .addCase(fetchMasterData.fulfilled, (state, action) => {
         const { type, data } = action.payload;
         if (type === "client") state.clients = data;
@@ -84,9 +134,9 @@ const masterDataSlice = createSlice({
       // Update
       .addCase(updateMasterItem.fulfilled, (state, action) => {
         const { type, data } = action.payload;
-        const updateList = (list: MasterItem[]) => 
-            list.map(i => i._id === data._id ? data : i);
-            
+        const updateList = (list: MasterItem[]) =>
+          list.map(i => i._id === data._id ? data : i);
+
         if (type === "client") state.clients = updateList(state.clients);
         if (type === "department") state.departments = updateList(state.departments);
         if (type === "project-type") state.projectTypes = updateList(state.projectTypes);
@@ -102,5 +152,8 @@ const masterDataSlice = createSlice({
       });
   },
 });
+export const { setPage, setSearchText } = masterDataSlice.actions;
+
+
 
 export default masterDataSlice.reducer;

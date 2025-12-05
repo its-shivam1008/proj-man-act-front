@@ -168,7 +168,8 @@ export default function SchedulingPlanning() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     null
   );
-
+  const [searchText, setSearchText] = useState("");
+  const [cprSearch, setCprSearch] = useState("");
   // CPM State
   const [cpmData, setCpmData] = useState<{
     taskResults: Record<string, CPMResult>;
@@ -441,7 +442,7 @@ export default function SchedulingPlanning() {
     // Build parent-child map
     const childrenMap: Record<string, string[]> = {};
     const itemMap: Record<string, any> = {};
-    
+
     wbs.forEach((item) => {
       itemMap[item.id] = item;
       if (item.parentId) {
@@ -490,7 +491,7 @@ export default function SchedulingPlanning() {
       }
 
       let currentNumber: string;
-      
+
       if (item.type === "phase") {
         phaseCounter++;
         currentNumber = phaseCounter.toString();
@@ -503,7 +504,7 @@ export default function SchedulingPlanning() {
           const siblingsWithoutCustom = siblings.filter(sibId => !customHierarchicalNumbers[sibId]);
           const index = siblingsWithoutCustom.indexOf(itemId);
           const subNumber = index + 1;
-          
+
           if (parent.type === "phase") {
             currentNumber = `${parentNumber}.${subNumber}`;
           } else {
@@ -551,7 +552,7 @@ export default function SchedulingPlanning() {
     if (!cpmData || !selectedProject) return null;
 
     const groupedFeatures: Record<string, any[]> = {};
-    
+
     const getGroupName = (itemId: string, parentId: string | null) => {
       if (!parentId) return "General";
       const parent = wbs.find((i) => i.id === parentId);
@@ -604,8 +605,8 @@ export default function SchedulingPlanning() {
       // 4. Get hierarchical number
       const hierarchicalNumber = generateHierarchicalNumbering[item.id] || "";
       // Display number will be calculated after sorting
-      const displayNumber = customSequences[item.id] 
-        ? customSequences[item.id].toString() 
+      const displayNumber = customSequences[item.id]
+        ? customSequences[item.id].toString()
         : hierarchicalNumber;
 
       // 5. Find parent dates for constraints (if item has a parent)
@@ -613,7 +614,7 @@ export default function SchedulingPlanning() {
       let maxDate: Date | null = null;
       let originalStartDate: Date = startAt;
       let originalEndDate: Date = endAt;
-      
+
       // Store original dates from WBS
       if (item.startDate) {
         originalStartDate = parseISO(item.startDate);
@@ -621,14 +622,14 @@ export default function SchedulingPlanning() {
       if (item.endDate) {
         originalEndDate = parseISO(item.endDate);
       }
-      
+
       // If item has a parent, constrain by parent's dates
       if (item.parentId) {
         const parent = wbs.find((p) => p.id === item.parentId);
         if (parent) {
           const parentStart = parent.startDate ? parseISO(parent.startDate) : null;
           const parentEnd = parent.endDate ? parseISO(parent.endDate) : null;
-          
+
           // Use parent dates as constraints
           if (parentStart) minDate = parentStart;
           if (parentEnd) maxDate = parentEnd;
@@ -665,29 +666,29 @@ export default function SchedulingPlanning() {
         // Check if items have manual priority numbers
         const hasPriorityA = customSequences[a.id] !== undefined;
         const hasPriorityB = customSequences[b.id] !== undefined;
-        
+
         // If both have priority numbers, sort by priority
         if (hasPriorityA && hasPriorityB) {
           return customSequences[a.id] - customSequences[b.id];
         }
-        
+
         // If only A has priority, A comes first
         if (hasPriorityA && !hasPriorityB) {
           return -1;
         }
-        
+
         // If only B has priority, B comes first
         if (!hasPriorityA && hasPriorityB) {
           return 1;
         }
-        
+
         // If neither has priority, sort by start date
         if (!hasPriorityA && !hasPriorityB) {
           const dateA = a.startAt ? new Date(a.startAt).getTime() : 0;
           const dateB = b.startAt ? new Date(b.startAt).getTime() : 0;
           return dateA - dateB;
         }
-        
+
         // Fallback to hierarchical number comparison
         const numA = a.hierarchicalNumber || "";
         const numB = b.hierarchicalNumber || "";
@@ -722,8 +723,7 @@ export default function SchedulingPlanning() {
   // --- Sorted List for Table View ---
   const sortedItemsList = useMemo(() => {
     if (!ganttData || Object.keys(ganttData).length === 0) return [];
-    
-    // Flatten all items from all groups into a single array
+
     const allItems: any[] = [];
     Object.entries(ganttData).forEach(([group, items]) => {
       items.forEach((item) => {
@@ -731,36 +731,32 @@ export default function SchedulingPlanning() {
       });
     });
 
-    // Sort by the same logic as ganttData: Priority first, then by date
     allItems.sort((a, b) => {
       const hasPriorityA = customSequences[a.id] !== undefined;
       const hasPriorityB = customSequences[b.id] !== undefined;
-      
+
       if (hasPriorityA && hasPriorityB) {
         return customSequences[a.id] - customSequences[b.id];
       }
-      
-      if (hasPriorityA && !hasPriorityB) {
-        return -1;
-      }
-      
-      if (!hasPriorityA && hasPriorityB) {
-        return 1;
-      }
-      
-      if (!hasPriorityA && !hasPriorityB) {
-        const dateA = a.startAt ? new Date(a.startAt).getTime() : 0;
-        const dateB = b.startAt ? new Date(b.startAt).getTime() : 0;
-        return dateA - dateB;
-      }
-      
-      const numA = a.hierarchicalNumber || "";
-      const numB = b.hierarchicalNumber || "";
-      return numA.localeCompare(numB, undefined, { numeric: true, sensitivity: 'base' });
+      if (hasPriorityA && !hasPriorityB) return -1;
+      if (!hasPriorityA && hasPriorityB) return 1;
+
+      const dateA = a.startAt ? new Date(a.startAt).getTime() : 0;
+      const dateB = b.startAt ? new Date(b.startAt).getTime() : 0;
+
+      return dateA - dateB;
     });
 
     return allItems;
   }, [ganttData, customSequences]);
+  const filteredItems = useMemo(() => {
+    if (!searchText.trim()) return sortedItemsList;
+
+    return sortedItemsList.filter((item) =>
+      item.name.toLowerCase().includes(searchText.toLowerCase())
+    );
+  }, [sortedItemsList, searchText]);
+
 
   // --- Reminders Logic ---
   const reminders = useMemo(() => {
@@ -830,10 +826,10 @@ export default function SchedulingPlanning() {
 
       ganttContainer.addEventListener('scroll', handleScroll, { passive: false });
       ganttContainer.addEventListener('wheel', handleWheel, { passive: false, capture: true });
-      
+
       // Also check periodically as backup
       intervalId = setInterval(fixScroll, 50);
-      
+
       // Initial check
       fixScroll();
     };
@@ -861,6 +857,11 @@ export default function SchedulingPlanning() {
     });
     setReminderDialogOpen(true);
   };
+  // const filteredIds = cpmData?.criticalPathIds?.filter((taskId) => {
+  //   const task = wbs.find((t) => t.id === taskId);
+  //   return task?.name?.toLowerCase().includes(cprSearch.toLowerCase());
+  // }) ?? [];
+
 
   const handleSaveReminder = async () => {
     if (!reminderForm.itemId) return;
@@ -952,7 +953,7 @@ export default function SchedulingPlanning() {
 
   const handleNumberEditSave = async (itemId: string) => {
     const trimmedValue = editingNumberValue.trim();
-    
+
     if (trimmedValue === "") {
       // Remove custom priority number (revert to auto-generated)
       setCustomSequences((prev) => {
@@ -988,10 +989,10 @@ export default function SchedulingPlanning() {
         saveCustomSequences(selectedProjectId, updated);
         return updated;
       });
-      
+
       toast.success(`Priority ${priorityNum} set - item will appear in priority order`);
     }
-    
+
     setEditingNumberId(null);
     setEditingNumberValue("");
   };
@@ -1061,154 +1062,153 @@ export default function SchedulingPlanning() {
 
         {/* Schedule & Planning Tab */}
         <TabsContent value="schedule" className="space-y-6 mt-6">
-      {/* Main Content */}
-      {wbsLoading && selectedProjectId ? (
-        <div className="h-96 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-2">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="text-sm text-muted-foreground">
-              Loading Project Schedule...
-            </p>
-          </div>
-        </div>
-      ) : !selectedProjectId ? (
-        <Card className="h-96 flex items-center justify-center bg-slate-50 border-dashed">
-          <div className="text-center text-muted-foreground">
-            <CalendarIcon className="h-12 w-12 mx-auto mb-4 opacity-50" />
-            <p>Please select a project to view the schedule.</p>
-          </div>
-        </Card>
-      ) : (
-        <>
-          {/* Metrics Bar */}
-          <div className="grid gap-4 md:grid-cols-5">
-            <Card className="bg-slate-50">
-              <CardContent className="p-4 flex flex-col justify-center">
-                <span className="text-xs font-semibold text-muted-foreground uppercase">
-                  Est. Duration
-                </span>
-                <div className="text-2xl font-bold flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-slate-400" />
-                  {cpmData?.projectDuration || 0}{" "}
-                  <span className="text-sm font-normal text-muted-foreground">
-                    Days
-                  </span>
-                </div>
-              </CardContent>
+          {/* Main Content */}
+          {wbsLoading && selectedProjectId ? (
+            <div className="h-96 flex items-center justify-center">
+              <div className="flex flex-col items-center gap-2">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <p className="text-sm text-muted-foreground">
+                  Loading Project Schedule...
+                </p>
+              </div>
+            </div>
+          ) : !selectedProjectId ? (
+            <Card className="h-96 flex items-center justify-center bg-slate-50 border-dashed">
+              <div className="text-center text-muted-foreground">
+                <CalendarIcon className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>Please select a project to view the schedule.</p>
+              </div>
             </Card>
-
-            <Card className="bg-slate-50">
-              <CardContent className="p-4 flex flex-col justify-center">
-                <span className="text-xs font-semibold text-muted-foreground uppercase">
-                  Critical Tasks
-                </span>
-                <div className="text-2xl font-bold text-red-600 flex items-center gap-2">
-                  <GitMerge className="w-5 h-5" />
-                  {cpmData?.criticalPathIds.length || 0}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-slate-50">
-              <CardContent className="p-4 flex flex-col justify-center">
-                <span className="text-xs font-semibold text-muted-foreground uppercase">
-                  Active Reminders
-                </span>
-                <div className="text-2xl font-bold text-orange-600 flex items-center gap-2">
-                  <AlertCircle className="w-5 h-5" />
-                  {reminders.length}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* View Toggle */}
-            <Card className="bg-white border">
-              <CardContent className="p-2 h-full flex flex-col justify-center gap-2">
-                <span className="text-xs text-center text-slate-400 uppercase font-bold">
-                  Calculation Mode
-                </span>
-                <div className="flex gap-1">
-                  <Button
-                    size="sm"
-                    variant={viewMode === "standard" ? "default" : "ghost"}
-                    onClick={() => setViewMode("standard")}
-                    className="flex-1 text-xs h-8"
-                  >
-                    Actual
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={viewMode === "cpm" ? "destructive" : "ghost"}
-                    className={`flex-1 text-xs h-8 ${
-                      viewMode === "cpm"
-                        ? "bg-red-600 hover:bg-red-700 text-white"
-                        : "text-slate-500"
-                    }`}
-                    onClick={() => setViewMode("cpm")}
-                  >
-                    CPM View
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Zoom Toggle */}
-            <Card className="bg-white border">
-              <CardContent className="p-2 h-full flex flex-col justify-center gap-2">
-                <span className="text-xs text-center text-slate-400 uppercase font-bold">
-                  Timeline Zoom
-                </span>
-                <Select
-                  value={ganttView}
-                  onValueChange={(v: any) => setGanttView(v)}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="daily">Daily</SelectItem>
-                    <SelectItem value="weekly">Weekly</SelectItem>
-                    <SelectItem value="monthly">Monthly</SelectItem>
-                  </SelectContent>
-                </Select>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Gantt Chart & Reminders Area */}
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-full min-h-[600px]">
-            <Card className="lg:col-span-3 flex flex-col overflow-hidden shadow-lg border-slate-300 bg-gradient-to-br from-white to-slate-50/30">
-              <CardHeader className="pb-3 border-b bg-gradient-to-r from-slate-50 to-white">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <CardTitle className="text-xl font-bold text-slate-800">Project Timeline</CardTitle>
-                    <CardDescription className="text-xs mt-1">Visualize phases, activities, and tasks with hierarchical numbering</CardDescription>
-                  </div>
-                  <div className="flex gap-3 text-xs bg-white/80 px-3 py-2 rounded-lg border border-slate-200 shadow-sm">
-                    <span className="flex items-center gap-1.5">
-                      <div className="w-3 h-3 bg-slate-800 rounded-sm shadow-sm"></div>
-                      <span className="font-medium">Phase</span>
+          ) : (
+            <>
+              {/* Metrics Bar */}
+              <div className="grid gap-4 md:grid-cols-5">
+                <Card className="bg-slate-50">
+                  <CardContent className="p-4 flex flex-col justify-center">
+                    <span className="text-xs font-semibold text-muted-foreground uppercase">
+                      Est. Duration
                     </span>
-                    <span className="flex items-center gap-1.5">
-                      <div className="w-3 h-3 bg-red-200 border border-red-400 rounded-sm shadow-sm"></div>
-                      <span className="font-medium">Critical</span>
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <div className="w-3 h-3 bg-indigo-200 border border-indigo-300 rounded-sm shadow-sm"></div>
-                      <span className="font-medium">Activity</span>
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <div className="w-3 h-3 bg-blue-200 border border-blue-300 rounded-sm shadow-sm"></div>
-                      <span className="font-medium">Task</span>
-                    </span>
-                  </div>
-                </div>
-              </CardHeader>
+                    <div className="text-2xl font-bold flex items-center gap-2">
+                      <Clock className="w-5 h-5 text-slate-400" />
+                      {cpmData?.projectDuration || 0}{" "}
+                      <span className="text-sm font-normal text-muted-foreground">
+                        Days
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
 
-              <div className="flex-1 relative min-h-[500px] flex flex-col bg-white">
-                {ganttData && Object.keys(ganttData).length > 0 ? (
-                  <>
-                    <style>{`
+                <Card className="bg-slate-50">
+                  <CardContent className="p-4 flex flex-col justify-center">
+                    <span className="text-xs font-semibold text-muted-foreground uppercase">
+                      Critical Tasks
+                    </span>
+                    <div className="text-2xl font-bold text-red-600 flex items-center gap-2">
+                      <GitMerge className="w-5 h-5" />
+                      {cpmData?.criticalPathIds.length || 0}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-slate-50">
+                  <CardContent className="p-4 flex flex-col justify-center">
+                    <span className="text-xs font-semibold text-muted-foreground uppercase">
+                      Active Reminders
+                    </span>
+                    <div className="text-2xl font-bold text-orange-600 flex items-center gap-2">
+                      <AlertCircle className="w-5 h-5" />
+                      {reminders.length}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* View Toggle */}
+                <Card className="bg-white border">
+                  <CardContent className="p-2 h-full flex flex-col justify-center gap-2">
+                    <span className="text-xs text-center text-slate-400 uppercase font-bold">
+                      Calculation Mode
+                    </span>
+                    <div className="flex gap-1">
+                      <Button
+                        size="sm"
+                        variant={viewMode === "standard" ? "default" : "ghost"}
+                        onClick={() => setViewMode("standard")}
+                        className="flex-1 text-xs h-8"
+                      >
+                        Actual
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={viewMode === "cpm" ? "destructive" : "ghost"}
+                        className={`flex-1 text-xs h-8 ${viewMode === "cpm"
+                          ? "bg-red-600 hover:bg-red-700 text-white"
+                          : "text-slate-500"
+                          }`}
+                        onClick={() => setViewMode("cpm")}
+                      >
+                        CPM View
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Zoom Toggle */}
+                <Card className="bg-white border">
+                  <CardContent className="p-2 h-full flex flex-col justify-center gap-2">
+                    <span className="text-xs text-center text-slate-400 uppercase font-bold">
+                      Timeline Zoom
+                    </span>
+                    <Select
+                      value={ganttView}
+                      onValueChange={(v: any) => setGanttView(v)}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="daily">Daily</SelectItem>
+                        <SelectItem value="weekly">Weekly</SelectItem>
+                        <SelectItem value="monthly">Monthly</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Gantt Chart & Reminders Area */}
+              <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-full min-h-[600px]">
+                <Card className="lg:col-span-3 flex flex-col overflow-hidden shadow-lg border-slate-300 bg-gradient-to-br from-white to-slate-50/30">
+                  <CardHeader className="pb-3 border-b bg-gradient-to-r from-slate-50 to-white">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <CardTitle className="text-xl font-bold text-slate-800">Project Timeline</CardTitle>
+                        <CardDescription className="text-xs mt-1">Visualize phases, activities, and tasks with hierarchical numbering</CardDescription>
+                      </div>
+                      <div className="flex gap-3 text-xs bg-white/80 px-3 py-2 rounded-lg border border-slate-200 shadow-sm">
+                        <span className="flex items-center gap-1.5">
+                          <div className="w-3 h-3 bg-slate-800 rounded-sm shadow-sm"></div>
+                          <span className="font-medium">Phase</span>
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <div className="w-3 h-3 bg-red-200 border border-red-400 rounded-sm shadow-sm"></div>
+                          <span className="font-medium">Critical</span>
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <div className="w-3 h-3 bg-indigo-200 border border-indigo-300 rounded-sm shadow-sm"></div>
+                          <span className="font-medium">Activity</span>
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <div className="w-3 h-3 bg-blue-200 border border-blue-300 rounded-sm shadow-sm"></div>
+                          <span className="font-medium">Task</span>
+                        </span>
+                      </div>
+                    </div>
+                  </CardHeader>
+
+                  <div className="flex-1 relative min-h-[500px] flex flex-col bg-white">
+                    {ganttData && Object.keys(ganttData).length > 0 ? (
+                      <>
+                        <style>{`
                       /* Prevent Gantt container from scrolling left beyond 0 */
                       .gantt.overflow-auto {
                         scroll-behavior: smooth;
@@ -1219,338 +1219,353 @@ export default function SchedulingPlanning() {
                         z-index: 50 !important;
                       }
                     `}</style>
-                  <GanttProvider
-                    zoom={
-                      ganttView === "daily"
-                        ? 150
-                        : ganttView === "weekly"
-                        ? 100
-                        : 70
-                    }
-                    range={ganttView}
-                  >
-                    {/* --- SPLIT VIEW LAYOUT with SYNCED SCROLL --- */}
-                    <div className="grid grid-cols-[280px_1fr] h-full border-t">
-                      {/* Sidebar Pane */}
-                      <div
-                        ref={sidebarRef}
-                        className="sticky top-0 left-0 h-full overflow-y-auto overflow-x-hidden border-r bg-gradient-to-b from-slate-50/50 to-white z-50 shadow-sm"
-                      >
-                        <GanttSidebar>
-                          {Object.entries(ganttData).map(([group, items]) => (
-                            <GanttSidebarGroup key={group} name={group}>
-                              {items.map((item) => (
-                                <div
-                                  key={item.id}
-                                  className="flex items-center justify-between group pr-2 hover:bg-slate-100 transition-colors h-12 border-b border-slate-100"
-                                >
-                                  <div className="w-20 shrink-0 flex items-center justify-center pl-2">
-                                    {editingNumberId === item.id ? (
-                                      <div className="flex items-center gap-1">
-                                        <Input
-                                          type="number"
-                                          min="1"
-                                          value={editingNumberValue}
-                                          onChange={(e) => setEditingNumberValue(e.target.value)}
-                                          onBlur={() => handleNumberEditSave(item.id)}
-                                          onKeyDown={(e) => {
-                                            if (e.key === "Enter") {
-                                              handleNumberEditSave(item.id);
-                                            } else if (e.key === "Escape") {
-                                              handleNumberEditCancel();
-                                            }
-                                          }}
-                                          placeholder="Priority"
-                                          className="h-7 w-20 text-xs px-1.5 py-0.5 text-center font-bold"
-                                          autoFocus
-                                        />
-                                      </div>
-                                    ) : (
-                                      <div className="flex flex-col items-center gap-0.5">
-                                        {customSequences[item.id] ? (
-                                          <span
-                                            className="text-xs font-bold text-white bg-blue-600 px-2 py-1 rounded-md border border-blue-700 shadow-sm cursor-pointer hover:bg-blue-700 transition-colors"
-                                            onClick={() => handleNumberEditStart(item.id, customSequences[item.id].toString())}
-                                            title="Click to edit priority number"
-                                          >
-                                            P{customSequences[item.id]}
-                                          </span>
-                                        ) : (
-                                          <span
-                                            className="text-xs font-semibold text-slate-600 bg-slate-100 px-2 py-1 rounded-md border border-slate-300 cursor-pointer hover:bg-slate-200 transition-colors"
-                                            onClick={() => handleNumberEditStart(item.id, "")}
-                                            title="Click to set priority number (or leave empty to sort by date)"
-                                          >
-                                            {item.sequence ? `P${item.sequence}` : item.hierarchicalNumber}
-                                          </span>
-                                        )}
-                                        {!customSequences[item.id] && (
-                                          <span className="text-[9px] text-slate-400">Date</span>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <GanttSidebarItem feature={item} />
-                                  </div>
-                                  <div className="flex items-center gap-1 shrink-0">
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-7 w-7 opacity-0 group-hover:opacity-100 hover:bg-blue-50"
-                                      onClick={() => openEditDialog(item)}
-                                      title="Edit Item"
-                                    >
-                                      <Pencil className="w-3.5 h-3.5 text-blue-600" />
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-7 w-7 opacity-0 group-hover:opacity-100 hover:bg-orange-50"
-                                      onClick={() => openReminderDialog(item)}
-                                      title="Set Reminder"
-                                    >
-                                      <BellRing className="w-3.5 h-3.5 text-orange-500" />
-                                    </Button>
-                                  </div>
-                                </div>
-                              ))}
-                            </GanttSidebarGroup>
-                          ))}
-                        </GanttSidebar>
-                      </div>
-
-                      {/* Timeline Pane (Master Scroll) */}
-                      <div
-                        ref={timelineRef}
-                        onScroll={handleSyncScroll}
-                        className="bg-background"
-                      >
-                        <GanttTimeline className="min-w-screen">
-                          <GanttHeader />
-                          <GanttFeatureList>
-                            {Object.entries(ganttData).map(([group, items]) => (
-                              <GanttFeatureListGroup key={group}>
-                                {items.map((item) => (
-                                  <GanttFeatureItem key={item.id} {...item}>
-                                    <div
-                                      className={`group/item flex items-center gap-2 px-3 py-1.5 w-full h-full rounded-md shadow-md border-2 transition-all hover:shadow-lg min-w-[200px] ${item.className}`}
-                                      title={`${customSequences[item.id] ? `Priority ${customSequences[item.id]}` : item.sequence ? `P${item.sequence}` : item.hierarchicalNumber}: ${item.name} (${item.type})`}
-                                    >
-                                      {/* Priority or Hierarchical Number Badge */}
-                                      {customSequences[item.id] ? (
-                                        <span className="font-bold text-xs bg-blue-600 text-white px-2 py-0.5 rounded-md border border-blue-700 shrink-0 shadow-sm">
-                                          P{customSequences[item.id]}
-                                        </span>
-                                      ) : (
-                                        <span className="font-bold text-xs bg-white/40 backdrop-blur-sm px-2 py-0.5 rounded-md border border-white/60 shrink-0 shadow-sm">
-                                          {item.sequence ? `P${item.sequence}` : item.hierarchicalNumber}
-                                        </span>
-                                      )}
-
-                                      {/* Task Name - More Prominent */}
-                                      <span className="truncate font-semibold text-sm flex-1 min-w-[120px]">
-                                        {item.name}
-                                      </span>
-
-                                      {/* Type Badge */}
-                                      <span className="text-[9px] uppercase font-medium bg-black/15 px-2 py-0.5 rounded-md shrink-0 border border-black/10">
-                                        {item.type}
-                                      </span>
-
-                                      {/* Edit Button - Shows on Hover */}
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-6 w-6 opacity-0 group-hover/item:opacity-100 shrink-0 hover:bg-white/30 transition-opacity"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          openEditDialog(item);
-                                        }}
-                                        title="Edit Item"
+                        <GanttProvider
+                          zoom={
+                            ganttView === "daily"
+                              ? 150
+                              : ganttView === "weekly"
+                                ? 100
+                                : 70
+                          }
+                          range={ganttView}
+                        >
+                          {/* --- SPLIT VIEW LAYOUT with SYNCED SCROLL --- */}
+                          <div className="grid grid-cols-[280px_1fr] h-full border-t">
+                            {/* Sidebar Pane */}
+                            <div
+                              ref={sidebarRef}
+                              className="sticky top-0 left-0 h-full overflow-y-auto overflow-x-hidden border-r bg-gradient-to-b from-slate-50/50 to-white z-50 shadow-sm"
+                            >
+                              <GanttSidebar>
+                                {Object.entries(ganttData).map(([group, items]) => (
+                                  <GanttSidebarGroup key={group} name={group}>
+                                    {items.map((item) => (
+                                      <div
+                                        key={item.id}
+                                        className="flex items-center justify-between group pr-2 hover:bg-slate-100 transition-colors h-12 border-b border-slate-100"
                                       >
-                                        <Pencil className="w-3.5 h-3.5" />
-                                      </Button>
-
-                                      {/* Critical Path Indicator */}
-                                      {item.isCritical && viewMode === "cpm" && (
-                                        <Zap className="w-4 h-4 text-red-600 shrink-0 animate-pulse" title="Critical Path" />
-                                      )}
-                                    </div>
-                                  </GanttFeatureItem>
+                                        <div className="w-20 shrink-0 flex items-center justify-center pl-2">
+                                          {editingNumberId === item.id ? (
+                                            <div className="flex items-center gap-1">
+                                              <Input
+                                                type="number"
+                                                min="1"
+                                                value={editingNumberValue}
+                                                onChange={(e) => setEditingNumberValue(e.target.value)}
+                                                onBlur={() => handleNumberEditSave(item.id)}
+                                                onKeyDown={(e) => {
+                                                  if (e.key === "Enter") {
+                                                    handleNumberEditSave(item.id);
+                                                  } else if (e.key === "Escape") {
+                                                    handleNumberEditCancel();
+                                                  }
+                                                }}
+                                                placeholder="Priority"
+                                                className="h-7 w-20 text-xs px-1.5 py-0.5 text-center font-bold"
+                                                autoFocus
+                                              />
+                                            </div>
+                                          ) : (
+                                            <div className="flex flex-col items-center gap-0.5">
+                                              {customSequences[item.id] ? (
+                                                <span
+                                                  className="text-xs font-bold text-white bg-blue-600 px-2 py-1 rounded-md border border-blue-700 shadow-sm cursor-pointer hover:bg-blue-700 transition-colors"
+                                                  onClick={() => handleNumberEditStart(item.id, customSequences[item.id].toString())}
+                                                  title="Click to edit priority number"
+                                                >
+                                                  P{customSequences[item.id]}
+                                                </span>
+                                              ) : (
+                                                <span
+                                                  className="text-xs font-semibold text-slate-600 bg-slate-100 px-2 py-1 rounded-md border border-slate-300 cursor-pointer hover:bg-slate-200 transition-colors"
+                                                  onClick={() => handleNumberEditStart(item.id, "")}
+                                                  title="Click to set priority number (or leave empty to sort by date)"
+                                                >
+                                                  {item.sequence ? `P${item.sequence}` : item.hierarchicalNumber}
+                                                </span>
+                                              )}
+                                              {!customSequences[item.id] && (
+                                                <span className="text-[9px] text-slate-400">Date</span>
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <GanttSidebarItem feature={item} />
+                                        </div>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-7 w-7 opacity-0 group-hover:opacity-100 hover:bg-blue-50"
+                                            onClick={() => openEditDialog(item)}
+                                            title="Edit Item"
+                                          >
+                                            <Pencil className="w-3.5 h-3.5 text-blue-600" />
+                                          </Button>
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-7 w-7 opacity-0 group-hover:opacity-100 hover:bg-orange-50"
+                                            onClick={() => openReminderDialog(item)}
+                                            title="Set Reminder"
+                                          >
+                                            <BellRing className="w-3.5 h-3.5 text-orange-500" />
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </GanttSidebarGroup>
                                 ))}
-                              </GanttFeatureListGroup>
-                            ))}
-                          </GanttFeatureList>
-                          <GanttToday />
-                        </GanttTimeline>
+                              </GanttSidebar>
+                            </div>
+
+                            {/* Timeline Pane (Master Scroll) */}
+                            <div
+                              ref={timelineRef}
+                              onScroll={handleSyncScroll}
+                              className="bg-background"
+                            >
+                              <GanttTimeline className="min-w-screen">
+                                <GanttHeader />
+                                <GanttFeatureList>
+                                  {Object.entries(ganttData).map(([group, items]) => (
+                                    <GanttFeatureListGroup key={group}>
+                                      {items.map((item) => (
+                                        <GanttFeatureItem key={item.id} {...item}>
+                                          <div
+                                            className={`group/item flex items-center gap-2 px-3 py-1.5 w-full h-full rounded-md shadow-md border-2 transition-all hover:shadow-lg min-w-[200px] ${item.className}`}
+                                            title={`${customSequences[item.id] ? `Priority ${customSequences[item.id]}` : item.sequence ? `P${item.sequence}` : item.hierarchicalNumber}: ${item.name} (${item.type})`}
+                                          >
+                                            {/* Priority or Hierarchical Number Badge */}
+                                            {customSequences[item.id] ? (
+                                              <span className="font-bold text-xs bg-blue-600 text-white px-2 py-0.5 rounded-md border border-blue-700 shrink-0 shadow-sm">
+                                                P{customSequences[item.id]}
+                                              </span>
+                                            ) : (
+                                              <span className="font-bold text-xs bg-white/40 backdrop-blur-sm px-2 py-0.5 rounded-md border border-white/60 shrink-0 shadow-sm">
+                                                {item.sequence ? `P${item.sequence}` : item.hierarchicalNumber}
+                                              </span>
+                                            )}
+
+                                            {/* Task Name - More Prominent */}
+                                            <span className="truncate font-semibold text-sm flex-1 min-w-[120px]">
+                                              {item.name}
+                                            </span>
+
+                                            {/* Type Badge */}
+                                            <span className="text-[9px] uppercase font-medium bg-black/15 px-2 py-0.5 rounded-md shrink-0 border border-black/10">
+                                              {item.type}
+                                            </span>
+
+                                            {/* Edit Button - Shows on Hover */}
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-6 w-6 opacity-0 group-hover/item:opacity-100 shrink-0 hover:bg-white/30 transition-opacity"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                openEditDialog(item);
+                                              }}
+                                              title="Edit Item"
+                                            >
+                                              <Pencil className="w-3.5 h-3.5" />
+                                            </Button>
+
+                                            {/* Critical Path Indicator */}
+                                            {item.isCritical && viewMode === "cpm" && (
+                                              <Zap className="w-4 h-4 text-red-600 shrink-0 animate-pulse" title="Critical Path" />
+                                            )}
+                                          </div>
+                                        </GanttFeatureItem>
+                                      ))}
+                                    </GanttFeatureListGroup>
+                                  ))}
+                                </GanttFeatureList>
+                                <GanttToday />
+                              </GanttTimeline>
+                            </div>
+                          </div>
+                          {/* --- END LAYOUT --- */}
+                        </GanttProvider>
+                      </>
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-muted-foreground bg-slate-50">
+                        No schedule data available. Add items in WBS to generate
+                        Gantt chart.
                       </div>
-                    </div>
-                    {/* --- END LAYOUT --- */}
-                  </GanttProvider>
-                  </>
-                ) : (
-                  <div className="h-full flex items-center justify-center text-muted-foreground bg-slate-50">
-                    No schedule data available. Add items in WBS to generate
-                    Gantt chart.
+                    )}
                   </div>
-                )}
+                </Card>
+
+                {/* Reminders Sidebar */}
+                <Card className="lg:col-span-1 flex flex-col h-full max-h-[650px]">
+                  <CardHeader className="border-b bg-orange-50/30">
+                    <CardTitle className="flex items-center gap-2 text-orange-700">
+                      <Bell className="w-5 h-5" /> Reminders
+                    </CardTitle>
+                    <CardDescription>Upcoming Deadlines</CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex-1 overflow-y-auto p-4">
+                    {reminders.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <CheckSquare className="w-12 h-12 mx-auto mb-2 opacity-20" />
+                        <p>No pending reminders.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {reminders.map((item) => (
+                          <div
+                            key={item.id}
+                            className="p-3 rounded-lg border bg-white shadow-sm flex flex-col gap-2 hover:shadow-md transition-shadow"
+                          >
+                            <div className="flex justify-between items-start">
+                              <span
+                                className="font-medium text-sm line-clamp-1"
+                                title={item.name}
+                              >
+                                {item.name}
+                              </span>
+                              <Badge
+                                variant={
+                                  item.daysLeft < 3 ? "destructive" : "outline"
+                                }
+                                className="text-[10px]"
+                              >
+                                {item.daysLeft < 0
+                                  ? "Overdue"
+                                  : `${item.daysLeft} days`}
+                              </Badge>
+                            </div>
+                            <div className="text-xs text-muted-foreground flex justify-between items-center">
+                              <span className="capitalize text-slate-500 bg-slate-100 px-1 rounded">
+                                {item.type}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                {format(parseISO(item.endDate!), "MMM dd")}
+                                <ArrowRight className="w-3 h-3" />
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
               </div>
-            </Card>
 
-            {/* Reminders Sidebar */}
-            <Card className="lg:col-span-1 flex flex-col h-full max-h-[650px]">
-              <CardHeader className="border-b bg-orange-50/30">
-                <CardTitle className="flex items-center gap-2 text-orange-700">
-                  <Bell className="w-5 h-5" /> Reminders
-                </CardTitle>
-                <CardDescription>Upcoming Deadlines</CardDescription>
-              </CardHeader>
-              <CardContent className="flex-1 overflow-y-auto p-4">
-                {reminders.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <CheckSquare className="w-12 h-12 mx-auto mb-2 opacity-20" />
-                    <p>No pending reminders.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {reminders.map((item) => (
-                      <div
-                        key={item.id}
-                        className="p-3 rounded-lg border bg-white shadow-sm flex flex-col gap-2 hover:shadow-md transition-shadow"
-                      >
-                        <div className="flex justify-between items-start">
-                          <span
-                            className="font-medium text-sm line-clamp-1"
-                            title={item.name}
-                          >
-                            {item.name}
-                          </span>
-                          <Badge
-                            variant={
-                              item.daysLeft < 3 ? "destructive" : "outline"
-                            }
-                            className="text-[10px]"
-                          >
-                            {item.daysLeft < 0
-                              ? "Overdue"
-                              : `${item.daysLeft} days`}
-                          </Badge>
-                        </div>
-                        <div className="text-xs text-muted-foreground flex justify-between items-center">
-                          <span className="capitalize text-slate-500 bg-slate-100 px-1 rounded">
-                            {item.type}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            {format(parseISO(item.endDate!), "MMM dd")}
-                            <ArrowRight className="w-3 h-3" />
-                          </span>
-                        </div>
+              {/* Sorted Items Table */}
+              {ganttData && Object.keys(ganttData).length > 0 && (
+                <Card className="mt-6">
+                  <CardHeader>
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <CardTitle>Schedule Items (Sorted by Order)</CardTitle>
+                        <CardDescription>
+                          All items sorted by priority and date order
+                        </CardDescription>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
 
-          {/* Sorted Items Table */}
-          {ganttData && Object.keys(ganttData).length > 0 && (
-            <Card className="mt-6">
-              <CardHeader>
-                <CardTitle>Schedule Items (Sorted by Order)</CardTitle>
-                <CardDescription>
-                  All items sorted by priority and date order
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-20">Order</TableHead>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Group</TableHead>
-                        <TableHead>Start Date</TableHead>
-                        <TableHead>End Date</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Duration</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {sortedItemsList.map((item) => (
-                        <TableRow key={item.id}>
-                          <TableCell>
-                            <Badge
-                              variant={customSequences[item.id] ? "default" : "outline"}
-                              className={
-                                customSequences[item.id]
-                                  ? "bg-blue-600 text-white"
-                                  : "bg-slate-100 text-slate-700"
-                              }
-                            >
-                              {customSequences[item.id]
-                                ? `P${customSequences[item.id]}`
-                                : item.sequence
-                                ? `P${item.sequence}`
-                                : item.hierarchicalNumber || "-"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="font-medium">{item.name}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="capitalize">
-                              {item.type}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
-                            {item.group}
-                          </TableCell>
-                          <TableCell>
-                            {item.startAt
-                              ? format(new Date(item.startAt), "MMM dd, yyyy")
-                              : "-"}
-                          </TableCell>
-                          <TableCell>
-                            {item.endAt
-                              ? format(new Date(item.endAt), "MMM dd, yyyy")
-                              : "-"}
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant={
-                                item.status === "completed"
-                                  ? "default"
-                                  : item.status === "in-progress"
-                                  ? "secondary"
-                                  : "outline"
-                              }
-                              className={
-                                item.status === "completed"
-                                  ? "bg-green-600 text-white"
-                                  : item.status === "in-progress"
-                                  ? "bg-blue-600 text-white"
-                                  : ""
-                              }
-                            >
-                              {item.status || "not-started"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            {item.startAt && item.endAt
-                              ? `${differenceInDays(new Date(item.endAt), new Date(item.startAt)) + 1} days`
-                              : "-"}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
+                      <div className="flex justify-end mb-4">
+                        <Input
+                          placeholder="Search tasks..."
+                          className="w-64"
+                          value={searchText}
+                          onChange={(e) => setSearchText(e.target.value)}
+                        />
+                      </div>
+
+                    </div>
+
+                  </CardHeader>
+                  <CardContent>
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-20">Order</TableHead>
+                            <TableHead>Name</TableHead>
+                            <TableHead>Type</TableHead>
+                            <TableHead>Group</TableHead>
+                            <TableHead>Start Date</TableHead>
+                            <TableHead>End Date</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Duration</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredItems.map((item) => (
+                            <TableRow key={item.id}>
+                              <TableCell>
+                                <Badge
+                                  variant={customSequences[item.id] ? "default" : "outline"}
+                                  className={
+                                    customSequences[item.id]
+                                      ? "bg-blue-600 text-white"
+                                      : "bg-slate-100 text-slate-700"
+                                  }
+                                >
+                                  {customSequences[item.id]
+                                    ? `P${customSequences[item.id]}`
+                                    : item.sequence
+                                      ? `P${item.sequence}`
+                                      : item.hierarchicalNumber || "-"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="font-medium">{item.name}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="capitalize">
+                                  {item.type}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {item.group}
+                              </TableCell>
+                              <TableCell>
+                                {item.startAt
+                                  ? format(new Date(item.startAt), "MMM dd, yyyy")
+                                  : "-"}
+                              </TableCell>
+                              <TableCell>
+                                {item.endAt
+                                  ? format(new Date(item.endAt), "MMM dd, yyyy")
+                                  : "-"}
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant={
+                                    item.status === "completed"
+                                      ? "default"
+                                      : item.status === "in-progress"
+                                        ? "secondary"
+                                        : "outline"
+                                  }
+                                  className={
+                                    item.status === "completed"
+                                      ? "bg-green-600 text-white"
+                                      : item.status === "in-progress"
+                                        ? "bg-blue-600 text-white"
+                                        : ""
+                                  }
+                                >
+                                  {item.status || "not-started"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                {item.startAt && item.endAt
+                                  ? `${differenceInDays(new Date(item.endAt), new Date(item.startAt)) + 1} days`
+                                  : "-"}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </>
           )}
-        </>
-      )}
         </TabsContent>
 
         {/* Critical Path Report Tab */}
@@ -1574,7 +1589,7 @@ export default function SchedulingPlanning() {
                       <CardTitle className="text-xl font-bold text-red-900 flex items-center gap-2">
                         Critical Path Report
                         <Badge variant="destructive" className="ml-2">
-                          {cpmData.criticalPathIds.length} Tasks
+                          {cpmData?.criticalPathIds?.length ?? 0} Tasks
                         </Badge>
                       </CardTitle>
                       <CardDescription className="text-sm mt-1">
@@ -1592,224 +1607,203 @@ export default function SchedulingPlanning() {
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="p-6">
-                <div className="space-y-4">
-                  {/* Critical Path Tasks Table */}
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Order</TableHead>
-                          <TableHead>Name</TableHead>
-                          <TableHead>Type</TableHead>
-                          <TableHead>Group</TableHead>
-                          <TableHead>Start Date</TableHead>
-                          <TableHead>End Date</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Duration</TableHead>
-                          <TableHead>Slack</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {cpmData.criticalPathIds.map((taskId, index) => {
-                          const task = wbs.find((t) => t.id === taskId);
-                          const cpmResult = cpmData.taskResults[taskId];
-                          if (!task || !cpmResult) return null;
 
-                          // Find parent/group name
-                          const parent = task.parentId
-                            ? wbs.find((t) => t.id === task.parentId)
-                            : null;
-                          const groupName = parent
-                            ? parent.name
-                            : task.type === "phase"
-                            ? "Phases & Milestones"
-                            : "General";
+              <CardContent className="p-6 space-y-5">
 
-                          return (
-                            <TableRow
-                              key={taskId}
-                              className="hover:bg-red-50/50 border-l-4 border-l-red-500"
-                            >
-                              <TableCell>
-                                <Badge
-                                  variant="destructive"
-                                  className="bg-red-600 text-white"
-                                >
-                                  {index + 1}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="font-medium">
-                                <div className="flex items-center gap-2">
-                                  <Zap className="w-4 h-4 text-red-600" />
-                                  {task.name}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="outline" className="capitalize">
-                                  {task.type || "task"}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-sm text-muted-foreground">
-                                {groupName}
-                              </TableCell>
-                              <TableCell>
-                                {(() => {
-                                  // Use actual WBS start date if available, otherwise use CPM calculated date
-                                  if (task.startDate) {
-                                    return format(parseISO(task.startDate), "MMM dd, yyyy");
-                                  }
-                                  // Only calculate from CPM if project has start date
-                                  if (selectedProject?.startDate) {
-                                    const projectStart = parseISO(selectedProject.startDate);
-                                    const startDate = addDays(projectStart, cpmResult.es);
-                                    return format(startDate, "MMM dd, yyyy");
-                                  }
-                                  return "-";
-                                })()}
-                              </TableCell>
-                              <TableCell>
-                                {(() => {
-                                  // Use actual WBS end date if available, otherwise use CPM calculated date
-                                  if (task.endDate) {
-                                    return format(parseISO(task.endDate), "MMM dd, yyyy");
-                                  }
-                                  // Only calculate from CPM if project has start date
-                                  if (selectedProject?.startDate) {
-                                    const projectStart = parseISO(selectedProject.startDate);
-                                    const endDate = addDays(projectStart, cpmResult.ef);
-                                    return format(endDate, "MMM dd, yyyy");
-                                  }
-                                  return "-";
-                                })()}
-                              </TableCell>
-                              <TableCell>
-                                <Badge
-                                  variant={
-                                    task.status === "completed"
-                                      ? "default"
-                                      : task.status === "in-progress"
-                                      ? "secondary"
-                                      : "outline"
-                                  }
-                                  className={
-                                    task.status === "completed"
-                                      ? "bg-green-600 text-white"
-                                      : task.status === "in-progress"
-                                      ? "bg-blue-600 text-white"
-                                      : ""
-                                  }
-                                >
-                                  {task.status || "not-started"}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                {cpmResult.ef - cpmResult.es} days
-                              </TableCell>
-                              <TableCell>
-                                <Badge
-                                  variant="destructive"
-                                  className="bg-red-600 text-white"
-                                >
-                                  {cpmResult.slack <= 0.001
-                                    ? "0"
-                                    : `${cpmResult.slack.toFixed(1)} days`}
-                                </Badge>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </div>
-
-                  {/* Critical Path Flow Visualization */}
-                  <div className="mt-6 p-4 bg-white rounded-lg border border-red-200">
-                    <div className="flex items-center gap-2 mb-3">
-                      <FileText className="w-5 h-5 text-red-600" />
-                      <h3 className="font-semibold text-red-900">
-                        Critical Path Flow
-                      </h3>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 p-3 bg-slate-50 rounded-lg overflow-x-auto">
-                      {cpmData.criticalPathIds.map((taskId, index) => {
-                        const task = wbs.find((t) => t.id === taskId);
-                        if (!task) return null;
-
-                        return (
-                          <React.Fragment key={taskId}>
-                            <div className="flex items-center gap-2">
-                              <div className="px-3 py-2 bg-red-500 text-white rounded-lg shadow-md font-semibold text-sm min-w-[120px] text-center border-2 border-red-600">
-                                <div className="font-bold">{index + 1}</div>
-                                <div className="text-xs truncate max-w-[100px]">
-                                  {task.name}
-                                </div>
-                                <div className="text-xs mt-1 opacity-90">
-                                  {cpmData.taskResults[taskId]?.ef -
-                                    cpmData.taskResults[taskId]?.es}{" "}
-                                  days
-                                </div>
-                              </div>
-                            </div>
-                            {index < cpmData.criticalPathIds.length - 1 && (
-                              <ArrowRight className="w-5 h-5 text-red-500 flex-shrink-0" />
-                            )}
-                          </React.Fragment>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Summary Statistics */}
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
-                    <Card className="bg-gradient-to-br from-red-50 to-white border-red-200">
-                      <CardContent className="p-4">
-                        <div className="text-xs font-semibold text-muted-foreground uppercase mb-1">
-                          Total Critical Tasks
-                        </div>
-                        <div className="text-2xl font-bold text-red-700">
-                          {cpmData.criticalPathIds.length}
-                        </div>
-                      </CardContent>
-                    </Card>
-                    <Card className="bg-gradient-to-br from-red-50 to-white border-red-200">
-                      <CardContent className="p-4">
-                        <div className="text-xs font-semibold text-muted-foreground uppercase mb-1">
-                          Project Duration
-                        </div>
-                        <div className="text-2xl font-bold text-red-700">
-                          {cpmData.projectDuration} Days
-                        </div>
-                      </CardContent>
-                    </Card>
-                    <Card className="bg-gradient-to-br from-red-50 to-white border-red-200">
-                      <CardContent className="p-4">
-                        <div className="text-xs font-semibold text-muted-foreground uppercase mb-1">
-                          Total Tasks
-                        </div>
-                        <div className="text-2xl font-bold text-slate-700">
-                          {wbs.length}
-                        </div>
-                      </CardContent>
-                    </Card>
-                    <Card className="bg-gradient-to-br from-red-50 to-white border-red-200">
-                      <CardContent className="p-4">
-                        <div className="text-xs font-semibold text-muted-foreground uppercase mb-1">
-                          Critical Path %
-                        </div>
-                        <div className="text-2xl font-bold text-red-700">
-                          {wbs.length > 0
-                            ? Math.round(
-                                (cpmData.criticalPathIds.length / wbs.length) *
-                                  100
-                              )
-                            : 0}
-                          %
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
+                {/* SEARCH BAR */}
+                <div className="flex justify-end mb-3">
+                  <Input
+                    placeholder="Search Critical Path..."
+                    className="w-64"
+                    value={cprSearch}
+                    onChange={(e) => setCprSearch(e.target.value)}
+                  />
                 </div>
+
+                {/* FILTERED LIST */}
+                {(() => {
+                  const filteredIds = cpmData?.criticalPathIds?.filter((taskId) => {
+                    const task = wbs.find((t) => t.id === taskId);
+                    return task?.name?.toLowerCase().includes(cprSearch.toLowerCase());
+                  }) ?? [];
+
+                  return (
+                    <>
+                      {/* TABLE */}
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Order</TableHead>
+                              <TableHead>Name</TableHead>
+                              <TableHead>Type</TableHead>
+                              <TableHead>Group</TableHead>
+                              <TableHead>Start</TableHead>
+                              <TableHead>End</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead>Duration</TableHead>
+                              <TableHead>Slack</TableHead>
+                            </TableRow>
+                          </TableHeader>
+
+                          <TableBody>
+                            {filteredIds.map((taskId, index) => {
+                              const task = wbs.find((t) => t.id === taskId);
+                              const cpmResult = cpmData.taskResults[taskId];
+                              if (!task || !cpmResult) return null;
+
+                              const parent = task.parentId
+                                ? wbs.find((t) => t.id === task.parentId)
+                                : null;
+
+                              const groupName = parent
+                                ? parent.name
+                                : task.type === "phase"
+                                  ? "Phases & Milestones"
+                                  : "General";
+
+                              return (
+                                <TableRow key={taskId} className="hover:bg-red-50/50 border-l-4 border-l-red-500">
+                                  <TableCell>
+                                    <Badge variant="destructive" className="bg-red-600 text-white">
+                                      {index + 1}
+                                    </Badge>
+                                  </TableCell>
+
+                                  <TableCell className="font-medium flex items-center gap-2">
+                                    <Zap className="w-4 h-4 text-red-600" />
+                                    {task.name}
+                                  </TableCell>
+
+                                  <TableCell>
+                                    <Badge variant="outline" className="capitalize">
+                                      {task.type || "task"}
+                                    </Badge>
+                                  </TableCell>
+
+                                  <TableCell className="text-sm">{groupName}</TableCell>
+
+                                  <TableCell>
+                                    {task.startDate
+                                      ? format(parseISO(task.startDate), "MMM dd, yyyy")
+                                      : "-"}
+                                  </TableCell>
+
+                                  <TableCell>
+                                    {task.endDate
+                                      ? format(parseISO(task.endDate), "MMM dd, yyyy")
+                                      : "-"}
+                                  </TableCell>
+
+                                  <TableCell>
+                                    <Badge
+                                      variant={
+                                        task.status === "completed"
+                                          ? "default"
+                                          : task.status === "in-progress"
+                                            ? "secondary"
+                                            : "outline"
+                                      }
+                                      className={
+                                        task.status === "completed"
+                                          ? "bg-green-600 text-white"
+                                          : task.status === "in-progress"
+                                            ? "bg-blue-600 text-white"
+                                            : ""
+                                      }
+                                    >
+                                      {task.status || "not-started"}
+                                    </Badge>
+                                  </TableCell>
+
+                                  <TableCell>{cpmResult.ef - cpmResult.es} days</TableCell>
+
+                                  <TableCell>
+                                    <Badge variant="destructive" className="bg-red-600 text-white">
+                                      {cpmResult.slack <= 0.001
+                                        ? "0"
+                                        : `${cpmResult.slack.toFixed(1)} days`}
+                                    </Badge>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+
+                      {/* CRITICAL PATH FLOW */}
+                      <div className="mt-6 p-4 bg-white rounded-lg border border-red-200">
+                        <div className="flex items-center gap-2 mb-3">
+                          <FileText className="w-5 h-5 text-red-600" />
+                          <h3 className="font-semibold text-red-900">Critical Path Flow</h3>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 p-3 bg-slate-50 rounded-lg overflow-x-auto">
+                          {filteredIds.map((taskId, index) => {
+                            const task = wbs.find((t) => t.id === taskId);
+                            if (!task) return null;
+
+                            return (
+                              <React.Fragment key={taskId}>
+                                <div className="px-3 py-2 bg-red-500 text-white rounded-lg shadow-md min-w-[120px] text-center border-2 border-red-600">
+                                  <div className="font-bold">{index + 1}</div>
+                                  <div className="text-xs truncate">{task.name}</div>
+                                  <div className="text-xs mt-1 opacity-90">
+                                    {cpmData.taskResults[taskId]?.ef -
+                                      cpmData.taskResults[taskId]?.es}{" "}
+                                    days
+                                  </div>
+                                </div>
+                                {index < filteredIds.length - 1 && (
+                                  <ArrowRight className="w-5 h-5 text-red-500" />
+                                )}
+                              </React.Fragment>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* SUMMARY */}
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
+                        <Card className="bg-gradient-to-br from-red-50 to-white border-red-200">
+                          <CardContent className="p-4">
+                            <div className="text-xs uppercase mb-1">Total Critical Tasks</div>
+                            <div className="text-2xl font-bold text-red-700">{filteredIds.length}</div>
+                          </CardContent>
+                        </Card>
+
+                        <Card className="bg-gradient-to-br from-red-50 to-white border-red-200">
+                          <CardContent className="p-4">
+                            <div className="text-xs uppercase mb-1">Project Duration</div>
+                            <div className="text-2xl font-bold text-red-700">
+                              {cpmData.projectDuration} Days
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        <Card className="bg-gradient-to-br from-red-50 to-white border-red-200">
+                          <CardContent className="p-4">
+                            <div className="text-xs uppercase mb-1">Total Tasks</div>
+                            <div className="text-2xl font-bold text-slate-700">{wbs.length}</div>
+                          </CardContent>
+                        </Card>
+
+                        <Card className="bg-gradient-to-br from-red-50 to-white border-red-200">
+                          <CardContent className="p-4">
+                            <div className="text-xs uppercase mb-1">Critical Path %</div>
+                            <div className="text-2xl font-bold text-red-700">
+                              {wbs.length > 0
+                                ? Math.round((filteredIds.length / wbs.length) * 100)
+                                : 0}
+                              %
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </div>
+                    </>
+                  );
+                })()}
               </CardContent>
             </Card>
           ) : (
@@ -1821,6 +1815,8 @@ export default function SchedulingPlanning() {
             </Card>
           )}
         </TabsContent>
+
+
 
         {/* Workload Forecast Report Tab */}
         <TabsContent value="workload" className="space-y-6 mt-6">
@@ -1901,9 +1897,9 @@ export default function SchedulingPlanning() {
                           <div className="text-2xl font-bold text-orange-700">
                             {projectResources.length > 0
                               ? Math.round(
-                                  projectResources.reduce((sum, r) => sum + (r.duration || 0), 0) /
-                                    projectResources.length
-                                )
+                                projectResources.reduce((sum, r) => sum + (r.duration || 0), 0) /
+                                projectResources.length
+                              )
                               : 0}{" "}
                             {projectResources[0]?.durationUnit || "days"}
                           </div>
@@ -2053,22 +2049,22 @@ export default function SchedulingPlanning() {
                     const today = new Date();
                     const currentMonth = today.getMonth();
                     const currentYear = today.getFullYear();
-                    
+
                     // Generate calendar days
                     const generateCalendarDays = () => {
                       const firstDay = new Date(currentYear, currentMonth, 1);
                       const lastDay = new Date(currentYear, currentMonth + 1, 0);
                       const startDate = startOfWeek(firstDay, { weekStartsOn: 1 });
                       const endDate = endOfWeek(lastDay, { weekStartsOn: 1 });
-                      
+
                       const days: Date[] = [];
                       let current = new Date(startDate);
-                      
+
                       while (current <= endDate) {
                         days.push(new Date(current));
                         current = addDays(current, 1);
                       }
-                      
+
                       return days;
                     };
 
@@ -2117,18 +2113,16 @@ export default function SchedulingPlanning() {
                               return (
                                 <div
                                   key={index}
-                                  className={`min-h-[100px] border-r border-b p-2 ${
-                                    !isCurrentMonth ? "bg-slate-50 opacity-50" : "bg-white"
-                                  } ${isToday ? "bg-blue-50 border-blue-300" : ""}`}
+                                  className={`min-h-[100px] border-r border-b p-2 ${!isCurrentMonth ? "bg-slate-50 opacity-50" : "bg-white"
+                                    } ${isToday ? "bg-blue-50 border-blue-300" : ""}`}
                                 >
                                   <div
-                                    className={`text-sm font-semibold mb-1 ${
-                                      isToday
-                                        ? "text-blue-600"
-                                        : isCurrentMonth
+                                    className={`text-sm font-semibold mb-1 ${isToday
+                                      ? "text-blue-600"
+                                      : isCurrentMonth
                                         ? "text-slate-900"
                                         : "text-slate-400"
-                                    }`}
+                                      }`}
                                   >
                                     {format(day, "d")}
                                   </div>
@@ -2136,17 +2130,16 @@ export default function SchedulingPlanning() {
                                     {dayEvents.slice(0, 3).map((event) => (
                                       <div
                                         key={event.id}
-                                        className={`text-xs p-1 rounded truncate ${
-                                          event.isCritical
-                                            ? "bg-red-100 text-red-900 border border-red-300"
-                                            : event.type === "phase"
+                                        className={`text-xs p-1 rounded truncate ${event.isCritical
+                                          ? "bg-red-100 text-red-900 border border-red-300"
+                                          : event.type === "phase"
                                             ? "bg-slate-800 text-white"
                                             : event.type === "activity"
-                                            ? "bg-indigo-100 text-indigo-900"
-                                            : event.type === "resource"
-                                            ? "bg-green-100 text-green-900"
-                                            : "bg-blue-100 text-blue-900"
-                                        }`}
+                                              ? "bg-indigo-100 text-indigo-900"
+                                              : event.type === "resource"
+                                                ? "bg-green-100 text-green-900"
+                                                : "bg-blue-100 text-blue-900"
+                                          }`}
                                         title={event.title}
                                       >
                                         {event.title.length > 15
@@ -2210,17 +2203,16 @@ export default function SchedulingPlanning() {
                                     </div>
                                     <Badge
                                       variant="outline"
-                                      className={`capitalize ${
-                                        event.isCritical
-                                          ? "border-red-300 text-red-700"
-                                          : event.type === "phase"
+                                      className={`capitalize ${event.isCritical
+                                        ? "border-red-300 text-red-700"
+                                        : event.type === "phase"
                                           ? "bg-slate-800 text-white"
                                           : event.type === "activity"
-                                          ? "bg-indigo-100 text-indigo-900"
-                                          : event.type === "resource"
-                                          ? "bg-green-100 text-green-900"
-                                          : "bg-blue-100 text-blue-900"
-                                      }`}
+                                            ? "bg-indigo-100 text-indigo-900"
+                                            : event.type === "resource"
+                                              ? "bg-green-100 text-green-900"
+                                              : "bg-blue-100 text-blue-900"
+                                        }`}
                                     >
                                       {event.type}
                                     </Badge>
@@ -2230,8 +2222,8 @@ export default function SchedulingPlanning() {
                                         event.status === "completed"
                                           ? "default"
                                           : event.status === "in-progress"
-                                          ? "secondary"
-                                          : "outline"
+                                            ? "secondary"
+                                            : "outline"
                                       }
                                     >
                                       {event.status}

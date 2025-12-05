@@ -7,6 +7,17 @@ import { Milestone, Invoice } from "@/types/billing";
 --------------------------------------------------- */
 const getOrg = () => localStorage.getItem("organisationId");
 
+
+export const fetchPaginatedMilestones = createAsyncThunk(
+  "billing/fetchPaginatedMilestones",
+  async ({ page = 1, limit = 10, search = "", projectId = "", organisationId = "" }) => {
+    const res = await api.get("/get/milestone/paginated", {
+      params: { page, limit, search, projectId, organisationId },
+    });
+    return res.data;
+  }
+);
+
 /* ---------------------------------------------------
    FETCH MILESTONES
 --------------------------------------------------- */
@@ -112,12 +123,18 @@ interface BillingState {
   milestones: Milestone[];
   invoices: Invoice[];
   loading: boolean;
+  page: number;
+  total: number;
+  totalPages: number;
 }
 
 const initialState: BillingState = {
   milestones: [],
   invoices: [],
   loading: false,
+  page: 1,
+  total: 0,
+  totalPages: 1,
 };
 
 const billingSlice = createSlice({
@@ -125,9 +142,15 @@ const billingSlice = createSlice({
   initialState,
   reducers: {},
   extraReducers: (builder) => {
-    builder
 
-      /* ----------------- MILESTONES ----------------- */
+    /* ----------------- MILESTONES ----------------- */
+    builder.addCase(fetchPaginatedMilestones.fulfilled, (state, action) => {
+      state.milestones = action.payload.data;
+      state.page = action.payload.page;
+      state.total = action.payload.total;
+      state.totalPages = action.payload.totalPages;
+      state.loading = false;
+    })
 
       .addCase(
         fetchMilestones.fulfilled,

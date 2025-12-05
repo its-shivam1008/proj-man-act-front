@@ -9,7 +9,11 @@ import {
   updateMasterItem,
   deleteMasterItem,
   MasterItem,
+  fetchPaginatedMaster,
+  setPage,
+  setSearchText,
 } from "@/redux/slices/masterDataSlice";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,6 +45,9 @@ export default function MasterDataPage() {
   const { clients, departments, projectTypes } = useSelector(
     (state: RootState) => state.masterData
   );
+  const { paginatedList, page, totalPages, limit, search } = useSelector(
+    (state: RootState) => state.masterData
+  );
 
   const canView = usePermission('masterData', 'view');
   const canCreate = usePermission('masterData', 'create');
@@ -52,17 +59,27 @@ export default function MasterDataPage() {
   const [editingItem, setEditingItem] = useState<MasterItem | null>(null);
   const [formData, setFormData] = useState({ name: "", description: "" });
 
+
   useEffect(() => {
     dispatch(fetchMasterData("client"));
     dispatch(fetchMasterData("department"));
     dispatch(fetchMasterData("project-type"));
   }, [dispatch]);
+  useEffect(() => {
+    dispatch(fetchPaginatedMaster({
+      type: activeTab,
+      page,
+      limit,
+      search,
+    }));
+  }, [activeTab, page, search]);
 
-  const getCurrentList = () => {
-    if (activeTab === "client") return clients;
-    if (activeTab === "department") return departments;
-    return projectTypes;
-  };
+  useEffect(() => {
+    if (paginatedList.length === 0 && page > 1) {
+      dispatch(setPage(page - 1));
+    }
+  }, [paginatedList.length, page]);
+
 
   const handleOpenDialog = (item?: MasterItem) => {
     if (item) {
@@ -88,11 +105,27 @@ export default function MasterDataPage() {
           })
         ).unwrap();
         toast.success("Updated successfully");
+        dispatch(
+          fetchPaginatedMaster({
+            type: activeTab,
+            page,
+            limit,
+            search,
+          })
+        );
       } else {
         await dispatch(
           addMasterItem({ type: activeTab, data: formData })
         ).unwrap();
         toast.success("Created successfully");
+        dispatch(
+          fetchPaginatedMaster({
+            type: activeTab,
+            page,
+            limit,
+            search,
+          })
+        );
       }
       setIsDialogOpen(false);
     } catch (error) {
@@ -102,8 +135,14 @@ export default function MasterDataPage() {
 
   const handleDelete = async (id: string) => {
     if (confirm("Are you sure?")) {
-        await dispatch(deleteMasterItem({ type: activeTab, id }));
-        toast.success("Deleted");
+      await dispatch(deleteMasterItem({ type: activeTab, id }));
+      toast.success("Deleted");
+      dispatch(fetchPaginatedMaster({
+        type: activeTab,
+        page,
+        limit,
+        search
+      }));
     }
   };
 
@@ -137,9 +176,22 @@ export default function MasterDataPage() {
         </TabsList>
 
         <Card className="mt-4">
-            <CardHeader>
-                <CardTitle className="capitalize">{activeTab.replace("-", " ")} List</CardTitle>
-            </CardHeader>
+          <CardHeader>
+            <div className="flex justify-between items-center">
+              <CardTitle className="capitalize">{activeTab.replace("-", " ")} List</CardTitle>
+              <Input
+                placeholder="Search..."
+                className="w-64 mb-4"
+                value={search}
+                onChange={(e) => {
+                  dispatch(setSearchText(e.target.value));
+                  dispatch(setPage(1));
+                }}
+              />
+
+            </div>
+
+          </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
@@ -150,14 +202,14 @@ export default function MasterDataPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {getCurrentList().length === 0 ? (
+                {paginatedList.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={3} className="text-center py-8">
                       No records found.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  getCurrentList().map((item) => (
+                  paginatedList.map((item) => (
                     <TableRow key={item._id}>
                       <TableCell className="font-medium">{item.name}</TableCell>
                       <TableCell>{item.description}</TableCell>
@@ -182,6 +234,21 @@ export default function MasterDataPage() {
                 )}
               </TableBody>
             </Table>
+            <div className="flex justify-between items-center mt-4">
+              <Button disabled={page === 1} onClick={() => dispatch(setPage(page - 1))}>
+                Previous
+              </Button>
+
+              <span>Page {page} of {totalPages}</span>
+
+              <Button
+                disabled={page === totalPages}
+                onClick={() => dispatch(setPage(page + 1))}
+              >
+                Next
+              </Button>
+            </div>
+
           </CardContent>
         </Card>
       </Tabs>

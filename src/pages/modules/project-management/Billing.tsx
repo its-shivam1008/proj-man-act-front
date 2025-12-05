@@ -46,20 +46,22 @@ import {
     deleteMilestone,
     fetchInvoices,
     createInvoice,
+    fetchPaginatedMilestones,
 } from "@/redux/slices/billingSlice";
 import { fetchProjects } from "@/redux/slices/projectSlice";
 import { usePermission } from "@/hooks/userPermission";
 
 export default function BillingPage() {
     const dispatch = useDispatch();
-    const { milestones, invoices, loading: billingLoading } = useSelector((state: RootState) => state.billing);
+    const { milestones, invoices, loading: billingLoading, totalPages } = useSelector((state: RootState) => state.billing);
     const { projects, loading: projectsLoading } = useSelector((state: RootState) => state.projects);
     const loading = billingLoading || projectsLoading;
 
     const canView = usePermission('billings', 'view');
-  const canCreate = usePermission('billings', 'create');
-  const canEdit = usePermission('billings', 'edit');
-  const canDelete = usePermission('billings', 'delete');
+    const canCreate = usePermission('billings', 'create');
+    const canEdit = usePermission('billings', 'edit');
+    const canDelete = usePermission('billings', 'delete');
+    const [searchDebounce, setSearchDebounce] = useState("");
 
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editing, setEditing] = useState<Milestone | null>(null);
@@ -68,14 +70,36 @@ export default function BillingPage() {
         value: 0,
         billed: 0,
     });
+    const [page, setPage] = useState(1);
+    const [limit, setLimit] = useState(10);
+    const [search, setSearch] = useState("");
+    const [projectId, setProjectId] = useState("");
+    const safeMilestones = milestones?.length ? milestones : [];
+
+    const safeProjects = (projects || []).filter(Boolean);
 
     // Safely get from localStorage
     const organisationId = localStorage.getItem("organisationId") || "";
-    const userId = localStorage.getItem("userId") || "";
 
     useEffect(() => {
+        dispatch(fetchPaginatedMilestones({
+            page,
+            limit,
+            search: searchDebounce,
+            projectId,
+            organisationId,
+        }));
+    }, [page, searchDebounce, projectId]);
+
+    useEffect(() => {
+        if (safeMilestones.length === 0 && page > 1 && !loading) {
+            setPage(page - 1);
+        }
+
+    }, [safeMilestones])
+    useEffect(() => {
         // Fetch all required data
-        dispatch(fetchMilestones());
+        // dispatch(fetchMilestones());
         dispatch(fetchInvoices());
 
         // Correct way: pass object with pagination params
@@ -88,6 +112,14 @@ export default function BillingPage() {
             })
         );
     }, [dispatch]);
+    useEffect(() => {
+        const delay = setTimeout(() => {
+            setSearchDebounce(search);
+        }, 300);
+
+        return () => clearTimeout(delay);
+    }, [search]);
+
 
     const openCreate = () => {
         setEditing(null);
@@ -113,8 +145,6 @@ export default function BillingPage() {
             return;
         }
 
-
-
         const billed = Number(form.billed) || 0;
         const value = Number(form.value) || 0;
         const balance = value - billed;
@@ -127,7 +157,6 @@ export default function BillingPage() {
                         ...form,
                         billed,
                         balance,
-                        // projectId preserved from original
                     },
                 })
             );
@@ -143,13 +172,24 @@ export default function BillingPage() {
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
             };
+
             await dispatch(createMilestone(newMilestone));
         }
+
+        // 🔥 FIX: Refresh pagination instantly
+        await dispatch(fetchPaginatedMilestones({
+            page,
+            limit,
+            search,
+            projectId,
+            organisationId,
+        }));
 
         setIsDialogOpen(false);
         setEditing(null);
         setForm({ percent: 0, value: 0, billed: 0 });
     };
+
 
     const handleDelete = (id: string) => {
         if (confirm("Are you sure you want to delete this milestone?")) {
@@ -217,18 +257,18 @@ export default function BillingPage() {
         );
     }
 
-    const safeMilestones = (milestones || []).filter(Boolean);
-    const safeProjects = (projects || []).filter(Boolean);
+
 
     if (!canView) {
-    return (
-      <div className="text-center py-12 px-4">
-        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
-        <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
-        <p className="text-gray-600">You do not have the necessary permissions to view this page.</p>
-      </div>
-    );
-  }
+        return (
+            <div className="text-center py-12 px-4">
+                <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
+                <p className="text-gray-600">You do not have the necessary permissions to view this page.</p>
+            </div>
+        );
+    }
+
 
     return (
         <div className="space-y-6 p-4 md:p-6">
@@ -253,7 +293,21 @@ export default function BillingPage() {
             {/* Milestones Table */}
             <Card>
                 <CardHeader>
-                    <CardTitle>Milestones ({safeMilestones.length})</CardTitle>
+
+                    <div className="flex justify-between items-center mb-4">
+                        <CardTitle>Milestones ({safeMilestones.length})</CardTitle>
+                        <Input
+                            placeholder="Search milestone..."
+                            value={search}
+                            onChange={(e) => {
+                                const value = e.target.value;
+                                setSearch(value);
+                                setPage(1);        // 🔥 important
+                            }}
+                            className="w-64"
+                        />
+                    </div>
+
                 </CardHeader>
                 <CardContent>
                     <Table>
@@ -306,6 +360,20 @@ export default function BillingPage() {
                             No milestones yet. Click "Add Milestone" to create one.
                         </div>
                     )}
+
+                    <div className="flex justify-between items-center mt-4">
+                        <Button disabled={page === 1} onClick={() => setPage(page - 1)}>
+                            Previous
+                        </Button>
+
+                        <span>Page {page} of {totalPages}</span>
+
+                        <Button disabled={page === totalPages} onClick={() => setPage(page + 1)}>
+                            Next
+                        </Button>
+                    </div>
+
+
                 </CardContent>
             </Card>
 

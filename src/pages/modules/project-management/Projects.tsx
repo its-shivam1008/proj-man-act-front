@@ -113,7 +113,6 @@ export default function Projects() {
   const [employeeList, setEmployeeList] = useState([]);
   const [employeeLoading, setEmployeeLoading] = useState(false);
 
-  const organisationId = localStorage.getItem("organisationId");
 
   const dispatch = useDispatch<AppDispatch>();
 
@@ -141,7 +140,7 @@ export default function Projects() {
 
   const debouncedSearch = useDebounce(searchTerm, 500);
   const uuid = "81b48a8b-f574-4562-be38-f480e99359c9";
-
+  const organisationId = localStorage.getItem('organisationId')
   // Get Master Data from Redux
   const { clients, departments, projectTypes } = useSelector(
     (state: RootState) => state.masterData
@@ -181,6 +180,7 @@ export default function Projects() {
     if (organisationId) {
       dispatch(
         fetchProjects({
+          organisationId, 
           page,
           limit,
           status: statusFilter,

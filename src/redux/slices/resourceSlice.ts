@@ -26,16 +26,14 @@ const RESOURCE_BASE = "/resource";
 //  FETCH ALL BY PROJECT
 // -------------------------
 export const fetchResources = createAsyncThunk(
-  "resources/fetchResources",
-  async (projectId: string, { rejectWithValue }) => {
-    try {
-      const res = await api.get(`${RESOURCE_BASE}/project/${projectId}`);
-      return res.data as ResourceAllocation[];
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.message ?? err.message);
-    }
+  "resources/fetch",
+  async ({ projectId, search = "" }) => {
+    const res = await api.get(`/resource/project/${projectId}?search=${search}`);
+    return res.data;
   }
 );
+
+
 
 // -------------------------
 //  CREATE
