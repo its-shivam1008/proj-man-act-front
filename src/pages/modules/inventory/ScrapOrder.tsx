@@ -10,6 +10,7 @@ import {
   Edit2,
   Eye,
   ShieldAlert,
+  Search,
 } from "lucide-react";
 import { usePermission } from "@/hooks/userPermission";
 import {
@@ -89,6 +90,12 @@ const ScrapManagement: React.FC = () => {
   const [localScrapOrders, setLocalScrapOrders] = useState<any[]>([]);
   const orgId = localStorage.getItem('organisationId')
   
+  // Pagination and search states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const itemsPerPage = 10;
+  
   useEffect(() => {
     dispatch(getScrapOrders());
     dispatch(fetchProducts(orgId));
@@ -104,6 +111,32 @@ const ScrapManagement: React.FC = () => {
   const allScrapOrders = useMemo(() => {
     return [...localScrapOrders, ...scrapOrders];
   }, [localScrapOrders, scrapOrders]);
+  
+  // Filter scrap orders based on search and status
+  const filteredScrapOrders = useMemo(() => {
+    return allScrapOrders.filter((order: any) => {
+      const product = products.find((p: any) => p._id === order.productId) || {};
+      const productName = order.productName || product.name || "Unknown";
+      const productSku = product.sku || order.sku || "N/A";
+      
+      const matchesSearch = 
+        productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        productSku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        order.reason?.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      const matchesStatus = statusFilter === "all" || order.status === statusFilter;
+      
+      return matchesSearch && matchesStatus;
+    });
+  }, [allScrapOrders, searchTerm, statusFilter, products]);
+  
+  // Paginate filtered orders
+  const paginatedOrders = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredScrapOrders.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredScrapOrders, currentPage, itemsPerPage]);
+  
+  const totalPages = Math.ceil(filteredScrapOrders.length / itemsPerPage);
 
   const selectedCreateProduct = useMemo(
     () => products.find((p: any) => p._id === createForm.productId) || null,
@@ -370,6 +403,42 @@ const ScrapManagement: React.FC = () => {
 
         <Separator />
 
+        {/* SEARCH AND FILTERS */}
+        <div className="bg-white shadow rounded-lg p-6">
+          <div className="flex flex-col lg:flex-row gap-4">
+            <div className="flex-1 relative">
+              <Input
+                type="text"
+                placeholder="Search by product name, SKU, or reason..."
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1); // Reset to first page on search
+                }}
+                className="w-full"
+              />
+            </div>
+            <div className="flex gap-3">
+              <Select
+                value={statusFilter}
+                onValueChange={(value) => {
+                  setStatusFilter(value);
+                  setCurrentPage(1); // Reset to first page on filter
+                }}
+              >
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Filter by status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="approved">Approved</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+
         {/* TABLE */}
         <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
@@ -401,7 +470,15 @@ const ScrapManagement: React.FC = () => {
 
               {/* BODY */}
               <TableBody>
-                {allScrapOrders.map((order: any, index: number) => {
+                {paginatedOrders.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center py-12 text-gray-500">
+                      {searchTerm || statusFilter !== "all" 
+                        ? "No scrap orders found matching your filters" 
+                        : "No scrap orders found"}
+                    </TableCell>
+                  </TableRow>
+                ) : paginatedOrders.map((order: any, index: number) => {
                   const product =
                     products.find((p: any) => p._id === order.productId) || {};
                   
@@ -519,6 +596,36 @@ const ScrapManagement: React.FC = () => {
               </TableBody>
             </Table>
           </div>
+          
+          {/* PAGINATION */}
+          {totalPages > 1 && (
+            <div className="px-6 py-4 border-t flex items-center justify-between">
+              <p className="text-sm text-gray-600">
+                Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredScrapOrders.length)} of {filteredScrapOrders.length} orders
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                >
+                  Previous
+                </Button>
+                <span className="px-3 py-2 text-sm text-gray-600">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ==================== VIEW DIALOG ==================== */}

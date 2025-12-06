@@ -97,6 +97,9 @@ const Deliveries: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [requestsPage, setRequestsPage] = useState(1);
+  const [transfersPage, setTransfersPage] = useState(1);
+  const itemsPerPage = 10;
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showUpdateForm, setShowUpdateForm] = useState(false);
   const [showViewForm, setShowViewForm] = useState(false);
@@ -159,7 +162,7 @@ const Deliveries: React.FC = () => {
       // If accepted, add to material requests table
       if (response === 'accepted' && notification?.materialData) {
         const newRequest = {
-          id: Date.now().toString(),
+          id: notification.itemId || Date.now().toString(), // Use original MRS item ID
           item: notification.materialData.item || 'Unknown Item',
           sourceTask: notification.materialData.sourceTask || 'N/A',
           quantity: notification.materialData.quantity || 0,
@@ -204,10 +207,10 @@ const Deliveries: React.FC = () => {
     );
     saveMaterialRequests(updatedRequests);
     
-    // Update MRS status sync
+    // Update MRS status sync using unique ID instead of item name
     if (newStatus === 'in-transit') {
       const mrsStatusSync = JSON.parse(localStorage.getItem('MRS_STATUS_SYNC') || '{}');
-      mrsStatusSync[editingRequest.item] = 'in-transit';
+      mrsStatusSync[editingRequest.id] = 'in-transit'; // Use unique ID
       localStorage.setItem('MRS_STATUS_SYNC', JSON.stringify(mrsStatusSync));
     }
     
@@ -631,6 +634,39 @@ const Deliveries: React.FC = () => {
     );
   };
 
+  // Filter material requests and stock transfers
+  const filteredMaterialRequests = materialRequests.filter((request) => {
+    const matchesSearch = request.item?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         request.sourceTask?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         request.projectName?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus = statusFilter === "all" || request.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  const filteredStockTransfers = stockTransfers.filter((transfer: any) => {
+    const matchesSearch = transfer.productName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         transfer.fromWarehouse?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         transfer.toWarehouse?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         transfer.fromWarehouseName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         transfer.toWarehouseName?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus = statusFilter === "all" || transfer.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  // Paginate filtered data
+  const paginatedRequests = filteredMaterialRequests.slice(
+    (requestsPage - 1) * itemsPerPage,
+    requestsPage * itemsPerPage
+  );
+
+  const paginatedTransfers = filteredStockTransfers.slice(
+    (transfersPage - 1) * itemsPerPage,
+    transfersPage * itemsPerPage
+  );
+
+  const requestsTotalPages = Math.ceil(filteredMaterialRequests.length / itemsPerPage);
+  const transfersTotalPages = Math.ceil(filteredStockTransfers.length / itemsPerPage);
+
   return (
     <div className="space-y-6">
       {/* Material Request Notifications */}
@@ -737,7 +773,7 @@ const Deliveries: React.FC = () => {
           <div>
             <p className="text-sm text-gray-500">Total Deliveries</p>
             <p className="text-2xl font-bold">
-              {materialRequests.length + stockTransfers.length}
+              {filteredMaterialRequests.length + filteredStockTransfers.length}
             </p>
           </div>
         </div>
@@ -746,8 +782,8 @@ const Deliveries: React.FC = () => {
           <div>
             <p className="text-sm text-gray-500">In Transit</p>
             <p className="text-2xl font-bold">
-              {materialRequests.filter((r: any) => r.status === "in-transit").length + 
-               stockTransfers.filter((t: any) => t.status === "in-transit").length}
+              {filteredMaterialRequests.filter((r: any) => r.status === "in-transit").length + 
+               filteredStockTransfers.filter((t: any) => t.status === "in-transit").length}
             </p>
           </div>
         </div>
@@ -756,8 +792,8 @@ const Deliveries: React.FC = () => {
           <div>
             <p className="text-sm text-gray-500">Delivered</p>
             <p className="text-2xl font-bold">
-              {materialRequests.filter((r: any) => r.status === "delivered").length + 
-               stockTransfers.filter((t: any) => t.status === "delivered").length}
+              {filteredMaterialRequests.filter((r: any) => r.status === "delivered").length + 
+               filteredStockTransfers.filter((t: any) => t.status === "delivered").length}
             </p>
           </div>
         </div>
@@ -799,7 +835,7 @@ const Deliveries: React.FC = () => {
               <option value="delivered">Delivered</option>
               <option value="cancelled">Cancelled</option>
             </select>
-            <select
+            {/* <select
               value={priorityFilter}
               onChange={(e) => setPriorityFilter(e.target.value)}
               className="px-4 py-3 border rounded-lg"
@@ -808,7 +844,7 @@ const Deliveries: React.FC = () => {
               <option value="low">Low</option>
               <option value="medium">Medium</option>
               <option value="high">High</option>
-            </select>
+            </select> */}
           </div>
         </div>
       </div>
@@ -1040,13 +1076,13 @@ const Deliveries: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {materialRequests.length === 0 ? (
+                {paginatedRequests.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
                       No material requests found. Accepted requests from MRS will appear here.
                     </td>
                   </tr>
-                ) : materialRequests.map((request) => (
+                ) : paginatedRequests.map((request) => (
                   <tr key={request.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 text-sm font-medium text-gray-900">{request.item}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">{request.sourceTask}</td>
@@ -1094,6 +1130,34 @@ const Deliveries: React.FC = () => {
               </tbody>
             </table>
           </div>
+          
+          {/* Pagination for Material Requests */}
+          {requestsTotalPages > 1 && (
+            <div className="px-6 py-4 border-t flex items-center justify-between">
+              <p className="text-sm text-gray-600">
+                Showing {((requestsPage - 1) * itemsPerPage) + 1} to {Math.min(requestsPage * itemsPerPage, filteredMaterialRequests.length)} of {filteredMaterialRequests.length} requests
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setRequestsPage(p => Math.max(1, p - 1))}
+                  disabled={requestsPage === 1}
+                  className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                <span className="px-3 py-1 text-sm text-gray-600">
+                  Page {requestsPage} of {requestsTotalPages}
+                </span>
+                <button
+                  onClick={() => setRequestsPage(p => Math.min(requestsTotalPages, p + 1))}
+                  disabled={requestsPage === requestsTotalPages}
+                  className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       
       {/* Edit Status Dialog */}
@@ -1151,7 +1215,15 @@ const Deliveries: React.FC = () => {
       )}
       
       {/* Stock Transfer History */}
-      <StockTransferHistory onTransfersUpdate={setStockTransfers} />
+      <StockTransferHistory 
+        onTransfersUpdate={setStockTransfers} 
+        filteredTransfers={paginatedTransfers}
+        currentPage={transfersPage}
+        totalPages={transfersTotalPages}
+        totalItems={filteredStockTransfers.length}
+        onPageChange={setTransfersPage}
+        itemsPerPage={itemsPerPage}
+      />
     </div>
   );
 };
@@ -1160,7 +1232,23 @@ export default Deliveries;
 
 
 // Stock Transfer History Section Component
-const StockTransferHistory = ({ onTransfersUpdate }: { onTransfersUpdate: (transfers: any[]) => void }) => {
+const StockTransferHistory = ({ 
+  onTransfersUpdate, 
+  filteredTransfers,
+  currentPage,
+  totalPages,
+  totalItems,
+  onPageChange,
+  itemsPerPage
+}: { 
+  onTransfersUpdate: (transfers: any[]) => void;
+  filteredTransfers: any[];
+  currentPage: number;
+  totalPages: number;
+  totalItems: number;
+  onPageChange: (page: number) => void;
+  itemsPerPage: number;
+}) => {
   const [transfers, setTransfers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
@@ -1439,10 +1527,10 @@ const StockTransferHistory = ({ onTransfersUpdate }: { onTransfersUpdate: (trans
           <tbody className="bg-white divide-y divide-gray-200">
             {loading ? (
               <tr><td colSpan={11} className="text-center py-4">Loading...</td></tr>
-            ) : transfers.length === 0 ? (
+            ) : filteredTransfers.length === 0 ? (
               <tr><td colSpan={11} className="text-center py-4 text-gray-500">No transfers found</td></tr>
             ) : (
-              transfers.map((transfer) => (
+              filteredTransfers.map((transfer) => (
                 <tr key={transfer._id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-sm text-gray-900">
                     {new Date(transfer.createdAt).toLocaleString()}
@@ -1486,6 +1574,34 @@ const StockTransferHistory = ({ onTransfersUpdate }: { onTransfersUpdate: (trans
           </tbody>
         </table>
       </div>
+      
+      {/* Pagination for Stock Transfer History */}
+      {totalPages > 1 && (
+        <div className="px-6 py-4 border-t flex items-center justify-between">
+          <p className="text-sm text-gray-600">
+            Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalItems)} of {totalItems} transfers
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Previous
+            </button>
+            <span className="px-3 py-1 text-sm text-gray-600">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
+              disabled={currentPage === totalPages}
+              className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
       
       {/* Edit Transfer Form Modal */}
       {showEditForm && editingTransfer && (

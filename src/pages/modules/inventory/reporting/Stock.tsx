@@ -53,6 +53,10 @@ const Stock: React.FC = () => {
   const [showViewForm, setShowViewForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewingId, setViewingId] = useState<string | null>(null);
+  
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   if (!canView) {
     return (
       <div className="text-center py-12 px-4">
@@ -83,21 +87,61 @@ const Stock: React.FC = () => {
 
   // Combine products and raw materials for display
   const combinedStock = useMemo(() => {
-    const productItems = safeProducts.map(p => {
+    const productItems: any[] = [];
+    
+    // For each product, find all warehouses that contain it
+    safeProducts.forEach(p => {
       const unitPrice = p.unitCost || p.salesPrice || p.unitPrice || p.sellingPrice || p.costPrice || p.price || 0;
-      const quantity = p.quantity || 0;
-      return {
-        _id: p._id || p.id,
-        itemType: 'Product',
-        itemName: p.name,
-        quantity: quantity,
-        unitPrice: unitPrice,
-        totalAmount: quantity * unitPrice,
-        inStock: quantity > 0,
-        date: p.createdAt || new Date().toISOString(),
-        category: p.category || 'Product',
-        warehouse: p.warehouseLocation || p.warehouse || ''
-      };
+      const productId = p._id || p.id;
+      
+      // Find all warehouses that have this product
+      const warehousesWithProduct = safeWarehouses.filter(w => 
+        w.products && Array.isArray(w.products) && 
+        w.products.some((prod: any) => String(prod.productId) === String(productId))
+      );
+      
+      if (warehousesWithProduct.length > 0) {
+        // Create separate entry for each warehouse
+        warehousesWithProduct.forEach(warehouse => {
+          const productInWarehouse = warehouse.products.find(
+            (prod: any) => String(prod.productId) === String(productId)
+          );
+          
+          const quantity = productInWarehouse?.quantity || 0;
+          
+          productItems.push({
+            _id: `${productId}-${warehouse._id || warehouse.id}`, // Unique ID per warehouse
+            originalProductId: productId,
+            itemType: 'Product',
+            itemName: p.name,
+            quantity: quantity,
+            unitPrice: unitPrice,
+            totalAmount: quantity * unitPrice,
+            inStock: quantity > 0,
+            date: p.createdAt || new Date().toISOString(),
+            category: p.category || 'Product',
+            warehouseId: warehouse._id || warehouse.id,
+            warehouseName: warehouse.name
+          });
+        });
+      } else {
+        // Product not in any warehouse
+        const quantity = p.quantity || 0;
+        productItems.push({
+          _id: productId,
+          originalProductId: productId,
+          itemType: 'Product',
+          itemName: p.name,
+          quantity: quantity,
+          unitPrice: unitPrice,
+          totalAmount: quantity * unitPrice,
+          inStock: quantity > 0,
+          date: p.createdAt || new Date().toISOString(),
+          category: p.category || 'Product',
+          warehouseId: '',
+          warehouseName: 'No Warehouse'
+        });
+      }
     });
 
     const materialItems = safeRawMaterials.map(m => ({
@@ -109,20 +153,30 @@ const Stock: React.FC = () => {
       totalAmount: (m.quantity || 0) * (m.unitCost || 0),
       inStock: (m.quantity || 0) > 0,
       date: m.createdAt || new Date().toISOString(),
-      category: 'Raw Material'
+      category: 'Raw Material',
+      warehouseId: '',
+      warehouseName: 'N/A'
     }));
 
     return [...productItems, ...materialItems];
-  }, [safeProducts, safeRawMaterials]);
+  }, [safeProducts, safeRawMaterials, safeWarehouses]);
 
   const filteredStock = combinedStock.filter((item) => {
     const matchesSearch = item.itemName.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = categoryFilter === "all" || item.itemType === categoryFilter;
     
     // Warehouse filtering (only for products)
-    const matchesWarehouse = warehouseFilter === "all" || 
-      item.itemType !== "Product" || 
-      (item as any).warehouse === warehouseFilter;
+    let matchesWarehouse = true;
+    
+    if (warehouseFilter !== "all") {
+      if (item.itemType === "Product") {
+        const itemWarehouse = (item as any).warehouseName || '';
+        matchesWarehouse = itemWarehouse === warehouseFilter;
+      } else {
+        // For non-products (Raw Materials), always pass warehouse filter
+        matchesWarehouse = true;
+      }
+    }
     
     // Date filtering
     let matchesDate = true;
@@ -146,6 +200,14 @@ const Stock: React.FC = () => {
     
     return matchesSearch && matchesCategory && matchesWarehouse && matchesDate;
   });
+  
+  // Paginate filtered stock
+  const paginatedStock = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredStock.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredStock, currentPage, itemsPerPage]);
+  
+  const totalPages = Math.ceil(filteredStock.length / itemsPerPage);
 
   const handleCloseForms = useCallback(() => {
     setShowCreateForm(false);
@@ -617,7 +679,7 @@ const Stock: React.FC = () => {
           </button>
           <button
             disabled={!canCreate}
-            onClick={() => canCreate && setShowForm(true)}
+            onClick={() => canCreate && setShowCreateForm(true)}
             className={`px-4 py-2 rounded-lg ${
               canCreate
                 ? "bg-blue-600 text-white"
@@ -714,7 +776,10 @@ const Stock: React.FC = () => {
               type="text"
               placeholder="Search items..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1); // Reset to first page on search
+              }}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
@@ -722,6 +787,7 @@ const Stock: React.FC = () => {
             value={categoryFilter}
             onChange={(e) => {
               setCategoryFilter(e.target.value);
+              setCurrentPage(1); // Reset to first page on filter
               // Reset warehouse filter when category changes
               if (e.target.value !== "Product") {
                 setWarehouseFilter("all");
@@ -735,7 +801,10 @@ const Stock: React.FC = () => {
           </select>
           <select
             value={monthFilter}
-            onChange={(e) => setMonthFilter(e.target.value)}
+            onChange={(e) => {
+              setMonthFilter(e.target.value);
+              setCurrentPage(1); // Reset to first page on filter
+            }}
             className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
             <option value="all">All Time</option>
@@ -746,13 +815,17 @@ const Stock: React.FC = () => {
           </select>
           <select
             value={warehouseFilter}
-            onChange={(e) => setWarehouseFilter(e.target.value)}
+            onChange={(e) => {
+              setWarehouseFilter(e.target.value);
+              setCurrentPage(1); // Reset to first page on filter
+            }}
             disabled={categoryFilter !== "Product"}
             className={`border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
               categoryFilter !== "Product" ? "bg-gray-100 cursor-not-allowed opacity-50" : ""
             }`}
           >
             <option value="all">All Warehouses</option>
+            <option value="No Warehouse">No Warehouse</option>
             {safeWarehouses.map((warehouse: any) => (
               <option
                 key={warehouse._id || warehouse.id}
@@ -813,7 +886,7 @@ const Stock: React.FC = () => {
                 </td>
               </tr>
             ) : (
-              filteredStock.map((item) => (
+              paginatedStock.map((item) => (
                   <tr
                     key={item._id}
                     className="hover:bg-gray-50"
@@ -852,6 +925,34 @@ const Stock: React.FC = () => {
             )}
           </tbody>
         </table>
+        
+        {/* PAGINATION */}
+        {totalPages > 1 && (
+          <div className="px-6 py-4 border-t flex items-center justify-between">
+            <p className="text-sm text-gray-600">
+              Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredStock.length)} of {filteredStock.length} items
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              <span className="px-3 py-1 text-sm text-gray-600">
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Forms Modals */}

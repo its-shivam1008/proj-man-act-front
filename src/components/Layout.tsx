@@ -186,7 +186,7 @@ const Layout: React.FC = () => {
       href: "/inventory/reporting/valuation",
       icon: CircleDollarSign,
     },
-    { name: "Operations", href: "/inventory/operations", icon: Warehouse },
+    // { name: "Operations", href: "/inventory/operations", icon: Warehouse },
     {
       name: "Reporting",
       href: "/inventory/reporting",

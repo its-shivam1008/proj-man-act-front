@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
-import { fetchNotifications, respondToInvite } from "@/redux/slices/notificationSlice";
+import { fetchNotifications, respondToInvite, markAsRead } from "@/redux/slices/notificationSlice";
 
 import {
   Bell,
@@ -10,7 +10,8 @@ import {
   AlertCircle,
   UserPlus,
   Check,
-  X
+  X,
+  CheckCheck
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -45,10 +46,10 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
   // console.log("yes chal gya if :",JSON.parse(stored as string))
   const fetchNotificationHelper = () => {
     if (destination && title === "dashboardAlerts" && userProfile) {
-      dispatch(fetchNotifications({ receiverId:userProfile?._id }));
+      dispatch(fetchNotifications({ receiverId:userProfile?._id, status: "unread" }));
     }else if(destination){
       // console.log("yes else ")
-      dispatch(fetchNotifications({ destination }));
+      dispatch(fetchNotifications({ destination, status: "unread" }));
     }
   }
   useEffect(() => {
@@ -89,6 +90,12 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
 
   const handleInviteResponse = (notificationId: string, response: "accepted" | "rejected") => {
     dispatch(respondToInvite({ notificationId, response }));
+  };
+
+  const handleMarkAsRead = async (notificationId: string) => {
+    await dispatch(markAsRead(notificationId));
+    // Refresh the notification list after marking as read
+    fetchNotificationHelper();
   };
 
   const unreadCount = list.filter((n: any) => n.status === "unread").length;
@@ -220,6 +227,16 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                             <Badge variant="outline" className="text-[10px] h-5 px-1 font-normal text-gray-500">
                               {notification.source}
                             </Badge>
+                            {notification.status === "unread" && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                onClick={() => handleMarkAsRead(notification._id)}
+                              >
+                                <CheckCheck className="h-3 w-3 mr-1" /> Mark as Read
+                              </Button>
+                            )}
                           </div>
                         )}
                       </div>

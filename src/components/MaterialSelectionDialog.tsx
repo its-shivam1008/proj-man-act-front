@@ -10,6 +10,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { RootState, AppDispatch } from "@/redux/store";
 import { fetchMaterials } from "@/redux/slices/rawmaterialSlice";
 import { fetchWbsByProject } from "@/redux/slices/wbsSlice";
+import { fetchMRS } from "@/redux/slices/mrsSlice";
 import api from "@/utils/axiosApi";
 import { Input } from "@/components/ui/input";
 
@@ -250,6 +251,9 @@ export default function MaterialSelectionDialog({
         dispatch(fetchWbsByProject(wbsItem.projectId));
       }
 
+      // 🔥 Refetch MRS to show newly created entries in Procurement page
+      dispatch(fetchMRS());
+
       // close modal
       setMaterialInput({
         open: false,
@@ -280,6 +284,9 @@ export default function MaterialSelectionDialog({
         dispatch(fetchWbsByProject(wbsItem.projectId));
       }
       dispatch(fetchMaterials({ page: 1, limit: 100 }));
+      
+      // 🔥 Refetch MRS to update Procurement page
+      dispatch(fetchMRS());
     } catch (err) {
       console.error("Delete failed", err);
     }
@@ -324,6 +331,9 @@ export default function MaterialSelectionDialog({
         dispatch(fetchWbsByProject(wbsItem.projectId));
       }
       dispatch(fetchMaterials({ page: 1, limit: 100 }));
+      
+      // 🔥 Refetch MRS to update Procurement page
+      dispatch(fetchMRS());
 
       setReturnModal({ open: false, item: null, submitting: false });
     } catch (err) {

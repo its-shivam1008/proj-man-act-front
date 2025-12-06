@@ -1624,14 +1624,18 @@ const Products: React.FC = () => {
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Reason for Rejection *</label>
-                <input
-                  type="text"
+                <select
                   value={rejectReason}
                   onChange={(e) => setRejectReason(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500"
-                  placeholder="e.g., Damaged, Wrong specification, etc."
                   required
-                />
+                >
+                  <option value="">Select reason...</option>
+                  <option value="damaged">Damaged</option>
+                  <option value="expired">Expired</option>
+                  <option value="lost">Lost</option>
+                  <option value="obsolete">Obsolete</option>
+                </select>
               </div>
               
               <div>

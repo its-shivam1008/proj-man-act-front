@@ -81,6 +81,18 @@ export const respondToInvite = createAsyncThunk(
   }
 );
 
+export const markAsRead = createAsyncThunk(
+  "notifications/markAsRead",
+  async (notificationId: string, { rejectWithValue }) => {
+    try {
+      const response = await api.post("/notifications/mark-read", { notificationId });
+      return { ...response.data, notificationId };
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.message || "Failed to mark as read");
+    }
+  }
+);
+
 const notificationSlice = createSlice({
   name: "notifications",
   initialState: {
@@ -136,6 +148,10 @@ const notificationSlice = createSlice({
         state.list[index].inviteResponse = action.payload.response;
         state.list[index].status = 'read'; // Usually responding marks it as read
       }
+    });
+    builder.addCase(markAsRead.fulfilled, (state, action) => {
+      // Remove the notification from the list after marking as read
+      state.list = state.list.filter(n => n._id !== action.payload.notificationId);
     });
   },
 });

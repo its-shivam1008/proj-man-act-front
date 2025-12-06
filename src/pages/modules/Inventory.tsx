@@ -354,7 +354,7 @@ const Inventory: React.FC = () => {
       icon: Truck,
       hasDropdown: true,
       dropdownItems: [
-        { name: 'Receipt', path: 'receipt' },
+        // { name: 'Receipt', path: 'receipt' },
         { name: 'Deliveries', path: 'deliveries' },
         { name: 'Scrap Order', path: 'scrap-order' },
         { name: 'Forecasting', path: 'forecasting' }
@@ -457,13 +457,13 @@ const Inventory: React.FC = () => {
       <div className="bg-white shadow rounded-lg p-6">
         <h3 className="text-lg font-medium text-gray-900 mb-4">Quick Actions</h3>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <button
+          {/* <button
             onClick={() => navigate('receipt')}
             className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
           >
             <Plus className="h-5 w-5 text-gray-400 mr-2" />
             <span className="text-sm font-medium text-gray-700">New Receipt</span>
-          </button>
+          </button> */}
           <button
             onClick={() => navigate('/inventory/deliveries')}
             className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
@@ -544,7 +544,7 @@ const Inventory: React.FC = () => {
           Use the dropdown menu above to access specific operation types:
         </p>
         <div className="mt-4 space-y-2">
-          <p className="text-sm text-gray-600">• Receipt - Manage incoming stock</p>
+          {/* <p className="text-sm text-gray-600">• Receipt - Manage incoming stock</p> */}
           <p className="text-sm text-gray-600">• Deliveries - Handle outgoing shipments</p>
           <p className="text-sm text-gray-600">• Scrap Order - Process damaged items</p>
           <p className="text-sm text-gray-600">• Forecasting - Plan inventory replenishment</p>

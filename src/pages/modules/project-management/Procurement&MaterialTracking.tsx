@@ -39,7 +39,7 @@ import { createNotification } from "@/redux/slices/notificationSlice";
 // import { Textarea } from "../../../components/ui/textarea";
 import {toast} from 'sonner';
 // Icons
-import { Plus, Edit2, Trash2, Truck, ShoppingCart, Check, ChevronsUpDown, ShoppingCartIcon, ShieldAlert } from "lucide-react";
+import { Plus, Edit2, Trash2, Truck, ShoppingCart, Check, ChevronsUpDown, ShoppingCartIcon, ShieldAlert, RefreshCcw } from "lucide-react";
 
 // Redux Actions
 import {
@@ -226,7 +226,7 @@ export default function ProcurementPage() {
     // Initial Data Load
     useEffect(() => {
         dispatch(fetchMRS());
-        dispatch(fetchMaterials()); // Fetch Raw Materials to map names
+        dispatch(fetchMaterials({ page: 1, limit: 1000 })); // Fetch Raw Materials to map names
         setInventory(getInventory());
         
         // Load MRS status sync from localStorage
@@ -236,12 +236,21 @@ export default function ProcurementPage() {
         }
     }, [dispatch]);
     
+    // 🔥 Auto-refresh MRS when project changes
+    useEffect(() => {
+        if (selectedProjectId) {
+            dispatch(fetchMRS());
+        }
+    }, [selectedProjectId, dispatch]);
+    
     // Refresh MRS status sync periodically
     useEffect(() => {
         const interval = setInterval(() => {
             const syncData = localStorage.getItem('MRS_STATUS_SYNC');
             if (syncData) {
-                setMrsStatusSync(JSON.parse(syncData));
+                const parsed = JSON.parse(syncData);
+                console.log('MRS Status Sync Updated:', parsed);
+                setMrsStatusSync(parsed);
             }
         }, 2000); // Check every 2 seconds
         
@@ -468,18 +477,52 @@ export default function ProcurementPage() {
     const selectedList = Object.keys(selectedIds).filter((k) => selectedIds[k]);
 
     const sendToPurchase = async (mrsIds: string[], supplier?: string, deliveryDate?: string) => {
-        if (!mrsIds || mrsIds.length === 0) return;
+        if (!mrsIds || mrsIds.length === 0) {
+            toast.error("Please select at least one item");
+            return;
+        }
         
-        const payload = {
-            mrsIds: mrsIds.filter(id => id?.trim()),
-            supplier: supplier?.trim(),
-            deliveryDate,
-        };
         try {
-            await dispatch(convertToPR(payload)).unwrap();
+            // Get selected MRS items
+            const selectedItems = displayedMrsList.filter(item => 
+                mrsIds.includes(item.id || item._id)
+            );
+            
+            if (selectedItems.length === 0) {
+                toast.error("No valid items selected");
+                return;
+            }
+            
+            // Create notifications for each selected item
+            const source = "procurement.project-management";
+            const destination = "rfq.purchase";
+            
+            for (const item of selectedItems) {
+                await dispatch(createNotification({
+                    source,
+                    destination,
+                    remark: `Bulk purchase request for ${item.item}`,
+                    itemId: item.id || item._id,
+                    itemName: item.item,
+                    materialData: {
+                        item: item.item,
+                        sourceTask: item.task || 'N/A',
+                        quantity: item.quantity,
+                        unit: item.unit || 'units',
+                        requiredDate: item.requiredDate || new Date().toISOString(),
+                        sentDate: new Date().toISOString(),
+                        projectId: item.projectId || selectedProjectId,
+                        projectName: selectedProject?.name || 'N/A',
+                        status: item.status || 'sent'
+                    }
+                })).unwrap();
+            }
+            
+            toast.success(`${selectedItems.length} notification(s) sent to Purchase`);
             setSelectedIds({});
         } catch (err: any) {
             console.error('Send to Purchase failed:', err);
+            toast.error("Failed to send notifications");
         }
     };
 
@@ -523,9 +566,10 @@ export default function ProcurementPage() {
     };
     
     const handleItemReceived = (m: MRSItem) => {
-        // Mark item as received
+        // Mark item as received using unique ID
         const syncData = JSON.parse(localStorage.getItem('MRS_STATUS_SYNC') || '{}');
-        syncData[m.item] = 'received';
+        const itemId = m.id || m._id;
+        syncData[itemId] = 'received'; // Use unique ID instead of item name
         localStorage.setItem('MRS_STATUS_SYNC', JSON.stringify(syncData));
         setMrsStatusSync(syncData);
         
@@ -669,6 +713,13 @@ export default function ProcurementPage() {
                     <Button onClick={openCreate} disabled={mrsLoading}>
                         <Plus className="mr-2 h-4 w-4" /> Create MRS Item
                     </Button>
+                    <Button 
+                        variant="outline" 
+                        onClick={() => dispatch(fetchMRS())} 
+                        disabled={mrsLoading}
+                    >
+                        <RefreshCcw className="mr-2 h-4 w-4" /> Refresh
+                    </Button>
                     {/* <Button variant="outline" onClick={bootstrapInventory}>
                         <Truck className="mr-2 h-4 w-4" /> Bootstrap Inv
                     </Button> */}
@@ -753,33 +804,38 @@ export default function ProcurementPage() {
                                     </TableCell>
                                     <TableCell>{m.quantity}</TableCell>
                                     <TableCell>
-                                        {mrsStatusSync[m.item] === 'in-transit' ? (
-                                            <Button 
-                                                size="sm" 
-                                                variant="default"
-                                                className="bg-green-600 hover:bg-green-700"
-                                                onClick={() => handleItemReceived(m)}
-                                            >
-                                                Item Received
-                                            </Button>
-                                        ) : mrsStatusSync[m.item] === 'received' ? (
-                                            <Button 
-                                                size="sm" 
-                                                variant="outline"
-                                                disabled
-                                                className="bg-gray-100"
-                                            >
-                                                Received ✓
-                                            </Button>
-                                        ) : (
-                                            <Button 
-                                                size="sm" 
-                                                variant="outline"
-                                                onClick={() => handleOpenRemarkDialog(m, "INVENTORY")}
-                                            >
-                                                Sent
-                                            </Button>
-                                        )}
+                                        {(() => {
+                                            const itemId = m.id || m._id;
+                                            const status = mrsStatusSync[itemId];
+                                            console.log(`Item: ${m.item}, ID: ${itemId}, Status: ${status}`);
+                                            return status === 'in-transit' ? (
+                                                <Button 
+                                                    size="sm" 
+                                                    variant="default"
+                                                    className="bg-green-600 hover:bg-green-700"
+                                                    onClick={() => handleItemReceived(m)}
+                                                >
+                                                    Item Received
+                                                </Button>
+                                            ) : status === 'received' ? (
+                                                <Button 
+                                                    size="sm" 
+                                                    variant="outline"
+                                                    disabled
+                                                    className="bg-gray-100"
+                                                >
+                                                    Received ✓
+                                                </Button>
+                                            ) : (
+                                                <Button 
+                                                    size="sm" 
+                                                    variant="outline"
+                                                    onClick={() => handleOpenRemarkDialog(m, "INVENTORY")}
+                                                >
+                                                    Sent
+                                                </Button>
+                                            );
+                                        })()}
                                     </TableCell>
                                     <TableCell>{m.requiredDate ? new Date(m.requiredDate).toLocaleDateString() : "—"}</TableCell>
                                     <TableCell>

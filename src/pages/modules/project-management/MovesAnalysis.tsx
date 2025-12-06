@@ -99,6 +99,10 @@ export default function MovesAnalysis() {
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [itemType, setItemType] = useState<"material" | "product">("material");
   
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+  
   // Form State
   const [form, setForm] = useState({
     projectId: "",
@@ -190,6 +194,14 @@ export default function MovesAnalysis() {
         m.referenceNumber?.toLowerCase().includes(query)
     );
   }, [movements, searchTerm]);
+  
+  // Paginate filtered movements
+  const paginatedMovements = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredMovements.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredMovements, currentPage, itemsPerPage]);
+  
+  const totalPages = Math.ceil(filteredMovements.length / itemsPerPage);
 
   // Get selected project
   const selectedProject = projects.find((p) => p._id === selectedProjectId);
@@ -956,7 +968,10 @@ export default function MovesAnalysis() {
 
             <div>
               <Label>Movement Type</Label>
-              <Select value={selectedMovementType} onValueChange={setSelectedMovementType}>
+              <Select value={selectedMovementType} onValueChange={(value) => {
+                setSelectedMovementType(value);
+                setCurrentPage(1); // Reset to first page on filter
+              }}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -975,7 +990,10 @@ export default function MovesAnalysis() {
               <Input
                 type="date"
                 value={dateRange.start}
-                onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+                onChange={(e) => {
+                  setDateRange({ ...dateRange, start: e.target.value });
+                  setCurrentPage(1); // Reset to first page on filter
+                }}
               />
             </div>
 
@@ -984,7 +1002,10 @@ export default function MovesAnalysis() {
               <Input
                 type="date"
                 value={dateRange.end}
-                onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+                onChange={(e) => {
+                  setDateRange({ ...dateRange, end: e.target.value });
+                  setCurrentPage(1); // Reset to first page on filter
+                }}
               />
             </div>
           </div>
@@ -994,7 +1015,10 @@ export default function MovesAnalysis() {
             <Input
               placeholder="Search by material, source, destination, WBS task, or reference..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1); // Reset to first page on search
+              }}
             />
           </div>
         </CardContent>
@@ -1040,7 +1064,7 @@ export default function MovesAnalysis() {
               )}
 
               {!loading &&
-                filteredMovements.map((movement) => (
+                paginatedMovements.map((movement) => (
                   <TableRow key={movement._id}>
                     <TableCell>
                       {movement.movementDate ? format(new Date(movement.movementDate), "dd MMM yyyy") : "N/A"}
@@ -1101,6 +1125,36 @@ export default function MovesAnalysis() {
                 ))}
             </TableBody>
           </Table>
+          
+          {/* PAGINATION */}
+          {totalPages > 1 && (
+            <div className="px-6 py-4 border-t flex items-center justify-between">
+              <p className="text-sm text-gray-600">
+                Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredMovements.length)} of {filteredMovements.length} movements
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                >
+                  Previous
+                </Button>
+                <span className="px-3 py-2 text-sm text-gray-600">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

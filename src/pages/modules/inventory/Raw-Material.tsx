@@ -699,13 +699,20 @@ export default function RawMaterialMaster() {
               
               <div>
                 <Label htmlFor="reason">Reason for Rejection *</Label>
-                <Input
-                  id="reason"
+                <Select
                   value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
-                  placeholder="e.g., Damaged, Wrong specification, etc."
-                  required
-                />
+                  onValueChange={(value) => setRejectReason(value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select reason..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="damaged">Damaged</SelectItem>
+                    <SelectItem value="expired">Expired</SelectItem>
+                    <SelectItem value="lost">Lost</SelectItem>
+                    <SelectItem value="obsolete">Obsolete</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               
               <div>
