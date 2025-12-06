@@ -34,9 +34,8 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
 }) => {
   const dispatch = useDispatch<AppDispatch>();
   
-  const { list, loading } = useSelector((state: RootState) => state.notification); // Ensure your root reducer key matches 'notification' or 'notifications'
-  const { userProfile } = useSelector((state: RootState) => state.auth); // Ensure your root reducer key matches 'notification' or 'notifications'
-  // const stored = localStorage.getItem("userProfile");
+  const { list, loading } = useSelector((state: RootState) => state.notification);
+  const { userProfile } = useSelector((state: RootState) => state.auth);
 
   const [cooldown, setCooldown] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
@@ -45,16 +44,21 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
 
   // console.log("yes chal gya if :",JSON.parse(stored as string))
   const fetchNotificationHelper = () => {
-    if (destination && title === "dashboardAlerts" && userProfile) {
-      dispatch(fetchNotifications({ receiverId:userProfile?._id, status: "unread" }));
-    }else if(destination){
-      // console.log("yes else ")
-      dispatch(fetchNotifications({ destination, status: "unread" }));
+    if (title === "dashboardAlerts" && userProfile) {
+      dispatch(fetchNotifications({ 
+        receiverId: userProfile._id, 
+        status: "unread" as const 
+      }));
+    } else if (destination) {
+      dispatch(fetchNotifications({ 
+        destination: destination, 
+        status: "unread" as const 
+      }));
     }
   }
   useEffect(() => {
-    fetchNotificationHelper()
-  }, [dispatch, destination, userProfile]);
+    fetchNotificationHelper();
+  }, [dispatch, destination]);
 
   // Auto-open logic for pending invites
   useEffect(() => {
@@ -93,9 +97,12 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
   };
 
   const handleMarkAsRead = async (notificationId: string) => {
-    await dispatch(markAsRead(notificationId));
-    // Refresh the notification list after marking as read
-    fetchNotificationHelper();
+    try {
+      await dispatch(markAsRead(notificationId)).unwrap();
+      fetchNotificationHelper();
+    } catch (error) {
+      console.error('Failed to mark as read:', error);
+    }
   };
 
   const unreadCount = list.filter((n: any) => n.status === "unread").length;
@@ -227,7 +234,8 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                             <Badge variant="outline" className="text-[10px] h-5 px-1 font-normal text-gray-500">
                               {notification.source}
                             </Badge>
-                            {notification.status === "unread" && (
+                            {/* Always show Mark as Read button for non-invite notifications */}
+                            {notification.status === "unread" ? (
                               <Button
                                 size="sm"
                                 variant="ghost"
@@ -236,6 +244,10 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                               >
                                 <CheckCheck className="h-3 w-3 mr-1" /> Mark as Read
                               </Button>
+                            ) : (
+                              <span className="text-[10px] text-gray-400 flex items-center gap-1">
+                                <CheckCheck className="h-3 w-3" /> Read
+                              </span>
                             )}
                           </div>
                         )}

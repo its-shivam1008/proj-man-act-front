@@ -899,7 +899,18 @@ const Stock: React.FC = () => {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {item.itemName}
+                      <div className="flex items-center gap-2">
+                        <span>{item.itemName}</span>
+                        {item.itemType === 'Product' && (item as any).warehouseName && (
+                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                            (item as any).warehouseName === 'No Warehouse' 
+                              ? 'bg-gray-100 text-gray-600' 
+                              : 'bg-orange-100 text-orange-800'
+                          }`}>
+                            📦 {(item as any).warehouseName}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {item.quantity}

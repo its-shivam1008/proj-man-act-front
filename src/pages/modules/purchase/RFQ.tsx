@@ -947,9 +947,6 @@ const RFQComponent: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Added Notification Center */}
-          {/* <NotificationCenter destination="rfq.purchase" title="Purchase Notifications" /> */}
-
           <input
             type="search"
             value={search}

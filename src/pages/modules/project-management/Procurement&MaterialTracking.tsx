@@ -295,56 +295,22 @@ export default function ProcurementPage() {
         return wbsList.filter((item) => item.projectId === selectedProjectId);
     }, [wbsList, selectedProjectId]);
 
-    // --- DATA TRANSFORMATION: Filter & Merge ---
+    // --- DATA TRANSFORMATION: Filter by Project ---
     const displayedMrsList = useMemo(() => {
-        // 1. If NO project is selected, show only MRS items that don't have a projectId
+        // If NO project is selected, show only MRS items that don't have a projectId
         if (!selectedProjectId) {
             return mrsListRaw.filter(item => !item.projectId || item.projectId === null || item.projectId === undefined);
         }
 
-        // 2. If Project IS selected, combine:
-        //    a) WBS Linked Materials
-        //    b) Manually created MRS items for this project
-        
-        const wbsDerivedItems: MRSItem[] = [];
-        
-        // Iterate through all WBS items for this project
-        wbsList.forEach((wbsItem) => {
-            if (wbsItem.linkedMaterials && wbsItem.linkedMaterials.length > 0) {
-                wbsItem.linkedMaterials.forEach((link) => {
-                    // Find the Raw Material details using the ID stored in WBS
-                    const rawMat = rawMaterials.find(r => r._id === link.materialId);
-
-                    if (rawMat) {
-                        wbsDerivedItems.push({
-                            id: `${wbsItem.id}-${link.materialId}`, // Create a temporary unique ID
-                            _id: link.materialId, // Keep reference
-                            projectId: selectedProjectId,
-                            task: wbsItem.name, // The WBS Task Name
-                            item: rawMat.name, // The Raw Material Name
-                            quantity: link.quantity,
-                            unit: link.unit || rawMat.unit,
-                            status: "planned", // Mark as planned coming from WBS
-                            requiredDate: wbsItem.startDate, // Use task start date
-                            isWbsLinked: true, // Flag to disable editing in MRS view
-                        });
-                    }
-                });
-            }
-        });
-
-        // Get manually created MRS items for this project
-        // Compare projectId as strings to handle ObjectId vs string comparison
-        const manualMrsItems = mrsListRaw.filter(item => {
+        // If Project IS selected, show all MRS items for this project
+        // Backend creates MRS entries when materials are linked to WBS
+        return mrsListRaw.filter(item => {
             const itemProjectId = String(item.projectId || '');
             const selectedId = String(selectedProjectId || '');
-            return itemProjectId === selectedId && !item.isWbsLinked;
+            return itemProjectId === selectedId;
         });
 
-        // Combine both: WBS-linked items and manually created items
-        return [...wbsDerivedItems, ...manualMrsItems];
-
-    }, [selectedProjectId, mrsListRaw, wbsList, rawMaterials]);
+    }, [selectedProjectId, mrsListRaw]);
 
     // --- Pagination Logic (Applied to the Derived List) ---
     const mrsTotalPages = Math.max(1, Math.ceil((displayedMrsList?.length || 0) / MRS_PAGE_SIZE));
@@ -796,7 +762,7 @@ export default function ProcurementPage() {
                                     </TableCell>
                                     <TableCell>
                                         {m.task || "—"}
-                                        {m.isWbsLinked && <Badge variant="secondary" className="ml-2 text-[10px]">WBS</Badge>}
+                                        {m.task && <Badge variant="secondary" className="ml-2 text-[10px]">WBS</Badge>}
                                     </TableCell>
                                     <TableCell className="font-medium">
                                         {m.item} 
@@ -840,10 +806,10 @@ export default function ProcurementPage() {
                                     <TableCell>{m.requiredDate ? new Date(m.requiredDate).toLocaleDateString() : "—"}</TableCell>
                                     <TableCell>
                                         <div className="flex gap-2">
-                                            {canEdit && <Button size="icon" variant="ghost" onClick={() => openEdit(m)} disabled={mrsLoading || !!m.isWbsLinked}>
+                                            {canEdit && <Button size="icon" variant="ghost" onClick={() => openEdit(m)} disabled={mrsLoading || !!m.task}>
                                                 <Edit2 className="h-4 w-4" />
                                             </Button>}
-                                            {canDelete && <Button size="icon" variant="ghost" onClick={() => handleDelete(m.id || m._id!, m.isWbsLinked)} disabled={mrsLoading || !!m.isWbsLinked}>
+                                            {canDelete && <Button size="icon" variant="ghost" onClick={() => handleDelete(m.id || m._id!, !!m.task)} disabled={mrsLoading || !!m.task}>
                                                 <Trash2 className="h-4 w-4 text-red-600" />
                                             </Button>}
                                             <Button 
