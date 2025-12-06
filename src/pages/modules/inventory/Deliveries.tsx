@@ -38,6 +38,7 @@ import {
   X,
   ShieldAlert,
 } from "lucide-react";
+import { BASE_URL } from "@/utils/constants";
 
 interface DeliveryItem {
   _id: string;
@@ -115,7 +116,7 @@ const Deliveries: React.FC = () => {
   const fetchNotifications = async () => {
     setLoadingNotifications(true);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+      const apiUrl = BASE_URL || 'http://localhost:4000';
       const url = `${apiUrl}/notifications/list?destination=delivery.inventory&status=unread`;
       
       const response = await fetch(url, {
@@ -157,7 +158,7 @@ const Deliveries: React.FC = () => {
   // Handle accept/reject
   const handleDeliveryResponse = async (notificationId: string, response: 'accepted' | 'rejected', notification?: any) => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+      const apiUrl = BASE_URL || 'http://localhost:4000';
       
       // If accepted, add to material requests table
       if (response === 'accepted' && notification?.materialData) {
@@ -1265,7 +1266,7 @@ const StockTransferHistory = ({
   const fetchTransfers = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/stock-transfers`, {
+      const response = await fetch(`${BASE_URL || 'http://localhost:4000'}/stock-transfers`, {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
       if (response.ok) {
@@ -1284,7 +1285,7 @@ const StockTransferHistory = ({
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this transfer?')) return;
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/stock-transfers/${id}`, {
+      const response = await fetch(`${BASE_URL || 'http://localhost:4000'}/stock-transfers/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
@@ -1331,7 +1332,7 @@ const StockTransferHistory = ({
       setLoading(true);
       
       try {
-        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/stock-transfers/${transfer._id}`, {
+        const response = await fetch(`${BASE_URL || 'http://localhost:4000'}/stock-transfers/${transfer._id}`, {
           method: 'PATCH',
           headers: {
             'Content-Type': 'application/json',

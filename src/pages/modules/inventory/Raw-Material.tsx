@@ -49,6 +49,7 @@ import { Label } from "@/components/ui/label";
 import { Eye, Edit, Trash2, Plus, Warehouse, ShieldAlert, Package } from "lucide-react";
 
 import { RawMaterial } from "@/redux/slices/rawmaterialSlice";
+import { BASE_URL } from "@/utils/constants";
 
 export default function RawMaterialMaster() {
 
@@ -108,7 +109,7 @@ export default function RawMaterialMaster() {
   const fetchNotifications = async () => {
     setLoadingNotifications(true);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+      const apiUrl = BASE_URL || 'http://localhost:4000';
       const url = `${apiUrl}/notifications/list?destination=inventory.raw-materials&status=unread`;
       
       console.log('Fetching notifications from:', url);
@@ -167,7 +168,7 @@ export default function RawMaterialMaster() {
         return;
       }
       
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/purchase/orders/material-response`, {
+      const res = await fetch(`${BASE_URL}/purchase/orders/material-response`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -246,7 +247,7 @@ export default function RawMaterialMaster() {
       }
       
       // Mark notification as rejected
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/purchase/orders/material-response`, {
+      const res = await fetch(`${BASE_URL}/purchase/orders/material-response`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

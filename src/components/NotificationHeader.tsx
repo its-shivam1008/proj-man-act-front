@@ -21,6 +21,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { BASE_URL } from "@/utils/constants";
 
 export default function NotificationHeader() {
   const dispatch = useDispatch<AppDispatch>();
@@ -110,7 +111,7 @@ export default function NotificationHeader() {
 
   const handleMarkAsRead = async (notificationId: string) => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+      const apiUrl = BASE_URL || 'http://localhost:4000';
       const response = await fetch(`${apiUrl}/notifications/mark-read`, {
         method: 'POST',
         headers: {

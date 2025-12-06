@@ -1,8 +1,6 @@
-"use client";
-
 import React, { useEffect, useMemo, useState } from "react";
-import { Button } from "../../../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -11,61 +9,187 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "../../../components/ui/dialog";
-import { Input } from "../../../components/ui/input";
-import { Label } from "../../../components/ui/label";
-import { Textarea } from "../../../components/ui/textarea";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
-import { Badge } from "../../../components/ui/badge";
-import { Avatar } from "../../../components/ui/avatar";
-import { Upload, Trash2, Edit2, Globe, MapPin, Loader2, ShieldAlert } from "lucide-react";
-import { generateId } from "../../../utils/localStorage"; // Only for local photo IDs and gantt
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Upload, Trash2, Edit2, MapPin, Loader2, ShieldAlert, Check, ChevronsUpDown } from "lucide-react";
+import { generateId } from "@/utils/localStorage";
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, AreaChart, Area } from "recharts";
 import { useDispatch, useSelector } from "react-redux";
-import { RootState } from "@/redux/store"; // Adjust path to your store
-import { DailyProgressItem } from "../../../types/dailyProgress"; // Adjust path to match your types
+import { AppDispatch, RootState } from "@/redux/store";
 import {
   fetchDailyProgress,
   addDailyProgress,
   editDailyProgress,
   removeDailyProgress,
 } from "@/redux/slices/dailyProgressSlice";
+import { fetchProjects } from "@/redux/slices/projectSlice"; // Import fetchProjects
+import { fetchWbsByProject } from "@/redux/slices/wbsSlice"; // Import fetchWbsByProject
 import { usePermission } from "@/hooks/userPermission";
-
-// Gantt storage (kept local as no Redux slice for it)
-const getGantt = () =>
-  typeof window !== "undefined"
-    ? (window.localStorage.getItem("GANTT_PROGRESS") ? JSON.parse(window.localStorage.getItem("GANTT_PROGRESS")!) : [])
-    : [];
-const saveGantt = (list: { date: string; planned: number }[]) =>
-  typeof window !== "undefined" ? window.localStorage.setItem("GANTT_PROGRESS", JSON.stringify(list)) : null;
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { useDebounce } from "@/hooks/useDebounce";
+import { parseISO, differenceInDays, addDays, format, isWithinInterval, startOfDay } from "date-fns";
+import { DailyProgressItem } from "@/types/dailyProgress";
+import { Progress } from "@/components/ui/progress";
 
 export default function DailyProgressPage() {
-  const dispatch = useDispatch();
-  const { items, loading } = useSelector((state: RootState) => state.dailyProgress);
-  const [gantt, setGantt] = useState<{ date: string; planned: number }[]>([]);
+  const dispatch = useDispatch<AppDispatch>();
+  
+  // -- Selectors --
+  const { items, loading: progressLoading } = useSelector((state: RootState) => state.dailyProgress);
+  const { projects, loading: projectLoading } = useSelector((state: RootState) => state.projects);
+  const { wbs, loading: wbsLoading } = useSelector((state: RootState) => state.wbs);
 
   const canView = usePermission('progressUpdates', 'view');
 
+  // -- Local State --
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editing, setEditing] = useState<DailyProgressItem | null>(null);
   const [form, setForm] = useState<Partial<DailyProgressItem>>({ date: new Date().toISOString().slice(0, 10), percentComplete: 0 });
+  
+  // Pagination
   const [progressPage, setProgressPage] = useState(1);
   const PROGRESS_PAGE_SIZE = 10;
+
+  // -- Project Selection State --
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [projectPopoverOpen, setProjectPopoverOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearchTerm = useDebounce(searchTerm, 500);
+
+  // -- Initial Fetch --
   useEffect(() => {
-
     dispatch(fetchDailyProgress());
-
-    setGantt(getGantt());
   }, [dispatch]);
 
+  // Fetch Projects on search
+  useEffect(() => {
+    dispatch(
+      fetchProjects({
+        search: debouncedSearchTerm,
+        page: 1,
+        limit: 10,
+      })
+    );
+  }, [debouncedSearchTerm, dispatch]);
 
-  const persistGantt = (list: { date: string; planned: number }[]) => {
-    setGantt(list);
-    saveGantt(list);
-  };
+  // Fetch WBS when project is selected
+  useEffect(() => {
+    if (selectedProjectId) {
+      dispatch(fetchWbsByProject(selectedProjectId));
+    }
+  }, [selectedProjectId, dispatch]);
 
-  // Create / Edit handlers
+  // -- Helper: Calculate Planned vs Actual Data based on WBS --
+  const chartData = useMemo(() => {
+    if (!selectedProjectId || wbs.length === 0) return [];
+
+    // 1. Find Date Range of the Project
+    const dates = wbs
+      .map(item => ({ start: item.startDate ? parseISO(item.startDate) : null, end: item.endDate ? parseISO(item.endDate) : null }))
+      .filter(d => d.start && d.end);
+
+    if (dates.length === 0) return [];
+
+    const minDate = new Date(Math.min(...dates.map(d => d.start!.getTime())));
+    const maxDate = new Date(Math.max(...dates.map(d => d.end!.getTime())));
+
+    const totalDays = differenceInDays(maxDate, minDate) + 1;
+    const dataPoints = [];
+
+    // 2. Generate Daily Data Points
+    for (let i = 0; i <= totalDays; i++) {
+      const currentDate = addDays(minDate, i);
+      const dateStr = format(currentDate, "yyyy-MM-dd");
+
+      // Calculate Planned Progress (Simple linear distribution logic)
+      // For each active WBS item on this day, add its contribution to total progress
+      let activeItemsWeight = 0;
+      let totalItemsWeight = 0;
+
+      wbs.forEach(item => {
+        if (!item.startDate || !item.endDate) return;
+        const start = parseISO(item.startDate);
+        const end = parseISO(item.endDate);
+        
+        // Simple weight: 1 per item (can be improved to use plannedCost)
+        const weight = 1; 
+        totalItemsWeight += weight;
+
+        if (currentDate >= start) {
+           const itemDuration = differenceInDays(end, start) + 1;
+           const daysPassed = differenceInDays(currentDate, start) + 1;
+           
+           if (currentDate > end) {
+             activeItemsWeight += weight; // 100% complete planned
+           } else {
+             const percentPlanned = Math.min(100, Math.max(0, (daysPassed / itemDuration) * 100));
+             activeItemsWeight += (percentPlanned / 100) * weight;
+           }
+        }
+      });
+
+      const plannedPercentage = totalItemsWeight > 0 ? (activeItemsWeight / totalItemsWeight) * 100 : 0;
+
+      // Actual Progress (Aggregate current WBS progress)
+      // Note: Since we don't have historical WBS snapshots, we approximate actual curve 
+      // by using the "DailyProgress" entries if they match the date, or holding the current WBS progress value if looking at today.
+      
+      // For visualization, let's map "Actual" as the Weighted Average of WBS Progress *Current State* // (This creates a flat line for past/future, so we'll try to find DailyProgress logs to make it jagged)
+      
+      const dailyLog = items.find(log => log.date === dateStr);
+      // If there is a daily log, use its percentComplete as a proxy for project level if applicable, 
+      // or just plot it separately.
+      
+      // Better approach for "Actual" Line: Weighted Average of WBS items *Right Now* is a single point (Today).
+      // To show history, we really need the DailyProgress logs to be linked to WBS items. 
+      // Since they aren't explicitly linked by ID in the schema provided, we will omit the historical Actual line 
+      // and only show "Planned" curve vs "Daily Log Entries" as scatter points or a secondary line.
+
+      dataPoints.push({
+        date: dateStr,
+        planned: Math.round(plannedPercentage),
+        actualLog: dailyLog ? dailyLog.percentComplete : null // Show daily log % if exists
+      });
+    }
+
+    return dataPoints;
+  }, [wbs, items, selectedProjectId]);
+
+
+  // -- Data Processing for UI --
+  const selectedProjectDetails = projects.find(p => p._id === selectedProjectId);
+
+  // Calculate Overall Project Actual Progress based on WBS weighted average
+  const overallActualProgress = useMemo(() => {
+    if (!wbs.length) return 0;
+    const totalProgress = wbs.reduce((acc, item) => acc + (item.progress || 0), 0);
+    return Math.round(totalProgress / wbs.length);
+  }, [wbs]);
+
+  const paginatedProgressItems = useMemo(() => {
+    const start = (progressPage - 1) * PROGRESS_PAGE_SIZE;
+    return items.slice(start, start + PROGRESS_PAGE_SIZE);
+  }, [items, progressPage]);
+
+  const progressTotalPages = Math.max(1, Math.ceil((items.length || 0) / PROGRESS_PAGE_SIZE));
+
+  // -- Handlers --
   const openCreate = () => {
     setEditing(null);
     setForm({ date: new Date().toISOString().slice(0, 10), percentComplete: 0 });
@@ -81,30 +205,26 @@ export default function DailyProgressPage() {
   const handleSave = async () => {
     if (!form.date || typeof form.percentComplete !== "number") return;
     const now = new Date().toISOString();
-    if (editing) {
-      await dispatch(
-        editDailyProgress({
-          id: editing._id,
-          payload: { ...form, updatedAt: now },
-        })
-      );
-    } else {
-      const newItem = {
-        organisationId: localStorage.getItem("organisationId"),
-        date: form.date!,
-        task: form.task || "",
-        percentComplete: form.percentComplete || 0,
-        materialUsed: form.materialUsed || "",
-        labourHours: form.labourHours || 0,
-        machineHours: form.machineHours || 0,
-        remarks: form.remarks || "",
-        photos: form.photos || [],
-        updatedBy: form.updatedBy || "",
-        createdAt: now,
-        updatedAt: now,
-      };
+    
+    // Payload preparation
+    const payload = {
+      organisationId: localStorage.getItem("organisationId") || "",
+      date: form.date,
+      task: form.task || "",
+      percentComplete: form.percentComplete,
+      materialUsed: form.materialUsed || "",
+      labourHours: form.labourHours || 0,
+      machineHours: form.machineHours || 0,
+      remarks: form.remarks || "",
+      photos: form.photos || [],
+      updatedBy: form.updatedBy || "",
+      updatedAt: now,
+    };
 
-      await dispatch(addDailyProgress(newItem));
+    if (editing) {
+      await dispatch(editDailyProgress({ id: editing._id, payload }));
+    } else {
+      await dispatch(addDailyProgress({ ...payload, createdAt: now }));
     }
     setIsDialogOpen(false);
     setEditing(null);
@@ -115,14 +235,12 @@ export default function DailyProgressPage() {
     dispatch(removeDailyProgress(id));
   };
 
-  // Photo upload helper -> converts file to dataURL and attempts to attach GPS using geolocation at time of upload
   const handlePhotoUpload = (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const file = files[0];
     const reader = new FileReader();
     reader.onload = async (e) => {
       const dataUrl = e.target?.result as string;
-      // try to get GPS
       const gps = await new Promise<{ lat: number; lng: number } | undefined>((resolve) => {
         if (!navigator.geolocation) return resolve(undefined);
         navigator.geolocation.getCurrentPosition(
@@ -131,7 +249,6 @@ export default function DailyProgressPage() {
           { timeout: 5000 },
         );
       });
-
       const photo = { id: generateId(), dataUrl, gps };
       setForm((f) => ({ ...(f || {}), photos: [...((f && f.photos) || []), photo] }));
     };
@@ -141,59 +258,6 @@ export default function DailyProgressPage() {
   const removePhoto = (photoId: string) => {
     setForm((f) => ({ ...(f || {}), photos: (f.photos || []).filter((p) => p.id !== photoId) }));
   };
-
-  // Integration: Update Gantt Progress
-  // This will push today's actual percent into the Gantt planned dataset as "actual update" simulation.
-  const updateGanttProgress = () => {
-    // For simplicity: find latest item per date and push into gantt as planned/actual record
-    const series = items
-      .map((it) => ({ date: it.date, actual: it.percentComplete }))
-      .sort((a, b) => (a.date > b.date ? 1 : -1));
-
-    // Merge into gantt: if a date exists update planned to current actual; otherwise append
-    const existing = [...gantt];
-    series.forEach((s) => {
-      const idx = existing.findIndex((g) => g.date === s.date);
-      if (idx >= 0) existing[idx] = { date: s.date, planned: s.actual };
-      else existing.push({ date: s.date, planned: s.actual });
-    });
-
-    persistGantt(existing.sort((a, b) => (a.date > b.date ? 1 : -1)));
-    window.alert("Gantt progress updated with current actuals (simulation).");
-  };
-
-  // Chart data: planned vs actual
-  const chartData = useMemo(() => {
-    // Build a union of dates from gantt (planned) and items (actual)
-    const dateSet = new Set<string>();
-    (gantt || []).forEach((g) => dateSet.add(g.date));
-    (items || []).forEach((i) => dateSet.add(i.date));
-    const dates = Array.from(dateSet).sort((a, b) => (a > b ? 1 : -1));
-
-    return dates.map((d) => ({
-      date: d,
-      planned: (gantt.find((g) => g.date === d) || { planned: 0 }).planned || 0,
-      actual: (items.find((i) => i.date === d) || { percentComplete: 0 }).percentComplete || 0,
-    }));
-  }, [gantt, items]);
-
-  const progressTotalPages = Math.max(1, Math.ceil((items.length || 0) / PROGRESS_PAGE_SIZE));
-  const paginatedProgressItems = useMemo(() => {
-    const start = (progressPage - 1) * PROGRESS_PAGE_SIZE;
-    return items.slice(start, start + PROGRESS_PAGE_SIZE);
-  }, [items, progressPage]);
-
-  useEffect(() => {
-    setProgressPage(1);
-  }, [items.length]);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
-    );
-  }
 
   if (!canView) {
     return (
@@ -207,144 +271,268 @@ export default function DailyProgressPage() {
 
   return (
     <div className="space-y-6 p-4 md:p-6">
-      <div className="flex items-center justify-between">
+      {/* --- HEADER & PROJECT SELECTOR --- */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold">Daily Progress</h2>
-          <p className="text-muted-foreground">Track daily %complete, resources used, photos & GPS, and update Gantt.</p>
+          <h2 className="text-3xl font-bold">Progress Tracking</h2>
+          <p className="text-muted-foreground">Monitor actual vs planned progress across projects.</p>
         </div>
-        <div className="flex gap-2">
-          <Button onClick={openCreate}>
-            <Upload className="mr-2 h-4 w-4" /> Add Daily Progress
-          </Button>
-          <Button variant="outline" onClick={updateGanttProgress}>
-            Update Gantt Progress
+        
+        <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
+          {/* Project Selector Popover */}
+          <Popover open={projectPopoverOpen} onOpenChange={setProjectPopoverOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                aria-expanded={projectPopoverOpen}
+                className="w-full md:w-72 justify-between"
+              >
+                {selectedProjectDetails ? (
+                  <span className="truncate">
+                    {selectedProjectDetails.code} - {selectedProjectDetails.name}
+                  </span>
+                ) : (
+                  "Select a Project for Analysis"
+                )}
+                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+              <Command>
+                <CommandInput
+                  placeholder="Search projects..."
+                  value={searchTerm}
+                  onValueChange={setSearchTerm}
+                />
+                <CommandList>
+                  {projectLoading && <div className="p-4 text-center text-sm">Loading...</div>}
+                  <CommandEmpty>{!projectLoading && "No projects found."}</CommandEmpty>
+                  <CommandGroup>
+                    {!projectLoading &&
+                      projects.map((project) => (
+                        <CommandItem
+                          key={project._id}
+                          value={`${project.code} ${project.name}`}
+                          onSelect={() => {
+                            setSelectedProjectId(project._id);
+                            setProjectPopoverOpen(false);
+                          }}
+                        >
+                          <Check
+                            className={`mr-2 h-4 w-4 ${
+                              selectedProjectId === project._id ? "opacity-100" : "opacity-0"
+                            }`}
+                          />
+                          <div className="flex flex-col">
+                            <span className="font-medium">{project.code} - {project.name}</span>
+                          </div>
+                        </CommandItem>
+                      ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+
+          <Button onClick={openCreate} className="whitespace-nowrap">
+            <Upload className="mr-2 h-4 w-4" /> Log Daily Progress
           </Button>
         </div>
       </div>
 
-      {/* Chart */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Planned vs Actual Progress</CardTitle>
-        </CardHeader>
-        <CardContent className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="date" />
-              <YAxis domain={[0, 100]} />
-              <Tooltip />
-              <Legend />
-              <Line type="monotone" dataKey="planned" name="Planned %" stroke="#8884d8" />
-              <Line type="monotone" dataKey="actual" name="Actual %" stroke="#82ca9d" />
-            </LineChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
-
-      {/* Form & Table */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Table */}
-        <div className="lg:col-span-3">
+      {/* --- CHARTS SECTION --- */}
+      {selectedProjectId ? (
+        <div className="grid grid-cols-1 gap-6">
           <Card>
-            <CardHeader>
-              <CardTitle>Daily Progress Records ({items.length})</CardTitle>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Project S-Curve: Planned vs Actual</CardTitle>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Based on WBS timelines vs reported progress
+                </p>
+              </div>
+              <div className="text-right">
+                 <div className="text-2xl font-bold">{overallActualProgress}%</div>
+                 <div className="text-xs text-muted-foreground">Calculated Actual</div>
+              </div>
             </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Task</TableHead>
-                    <TableHead>% Completed</TableHead>
-                    <TableHead>Remarks</TableHead>
-                    <TableHead>Updated By</TableHead>
-                    <TableHead>Photos</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {paginatedProgressItems.map((it) => (
-                    <TableRow key={it._id}>
-                      <TableCell>{it.date}</TableCell>
-                      <TableCell className="max-w-[200px] truncate">{it.task || "—"}</TableCell>
-                      <TableCell>{it.percentComplete}%</TableCell>
-                      <TableCell className="max-w-[240px] truncate">{it.remarks || "—"}</TableCell>
-                      <TableCell>{it.updatedBy || "—"}</TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          {(it.photos || []).map((p) => (
-                            <div
-                              key={p.id}
-                              className="w-12 h-12 rounded overflow-hidden border"
-                              title={p.gps ? `GPS: ${p.gps.lat.toFixed(4)}, ${p.gps.lng.toFixed(4)}` : "No GPS"}
-                            >
-                              <img src={p.dataUrl} alt="photo" className="w-full h-full object-cover" />
-                            </div>
-                          ))}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          <Button size="icon" variant="ghost" onClick={() => openEdit(it)}>
-                            <Edit2 className="h-4 w-4" />
-                          </Button>
-                          <Button size="icon" variant="ghost" onClick={() => handleDelete(it._id)}>
-                            <Trash2 className="h-4 w-4 text-red-600" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-
-              {items.length === 0 && (
-                <div className="text-center py-8 text-muted-foreground">
-                  No daily progress yet. Click “Add Daily Progress” to start.
-                </div>
-              )}
-              {items.length > PROGRESS_PAGE_SIZE && (
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 pt-4">
-                  <p className="text-sm text-muted-foreground">
-                    Page {progressPage} of {progressTotalPages}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setProgressPage((prev) => Math.max(1, prev - 1))}
-                      disabled={progressPage === 1}
-                    >
-                      Previous
-                    </Button>
-                    {Array.from({ length: progressTotalPages }, (_, idx) => idx + 1).map((pageNumber) => (
-                      <Button
-                        key={pageNumber}
-                        variant={pageNumber === progressPage ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setProgressPage(pageNumber)}
-                      >
-                        {pageNumber}
-                      </Button>
-                    ))}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setProgressPage((prev) => Math.min(progressTotalPages, prev + 1))}
-                      disabled={progressPage === progressTotalPages}
-                    >
-                      Next
-                    </Button>
-                  </div>
+            <CardContent className="h-[350px]">
+              {chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData}>
+                    <defs>
+                      <linearGradient id="colorPlanned" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#8884d8" stopOpacity={0.1}/>
+                        <stop offset="95%" stopColor="#8884d8" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="date" tick={{fontSize: 12}} tickFormatter={(val) => val.slice(5)} />
+                    <YAxis domain={[0, 100]} />
+                    <Tooltip />
+                    <Legend />
+                    <Area 
+                      type="monotone" 
+                      dataKey="planned" 
+                      name="Planned Cumulative %" 
+                      stroke="#8884d8" 
+                      fillOpacity={1} 
+                      fill="url(#colorPlanned)" 
+                      strokeWidth={2}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="actualLog" 
+                      name="Daily Log Entry %" 
+                      stroke="#82ca9d" 
+                      strokeWidth={2} 
+                      dot={{r: 4}}
+                      connectNulls={true}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-muted-foreground">
+                  <p>Insufficient WBS data (dates missing) to generate S-Curve.</p>
                 </div>
               )}
             </CardContent>
           </Card>
+
+          {/* --- WBS ITEM PROGRESS LIST --- */}
+          <Card>
+            <CardHeader>
+              <CardTitle>WBS Items Breakdown</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {wbsLoading ? (
+                  <div className="text-center py-4"><Loader2 className="animate-spin mx-auto"/></div>
+                ) : wbs.length === 0 ? (
+                  <p className="text-muted-foreground text-center">No WBS items found for this project.</p>
+                ) : (
+                  <div className="grid gap-4">
+                    {wbs.filter(i => i.parentId !== null).map((item) => (
+                      <div key={item.id} className="grid grid-cols-12 items-center gap-4 border-b pb-3 last:border-0">
+                         <div className="col-span-4 md:col-span-3">
+                           <div className="font-medium truncate">{item.name}</div>
+                           <div className="text-xs text-muted-foreground capitalize">{item.type}</div>
+                         </div>
+                         <div className="col-span-4 md:col-span-6">
+                            <div className="flex items-center justify-between text-xs mb-1">
+                              <span>{item.startDate}</span>
+                              <span className="font-semibold">{item.progress}%</span>
+                              <span>{item.endDate}</span>
+                            </div>
+                            <Progress value={item.progress} className="h-2" />
+                         </div>
+                         <div className="col-span-4 md:col-span-3 text-right">
+                            <Badge variant={item.status === 'completed' ? 'default' : 'outline'} className="capitalize">
+                              {item.status?.replace('-', ' ')}
+                            </Badge>
+                         </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </div>
+      ) : (
+        <Card className="bg-slate-50 border-dashed">
+          <CardContent className="py-10 text-center">
+            <p className="text-lg font-medium text-gray-600">Please select a project above to view planned vs actual analysis.</p>
+            <p className="text-sm text-gray-500">The chart requires specific project WBS data to calculate timelines.</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* --- DAILY PROGRESS LOGS (Existing Functionality) --- */}
+      <div className="mt-8">
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent Daily Logs ({items.length})</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Task</TableHead>
+                  <TableHead>% Completed</TableHead>
+                  <TableHead>Remarks</TableHead>
+                  <TableHead>Updated By</TableHead>
+                  <TableHead>Photos</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {progressLoading ? (
+                   <TableRow><TableCell colSpan={7} className="text-center"><Loader2 className="animate-spin inline mr-2"/>Loading...</TableCell></TableRow>
+                ) : paginatedProgressItems.map((it) => (
+                  <TableRow key={it._id}>
+                    <TableCell>{it.date}</TableCell>
+                    <TableCell className="max-w-[200px] truncate">{it.task || "—"}</TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">{it.percentComplete}%</Badge>
+                    </TableCell>
+                    <TableCell className="max-w-[240px] truncate">{it.remarks || "—"}</TableCell>
+                    <TableCell>{it.updatedBy || "—"}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        {(it.photos || []).slice(0, 3).map((p) => (
+                          <div
+                            key={p.id}
+                            className="w-8 h-8 rounded overflow-hidden border bg-gray-100"
+                            title={p.gps ? `GPS: ${p.gps.lat.toFixed(4)}, ${p.gps.lng.toFixed(4)}` : "No GPS"}
+                          >
+                            <img src={p.dataUrl} alt="photo" className="w-full h-full object-cover" />
+                          </div>
+                        ))}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button size="icon" variant="ghost" onClick={() => openEdit(it)}>
+                          <Edit2 className="h-4 w-4" />
+                        </Button>
+                        <Button size="icon" variant="ghost" onClick={() => handleDelete(it._id)}>
+                          <Trash2 className="h-4 w-4 text-red-600" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+
+            {items.length > PROGRESS_PAGE_SIZE && (
+              <div className="flex justify-end gap-2 mt-4">
+                 <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setProgressPage((prev) => Math.max(1, prev - 1))}
+                    disabled={progressPage === 1}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setProgressPage((prev) => Math.min(progressTotalPages, prev + 1))}
+                    disabled={progressPage === progressTotalPages}
+                  >
+                    Next
+                  </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Dialog: Add / Edit Daily Progress */}
+      {/* --- CREATE/EDIT DIALOG --- */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogTrigger asChild>
           <span />
@@ -363,7 +551,7 @@ export default function DailyProgressPage() {
               </div>
               <div>
                 <Label>Task</Label>
-                <Input value={form.task || ""} onChange={(e) => setForm({ ...form, task: e.target.value })} />
+                <Input value={form.task || ""} onChange={(e) => setForm({ ...form, task: e.target.value })} placeholder="Task name" />
               </div>
             </div>
 
@@ -417,19 +605,17 @@ export default function DailyProgressPage() {
             </div>
 
             <div>
-              <Label>Photos (attach one at a time)</Label>
-              <div className="flex gap-2 items-center">
-                <input type="file" accept="image/*" onChange={(e) => handlePhotoUpload(e.target.files)} />
-                <span className="text-sm text-muted-foreground">(GPS tag attempted at upload time)</span>
+              <Label>Photos (GPS auto-tagged)</Label>
+              <div className="flex gap-2 items-center mt-1">
+                <Input type="file" accept="image/*" onChange={(e) => handlePhotoUpload(e.target.files)} className="w-full" />
               </div>
-
               {(form.photos || []).length > 0 && (
-                <div className="mt-2 flex gap-2">
+                <div className="mt-2 flex gap-2 flex-wrap">
                   {(form.photos || []).map((p) => (
-                    <div key={p.id} className="border rounded overflow-hidden w-24 h-24 relative">
+                    <div key={p.id} className="border rounded overflow-hidden w-20 h-20 relative bg-slate-100">
                       <img src={p.dataUrl} alt="preview" className="w-full h-full object-cover" />
-                      <button className="absolute top-1 right-1 bg-white p-1 rounded" onClick={() => removePhoto(p.id)}>
-                        <Trash2 className="h-4 w-4 text-red-600" />
+                      <button className="absolute top-0 right-0 bg-red-500 text-white p-1 rounded-bl" onClick={() => removePhoto(p.id)}>
+                        <Trash2 className="h-3 w-3" />
                       </button>
                     </div>
                   ))}
@@ -437,24 +623,24 @@ export default function DailyProgressPage() {
               )}
             </div>
 
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <MapPin className="h-4 w-4" /> GPS:{" "}
-              {((form.photos || []).find((p) => p.gps)?.gps &&
-                `${(form.photos || []).find((p) => p.gps)!.gps!.lat.toFixed(4)}, ${(form.photos || []).find((p) => p.gps)!.gps!.lng.toFixed(4)
-                }`) ||
-                "No GPS recorded"}
+            {/* GPS Indicator */}
+             <div className="flex items-center gap-2 text-sm text-muted-foreground bg-gray-50 p-2 rounded">
+              <MapPin className="h-4 w-4" /> 
+              {((form.photos || []).find((p) => p.gps)?.gps) ? (
+                 <span className="text-green-600">Location Tagged</span>
+              ) : "No GPS data yet"}
             </div>
+
           </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSave}>{editing ? "Save" : "Add Progress"}</Button>
+            <Button onClick={handleSave}>{editing ? "Save Changes" : "Submit Log"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
   );
 }
-

@@ -37,6 +37,7 @@ import {
   ShieldAlert,
   Truck,
 } from "lucide-react";
+import { BASE_URL } from "@/utils/constants";
 
 interface Product {
   _id?: string;
@@ -121,7 +122,7 @@ const Products: React.FC = () => {
   const fetchNotifications = async () => {
     setLoadingNotifications(true);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+      const apiUrl = BASE_URL || 'http://localhost:4000';
       const url = `${apiUrl}/notifications/list?destination=inventory.products&status=unread`;
       
       const response = await fetch(url, {
@@ -168,7 +169,7 @@ const Products: React.FC = () => {
         return;
       }
       
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+      const apiUrl = BASE_URL || 'http://localhost:4000';
       const res = await fetch(`${apiUrl}/purchase/orders/product-response`, {
         method: 'POST',
         headers: {
@@ -253,7 +254,7 @@ const Products: React.FC = () => {
       }
       
       // Mark notification as rejected
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+      const apiUrl = BASE_URL || 'http://localhost:4000';
       const res = await fetch(`${apiUrl}/purchase/orders/product-response`, {
         method: 'POST',
         headers: {
