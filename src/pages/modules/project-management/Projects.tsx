@@ -75,10 +75,10 @@ interface Project {
   drawingCode?: string;
   name: string;
   description: string;
+  location?: string | { _id: string; name: string };
   client?: string | { _id: string; name: string };
   department?: string | { _id: string; name: string };
   projectType?: string | { _id: string; name: string };
-  location?: string;
   budget?: number;
   expectedRevenue?: number;
   duration?: string;
@@ -141,20 +141,22 @@ export default function Projects() {
   const debouncedSearch = useDebounce(searchTerm, 500);
   const uuid = "81b48a8b-f574-4562-be38-f480e99359c9";
   const organisationId = localStorage.getItem('organisationId')
-  // Get Master Data from Redux
-  const { clients, departments, projectTypes } = useSelector(
+  // [!code --] const { clients, departments, projectTypes } = useSelector(
+  const { clients, departments, projectTypes, locations } = useSelector( // [!code ++]
     (state: RootState) => state.masterData
   );
 
   const [clientOpen, setClientOpen] = useState(false);
   const [deptOpen, setDeptOpen] = useState(false);
   const [typeOpen, setTypeOpen] = useState(false);
+  const [locationOpen, setLocationOpen] = useState(false);
 
   // Fetch Master Data on mount
   useEffect(() => {
     dispatch(fetchMasterData("client"));
     dispatch(fetchMasterData("department"));
     dispatch(fetchMasterData("project-type"));
+    dispatch(fetchMasterData("location"));
   }, [dispatch]);
 
   const [formData, setFormData] = useState<{
@@ -164,6 +166,7 @@ export default function Projects() {
     description?: string;
     client?: string;
     department?: string;
+    location?: string;
     projectType?: string;
     status: ProjectStatus;
     budget?: number;
@@ -173,7 +176,8 @@ export default function Projects() {
     status: "planning",
     client: undefined,
     department: undefined,
-    projectType: undefined
+    projectType: undefined,
+    location: undefined,
   });
 
   useEffect(() => {
@@ -228,6 +232,13 @@ export default function Projects() {
   const handleStatusChange = (val: any) => {
     setStatusFilter(val);
     setPage(1);
+  };
+
+  const getLocationName = (locData: string | { _id: string; name: string } | undefined) => {
+    if (!locData) return "N/A";
+    if (typeof locData === 'object' && locData.name) return locData.name;
+    const found = locations.find((l) => l._id === locData);
+    return found ? found.name : "Unknown Location";
   };
 
   const handleSave = async () => {
@@ -291,6 +302,7 @@ export default function Projects() {
       client: getSafeId(project.client),
       department: getSafeId(project.department),
       projectType: getSafeId(project.projectType),
+      location: getSafeId(project.location),
     });
 
     setIsDialogOpen(true);
@@ -411,6 +423,7 @@ export default function Projects() {
                 <TableHead>Name</TableHead>
                 <TableHead>Client</TableHead>
                 <TableHead>Type</TableHead>
+                <TableHead>Location</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Progress</TableHead>
                 <TableHead>Budget</TableHead>
@@ -446,7 +459,7 @@ export default function Projects() {
                     {/* USE HELPERS HERE */}
                     <TableCell>{getClientName(p.client)}</TableCell>
                     <TableCell className="capitalize">{getProjectTypeName(p.projectType)}</TableCell>
-
+                    <TableCell>{getLocationName(p.location)}</TableCell>
                     <TableCell>
                       <Badge
                         className={getStatusBadge(p.status)}
@@ -708,6 +721,52 @@ export default function Projects() {
                                 )}
                               />
                               {t.name}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+              {/*Location popover  */}
+            <div className="flex flex-col gap-2">
+                <Label>Location</Label>
+                <Popover open={locationOpen} onOpenChange={setLocationOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      className="justify-between"
+                    >
+                      {formData.location
+                        ? locations.find((l) => l._id === formData.location)?.name
+                        : "Select Location"}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="p-0">
+                    <Command>
+                      <CommandInput placeholder="Search location..." />
+                      <CommandList>
+                        <CommandEmpty>No location found.</CommandEmpty>
+                        <CommandGroup>
+                          {locations.map((l) => (
+                            <CommandItem
+                              key={l._id}
+                              value={l.name}
+                              onSelect={() => {
+                                setFormData({ ...formData, location: l._id });
+                                setLocationOpen(false);
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  formData.location === l._id ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              {l.name}
                             </CommandItem>
                           ))}
                         </CommandGroup>

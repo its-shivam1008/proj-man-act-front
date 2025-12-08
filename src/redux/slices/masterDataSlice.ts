@@ -6,12 +6,14 @@ export interface MasterItem {
   _id: string;
   name: string;
   description?: string;
+  hrmsLocationId?:string;
 }
 
 interface MasterState {
   clients: MasterItem[];
   departments: MasterItem[];
   projectTypes: MasterItem[];
+  locations: MasterItem[];
   paginatedList: MasterItem[],
   loading: boolean;
   page: number;
@@ -27,6 +29,7 @@ const initialState: MasterState = {
   departments: [],
   projectTypes: [],
   paginatedList: [],
+  locations: [],
   page: 1,
   limit: 10,
   total: 0,
@@ -38,7 +41,7 @@ const initialState: MasterState = {
 };
 
 // Helper type for args
-type MasterType = "client" | "department" | "project-type";
+type MasterType = "client" | "department" | "project-type" | "location";
 export const fetchPaginatedMaster = createAsyncThunk(
   "masterData/fetchPaginated",
   async ({ type, page = 1, limit = 10, search = "" }) => {
@@ -106,7 +109,7 @@ const masterDataSlice = createSlice({
         state.loadingPaginated = true;
       })
       .addCase(fetchPaginatedMaster.fulfilled, (state, action) => {
-        const { data, total, totalPages, page, limit, type } = action.payload;
+        const { data, total, totalPages, page, limit } = action.payload;
 
         // store paginated list separately 
         state.paginatedList = data;
@@ -123,6 +126,7 @@ const masterDataSlice = createSlice({
         if (type === "client") state.clients = data;
         if (type === "department") state.departments = data;
         if (type === "project-type") state.projectTypes = data;
+        if (type === "location") state.locations = data;
       })
       // Add
       .addCase(addMasterItem.fulfilled, (state, action) => {
@@ -130,6 +134,7 @@ const masterDataSlice = createSlice({
         if (type === "client") state.clients.unshift(data);
         if (type === "department") state.departments.unshift(data);
         if (type === "project-type") state.projectTypes.unshift(data);
+        if (type === "location") state.locations.unshift(data);
       })
       // Update
       .addCase(updateMasterItem.fulfilled, (state, action) => {
@@ -140,6 +145,7 @@ const masterDataSlice = createSlice({
         if (type === "client") state.clients = updateList(state.clients);
         if (type === "department") state.departments = updateList(state.departments);
         if (type === "project-type") state.projectTypes = updateList(state.projectTypes);
+        if (type === "location") state.locations = updateList(state.locations);
       })
       // Delete
       .addCase(deleteMasterItem.fulfilled, (state, action) => {
@@ -149,6 +155,7 @@ const masterDataSlice = createSlice({
         if (type === "client") state.clients = filterList(state.clients);
         if (type === "department") state.departments = filterList(state.departments);
         if (type === "project-type") state.projectTypes = filterList(state.projectTypes);
+        if (type === "location") state.locations = filterList(state.locations);
       });
   },
 });

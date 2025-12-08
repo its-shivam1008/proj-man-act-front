@@ -34,15 +34,20 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Pencil, Trash2, Plus, ShieldAlert } from "lucide-react";
+// [!code ++] Import RefreshCw for the sync icon
+import { Pencil, Trash2, Plus, ShieldAlert, RefreshCw } from "lucide-react"; 
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/userPermission";
+// [!code ++] Import the HRMS integration function
+import { getPublicLocations } from "@/lib/hrmsIntegration"; 
 
-type MasterType = "client" | "department" | "project-type";
+// [!code ++] Update Type to include location
+type MasterType = "client" | "department" | "project-type" | "location"; 
 
 export default function MasterDataPage() {
   const dispatch = useDispatch<AppDispatch>();
-  const { clients, departments, projectTypes } = useSelector(
+  // [!code ++] Add locations to selector
+  const { clients, departments, projectTypes, locations } = useSelector( 
     (state: RootState) => state.masterData
   );
   const { paginatedList, page, totalPages, limit, search } = useSelector(
@@ -59,12 +64,16 @@ export default function MasterDataPage() {
   const [editingItem, setEditingItem] = useState<MasterItem | null>(null);
   const [formData, setFormData] = useState({ name: "", description: "" });
 
+  // [!code ++] State for sync loading
+  const [isSyncing, setIsSyncing] = useState(false); 
 
   useEffect(() => {
     dispatch(fetchMasterData("client"));
     dispatch(fetchMasterData("department"));
     dispatch(fetchMasterData("project-type"));
+    dispatch(fetchMasterData("location")); // [!code ++] Fetch locations
   }, [dispatch]);
+
   useEffect(() => {
     dispatch(fetchPaginatedMaster({
       type: activeTab,
@@ -90,6 +99,88 @@ export default function MasterDataPage() {
       setFormData({ name: "", description: "" });
     }
     setIsDialogOpen(true);
+  };
+
+  // [!code ++] New Function to Handle Sync
+  const handleSyncFromHRMS = async () => {
+    const organisationId = "81b48a8b-f574-4562-be38-f480e99359c9"
+    if (!organisationId) return toast.error("Organisation ID not found");
+
+    setIsSyncing(true);
+    try {
+      // 1. Fetch from HRMS
+      const { data: hrmsLocations, error } = await getPublicLocations(organisationId);
+      
+      if (error || !hrmsLocations) {
+        throw new Error(error || "Failed to fetch from HRMS");
+      }
+
+      let addedCount = 0;
+      let updatedCount = 0;
+
+      // 2. Iterate through HRMS locations to Sync
+      for (const hLoc of hrmsLocations) {
+        const hrmsName = hLoc.name?.toLowerCase().trim();
+        if (!hrmsName) continue;
+
+        // Check if we already have this location in Master Data (by Name)
+        const localMatch = locations.find(
+          (loc) => loc.name.toLowerCase().trim() === hrmsName
+        )
+
+        if (localMatch) {
+          // MATCH FOUND: Check if we need to link the HRMS ID
+          // If the local item doesn't have the ID yet, we update it.
+          if (!localMatch.hrmsLocationId) {
+            try {
+              // Cast data to 'any' to avoid TS errors if MasterItem interface isn't updated yet
+              await dispatch(updateMasterItem({
+                type: "location",
+                id: localMatch._id,
+                data: { hrmsLocationId: String(hLoc.id) } as any 
+              })).unwrap();
+              updatedCount++;
+            } catch (err) {
+              console.error(`Failed to link ID for ${hLoc.name}`, err);
+            }
+          }
+        } else {
+          // NO MATCH: Create new location with HRMS ID
+          try {
+            await dispatch(addMasterItem({
+              type: "location",
+              data: { 
+                name: hLoc.name, 
+                description: hLoc.address || hLoc.description || "Imported from HRMS",
+                hrmsLocationId: hLoc.id // Save the ID
+              } as any
+            })).unwrap();
+            addedCount++;
+          } catch (err) {
+            console.error(`Failed to add ${hLoc.name}`, err);
+          }
+        }
+      }
+
+      if (addedCount > 0 || updatedCount > 0) {
+        toast.success(`Synced: ${addedCount} added, ${updatedCount} updated.`);
+        // Refresh the lists
+        dispatch(fetchMasterData("location"));
+        dispatch(fetchPaginatedMaster({
+           type: "location", 
+           page: 1, 
+           limit, 
+           search 
+        }));
+      } else {
+        toast.info("Locations are already up to date.");
+      }
+
+    } catch (error: any) {
+      toast.error(error.message || "Sync failed");
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleSave = async () => {
@@ -160,9 +251,24 @@ export default function MasterDataPage() {
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-3xl font-bold">Master Data Management</h2>
-        {canCreate && <Button onClick={() => handleOpenDialog()}>
-          <Plus className="mr-2 h-4 w-4" /> Add New
-        </Button>}
+        <div className="flex gap-2"> {/* [!code ++] Wrap buttons in a flex container */}
+          
+          {/* [!code ++] Show Sync Button only for Location tab */}
+          {activeTab === 'location' && canCreate && (
+            <Button 
+              onClick={handleSyncFromHRMS} 
+              variant="outline" 
+              disabled={isSyncing}
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
+              {isSyncing ? "Syncing..." : "Sync from HRMS"}
+            </Button>
+          )}
+
+          {canCreate && <Button onClick={() => handleOpenDialog()}>
+            <Plus className="mr-2 h-4 w-4" /> Add New
+          </Button>}
+        </div>
       </div>
 
       <Tabs
@@ -173,6 +279,7 @@ export default function MasterDataPage() {
           <TabsTrigger value="client">Clients</TabsTrigger>
           <TabsTrigger value="department">Departments</TabsTrigger>
           <TabsTrigger value="project-type">Project Types</TabsTrigger>
+          <TabsTrigger value="location">Locations</TabsTrigger> {/* [!code ++] Location Tab */}
         </TabsList>
 
         <Card className="mt-4">
@@ -188,11 +295,10 @@ export default function MasterDataPage() {
                   dispatch(setPage(1));
                 }}
               />
-
             </div>
-
           </CardHeader>
           <CardContent>
+            {/* ... Rest of the Table code remains the same ... */}
             <Table>
               <TableHeader>
                 <TableRow>
@@ -248,11 +354,11 @@ export default function MasterDataPage() {
                 Next
               </Button>
             </div>
-
           </CardContent>
         </Card>
       </Tabs>
 
+      {/* Dialog Code (No changes needed, re-using existing logic) */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent>
           <DialogHeader>
