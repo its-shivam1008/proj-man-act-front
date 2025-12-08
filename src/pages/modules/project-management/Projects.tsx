@@ -17,7 +17,7 @@ import {
   CommandGroup,
   CommandItem,
 } from "@/components/ui/command";
-import { Check, ChevronsUpDown, ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Search, ShieldAlert } from "lucide-react";
+import { Check, ChevronsUpDown, ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Search, MapPin,ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import {

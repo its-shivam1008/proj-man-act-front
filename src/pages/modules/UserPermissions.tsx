@@ -9,7 +9,9 @@ import {
   FolderClosed, BarChart3, Warehouse, MapPin, Mail, CheckCircle, Clock, Trash2, Search, UserCog, Loader2,
   ShieldAlert
 } from 'lucide-react';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
+import { AppDispatch, RootState } from "@/redux/store";
 import { usePermission } from '@/hooks/userPermission';
 
 // --- 1. Navigation Structure with KEYS ---
@@ -115,6 +117,7 @@ interface User {
   email: string;
   role: UserRole;
   permissions?: Record<string, any>;
+  location?: string; // [!code ++] Add location field
   createdAt?: string;
 }
 
@@ -122,8 +125,10 @@ const PERMISSION_TYPES = ['view', 'create', 'edit', 'delete'];
 
 export const UserPermissionsPage: React.FC = () => {
   // --- State ---
+  const dispatch = useDispatch<AppDispatch>();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const { locations } = useSelector((state: RootState) => state.masterData);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const { userProfile: currentUser } = useSelector((state: any) => state.auth);
   const [localPermissions, setLocalPermissions] = useState<Record<string, any>>({}); 
@@ -157,6 +162,7 @@ export const UserPermissionsPage: React.FC = () => {
   // --- Initial Fetch ---
   useEffect(() => {
     fetchUsers();
+    dispatch(fetchMasterData("location"));
   }, []);
 
   const fetchUsers = async () => {
@@ -175,6 +181,11 @@ export const UserPermissionsPage: React.FC = () => {
     }
   };
 
+  const handleLocationChange = (userId: string, newLocationId: string) => {
+    setUsers(prevUsers => prevUsers.map(u => 
+        u._id === userId ? { ...u, location: newLocationId } : u
+    ));
+  };
   // --- Helpers ---
 
   const selectedUser = users.find(u => u._id === selectedUserId);
@@ -267,7 +278,7 @@ export const UserPermissionsPage: React.FC = () => {
         const errorMsg = err.response?.data?.message || "Failed to send invite. Make sure the user is registered.";
         setStatusMessage({ type: 'error', text: errorMsg });
     } finally {
-        setInviteLoading(false);
+        setInviteLoading(false)
         setTimeout(() => setStatusMessage(null), 4000);
     }
   };
@@ -280,6 +291,7 @@ export const UserPermissionsPage: React.FC = () => {
         const payload = {
             userId: selectedUser._id,
             role: selectedUser.role,
+            location: selectedUser.location,
             permissions: updatedPermissions // Now contains keys like "kanbanBoard"
         };
 
@@ -500,6 +512,21 @@ export const UserPermissionsPage: React.FC = () => {
                             <option value="user">User</option>
                         </select>
                     </div>
+                    <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-gray-700">Location:</span>
+                            <select 
+                                value={selectedUser.location || ""}
+                                onChange={(e) => handleLocationChange(selectedUser._id, e.target.value)}
+                                className="text-sm border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-white py-1.5 px-3 min-w-[150px]"
+                            >
+                                <option value="">All Locations</option>
+                                {locations.map(loc => (
+                                    <option key={loc._id} value={loc._id}>
+                                        {loc.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
                 </div>
             ) : (
                 <div className="text-center text-gray-500">Select a user to configure permissions</div>
