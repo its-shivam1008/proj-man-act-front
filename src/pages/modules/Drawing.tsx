@@ -172,13 +172,13 @@ const Drawing: React.FC = () => {
   const runOCR = async () => {
     if (!selectedImage) return;
     if (!apiKey) {
-        alert("Please enter a valid Gemini API Key.");
+        alert("Please enter a valid API Key.");
         setShowKeyInput(true);
         return;
     }
 
     setIsProcessing(true);
-    setStatus('Preparing image for Gemini...');
+    setStatus('Preparing image...');
 
     try {
       const genAI = new GoogleGenerativeAI(apiKey);
@@ -195,13 +195,13 @@ const Drawing: React.FC = () => {
 
       const prompt = `
         Look at this technical drawing or blueprint. 
-        Extract ALL text visible in the image. 
+        Extract ALL text visible in the image with there units like INCH, CM, KG, L etc like this W5 6 INCH, P2, W10 25 CM, P5 10 INCH.
         Return the raw text exactly as it appears. 
         Do not markdown format it. 
         Just give me the content.
       `;
 
-      setStatus('Sending to Gemini (AI Analysis)...');
+      setStatus('Processing...');
 
       const result = await model.generateContent([prompt, imagePart]);
       const response = await result.response;
@@ -226,7 +226,7 @@ const Drawing: React.FC = () => {
       setStatus('Complete');
 
     } catch (err: any) {
-      console.error("Gemini Error:", err);
+      console.error("Error:", err);
       setStatus(`Error: ${err.message || 'Failed to process image'}`);
     } finally {
       setIsProcessing(false);
@@ -341,7 +341,7 @@ const Drawing: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
             <Scan className="w-8 h-8 text-indigo-600" />
-            AI Blueprint Scanner
+            Blueprint Scanner
           </h1>
         </div>
         
@@ -404,7 +404,7 @@ const Drawing: React.FC = () => {
             </div>
           
             <button onClick={runOCR} disabled={!selectedImage || isProcessing} className={`w-full py-4 rounded-xl font-bold text-lg shadow-sm flex items-center justify-center gap-2 transition-all ${!selectedImage || isProcessing ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200'}`}>
-              <Scan className="w-6 h-6" /> {isProcessing ? 'Processing...' : 'Analyze with Gemini'}
+              <Scan className="w-6 h-6" /> {isProcessing ? 'Processing...' : 'Start Analyzing'}
             </button>
           </div>
 
