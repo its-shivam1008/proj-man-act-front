@@ -137,7 +137,7 @@ export default function Projects() {
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | "all">("all");
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
-
+  const { userProfile } = useSelector((state: RootState) => state.auth);
   const debouncedSearch = useDebounce(searchTerm, 500);
   const uuid = "81b48a8b-f574-4562-be38-f480e99359c9";
   const organisationId = localStorage.getItem('organisationId')
@@ -150,6 +150,11 @@ export default function Projects() {
   const [deptOpen, setDeptOpen] = useState(false);
   const [typeOpen, setTypeOpen] = useState(false);
   const [locationOpen, setLocationOpen] = useState(false);
+  const [locationFilter, setLocationFilter] = useState("all");
+
+  const isLocationRestricted = 
+    userProfile?.role !== 'admin' && 
+    !!userProfile?.location;
 
   // Fetch Master Data on mount
   useEffect(() => {
@@ -189,10 +194,17 @@ export default function Projects() {
           limit,
           status: statusFilter,
           search: debouncedSearch,
+          location: locationFilter,
         })
       );
     }
-  }, [organisationId, page, limit, statusFilter, debouncedSearch]);
+  }, [organisationId, page, limit, statusFilter, debouncedSearch, locationFilter]);
+
+  useEffect(() => {
+    if (isLocationRestricted && userProfile?.location) {
+      setLocationFilter(userProfile.location);
+    }
+  }, [isLocationRestricted, userProfile]);
 
   useEffect(() => {
     if (!uuid) return;
@@ -223,6 +235,11 @@ export default function Projects() {
 
     fetchEmployees();
   }, [uuid, debouncedEmployeeSearch, employeePage]);
+
+  const handleLocationFilterChange = (val: string) => { // [!code ++]
+    setLocationFilter(val);
+    setPage(1);
+  };
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(e.target.value);
@@ -288,7 +305,10 @@ export default function Projects() {
 
   const resetForm = () => {
     setEditingProject(null);
-    setFormData({ status: "planning" });
+    setFormData({ 
+      status: "planning",
+      location: isLocationRestricted ? userProfile.location : undefined 
+    });
   };
 
   const openEditDialog = (project: Project) => {
@@ -393,7 +413,19 @@ export default function Projects() {
             onChange={handleSearchChange}
           />
         </div>
-
+        <Select disabled={isLocationRestricted} value={locationFilter} onValueChange={handleLocationFilterChange}>
+          <SelectTrigger className="w-full md:w-48">
+            <SelectValue placeholder="Filter Location" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Locations</SelectItem>
+            {locations.map((loc) => (
+              <SelectItem key={loc._id} value={loc._id}>
+                {loc.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Select value={statusFilter} onValueChange={handleStatusChange}>
           <SelectTrigger className="w-full md:w-48">
             <SelectValue placeholder="Filter status" />
@@ -737,7 +769,9 @@ export default function Projects() {
                     <Button
                       variant="outline"
                       role="combobox"
-                      className="justify-between"
+                      className="justify-between disabled:opacity-75 disabled:cursor-not-allowed" // [!code ++] Add styling
+                      // [!code ++] Disable interaction if restricted
+                      disabled={isLocationRestricted} 
                     >
                       {formData.location
                         ? locations.find((l) => l._id === formData.location)?.name
@@ -745,35 +779,45 @@ export default function Projects() {
                       <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="p-0">
-                    <Command>
-                      <CommandInput placeholder="Search location..." />
-                      <CommandList>
-                        <CommandEmpty>No location found.</CommandEmpty>
-                        <CommandGroup>
-                          {locations.map((l) => (
-                            <CommandItem
-                              key={l._id}
-                              value={l.name}
-                              onSelect={() => {
-                                setFormData({ ...formData, location: l._id });
-                                setLocationOpen(false);
-                              }}
-                            >
-                              <Check
-                                className={cn(
-                                  "mr-2 h-4 w-4",
-                                  formData.location === l._id ? "opacity-100" : "opacity-0"
-                                )}
-                              />
-                              {l.name}
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
+                  
+                  {/* [!code ++] Only render content if NOT restricted (optimization) */}
+                  {!isLocationRestricted && (
+                    <PopoverContent className="p-0">
+                      <Command>
+                        <CommandInput placeholder="Search location..." />
+                        <CommandList>
+                          <CommandEmpty>No location found.</CommandEmpty>
+                          <CommandGroup>
+                            {locations.map((l) => (
+                              <CommandItem
+                                key={l._id}
+                                value={l.name}
+                                onSelect={() => {
+                                  setFormData({ ...formData, location: l._id });
+                                  setLocationOpen(false);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    formData.location === l._id ? "opacity-100" : "opacity-0"
+                                  )}
+                                />
+                                {l.name}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  )}
                 </Popover>
+                {/* [!code ++] Optional: Add a helper text */}
+                {isLocationRestricted && (
+                  <p className="text-[10px] text-muted-foreground">
+                    *Location is fixed based on your permissions.
+                  </p>
+                )}
               </div>
             </div>
 

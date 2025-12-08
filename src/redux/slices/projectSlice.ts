@@ -31,7 +31,7 @@ export const updateProjectActualCost = createAsyncThunk(
 export const fetchProjects = createAsyncThunk(
   "projects/fetch",
   async (args: any, { rejectWithValue }) => {
-    const { page, limit, status, search } = args;
+    const { page, limit, status, search, location } = args;
     try {
       
       const organisationId = localStorage.getItem("organisationId");
@@ -44,6 +44,7 @@ export const fetchProjects = createAsyncThunk(
           limit,
           status,
           search,
+          location
         },
       });
 
