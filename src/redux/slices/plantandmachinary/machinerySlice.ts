@@ -65,17 +65,19 @@ const initialState: MachineryState = {
 export const fetchMachineries = createAsyncThunk(
   "machinery/fetchMachineries",
   async (
-    { page = 1, limit = 10 }: { page: number; limit: number },
+    // [!code ++] Add location
+    { page = 1, limit = 10, location }: { page: number; limit: number; location?: string },
     thunkAPI
   ) => {
     try {
       const organisationId = localStorage.getItem("organisationId");
-
+      
+      // [!code ++] Add location param
       const res = await api.get(
-        `/machinery?page=${page}&limit=${limit}&organisationId=${organisationId}`
+        `/machinery?page=${page}&limit=${limit}&organisationId=${organisationId}&location=${location || ""}`
       );
 
-      return res.data; // backend sends { success, data, pagination }
+      return res.data; 
     } catch (err: any) {
       return thunkAPI.rejectWithValue(err.response?.data?.message || "Failed");
     }

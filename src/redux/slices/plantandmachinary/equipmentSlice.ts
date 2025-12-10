@@ -19,6 +19,7 @@ export interface Equipment {
   name: string;
   model: string;
   manufacturer?: string;
+  // location?: string;
   supplier?: string;
   warranty?: string;
   purchaseDate?: string;

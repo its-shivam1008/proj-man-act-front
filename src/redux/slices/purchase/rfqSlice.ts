@@ -4,14 +4,15 @@ import { RFQ } from "@/types/purchase";
 
 export const fetchRFQs = createAsyncThunk(
   "rfqs/fetchRFQs",
-  async (params: { page?: number; limit?: number; sort?: string; q?: string } = {}, { rejectWithValue }) => {
+  async (params: { page?: number; limit?: number; sort?: string; q?: string; location?: string } = {}, { rejectWithValue }) => { // [!code ++]
     try {
-      const { page = 1, limit = 10, sort, q } = params;
+      const { page = 1, limit = 10, sort, q, location } = params; // [!code ++]
       const query = new URLSearchParams();
       query.set('page', String(page));
       query.set('limit', String(limit));
       if (sort) query.set('sort', sort);
       if (q) query.set('q', q);
+      if (location) query.set('location', location); // [!code ++]
 
       const response = await api.get(`/purchase/rfq?${query.toString()}`);
       return response.data;
@@ -25,6 +26,8 @@ export const createRFQ = createAsyncThunk(
   "rfqs/createRFQ",
   async (rfqData: Omit<RFQ, "id" | "createdAt" | "updatedAt">, { rejectWithValue }) => {
     try {
+      const organisationId = localStorage.getItem("organisationId");
+      rfqData.organisationId = organisationId as string;
       const response = await api.post("/purchase/rfq", rfqData);
       return response.data;
     } catch (error: any) {

@@ -26,7 +26,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import {
   Table,
   TableBody,
@@ -50,6 +50,7 @@ import { Eye, Edit, Trash2, Plus, Warehouse, ShieldAlert, Package } from "lucide
 
 import { RawMaterial } from "@/redux/slices/rawmaterialSlice";
 import { BASE_URL } from "@/utils/constants";
+import { toast } from "sonner";
 
 export default function RawMaterialMaster() {
 
@@ -62,6 +63,16 @@ export default function RawMaterialMaster() {
   const canDelete = usePermission("rawMaterials", "delete");
   const dispatch = useDispatch<any>();
 
+  const { userProfile } = useSelector((state: RootState) => state.auth);
+  const { locations } = useSelector((state: RootState) => state.masterData);
+
+  const getLocationName = (loc: string | { name: string } | undefined) => {
+    if (!loc) return "N/A";
+    if (typeof loc === 'object') return loc.name || "N/A";
+    const found = locations.find((l: any) => l._id === loc);
+    return found ? found.name : loc;
+  };
+
   // Redux State
   const { materials, total, page: currentPage, limit: perPage, loading } =
     useSelector((state: RootState) => state.rawMaterials);
@@ -71,15 +82,20 @@ export default function RawMaterialMaster() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<RawMaterial | null>(null);
 
+  const isLocationRestricted = userProfile?.role !== 'admin' && !!userProfile?.location;
+  const [locationFilter, setLocationFilter] = useState(isLocationRestricted ? userProfile.location : "all");
+
   const {
     register,
     handleSubmit,
     reset,
     control,
+    setValue,
     formState: { errors },
   } = useForm<RawMaterial>({
     defaultValues: {
       name: "",
+      location: isLocationRestricted ? userProfile.location : "",
       unitOfMeasure: "",
       valuationMethod: "FIFO",
       quantity: 0,
@@ -112,9 +128,6 @@ export default function RawMaterialMaster() {
       const apiUrl = BASE_URL || 'http://localhost:4000';
       const url = `${apiUrl}/notifications/list?destination=inventory.raw-materials&status=unread`;
       
-      console.log('Fetching notifications from:', url);
-      console.log('Token:', localStorage.getItem('token') ? 'Present' : 'Missing');
-      
       const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
@@ -122,30 +135,15 @@ export default function RawMaterialMaster() {
         }
       });
       
-      console.log('Response status:', response.status);
-      console.log('Response headers:', response.headers);
-      
       if (!response.ok) {
-        const text = await response.text();
-        console.error('Failed to fetch notifications:', response.status, text);
-        setNotifications([]);
-        return;
-      }
-      
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const text = await response.text();
-        console.error('Response is not JSON:', text.substring(0, 200));
         setNotifications([]);
         return;
       }
       
       const data = await response.json();
-      console.log('Fetched notifications:', data);
       
       if (Array.isArray(data)) {
         const filtered = data.filter((n: any) => n.type === 'rawMaterialPurchase' && n.inviteResponse === 'pending');
-        console.log('Filtered notifications:', filtered);
         setNotifications(filtered);
       } else {
         setNotifications([]);
@@ -161,7 +159,6 @@ export default function RawMaterialMaster() {
   // Handle accept/reject
   const handleMaterialResponse = async (notificationId: string, response: 'accepted' | 'rejected', notification?: any) => {
     try {
-      // If rejected, open dialog to get reason
       if (response === 'rejected') {
         setRejectingNotification(notification);
         setShowRejectDialog(true);
@@ -178,7 +175,6 @@ export default function RawMaterialMaster() {
       });
       
       if (res.ok) {
-        // Refresh notifications and materials
         fetchNotifications();
         dispatch(fetchMaterials({ page, limit }));
       }
@@ -187,7 +183,6 @@ export default function RawMaterialMaster() {
     }
   };
   
-  // Handle reject with reason
   const handleRejectWithReason = async () => {
     if (!rejectReason.trim()) {
       alert('Please enter a reason for rejection');
@@ -211,14 +206,10 @@ export default function RawMaterialMaster() {
         status: 'pending'
       };
       
-      console.log('Saving scrap order:', scrapOrder); // Debug log
-      
-      // Save to localStorage for Scrap Orders page
       const scrapOrders = JSON.parse(localStorage.getItem('SCRAP_ORDERS') || '[]');
       scrapOrders.unshift(scrapOrder);
       localStorage.setItem('SCRAP_ORDERS', JSON.stringify(scrapOrders));
       
-      // Create material movement for outbound (rejection)
       const movementData = {
         organisationId: localStorage.getItem("organisationId"),
         materialName: scrapOrder.productName,
@@ -235,18 +226,13 @@ export default function RawMaterialMaster() {
         itemType: "material",
       };
       
-      console.log("Creating movement with data:", movementData); // Debug log
-      
       try {
-        const result = await dispatch(createMovement(movementData)).unwrap();
-        console.log("Outbound movement created successfully:", result);
-        alert("Movement created successfully! Check Move Analysis page.");
-      } catch (error) {
-        console.error("Failed to create movement record:", error);
-        alert(`Failed to create movement: ${error.message || error}`);
+        await dispatch(createMovement(movementData)).unwrap();
+        toast.success("Movement created successfully! Check Move Analysis page.");
+      } catch (error: any) {
+        toast.error(`Failed to create movement: ${error.message || error}`);
       }
       
-      // Mark notification as rejected
       const res = await fetch(`${BASE_URL}/purchase/orders/material-response`, {
         method: 'POST',
         headers: {
@@ -263,26 +249,29 @@ export default function RawMaterialMaster() {
         setRejectingNotification(null);
         setRejectReason('');
         setRejectRemark('');
-        alert('Material purchase rejected and added to scrap orders');
+        toast.success('Material purchase rejected and added to scrap orders');
       }
     } catch (error) {
-      console.error('Error rejecting material purchase:', error);
-      alert('Failed to reject material purchase');
+      toast.error('Failed to reject material purchase');
     }
   };
 
-  // Fetch on mount
   useEffect(() => {
-    console.log('Raw Material page mounted, fetching data...');
-    dispatch(fetchMaterials({ page, limit }));
-    // Fetch HSN codes
+    dispatch(fetchMasterData("location"));
+    dispatch(fetchMaterials({ page, limit, location: locationFilter }));
     dispatch(fetchInventoryMaster({ type: "hsn", page: 1, limit: 100 }));
-    // Fetch notifications
     fetchNotifications();
-  }, [dispatch, page, limit]);
+  }, [dispatch, page, limit, locationFilter]);
+
+  // Ensure default location is set for new entries
+  useEffect(() => {
+    if (isLocationRestricted && open && !editing) {
+      setValue("location", userProfile.location);
+    }
+  }, [open, editing, isLocationRestricted, userProfile.location, setValue]);
+
   const isSearching = search.trim() !== "";
   const filtered = useMemo(() => {
-
     const q = search.trim().toLowerCase();
     if (!q) return materials;
     return materials.filter(
@@ -293,26 +282,56 @@ export default function RawMaterialMaster() {
   }, [materials, search]);
 
   const onSubmit = async (data: RawMaterial) => {
-    if (editing) {
-      dispatch(updateMaterial({ id: editing._id!, data })).then(() => {
-        dispatch(fetchMaterials({ page, limit }));
-      });
-
-    } else {
-      dispatch(addMaterial(data)).then(() => {
-        dispatch(fetchMaterials({ page, limit }));
-      });
-
+    try {
+      if (editing) {
+        await dispatch(updateMaterial({ id: editing._id!, data })).unwrap();
+        toast.success("Material updated successfully");
+      } else {
+        await dispatch(addMaterial(data)).unwrap();
+      }
+      dispatch(fetchMaterials({ page, limit, location: locationFilter }));
+      reset();
+      setEditing(null);
+      setOpen(false);
+    } catch (error: any) {
+      console.error(error);
+      toast.error(typeof error === "string" ? error : "Operation failed");
     }
-
-    reset();
-    setEditing(null);
-    setOpen(false);
   };
 
   const startEdit = (it: RawMaterial) => {
     setEditing(it);
-    reset(it);
+    
+    // Prepare form data: safely extract location ID if it's an object
+    const formData = {
+      ...it,
+      location: typeof it.location === 'object' && it.location 
+        ? (it.location as any)._id 
+        : (it.location || ""),
+    };
+    
+    reset(formData);
+    setOpen(true);
+  };
+
+  // [!code ++] New Handler for Add Material
+  const handleAdd = () => {
+    setEditing(null);
+    // Explicitly reset form to empty defaults
+    reset({
+      name: "",
+      location: isLocationRestricted ? userProfile.location : "",
+      unitOfMeasure: "",
+      valuationMethod: "FIFO",
+      quantity: 0,
+      unitCost: 0,
+      reorderLevel: 0,
+      trackInventory: true,
+      hsn: "",
+      itemCode: "",
+      technicalSpecs: "",
+      gstPercent: 0
+    });
     setOpen(true);
   };
 
@@ -338,6 +357,7 @@ export default function RawMaterialMaster() {
       </div>
     );
   }
+
   return (
     <div className="p-6 space-y-6">
       {/* Purchase Notifications */}
@@ -398,23 +418,31 @@ export default function RawMaterialMaster() {
             onChange={(e) => setSearch(e.target.value)}
             className="w-64"
           />
-
+          <Select 
+              value={locationFilter} 
+              onValueChange={setLocationFilter} 
+              disabled={isLocationRestricted}
+           >
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Filter Location" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Locations</SelectItem>
+              {locations.map((loc) => (
+                <SelectItem key={loc._id} value={loc._id}>{loc.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          
+          {/* [!code ++] Updated Dialog triggering logic */}
           <Dialog
             open={open}
-            onOpenChange={(state) => {
-              setOpen(state);
-
-              if (!state) {
-                reset(); // clear form when closing
-                setEditing(null); // ensure no old record
-              }
-            }}
+            onOpenChange={setOpen}
           >
-            <DialogTrigger asChild>
-              <Button disabled={!canCreate}>
+            {/* [!code ++] Remove DialogTrigger wrapper and use direct Button */}
+            <Button disabled={!canCreate} onClick={handleAdd}>
                 <Plus className="h-4 w-4 mr-1" /> Add Material
-              </Button>
-            </DialogTrigger>
+            </Button>
 
             <DialogContent className="max-w-2xl">
               <DialogHeader>
@@ -462,7 +490,29 @@ export default function RawMaterialMaster() {
                     )}
                   />
                 </div>
-
+                <div className="col-span-2">
+                  <Label>Location</Label>
+                  <Controller
+                    name="location" 
+                    control={control}
+                    render={({ field }) => (
+                      <Select 
+                        onValueChange={field.onChange} 
+                        value={field.value} // Value should now be ID string
+                        disabled={isLocationRestricted}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select Location" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {locations.map((loc) => (
+                             <SelectItem key={loc._id} value={loc._id}>{loc.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                </div>
                 <div>
                   <Label>HSN</Label>
                   <Controller
@@ -537,7 +587,9 @@ export default function RawMaterialMaster() {
                 </div>
 
                 <div className="col-span-2 flex justify-end gap-2 mt-4">
+                  {/* [!code ++] Fixed Cancel Button: Added type="button" */}
                   <Button
+                    type="button" 
                     variant="outline"
                     onClick={() => {
                       reset();
@@ -566,6 +618,7 @@ export default function RawMaterialMaster() {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Code</TableHead>
+                <TableHead>Location</TableHead> 
                 <TableHead>UoM</TableHead>
                 <TableHead>Qty</TableHead>
                 <TableHead>Cost</TableHead>
@@ -579,6 +632,8 @@ export default function RawMaterialMaster() {
                 <TableRow key={m._id}>
                   <TableCell>{m.name}</TableCell>
                   <TableCell>{m.itemCode}</TableCell>
+                  {/* [!code ++] Display Location Name */}
+                  <TableCell>{getLocationName(m.location)}</TableCell>
                   <TableCell>{m.unitOfMeasure}</TableCell>
                   <TableCell>{m.quantity}</TableCell>
                   <TableCell>₹{m.unitCost}</TableCell>
@@ -599,7 +654,7 @@ export default function RawMaterialMaster() {
                         className="h-4 w-4 cursor-pointer text-red-500"
                         onClick={() =>
                           dispatch(deleteMaterial(m._id!)).then(() => {
-                            dispatch(fetchMaterials({ page, limit })).then((res: any) => {
+                            dispatch(fetchMaterials({ page, limit, location: locationFilter })).then((res: any) => {
                               const items = res.payload?.materials || [];
                               if (items.length === 0 && page > 1) {
                                 setPage((p) => p - 1);
@@ -635,8 +690,6 @@ export default function RawMaterialMaster() {
             </button>
           </div>
 
-
-
           {/* View Modal */}
           <Dialog
             open={!!viewItem}
@@ -648,36 +701,18 @@ export default function RawMaterialMaster() {
               </DialogHeader>
 
               <div className="space-y-3">
-                <p>
-                  <strong>Name:</strong> {viewItem?.name}
-                </p>
-                <p>
-                  <strong>Item Code:</strong> {viewItem?.itemCode}
-                </p>
-                <p>
-                  <strong>Unit:</strong> {viewItem?.unitOfMeasure}
-                </p>
-                <p>
-                  <strong>Qty:</strong> {viewItem?.quantity}
-                </p>
-                <p>
-                  <strong>Cost:</strong> ₹{viewItem?.unitCost}
-                </p>
-                <p>
-                  <strong>HSN:</strong> {viewItem?.hsn}
-                </p>
-                <p>
-                  <strong>GST %:</strong> {viewItem?.gstPercent}
-                </p>
-                <p>
-                  <strong>Valuation:</strong> {viewItem?.valuationMethod}
-                </p>
-                <p>
-                  <strong>Reorder Level:</strong> {viewItem?.reorderLevel}
-                </p>
-                <p>
-                  <strong>Technical Specs:</strong> {viewItem?.technicalSpecs}
-                </p>
+                <p><strong>Name:</strong> {viewItem?.name}</p>
+                <p><strong>Item Code:</strong> {viewItem?.itemCode}</p>
+                {/* [!code ++] Show Location */}
+                <p><strong>Location:</strong> {getLocationName(viewItem?.location)}</p>
+                <p><strong>Unit:</strong> {viewItem?.unitOfMeasure}</p>
+                <p><strong>Qty:</strong> {viewItem?.quantity}</p>
+                <p><strong>Cost:</strong> ₹{viewItem?.unitCost}</p>
+                <p><strong>HSN:</strong> {viewItem?.hsn}</p>
+                <p><strong>GST %:</strong> {viewItem?.gstPercent}</p>
+                <p><strong>Valuation:</strong> {viewItem?.valuationMethod}</p>
+                <p><strong>Reorder Level:</strong> {viewItem?.reorderLevel}</p>
+                <p><strong>Technical Specs:</strong> {viewItem?.technicalSpecs}</p>
               </div>
             </DialogContent>
           </Dialog>
@@ -730,6 +765,7 @@ export default function RawMaterialMaster() {
             
             <div className="flex justify-end gap-3 mt-6">
               <Button
+                type="button" 
                 variant="outline"
                 onClick={() => {
                   setShowRejectDialog(false);

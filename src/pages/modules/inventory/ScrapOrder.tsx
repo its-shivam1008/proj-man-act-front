@@ -43,7 +43,7 @@ import {
   TableBody,
   TableCell,
 } from "@/components/ui/table";
-
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import {
   getScrapOrders,
   createScrapOrder,
@@ -75,13 +75,32 @@ const ScrapManagement: React.FC = () => {
     (s: any) => s.products || {}
   );
 
+  const { userProfile } = useSelector((state: any) => state.auth);
+  const { locations } = useSelector((state: any) => state.masterData);
+
+  const isLocationRestricted = userProfile?.role !== 'admin' && !!userProfile?.location;
+  const [locationFilter, setLocationFilter] = useState(isLocationRestricted ? userProfile.location : "all");
+
+  const getLocationName = (loc: string | { name: string } | undefined) => {
+    if (!loc) return "N/A";
+    if (typeof loc === 'object') return loc.name || "N/A";
+    const found = locations.find((l: any) => l._id === loc);
+    return found ? found.name : loc;
+  };
+
   // Dialog states
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false); // View dialog
   const [selectedOrder, setSelectedOrder] = useState<any>(null); // For view modal
 
-  const [createForm, setCreateForm] = useState(EMPTY_FORM);
+  const [createForm, setCreateForm] = useState({
+      productId: "",
+      quantity: "",
+      reason: "",
+      remark: "",
+      scrapLocation: isLocationRestricted ? userProfile.location : "",
+  });
   const [editForm, setEditForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -97,9 +116,9 @@ const ScrapManagement: React.FC = () => {
   const itemsPerPage = 10;
   
   useEffect(() => {
-    dispatch(getScrapOrders());
-    dispatch(fetchProducts(orgId));
-    
+    dispatch(fetchMasterData("location"));
+    dispatch(fetchProducts({page:1, limit:10}));
+    dispatch(getScrapOrders({ location: locationFilter }));
     // Load scrap orders from localStorage
     const stored = localStorage.getItem('SCRAP_ORDERS');
     if (stored) {
@@ -360,16 +379,24 @@ const ScrapManagement: React.FC = () => {
                 </div>
 
                 <div>
-                  <Label>Location (optional)</Label>
-                  <Input
+                  <Label>Location</Label>
+                   {/* [!code ++] Replace Input with Select */}
+                  <Select
                     value={createForm.scrapLocation}
-                    onChange={(e) =>
-                      setCreateForm({
-                        ...createForm,
-                        scrapLocation: e.target.value,
-                      })
+                    onValueChange={(v) =>
+                      setCreateForm({ ...createForm, scrapLocation: v })
                     }
-                  />
+                    disabled={isLocationRestricted}
+                  >
+                    <SelectTrigger>
+                        <SelectValue placeholder="Select Location" />
+                    </SelectTrigger>
+                    <SelectContent>
+                         {locations.map(l => (
+                            <SelectItem key={l._id} value={l._id}>{l.name}</SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div>
@@ -419,6 +446,21 @@ const ScrapManagement: React.FC = () => {
               />
             </div>
             <div className="flex gap-3">
+            <Select
+                value={locationFilter}
+                onValueChange={setLocationFilter}
+                disabled={isLocationRestricted}
+              >
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Filter Location" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Locations</SelectItem>
+                   {locations.map(l => (
+                        <SelectItem key={l._id} value={l._id}>{l.name}</SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
               <Select
                 value={statusFilter}
                 onValueChange={(value) => {
@@ -706,7 +748,7 @@ const ScrapManagement: React.FC = () => {
                           Location:
                         </span>
                         <span className="col-span-3">
-                          {selectedOrder.scrapLocation}
+                          {getLocationName(selectedOrder.scrapLocation)}
                         </span>
                       </>
                     )}
@@ -813,14 +855,25 @@ const ScrapManagement: React.FC = () => {
               </div>
 
               <div>
-                <Label>Location (optional)</Label>
-                <Input
-                  value={editForm.scrapLocation}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, scrapLocation: e.target.value })
-                  }
-                />
-              </div>
+                  <Label>Location</Label>
+                   {/* [!code ++] Replace Input with Select */}
+                  <Select
+                    value={createForm.scrapLocation}
+                    onValueChange={(v) =>
+                      setCreateForm({ ...createForm, scrapLocation: v })
+                    }
+                    disabled={isLocationRestricted}
+                  >
+                    <SelectTrigger>
+                        <SelectValue placeholder="Select Location" />
+                    </SelectTrigger>
+                    <SelectContent>
+                         {locations.map(l => (
+                            <SelectItem key={l._id} value={l.name}>{l.name}</SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
               <div>
                 <Label>Remark</Label>

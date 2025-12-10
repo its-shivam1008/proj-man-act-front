@@ -8,7 +8,7 @@ import {
   deleteEquipment,
   fetchEquipments,
 } from "@/redux/slices/equipmentSlice";
-
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import { Save, Plus, Edit2, Trash2, Search, X, ShieldAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,7 @@ import {
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // ---------- TYPES ----------
 type DepreciationMethod = "Straight-line" | "WDV";
@@ -108,6 +109,31 @@ export default function AdvancedEquipmentRegistrationPage() {
     (state: RootState) => state.equipment.equipments
   );
 
+  // [!code ++] User & Location Data
+  const { userProfile } = useSelector((state: any) => state.auth);
+  const { locations: masterLocations } = useSelector((state: any) => state.masterData);
+
+  const isLocationRestricted = userProfile?.role !== 'admin' && !!userProfile?.location;
+  const [locationFilter, setLocationFilter] = useState(isLocationRestricted ? userProfile.location : "All");
+
+  // [!code ++] Helper
+  const getLocationName = (loc: string | { name: string } | undefined) => {
+    if (!loc) return "N/A";
+    if (typeof loc === 'object') return loc.name || "N/A";
+    const found = masterLocations.find((l: any) => l._id === loc);
+    return found ? found.name : loc; // Fallback to string if not found
+  };
+
+  useEffect(() => {
+    dispatch(fetchMasterData("location")); // [!code ++]
+    dispatch(fetchEquipments({ 
+        page: 1, 
+        limit: 100, 
+        location: locationFilter === "All" ? "" : locationFilter, // [!code ++]
+        organisationId: localStorage.getItem("organisationId") || ""
+    }));
+  }, [dispatch, locationFilter]); // [!code ++] Depend on filter
+
   // UI states
   const [query, setQuery] = useState("");
   const [filterCategory, setFilterCategory] = useState("All");
@@ -122,10 +148,10 @@ export default function AdvancedEquipmentRegistrationPage() {
     depreciation: "Straight-line",
   });
 
-  // FETCH FROM BACKEND ONLY
-  useEffect(() => {
-    dispatch(fetchEquipments({ page: 1, limit: 100 }));
-  }, [dispatch]);
+  // // FETCH FROM BACKEND ONLY
+  // useEffect(() => {
+  //   dispatch(fetchEquipments({ page: 1, limit: 100 }));
+  // }, [dispatch]);
 
   // CATEGORIES
   const categories = useMemo(() => {
@@ -154,8 +180,7 @@ export default function AdvancedEquipmentRegistrationPage() {
           it.name,
           it.model,
           it.serialNumber,
-          it.department,
-          it.location,
+          it.department
         ]
           .filter(Boolean)
           .some((f) => f!.toLowerCase().includes(q))
@@ -191,14 +216,14 @@ export default function AdvancedEquipmentRegistrationPage() {
   // ---------- OPEN ADD ----------
   function openAddDialog() {
     setEditing(null);
-    setForm({ frequency: "Monthly", depreciation: "Straight-line" });
+    setForm({ frequency: "Monthly", depreciation: "Straight-line", location: isLocationRestricted ? userProfile.location : ""});
     setIsDialogOpen(true);
   }
 
   // ---------- OPEN EDIT ----------
   function openEditDialog(eq: Equipment) {
     setEditing(eq);
-    setForm({ ...eq });
+    setForm({ ...eq, location: typeof eq.location === 'object' ? (eq.location as any)._id : eq.location });
     setIsDialogOpen(true);
   }
 
@@ -206,6 +231,10 @@ export default function AdvancedEquipmentRegistrationPage() {
   async function saveForm() {
     if (!form.name) {
       toast.error("Name is required");
+      return;
+    }
+    if (!form.location) {
+      toast.error("Location is required");
       return;
     }
 
@@ -302,6 +331,21 @@ export default function AdvancedEquipmentRegistrationPage() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
+            <Select
+            value={locationFilter}
+            onValueChange={setLocationFilter}
+            disabled={isLocationRestricted}
+         >
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Filter Location" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="All">All Locations</SelectItem>
+              {masterLocations.map((l: any) => (
+                <SelectItem key={l._id} value={l._id}>{l.name}</SelectItem>
+              ))}
+            </SelectContent>
+         </Select>
           </div>
 
           {/* TABLE */}
@@ -324,7 +368,7 @@ export default function AdvancedEquipmentRegistrationPage() {
                     <TableCell>{eq.code}</TableCell>
                     <TableCell>{eq.name}</TableCell>
                     <TableCell>{eq.category}</TableCell>
-                    <TableCell>{eq.location}</TableCell>
+                    <TableCell>{getLocationName(eq.location)}</TableCell>
                     <TableCell>{eq.cost ? `₹${eq.cost.toLocaleString()}` : '-'}</TableCell>
 
                     <TableCell>
@@ -411,11 +455,21 @@ export default function AdvancedEquipmentRegistrationPage() {
             </div>
 
             <div>
-              <Label>Location</Label>
-              <Input
-                value={form.location || ""}
-                onChange={(e) => setForm({ ...form, location: e.target.value })}
-              />
+              <Label>Location *</Label>
+              <Select
+                value={form.location}
+                onValueChange={(v) => setForm({ ...form, location: v })}
+                disabled={isLocationRestricted}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Location" />
+                </SelectTrigger>
+                <SelectContent>
+                  {masterLocations.map((l: any) => (
+                    <SelectItem key={l._id} value={l._id}>{l.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div>

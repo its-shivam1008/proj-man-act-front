@@ -19,7 +19,7 @@ export interface Equipment {
   name: string;
   model: string;
   category?: string;
-  location?: string;
+  location?: string | any;
   manufacturer?: string;
   supplier?: string;
   warranty?: string;
@@ -56,27 +56,27 @@ const initialState: EquipmentState = {
 
 /* API CALLS */
 
-// FETCH WITH PAGINATION
 export const fetchEquipments = createAsyncThunk(
   "equipment/fetchEquipments",
   async (
-    { page = 1, limit = 10 }: { page: number; limit: number },
+    params: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      category?: string;
+      location?: string;
+      organisationId: string;
+    },
     thunkAPI
   ) => {
     try {
-      const organisationId = localStorage.getItem("organisationId");
-
-      const res = await api.get(
-        `/equipment?page=${page}&limit=${limit}&organisationId=${organisationId}`
-      );
-
-      return res.data; // backend sends { success, data, pagination }
+      const res = await api.get("/equipment", { params });
+      return res.data;
     } catch (err: any) {
-      return thunkAPI.rejectWithValue(err.response?.data?.message || "Failed");
+      return thunkAPI.rejectWithValue(err.response?.data || "Failed to fetch equipment");
     }
   }
 );
-
 // CREATE
 export const createEquipment = createAsyncThunk(
   "equipment/createEquipment",

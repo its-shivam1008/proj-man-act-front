@@ -21,15 +21,14 @@ export interface Store {
 
 export const fetchStores = createAsyncThunk(
   "storages/fetch",
-  async (_, { rejectWithValue }) => {
+  async ({ page = 1, limit = 100, location = "" }: { page?: number, limit?: number, location?: string } = {}, { rejectWithValue }) => {
     try {
       const organisationId = localStorage.getItem("organisationId");
 
       if (!organisationId)
         return rejectWithValue("No organisationId found");
 
-      const res = await api.get(`/storage/all/${organisationId}`);
-
+      const res = await api.get(`/storage/all/${organisationId}?location=${location}`); // [!code ++]
       return res.data;
     } catch (error: any) {
       return rejectWithValue(error?.response?.data?.message || "Failed to fetch stores");

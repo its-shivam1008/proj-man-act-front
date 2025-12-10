@@ -5,11 +5,11 @@ import { PurchaseOrder } from "@/types/purchase";
 export const fetchPurchaseOrders = createAsyncThunk(
   "purchaseOrders/fetchPurchaseOrders",
   async (
-    params: { page?: number; limit?: number; sort?: string; q?: string } = {},
+    params: { page?: number; limit?: number; sort?: string; q?: string; location?: string } = {}, // [!code ++]
     { rejectWithValue }
   ) => {
     try {
-      const { page = 1, limit = 10, sort, q } = params;
+      const { page = 1, limit = 10, sort, q, location } = params; // [!code ++]
       const query = new URLSearchParams();
 
       query.set("page", String(page));
@@ -17,17 +17,15 @@ export const fetchPurchaseOrders = createAsyncThunk(
 
       if (sort) query.set("sort", sort);
       if (q) query.set("q", q);
+      // if (location) query.set("location", location); // [!code ++]
 
-      // 🔥 ADD organisationId HERE
       const organisationId = localStorage.getItem("organisationId");
       if (organisationId) query.set("organisationId", organisationId);
 
       const response = await api.get(`/purchase/orders?${query.toString()}`);
       return response.data;
     } catch (error: any) {
-      return rejectWithValue(
-        error.response?.data?.message || "Failed to fetch purchase orders"
-      );
+      return rejectWithValue(error.response?.data?.message || "Failed to fetch purchase orders");
     }
   }
 );

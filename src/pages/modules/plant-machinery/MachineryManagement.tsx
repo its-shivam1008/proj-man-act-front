@@ -8,7 +8,7 @@ import {
   deleteMachinery,
   fetchMachineries,
 } from "@/redux/slices/plantandmachinary/machinerySlice";
-
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import { Save, Plus, Edit2, Trash2, Search, X, ShieldAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -138,11 +138,33 @@ export default function MachineryManagementPage() {
     totalAmount: 0,
     status: "Active",
   });
+  // [!code ++]
+  const { userProfile } = useSelector((state: any) => state.auth);
+  const { locations: masterLocations } = useSelector((state: any) => state.masterData);
 
-  // FETCH FROM BACKEND
+  const isLocationRestricted = userProfile?.role !== 'admin' && !!userProfile?.location;
+  const [locationFilter, setLocationFilter] = useState(isLocationRestricted ? userProfile.location : "All");
+
+  const getLocationName = (loc: string | { name: string } | undefined) => {
+    if (!loc) return "N/A";
+    if (typeof loc === 'object') return loc.name || "N/A";
+    const found = masterLocations.find((l: any) => l._id === loc);
+    return found ? found.name : loc; 
+  };
+
   useEffect(() => {
-    dispatch(fetchMachineries({ page: 1, limit: 100 }));
-  }, [dispatch]);
+    dispatch(fetchMasterData("location")); // [!code ++]
+    dispatch(fetchMachineries({ 
+        page: 1, 
+        limit: 100,
+        location: locationFilter === "All" ? "" : locationFilter // [!code ++]
+    }));
+  }, [dispatch, locationFilter]); // [!code ++]
+
+  // // FETCH FROM BACKEND
+  // useEffect(() => {
+  //   dispatch(fetchMachineries({ page: 1, limit: 100 }));
+  // }, [dispatch]);
 
   // CATEGORIES
   const categories = useMemo(() => {
@@ -195,7 +217,8 @@ export default function MachineryManagementPage() {
       depreciation: "Straight-line",
       quantity: 0,
       unitCost: 0,
-      totalAmount: 0
+      totalAmount: 0,
+      location: isLocationRestricted ? userProfile.location : ""
     });
     setIsDialogOpen(true);
   }
@@ -203,7 +226,7 @@ export default function MachineryManagementPage() {
   // ---------- OPEN EDIT ----------
   function openEditDialog(machinery: Machinery) {
     setEditing(machinery);
-    setForm({ ...machinery });
+    setForm({ ...machinery, location: typeof machinery.location === 'object' ? (machinery.location as any)._id : machinery.location });
     setIsDialogOpen(true);
   }
 
@@ -211,6 +234,10 @@ export default function MachineryManagementPage() {
   async function saveForm() {
     if (!form.name) {
       toast.error("Name is required");
+      return;
+    }
+    if (!form.location) {
+      toast.error("Location is required");
       return;
     }
 
@@ -306,6 +333,21 @@ export default function MachineryManagementPage() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
+            <Select
+            value={locationFilter}
+            onValueChange={setLocationFilter}
+            disabled={isLocationRestricted}
+         >
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Filter Location" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="All">All Locations</SelectItem>
+              {masterLocations.map((l: any) => (
+                <SelectItem key={l._id} value={l._id}>{l.name}</SelectItem>
+              ))}
+            </SelectContent>
+         </Select>
           </div>
 
           {/* TABLE */}
@@ -331,7 +373,7 @@ export default function MachineryManagementPage() {
                     <TableCell>{machinery.code}</TableCell>
                     <TableCell>{machinery.name}</TableCell>
                     <TableCell>{machinery.category}</TableCell>
-                    <TableCell>{machinery.location}</TableCell>
+                    <TableCell>{getLocationName(machinery.location)}</TableCell>
                     <TableCell>
                       {machinery.cost ? `₹${machinery.cost.toLocaleString()}` : "-"}
                     </TableCell>
@@ -435,11 +477,21 @@ export default function MachineryManagementPage() {
             </div>
 
             <div>
-              <Label>Location</Label>
-              <Input
-                value={form.location || ""}
-                onChange={(e) => setForm({ ...form, location: e.target.value })}
-              />
+              <Label>Location *</Label>
+              <Select
+                value={form.location}
+                onValueChange={(v) => setForm({ ...form, location: v })}
+                disabled={isLocationRestricted}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Location" />
+                </SelectTrigger>
+                <SelectContent>
+                  {masterLocations.map((l: any) => (
+                    <SelectItem key={l._id} value={l._id}>{l.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div>

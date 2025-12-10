@@ -14,6 +14,7 @@ import { fetchVendors } from "@/redux/slices/purchase/vendorSlice";
 import { fetchMaterials } from "@/redux/slices/rawmaterialSlice";
 import { fetchInventoryMaster } from "@/redux/slices/inventoryMasterSlice";
 import { PurchaseOrder, PurchaseOrderProductLine } from "@/types/purchase";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import {
   Plus,
   Eye,
@@ -68,15 +69,30 @@ const PurchaseOrderComponent: React.FC = () => {
   const [limit, setLimit] = useState<number>(10);
   const [search, setSearch] = useState<string>("");
 
-  useEffect(() => {
-    const organisationId = localStorage.getItem("organisationId");
+  const { userProfile } = useSelector((state: any) => state.auth); // [!code ++]
+  const { locations } = useSelector((state: any) => state.masterData); // [!code ++]
 
+  const isLocationRestricted = userProfile?.role !== 'admin' && !!userProfile?.location;
+  const [locationFilter, setLocationFilter] = useState(isLocationRestricted ? userProfile.location : "all");
+
+
+  const getLocationName = (loc: string | { name: string } | undefined) => {
+    if (!loc) return "N/A";
+    if (typeof loc === 'object') return loc.name || "N/A";
+    const found = locations.find((l: any) => l._id === loc);
+    return found ? found.name : "N/A";
+  };
+
+  useEffect(() => {
+  dispatch(fetchMasterData("location")); // [!code ++]
+    const organisationId = localStorage.getItem("organisationId");
     dispatch(
       fetchPurchaseOrders({
         page,
         limit,
         q: search,
         organisationId,
+        location: locationFilter // [!code ++]
       })
     );
 
@@ -85,7 +101,7 @@ const PurchaseOrderComponent: React.FC = () => {
     dispatch(fetchMaterials());
     dispatch(fetchInventoryMaster({ type: "category", page: 1, limit: 100 }));
     dispatch(fetchInventoryMaster({ type: "hsn", page: 1, limit: 100 }));
-  }, [dispatch, page, limit, search]);
+  }, [dispatch, page, limit, search, locationFilter]);
 
 
   useEffect(() => {
@@ -106,6 +122,7 @@ const PurchaseOrderComponent: React.FC = () => {
       incoterms: "FOB",
       deliveryMethod: "Truck",
       scheduledDeliveryDate: "",
+      location: isLocationRestricted ? userProfile.location : "",
       itemType: "rawMaterial" as "rawMaterial" | "product",
       productLines: [
         { product: "", quantity: 0, unitPrice: 0, taxes: 0, subtotal: 0 },
@@ -133,6 +150,7 @@ const PurchaseOrderComponent: React.FC = () => {
         await dispatch(
           createPurchaseOrder({
             ...formData,
+            location: itemType === "rawMaterial" ? formData.location : undefined, 
             status: "draft",
             organisationId: localStorage.getItem("organisationId"),
           })
@@ -364,6 +382,24 @@ const PurchaseOrderComponent: React.FC = () => {
                                 placeholder="Item code"
                               />
                             </div>
+                            {/* [!code ++] Conditional Location Field: ONLY for Raw Material */}
+                            {itemType === "rawMaterial" && (
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Location *</label>
+                                <select
+                                  value={formData.location}
+                                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                                  disabled={isLocationRestricted}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+                                  required
+                                >
+                                  <option value="">Select Location</option>
+                                  {locations.map((l: any) => (
+                                    <option key={l._id} value={l._id}>{l.name}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
                             <div>
                               <label className="text-xs font-medium text-gray-600">Unit of Measure *</label>
                               <select
@@ -976,6 +1012,9 @@ const PurchaseOrderComponent: React.FC = () => {
       warehouse: viewingPo.warehouse,
       incoterms: viewingPo.incoterms,
       deliveryMethod: viewingPo.deliveryMethod,
+      location: viewingPo.location 
+        ? (typeof viewingPo.location === 'object' ? viewingPo.location._id : viewingPo.location)
+        : (isLocationRestricted ? userProfile.location : ""),
       scheduledDeliveryDate: viewingPo.scheduledDeliveryDate
         ? viewingPo.scheduledDeliveryDate.split("T")[0]
         : "",
@@ -1152,17 +1191,18 @@ const PurchaseOrderComponent: React.FC = () => {
             <div>
               <label>{itemType === "rawMaterial" ? "Material Lines" : "Product Lines"}</label>
               <div className="border p-3 rounded-lg">
-                <div className="grid grid-cols-5 gap-2 mb-2 text-sm font-medium text-gray-700">
+                <div className="grid grid-cols-6 gap-2 mb-2 text-sm font-medium text-gray-700">
                   <div>{itemType === "rawMaterial" ? "Material Name" : "Product Name"}</div>
                   <div>Quantity</div>
                   <div>Unit Price</div>
                   <div>Taxes (%)</div>
+                  <div>Location</div>
                   <div>Subtotal</div>
                 </div>
                 {formData.productLines.map((line, index) => (
                   <div
                     key={index}
-                    className="grid grid-cols-5 gap-2 mb-2 text-sm"
+                    className="grid grid-cols-6 gap-2 mb-2 text-sm"
                   >
                     <input
                       type="text"
@@ -1209,6 +1249,27 @@ const PurchaseOrderComponent: React.FC = () => {
                       }}
                       className="border px-2 py-1 rounded"
                     />
+                    {/* [!code ++] Conditional Location for Update */}
+                    {itemType === "rawMaterial" && (
+                        <div>
+                          <select
+                            value={line.location}
+                            // onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                            onChange={(e) => {
+                              const updated = [...formData.productLines];
+                              updated[index].location = e.target.value;
+                              setFormData({ ...formData, productLines: updated });
+                            }}
+                            disabled={isLocationRestricted}
+                            className="w-full border px-3 py-2 rounded disabled:bg-gray-100"
+                          >
+                            <option value="">Select Location</option>
+                            {locations.map((l: any) => (
+                              <option key={l._id} value={l._id}>{l.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                    )}
                     <input
                       type="number"
                       value={line.subtotal}

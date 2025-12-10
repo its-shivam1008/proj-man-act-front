@@ -1,4 +1,5 @@
 export interface Vendor {
+  location: string | { name: string; } | any;
   id: string;
   vendorName: string;
   contactPerson?: string;
@@ -6,6 +7,7 @@ export interface Vendor {
   phone?: string;
   address?: string;
   gstin?: string;
+  organisationId:string;
   currency: string;
   paymentTerms: string;
   productsSupplied?: string;
@@ -29,6 +31,8 @@ export interface RFQProduct {
 
 export interface RFQ {
   id: string;
+  location: string | { name: string; } | any;
+  organisationId:string;
   rfqNumber: string;
   orderDate?: string;
   currency?: string;
@@ -49,6 +53,8 @@ export interface PurchaseOrderProductLine {
   unitPrice: number;
   taxes: number;
   subtotal: number;
+  organisationId:string;
+  location: string | { name: string; } | any;
   // Raw Material specific fields
   itemCode?: string;
   unitOfMeasure?: string;
@@ -87,7 +93,9 @@ export interface PurchaseOrder {
 }
 
 export interface PurchaseAgreement {
+  location: string | { name: string; } | any;
   id: string;
+  organisationId:string;
   agreementNumber: string;
   vendor: string; // Vendor Name
   vendorId?: string; // Vendor ID

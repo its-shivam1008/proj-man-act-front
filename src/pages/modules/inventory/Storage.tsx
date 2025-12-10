@@ -27,10 +27,13 @@ import {
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
 import { usePermission } from "@/hooks/userPermission";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
+
+
 interface StoreData {
   _id?: string;
   name: string;
-  location: string;
+  location: string | { _id: string; name: string };
   dailySales: number;
   stock: number;
   last7DaysSales: number[];
@@ -62,9 +65,23 @@ const StoresManagement: React.FC = () => {
   }
   const dispatch = useDispatch<AppDispatch>();
   const { stores, loading } = useSelector((state: RootState) => state.storages);
+  const { userProfile } = useSelector((state: RootState) => state.auth);
+  const { locations } = useSelector((state: RootState) => state.masterData);
+
+  const isLocationRestricted = userProfile?.role !== 'admin' && !!userProfile?.location;
+  const [locationFilter, setLocationFilter] = useState(isLocationRestricted ? userProfile.location : "all");
+
+  const getLocationName = (loc: string | { name: string } | undefined) => {
+    if (!loc) return "N/A";
+    if (typeof loc === 'object') return loc.name;
+    const found = locations.find((l: any) => l._id === loc);
+    return found ? found.name : loc;
+  };
+
   useEffect(() => {
-    dispatch(fetchStores({ page: 1, limit: 100 }));
-  }, [dispatch]);
+    dispatch(fetchMasterData("location"));
+    dispatch(fetchStores({ page: 1, limit: 100, location: locationFilter }));
+  }, [dispatch, locationFilter]);
 
   const handleAdd = () => {
     setEditingStoreId(null);
@@ -133,7 +150,9 @@ const StoresManagement: React.FC = () => {
   const StoreForm = ({ initialData }: { initialData?: StoreData }) => {
     const [formData, setFormData] = useState({
       name: initialData?.name || "",
-      location: initialData?.location || "",
+      location: initialData?.location 
+        ? (typeof initialData.location === 'object' ? initialData.location._id : initialData.location)
+        : (isLocationRestricted ? userProfile.location : ""),
       dailySales: initialData?.dailySales?.toString() || "0",
       stock: initialData?.stock?.toString() || "",
       last7DaysSales: initialData?.last7DaysSales?.join(", ") || "",
@@ -204,12 +223,19 @@ const StoresManagement: React.FC = () => {
                 <label className="block text-sm font-medium mb-2">
                   Location *
                 </label>
-                <input
+                {/* [!code ++] Replaced input with Select */}
+                <select
                   required
                   value={formData.location}
-                  onChange={handleChange("location")}
-                  className="w-full px-4 py-3 border rounded-lg"
-                />
+                  onChange={(e) => setFormData(prev => ({...prev, location: e.target.value}))}
+                  disabled={isLocationRestricted}
+                  className="w-full px-4 py-3 border rounded-lg bg-white disabled:bg-gray-100"
+                >
+                    <option value="">Select Location</option>
+                    {locations.map(l => (
+                        <option key={l._id} value={l._id}>{l.name}</option>
+                    ))}
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2">
@@ -322,7 +348,7 @@ const StoresManagement: React.FC = () => {
               />
             </div>
 
-            <div>
+            {/* <div>
               <label className="block text-sm font-medium mb-2">
                 Transfer History (JSON - optional)
               </label>
@@ -333,7 +359,7 @@ const StoresManagement: React.FC = () => {
                 className="w-full px-4 py-3 border rounded-lg font-mono text-xs"
                 placeholder='[{"date": "10 Jan 2025", "qty": 20, "from": "Main Warehouse"}]'
               />
-            </div>
+            </div> */}
 
             <div className="flex justify-end gap-4 pt-6">
               <Button type="button" variant="outline" onClick={handleCloseForm}>
@@ -385,7 +411,7 @@ const StoresManagement: React.FC = () => {
                   {store.name}
                 </div>
                 <div className="col-span-3 text-gray-600 flex items-center gap-2">
-                  <Package className="w-4 h-4" /> {store.location}
+                  <Package className="w-4 h-4" /> {getLocationName(store.location)}
                 </div>
                 <div className="col-span-2 text-right">
                   <div className="text-2xl font-bold text-green-600">

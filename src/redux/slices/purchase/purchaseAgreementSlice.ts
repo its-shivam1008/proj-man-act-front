@@ -4,14 +4,15 @@ import { PurchaseAgreement } from "@/types/purchase";
 
 export const fetchPurchaseAgreements = createAsyncThunk(
   "purchaseAgreements/fetchPurchaseAgreements",
-  async (params: { page?: number; limit?: number; sort?: string; q?: string } = {}, { rejectWithValue }) => {
+  async (params: { page?: number; limit?: number; sort?: string; q?: string; location?: string } = {}, { rejectWithValue }) => { // [!code ++]
     try {
-      const { page = 1, limit = 10, sort, q } = params;
+      const { page = 1, limit = 10, sort, q, location } = params; // [!code ++]
       const query = new URLSearchParams();
       query.set('page', String(page));
       query.set('limit', String(limit));
       if (sort) query.set('sort', sort);
       if (q) query.set('q', q);
+      if (location) query.set('location', location); // [!code ++]
 
       const response = await api.get(`/purchase/agreements?${query.toString()}`);
       return response.data;
@@ -25,6 +26,8 @@ export const createPurchaseAgreement = createAsyncThunk(
   "purchaseAgreements/createPurchaseAgreement",
   async (agreementData: Omit<PurchaseAgreement, "id" | "createdAt" | "updatedAt">, { rejectWithValue }) => {
     try {
+      const organisationId = localStorage.getItem("organisationId");
+      agreementData.organisationId = organisationId as string;
       const response = await api.post("/purchase/agreements", agreementData);
       return response.data;
     } catch (error: any) {

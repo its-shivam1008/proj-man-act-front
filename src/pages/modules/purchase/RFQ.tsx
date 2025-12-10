@@ -6,6 +6,7 @@ import { fetchRFQs, createRFQ, updateRFQ, deleteRFQ, sendRFQ } from '@/redux/sli
 import { fetchVendors } from '@/redux/slices/purchase/vendorSlice';
 import { RFQ, RFQProduct } from '@/types/purchase';
 import NotificationCenter from '@/components/NotificationCenter';
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import {
   Plus,
   Eye,
@@ -20,7 +21,8 @@ import {
   Search,
   Filter,
   Loader2,
-  ShieldAlert
+  ShieldAlert,
+  MapPin
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -58,10 +60,27 @@ const RFQComponent: React.FC = () => {
   const [limit, setLimit] = useState<number>(10);
   const [search, setSearch] = useState<string>("");
 
+  // [!code ++] Get Profile & Locations
+  const { userProfile } = useSelector((state: any) => state.auth); 
+  const { locations } = useSelector((state: any) => state.masterData);
+
+  // [!code ++] Logic
+  const isLocationRestricted = userProfile?.role !== 'admin' && !!userProfile?.location;
+  const [locationFilter, setLocationFilter] = useState(isLocationRestricted ? userProfile.location : "all");
+
   useEffect(() => {
-    dispatch(fetchRFQs({ page, limit, q: search }));
+    dispatch(fetchMasterData("location")); // [!code ++]
+    dispatch(fetchRFQs({ page, limit, q: search, location: locationFilter })); // [!code ++]
     dispatch(fetchVendors());
-  }, [dispatch]);
+  }, [dispatch, page, limit, search, locationFilter]); // [!code ++]
+
+  const getLocationName = (loc: string | { name: string } | undefined) => {
+    if (!loc) return "N/A";
+    if (typeof loc === 'object') return loc.name || "N/A";
+    const found = locations.find((l: any) => l._id === loc);
+    return found ? found.name : "N/A";
+  };
+
 
   useEffect(() => {
     if (error) {
@@ -180,6 +199,7 @@ const RFQComponent: React.FC = () => {
       orderDate: new Date().toISOString().split('T')[0],
       currency: 'INR',
       vendors: [] as string[],
+      location: isLocationRestricted ? userProfile.location : "",
       paymentTerms: 'Net 30',
       deliveryDate: '',
       products: [{ name: '', quantity: 0, uom: 'pieces', unitPrice: 0, taxes: 0 }] as RFQProduct[],
@@ -275,6 +295,21 @@ const RFQComponent: React.FC = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Location *</label>
+                  <select
+                    value={formData.location}
+                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                    disabled={isLocationRestricted}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+                    required
+                  >
+                    <option value="">Select Location</option>
+                    {locations.map((l: any) => (
+                      <option key={l._id} value={l._id}>{l.name}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Order Date *</label>
@@ -502,6 +537,9 @@ const RFQComponent: React.FC = () => {
       rfqNumber: editingRfq.rfqNumber,
       orderDate: editingRfq.orderDate ? new Date(editingRfq.orderDate).toISOString().split('T')[0] : '',
       currency: editingRfq.currency || 'USD',
+      location: editingRfq.location 
+          ? (typeof editingRfq.location === 'object' ? editingRfq.location._id : editingRfq.location)
+          : (isLocationRestricted ? userProfile.location : ""),
       vendors: typeof editingRfq.vendors[0] === 'object' ? editingRfq.vendors.map((v: any) => v.id || v._id) : editingRfq.vendors,
       paymentTerms: editingRfq.paymentTerms || 'Net 30',
       deliveryDate: editingRfq.deliveryDate ? new Date(editingRfq.deliveryDate).toISOString().split('T')[0] : '',
@@ -588,6 +626,20 @@ const RFQComponent: React.FC = () => {
                     required
                   />
                 </div>
+                <select
+            value={locationFilter}
+            onChange={(e) => {
+              setLocationFilter(e.target.value);
+              setPage(1);
+            }}
+            disabled={isLocationRestricted}
+            className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+          >
+            <option value="all">All Locations</option>
+            {locations.map((l: any) => (
+              <option key={l._id} value={l._id}>{l.name}</option>
+            ))}
+          </select>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
                   <select
@@ -957,6 +1009,10 @@ const RFQComponent: React.FC = () => {
             placeholder="Search RFQs..."
             className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
+          <select value={locationFilter} onChange={e => setLocationFilter(e.target.value)} disabled={isLocationRestricted} className="border p-2 rounded">
+              <option value="all">All Locations</option>
+              {locations.map((l: any) => <option key={l._id} value={l._id}>{l.name}</option>)}
+          </select>
           <button
             disabled={!canCreate}
             onClick={() => canCreate && setShowCreateRfq(true)}
@@ -978,6 +1034,9 @@ const RFQComponent: React.FC = () => {
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   RFQ Number
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Location
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Vendors
@@ -1018,6 +1077,12 @@ const RFQComponent: React.FC = () => {
                   <tr key={rfq.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {rfq.rfqNumber}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <div className="flex items-center gap-1">
+                            {rfq.location && <MapPin className="w-3 h-3" />}
+                            {getLocationName(rfq.location)}
+                        </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {rfq.vendors?.length || 0} vendors

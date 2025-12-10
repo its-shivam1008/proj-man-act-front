@@ -5,15 +5,19 @@ import { AppDispatch, RootState } from '@/redux/store';
 import { fetchPurchaseAgreements, createPurchaseAgreement, deletePurchaseAgreement } from '@/redux/slices/purchase/purchaseAgreementSlice';
 import { fetchVendors } from '@/redux/slices/purchase/vendorSlice';
 import { PurchaseAgreement } from '@/types/purchase';
-import { Plus, Eye, Trash2, CheckCircle, X, Loader2, Search, ShieldAlert } from 'lucide-react';
+import { Plus, Eye, Trash2, CheckCircle, X, Loader2, Search, ShieldAlert, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 
 const PurchaseAgreementComponent: React.FC = () => {
   const canView = usePermission("agreements", "view");
   const canCreate = usePermission("agreements", "create");
   const canEdit = usePermission("agreements", "edit");
   const canDelete = usePermission("agreements", "delete");
-
+  const { userProfile } = useSelector((state: any) => state.auth); // [!code ++]
+  const { locations } = useSelector((state: any) => state.masterData); // [!code ++]
+  const isLocationRestricted = userProfile?.role !== 'admin' && !!userProfile?.location;
+  const [locationFilter, setLocationFilter] = useState(isLocationRestricted ? userProfile.location : "all");
   if (!canView) {
     return (
       <div className="text-center py-12 px-4">
@@ -40,10 +44,18 @@ const PurchaseAgreementComponent: React.FC = () => {
   const [limit, setLimit] = useState<number>(10);
   const [search, setSearch] = useState<string>("");
 
+  const getLocationName = (loc: string | { name: string } | undefined) => {
+    if (!loc) return "N/A";
+    if (typeof loc === 'object') return loc.name || "N/A";
+    const found = locations.find((l: any) => l._id === loc);
+    return found ? found.name : "N/A";
+  };
+
   useEffect(() => {
-    dispatch(fetchPurchaseAgreements({ page, limit, q: search }));
+    dispatch(fetchMasterData("location")); // [!code ++]
+    dispatch(fetchPurchaseAgreements({ page, limit, q: search, location: locationFilter })); // [!code ++]
     dispatch(fetchVendors());
-  }, [dispatch, page, limit, search]);
+  }, [dispatch, page, limit, search, locationFilter]); // [!code ++]
 
   useEffect(() => {
     if (error) {
@@ -60,6 +72,7 @@ const PurchaseAgreementComponent: React.FC = () => {
       endDate: '',
       terms: '',
       totalValue: 0,
+      location: isLocationRestricted ? userProfile.location : "",
       notes: ''
     });
 
@@ -115,6 +128,21 @@ const PurchaseAgreementComponent: React.FC = () => {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Agreement Number</label>
                   <input type="text" value={formData.agreementNumber} onChange={(e) => setFormData({ ...formData, agreementNumber: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Auto-generated" required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Location *</label>
+                  <select
+                    value={formData.location}
+                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                    disabled={isLocationRestricted}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+                    required
+                  >
+                    <option value="">Select Location</option>
+                    {locations.map((l: any) => (
+                      <option key={l._id} value={l._id}>{l.name}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Vendor</label>
@@ -284,6 +312,18 @@ const PurchaseAgreementComponent: React.FC = () => {
               className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
             />
           </div>
+          {/* [!code ++] Location Filter */}
+          <select
+            value={locationFilter}
+            onChange={(e) => { setLocationFilter(e.target.value); setPage(1); }}
+            disabled={isLocationRestricted}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+          >
+            <option value="all">All Locations</option>
+            {locations.map((l: any) => (
+              <option key={l._id} value={l._id}>{l.name}</option>
+            ))}
+          </select>
           <button
             disabled={!canCreate}
             onClick={() => canCreate && setShowCreateAgreement(true)}
@@ -303,6 +343,7 @@ const PurchaseAgreementComponent: React.FC = () => {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Agreement Number</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vendor</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Start Date</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">End Date</th>
@@ -315,6 +356,12 @@ const PurchaseAgreementComponent: React.FC = () => {
               {purchaseAgreements?.map((agreement) => (
                 <tr key={agreement.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{agreement?.agreementNumber}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <div className="flex items-center gap-1">
+                        {agreement.location && <MapPin className="w-3 h-3" />}
+                        {getLocationName(agreement?.location)}
+                      </div>
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{agreement?.vendor}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{agreement?.startDate ? new Date(agreement.startDate).toLocaleDateString() : 'N/A'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{agreement?.endDate ? new Date(agreement.endDate).toLocaleDateString() : 'N/A'}</td>

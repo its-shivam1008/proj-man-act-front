@@ -6,7 +6,7 @@ import { fetchVendors, createVendor, updateVendor, deleteVendor } from '@/redux/
 import { Vendor } from '@/types/purchase';
 import { Plus, Eye, Edit, Trash2, Building, Mail, Phone, MapPin, CreditCard, Star, X, Loader2, Search, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
-
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 const PurchaseVendors: React.FC = () => {
 
   const canView = usePermission("vendors", "view");
@@ -36,14 +36,28 @@ const PurchaseVendors: React.FC = () => {
   const [viewingVendor, setViewingVendor] = useState<Vendor | null>(null);
   const [editingVendor, setEditingVendor] = useState<Vendor | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  
+  const { userProfile } = useSelector((state: any) => state.auth); // [!code ++]
+  const { locations } = useSelector((state: any) => state.masterData); // [!code ++]
+
+  const isLocationRestricted = userProfile?.role !== 'admin' && !!userProfile?.location;
+  const [locationFilter, setLocationFilter] = useState(isLocationRestricted ? userProfile.location : "all");
+
+  const getLocationName = (loc: string | { name: string } | undefined) => {
+    if (!loc) return "N/A";
+    if (typeof loc === 'object') return loc.name || "N/A";
+    const found = locations.find((l: any) => l._id === loc);
+    return found ? found.name : "N/A";
+  };
 
   const [page, setPage] = useState<number>(1);
   const [limit, setLimit] = useState<number>(10);
   const [search, setSearch] = useState<string>("");
 
   useEffect(() => {
-    dispatch(fetchVendors({ page, limit, q: search }));
-  }, [dispatch, page, limit, search]);
+    dispatch(fetchMasterData("location")); // [!code ++]
+    dispatch(fetchVendors({ page, limit, q: search, location: locationFilter })); // [!code ++]
+  }, [dispatch, page, limit, search, locationFilter]); // [!code ++]
 
   useEffect(() => {
     if (error) {
@@ -62,6 +76,7 @@ const PurchaseVendors: React.FC = () => {
       currency: 'USD',
       paymentTerms: 'Net 30',
       productsSupplied: '',
+      location: isLocationRestricted ? userProfile.location : "",
       bankName: '',
       accountNumber: '',
       ifscCode: '',
@@ -113,6 +128,21 @@ const PurchaseVendors: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Contact Person</label>
                   <input type="text" value={formData.contactPerson} onChange={(e) => setFormData({ ...formData, contactPerson: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Contact person name" />
                 </div>
+              </div>
+              <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Location *</label>
+                  <select
+                    value={formData.location}
+                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                    disabled={isLocationRestricted}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+                    required
+                  >
+                    <option value="">Select Location</option>
+                    {locations.map((l: any) => (
+                      <option key={l._id} value={l._id}>{l.name}</option>
+                    ))}
+                  </select>
               </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
@@ -206,6 +236,9 @@ const PurchaseVendors: React.FC = () => {
       gstin: editingVendor.gstin || '',
       currency: editingVendor.currency || 'USD',
       paymentTerms: editingVendor.paymentTerms || 'Net 30',
+      location: editingVendor.location 
+        ? (typeof editingVendor.location === 'object' ? editingVendor.location._id : editingVendor.location)
+        : (isLocationRestricted ? userProfile.location : ""),
       productsSupplied: editingVendor.productsSupplied || '',
       bankName: editingVendor.bankName || '',
       accountNumber: editingVendor.accountNumber || '',
@@ -274,6 +307,17 @@ const PurchaseVendors: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
                 <textarea rows={2} value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Complete address"></textarea>
               </div>
+              <select
+            value={locationFilter}
+            onChange={(e) => { setLocationFilter(e.target.value); setPage(1); }}
+            disabled={isLocationRestricted}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+          >
+            <option value="all">All Locations</option>
+            {locations.map((l: any) => (
+              <option key={l._id} value={l._id}>{l.name}</option>
+            ))}
+          </select>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">GSTIN / Tax ID</label>
@@ -462,6 +506,11 @@ const PurchaseVendors: React.FC = () => {
               className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
             />
           </div>
+          {/* [!code ++] Filter */}
+           <select value={locationFilter} onChange={e => setLocationFilter(e.target.value)} disabled={isLocationRestricted} className="border p-2 rounded">
+              <option value="all">All Locations</option>
+              {locations.map((l: any) => <option key={l._id} value={l._id}>{l.name}</option>)}
+           </select>
           <button
             disabled={!canCreate}
             onClick={() => canCreate && setShowCreateVendor(true)}
@@ -498,6 +547,11 @@ const PurchaseVendors: React.FC = () => {
                 <div className="flex items-center text-sm text-gray-600">
                   <Mail className="h-4 w-4 mr-2" />
                   {vendor.email}
+                </div>
+                <div className="flex items-center text-sm text-gray-600">
+                  <MapPin className="h-4 w-4 mr-2" />
+                  {/* [!code ++] Show Location Name safely */}
+                  {getLocationName(vendor?.location)}
                 </div>
                 <div className="flex items-center text-sm text-gray-600">
                   <Phone className="h-4 w-4 mr-2" />

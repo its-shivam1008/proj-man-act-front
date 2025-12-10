@@ -8,6 +8,7 @@ export interface RawMaterial {
   name: string;
   unit: string;
   quantity: number;
+  location: string | { _id: string; name: string };
   createdAt: string;
 }
 
@@ -31,16 +32,15 @@ const initialState: RawMaterialState = {
 
 export const fetchMaterials = createAsyncThunk(
   "rawMaterials/fetch",
-  async ({ page = 1, limit = 10 }: { page: number; limit: number }) => {
+  async ({ page = 1, limit = 10, location = "" }: { page: number; limit: number, location?: string }) => { // [!code ++]
     const orgId = localStorage.getItem("organisationId");
 
     const res = await api.get(
-      `/raw/all/?page=${page}&limit=${limit}`,
+      `/raw/all/?page=${page}&limit=${limit}&location=${location}`, // [!code ++]
       {
         headers: { organisationId: orgId },
       }
     );
-
     return res.data;
   }
 );

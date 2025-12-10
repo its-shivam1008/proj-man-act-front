@@ -13,11 +13,11 @@ export interface Warehouse {
 
 export const fetchWarehouses = createAsyncThunk(
   "warehouse/fetchWarehouses",
-  async ({ page = 1, limit = 10 }: { page: number; limit: number }) => {
+  async ({ page = 1, limit = 10, location = "" }: { page: number; limit: number, location?: string }) => { // [!code ++]
     const res = await api.get(
-      `/getall/warehouse?page=${page}&limit=${limit}`
+      `/getall/warehouse?page=${page}&limit=${limit}&location=${location}` // [!code ++]
     );
-    return res.data;  // { warehouses, total, page, limit }
+    return res.data; 
   }
 );
 

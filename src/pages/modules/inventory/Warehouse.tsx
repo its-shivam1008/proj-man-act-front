@@ -38,6 +38,7 @@ import {
 } from "@/redux/slices/warehouseSlice";
 import { fetchProducts } from "@/redux/slices/productSlice";
 import { toast } from "sonner";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 
 // Types
 interface Product {
@@ -67,7 +68,7 @@ interface WarehouseData {
   _id: string;
   name: string;
   type: string;
-  location: string;
+  location: string | { _id: string; name: string };
   capacity: number;
   products: WarehouseProduct[];
   createdAt: string;
@@ -93,11 +94,25 @@ const WarehouseManagement: React.FC = () => {
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  
+  const { userProfile } = useSelector((state: any) => state.auth);
+  const { locations } = useSelector((state: any) => state.masterData);
+
+  const isLocationRestricted = userProfile?.role !== 'admin' && !!userProfile?.location;
+  const [locationFilter, setLocationFilter] = useState(isLocationRestricted ? userProfile.location : "all");
+
+const getLocationName = (loc: string | { name: string } | undefined) => {
+    if (!loc) return "N/A";
+    if (typeof loc === 'object') return loc.name || "N/A";
+    const found = locations.find((l: any) => l._id === loc);
+    return found ? found.name : "N/A";
+  };
 
   useEffect(() => {
+    dispatch(fetchMasterData("location"));
     dispatch(fetchProducts({ page: 1, limit: 200 })); // Load more products
-    dispatch(fetchWarehouses({ page, limit }));
-  }, [dispatch, page]);
+    dispatch(fetchWarehouses({ page, limit, location: locationFilter }));
+  }, [dispatch, page, locationFilter]);
 
   const hasPrev = page > 1;
   const hasNext = page * limit < total;
@@ -162,9 +177,21 @@ const WarehouseManagement: React.FC = () => {
             <Warehouse className="w-10 h-10 text-blue-600" />
             Warehouse Management
           </h1>
-          <Button disabled={!canCreate} onClick={() => setShowForm(true)} size="lg">
-            <Plus className="w-5 h-5 mr-2" /> Add Warehouse
-          </Button>
+          <div className="flex gap-2">
+             <Select value={locationFilter} onValueChange={setLocationFilter} disabled={isLocationRestricted}>
+                <SelectTrigger className="w-[200px] bg-white">
+                  <SelectValue placeholder="Filter Location" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Locations</SelectItem>
+                  {locations.map(l => <SelectItem key={l._id} value={l._id}>{l.name}</SelectItem>)}
+                </SelectContent>
+             </Select>
+             
+             <Button disabled={!canCreate} onClick={() => setShowForm(true)} size="lg">
+                <Plus className="w-5 h-5 mr-2" /> Add Warehouse
+             </Button>
+          </div>
         </div>
 
         {enrichedWarehouses.length === 0 && !loading && (
@@ -228,7 +255,8 @@ const WarehouseManagement: React.FC = () => {
 
                     <div className="col-span-2 text-sm text-gray-600 flex items-center gap-2">
                       <MapPin className="w-5 h-5" />
-                      {w.location}
+                      {/* [!code --] {w.location} */}
+                      {getLocationName(w.location)} {/* [!code ++] */}
                     </div>
 
                     <div className="col-span-3 text-right">
@@ -367,10 +395,18 @@ const WarehouseForm: React.FC<{
 }> = ({ warehouse, products, onClose, isEdit }) => {
   const dispatch = useDispatch();
 
+  const { userProfile } = useSelector((state: any) => state.auth);
+  const { locations } = useSelector((state: any) => state.masterData);
+
+  const isLocationRestricted = userProfile?.role !== 'admin' && !!userProfile?.location;
+  const [locationFilter, setLocationFilter] = useState(isLocationRestricted ? userProfile.location : "all");
+
   const [formData, setFormData] = useState({
     name: warehouse?.name || "",
     type: warehouse?.type || "General",
-    location: warehouse?.location || "",
+    location: warehouse?.location 
+      ? (typeof warehouse.location === 'object' ? warehouse.location._id : warehouse.location)
+      : (isLocationRestricted ? userProfile.location : ""),
     capacity: warehouse?.capacity?.toString() || "0",
     products: warehouse?.products.map((p) => ({
       productId: p.productId,
@@ -462,7 +498,19 @@ const WarehouseForm: React.FC<{
                 </SelectContent>
               </Select>
             </div>
-            <div><Label>Location *</Label><Input required value={formData.location} onChange={e => setFormData({ ...formData, location: e.target.value })} /></div>
+            <div><Label>Location *</Label>
+              {/* [!code ++] */}
+              <Select 
+                value={formData.location}
+                onValueChange={v => setFormData({ ...formData, location: v })}
+                disabled={isEdit ? false : isLocationRestricted} // Disable only on create if restricted
+              >
+                <SelectTrigger><SelectValue placeholder="Select Location" /></SelectTrigger>
+                <SelectContent>
+                   {locations.map(l => <SelectItem key={l._id} value={l._id}>{l.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
             <div><Label>Capacity (%)</Label><Input type="number" value={formData.capacity} onChange={e => setFormData({ ...formData, capacity: e.target.value })} /></div>
           </div>
 

@@ -42,9 +42,9 @@ export const createScrapOrder = createAsyncThunk(
 );
 export const getScrapOrders = createAsyncThunk(
     "scrap/getAll",
-    async (_, { rejectWithValue }) => {
+    async ({ location = "" }: { location?: string } = {}, { rejectWithValue }) => { // [!code ++]
         try {
-            const res = await axiosApi.get("/scrap/get/all");
+            const res = await axiosApi.get(`/scrap/get/all?location=${location}`); // [!code ++]
             return res.data.data;
         } catch (err: any) {
             return rejectWithValue(err?.response?.data || err.message);
