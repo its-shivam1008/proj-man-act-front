@@ -139,6 +139,31 @@ export default function ProcurementPage() {
         setRemarkDialogOpen(true);
     };
 
+    const handleSendClick = (item: MRSItem, type: "INVENTORY" | "PURCHASE") => {
+        const itemId = item.id || item._id || item.item;
+        const key = `${itemId}_${type}`;
+        
+        // Increment the click count
+        const newCounts = {
+            ...sendClickCounts,
+            [key]: (sendClickCounts[key] || 0) + 1
+        };
+        
+        setSendClickCounts(newCounts);
+        
+        // Save to localStorage
+        localStorage.setItem('SEND_CLICK_COUNTS', JSON.stringify(newCounts));
+        
+        // Open the remark dialog
+        handleOpenRemarkDialog(item, type);
+    };
+
+    const resetSendCounts = () => {
+        setSendClickCounts({});
+        localStorage.removeItem('SEND_CLICK_COUNTS');
+        toast.success("Send counts reset successfully");
+    };
+
     // --- NEW FUNCTION: Submit Notification ---
     const handleSubmitNotification = async () => {
         if (!notificationTarget) return;
@@ -202,6 +227,7 @@ export default function ProcurementPage() {
     // Local State
     const [inventory, setInventory] = useState<InventoryItem[]>([]);
     const [mrsStatusSync, setMrsStatusSync] = useState<Record<string, string>>({});
+    const [sendClickCounts, setSendClickCounts] = useState<Record<string, number>>({});
     
     // Pagination State
     const [mrsPage, setMrsPage] = useState(1);
@@ -233,6 +259,12 @@ export default function ProcurementPage() {
         const syncData = localStorage.getItem('MRS_STATUS_SYNC');
         if (syncData) {
             setMrsStatusSync(JSON.parse(syncData));
+        }
+        
+        // Load send click counts from localStorage
+        const clickCountsData = localStorage.getItem('SEND_CLICK_COUNTS');
+        if (clickCountsData) {
+            setSendClickCounts(JSON.parse(clickCountsData));
         }
     }, [dispatch]);
     
@@ -679,13 +711,20 @@ export default function ProcurementPage() {
                     <Button onClick={openCreate} disabled={mrsLoading}>
                         <Plus className="mr-2 h-4 w-4" /> Create MRS Item
                     </Button>
-                    <Button 
+                    {/* <Button 
                         variant="outline" 
                         onClick={() => dispatch(fetchMRS())} 
                         disabled={mrsLoading}
                     >
                         <RefreshCcw className="mr-2 h-4 w-4" /> Refresh
-                    </Button>
+                    </Button> */}
+                    {/* <Button 
+                        variant="outline" 
+                        onClick={resetSendCounts}
+                        className="text-red-600 hover:text-red-700"
+                    >
+                        Reset Counts
+                    </Button> */}
                     {/* <Button variant="outline" onClick={bootstrapInventory}>
                         <Truck className="mr-2 h-4 w-4" /> Bootstrap Inv
                     </Button> */}
@@ -796,9 +835,18 @@ export default function ProcurementPage() {
                                                 <Button 
                                                     size="sm" 
                                                     variant="outline"
-                                                    onClick={() => handleOpenRemarkDialog(m, "INVENTORY")}
+                                                    onClick={() => handleSendClick(m, "INVENTORY")}
                                                 >
-                                                    Sent
+                                                    Sent {(() => {
+                                                        const itemId = m.id || m._id || m.item;
+                                                        const key = `${itemId}_INVENTORY`;
+                                                        const count = sendClickCounts[key];
+                                                        return count ? (
+                                                            <span className="ml-1 px-1.5 py-0.5 bg-blue-100 text-blue-800 text-xs rounded-full font-semibold">
+                                                                {count}
+                                                            </span>
+                                                        ) : '';
+                                                    })()}
                                                 </Button>
                                             );
                                         })()}
@@ -814,9 +862,19 @@ export default function ProcurementPage() {
                                             </Button>}
                                             <Button 
                                                 variant="ghost" 
-                                                onClick={() => handleOpenRemarkDialog(m, "PURCHASE")}
+                                                onClick={() => handleSendClick(m, "PURCHASE")}
                                             >
-                                                <ShoppingCartIcon className="mr-2 h-4 w-4"/> Send
+                                                <ShoppingCartIcon className="mr-2 h-4 w-4"/> 
+                                                Send {(() => {
+                                                    const itemId = m.id || m._id || m.item;
+                                                    const key = `${itemId}_PURCHASE`;
+                                                    const count = sendClickCounts[key];
+                                                    return count ? (
+                                                        <span className="ml-1 px-1.5 py-0.5 bg-green-100 text-green-800 text-xs rounded-full font-semibold">
+                                                            {count}
+                                                        </span>
+                                                    ) : '';
+                                                })()}
                                             </Button>
                                             <Button size="sm" onClick={() => handleCheckStatus(m)}>
                                                 <Truck className="h-4 w-4" /> Check Status

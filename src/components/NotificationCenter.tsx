@@ -178,18 +178,23 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                       {/* Icon */}
                       <div className={`mt-1 p-2 rounded-full shrink-0 ${
                           isInvite ? "bg-purple-100 text-purple-600" :
+                          notification.type === "deadline_reminder" ? "bg-red-100 text-red-600" :
                           notification.source?.includes("procurement") ? "bg-orange-100 text-orange-600" :
                           notification.source?.includes("delivery") ? "bg-green-100 text-green-600" :
                           "bg-blue-100 text-blue-600"
                       }`}>
-                        {isInvite ? <UserPlus className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+                        {isInvite ? <UserPlus className="h-4 w-4" /> : 
+                         notification.type === "deadline_reminder" ? <Bell className="h-4 w-4" /> :
+                         <AlertCircle className="h-4 w-4" />}
                       </div>
 
                       {/* Content */}
                       <div className="flex-1 space-y-1 min-w-0">
                         <div className="flex justify-between items-start gap-2">
                           <p className="text-sm font-semibold text-gray-900 leading-tight">
-                             {isInvite ? "Organization Invitation" : (notification.itemName ? `Item: ${notification.itemName}` : "New Update")}
+                             {isInvite ? "Organization Invitation" : 
+                              notification.type === "deadline_reminder" ? notification.title :
+                              (notification.itemName ? `Item: ${notification.itemName}` : "New Update")}
                           </p>
                           <span className="text-[10px] text-gray-400 whitespace-nowrap shrink-0">
                             {notification.createdAt ? new Date(notification.createdAt).toLocaleDateString() : ""}
@@ -197,8 +202,21 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                         </div>
                         
                         <p className="text-sm text-gray-600 break-words">
-                          {notification.remark || "No additional remarks provided."}
+                          {notification.type === "deadline_reminder" ? 
+                            notification.message : 
+                            (notification.remark || "No additional remarks provided.")}
                         </p>
+                        
+                        {/* Deadline Reminder Info */}
+                        {notification.type === "deadline_reminder" && notification.metadata && (
+                          <div className="mt-2 p-2 bg-red-50 rounded-lg border border-red-200">
+                            <div className="text-xs text-red-800 space-y-1">
+                              <div><strong>Project:</strong> {notification.metadata.projectName}</div>
+                              <div><strong>Task:</strong> {notification.metadata.wbsName}</div>
+                              <div><strong>Deadline:</strong> {new Date(notification.metadata.deadline).toLocaleDateString()}</div>
+                            </div>
+                          </div>
+                        )}
                         
                         {/* Invite Actions */}
                         {isPendingInvite && (

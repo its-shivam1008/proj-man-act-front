@@ -115,6 +115,25 @@ export default function ReportsAnalytics() {
   const [allProjectsProfitability, setAllProjectsProfitability] = useState<any>(null);
   const [loadingAllProjectsProfitability, setLoadingAllProjectsProfitability] = useState(false);
   const { activities, totals} = useSelector((s: RootState) => s.activityCost);
+  
+  // Force refresh function
+  const forceRefreshReports = () => {
+    setHealthReport(null);
+    setProfitabilityReport(null);
+    setComparisonReport(null);
+    setAllProjectsHealth(null);
+    setAllProjectsProfitability(null);
+    
+    if (organisationId) {
+      setTimeout(() => {
+        fetchHealthReport();
+        fetchProfitabilityReport();
+        fetchComparisonReport();
+        fetchAllProjectsHealth();
+        fetchAllProjectsProfitability();
+      }, 100);
+    }
+  };
 
   // Fetch projects on mount
   useEffect(() => {
@@ -148,16 +167,21 @@ export default function ReportsAnalytics() {
 
   const canView = usePermission('projectReports', 'view');
 
-  // Fetch reports when organisationId changes
+  // Fetch reports when organisationId and projects are loaded
   useEffect(() => {
-    if (organisationId) {
-      fetchHealthReport();
-      fetchProfitabilityReport();
-      fetchComparisonReport();
-      fetchAllProjectsHealth();
-      fetchAllProjectsProfitability();
+    if (organisationId && projects.length > 0) {
+      console.log("Projects available:", projects.length);
+      console.log("Selected project ID:", selectedProjectId);
+      // Add small delay to ensure all data is loaded
+      setTimeout(() => {
+        fetchHealthReport();
+        fetchProfitabilityReport();
+        fetchComparisonReport();
+        fetchAllProjectsHealth();
+        fetchAllProjectsProfitability();
+      }, 500);
     }
-  }, [organisationId, selectedProjectId]);
+  }, [organisationId, selectedProjectId, projects.length]);
 
   // Fetch all projects health and profitability reports
   const fetchAllProjectsHealth = async () => {
@@ -804,9 +828,12 @@ export default function ReportsAnalytics() {
     }));
   }, [selectedProject, invoices, milestones, costs.total, selectedProjectId]);
 
-  // Fetch health report from API
-  const fetchHealthReport = async () => {
-    if (!organisationId) return;
+  // Fetch health report from API with retry mechanism
+  const fetchHealthReport = async (retryCount = 0) => {
+    if (!organisationId) {
+      console.log("No organisationId found for health report");
+      return;
+    }
     
     setLoadingHealthReport(true);
     try {
@@ -814,14 +841,30 @@ export default function ReportsAnalytics() {
         ? `${BASE_URL}/project-health-report/${selectedProjectId}?organisationId=${organisationId}`
         : `${BASE_URL}/project-health-report?organisationId=${organisationId}`;
       
+      console.log("Fetching health report from:", url);
       const response = await api.get(url);
-      if (response.data.success) {
-        // If single project, response.data.data is the project health object
-        // If all projects, response.data.data has summary, projects, etc.
+      console.log("Health report response:", response.data);
+      
+      if (response.data.success && response.data.data) {
         setHealthReport(response.data.data);
+      } else {
+        console.log("Health report API returned success: false or no data");
+        // Retry once if no data and we have projects
+        if (retryCount === 0 && projects.length > 0) {
+          console.log("Retrying health report fetch...");
+          setTimeout(() => fetchHealthReport(1), 1000);
+          return;
+        }
+        setHealthReport(null);
       }
     } catch (error) {
       console.error("Error fetching health report:", error);
+      // Retry once on error if we have projects
+      if (retryCount === 0 && projects.length > 0) {
+        console.log("Retrying health report fetch after error...");
+        setTimeout(() => fetchHealthReport(1), 1000);
+        return;
+      }
       setHealthReport(null);
     } finally {
       setLoadingHealthReport(false);
@@ -1020,6 +1063,9 @@ const budgetVsActualData = useMemo(() => {
               ))}
             </SelectContent>
           </Select>
+          <Button variant="outline" onClick={forceRefreshReports} className="mr-2">
+            <Activity className="h-4 w-4 mr-2" /> Refresh Reports
+          </Button>
           <Button onClick={() => setIsDialogOpen(true)}>
             <Plus className="h-4 w-4 mr-2" /> New Report
           </Button>
@@ -1276,6 +1322,19 @@ const budgetVsActualData = useMemo(() => {
               <CardTitle className="flex items-center gap-2">
                 <Activity className="h-5 w-5" />
                 Project Health Report
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => fetchHealthReport()} 
+                  disabled={loadingHealthReport}
+                  className="ml-2"
+                >
+                  {loadingHealthReport ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "↻"
+                  )}
+                </Button>
               </CardTitle>
               {healthReport && selectedProjectId && (
                 <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getHealthStatusBadgeColor(healthReport.healthStatus)}`}>

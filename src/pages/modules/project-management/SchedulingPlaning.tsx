@@ -5,6 +5,7 @@ import { RootState, AppDispatch } from "@/redux/store";
 import { fetchProjects } from "@/redux/slices/projectSlice";
 import { fetchWbsByProject, updateWbsItem } from "@/redux/slices/wbsSlice";
 import { fetchResources, ResourceAllocation } from "@/redux/slices/resourceSlice";
+import { createReminder, fetchReminders } from "@/redux/slices/reminderSlice";
 import {
   Card,
   CardContent,
@@ -157,6 +158,9 @@ export default function SchedulingPlanning() {
   const { resources, loading: resourcesLoading } = useSelector(
     (state: RootState) => state.resources
   );
+  const { reminders: dbReminders, loading: remindersLoading } = useSelector(
+    (state: RootState) => state.reminders
+  );
   const [customSequences, setCustomSequences] = useState<
     Record<string, number>
   >(() => loadCustomSequences(null));
@@ -227,13 +231,22 @@ export default function SchedulingPlanning() {
   useEffect(() => {
     if (selectedProjectId) {
       dispatch(fetchWbsByProject(selectedProjectId));
-      dispatch(fetchResources(selectedProjectId));
+      dispatch(fetchResources({ projectId: selectedProjectId, search: "" }));
+      dispatch(fetchReminders({ projectId: selectedProjectId }));
       // Load custom sequences for this project from localStorage
       const loadedSequences = loadCustomSequences(selectedProjectId);
       setCustomSequences(loadedSequences);
       setCustomHierarchicalNumbers({});
     }
   }, [selectedProjectId, dispatch]);
+
+  // 4. Auto-sync reminders to notifications when reminders change
+  useEffect(() => {
+    if (dbReminders.length > 0 && selectedProjectId) {
+      // Sync reminders to notifications for the bell icon
+      syncRemindersToNotifications();
+    }
+  }, [dbReminders, selectedProjectId]);
 
   // 4. Load custom numbers from WBS items (if they exist in backend)
   useEffect(() => {
@@ -335,6 +348,8 @@ export default function SchedulingPlanning() {
   }, [projectResources, selectedProject]);
 
   // Calendar Events for Calendar Report
+
+
   const calendarEvents = useMemo(() => {
     const events: Array<{
       date: Date;
@@ -778,6 +793,53 @@ export default function SchedulingPlanning() {
       }));
   }, [wbs]);
 
+  // Combine WBS reminders with database reminders
+  const allReminders = useMemo(() => {
+    const today = new Date();
+    
+    // Add WBS-based reminders (existing logic)
+    const wbsReminders = reminders.map((item) => ({
+      id: `wbs_${item.id}`,
+      name: item.name,
+      type: item.type || 'task',
+      endDate: item.endDate,
+      daysLeft: item.daysLeft,
+      projectName: selectedProject?.name || 'Current Project',
+      wbsName: item.name,
+      note: item.description?.includes("[REMINDER]") ? 
+        item.description.split("[REMINDER]:")[1]?.split("due")[0]?.trim() : '',
+      source: 'wbs'
+    }));
+    
+    // Add database reminders
+    const databaseReminders = dbReminders
+      .filter((reminder) => {
+        const deadlineDate = new Date(reminder.deadline);
+        const daysDiff = Math.ceil((deadlineDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        return daysDiff >= -1 && daysDiff <= 30; // Show overdue (1 day) and upcoming (30 days)
+      })
+      .map((reminder) => {
+        const deadlineDate = new Date(reminder.deadline);
+        const daysDiff = Math.ceil((deadlineDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        
+        return {
+          id: `db_${reminder._id}`,
+          name: reminder.title,
+          type: reminder.reminderType || 'deadline',
+          endDate: reminder.deadline,
+          daysLeft: daysDiff,
+          projectName: reminder.projectId?.name || 'Unknown Project',
+          wbsName: reminder.wbsId?.name || 'Unknown Task',
+          note: reminder.note,
+          source: 'database'
+        };
+      });
+    
+    // Combine and sort by urgency
+    return [...wbsReminders, ...databaseReminders]
+      .sort((a, b) => a.daysLeft - b.daysLeft);
+  }, [reminders, dbReminders, selectedProject]);
+
   // --- Scroll Sync Handler ---
   const handleSyncScroll = () => {
     if (sidebarRef.current && timelineRef.current) {
@@ -863,10 +925,36 @@ export default function SchedulingPlanning() {
   // }) ?? [];
 
 
+  // Sync reminders to notifications
+  const syncRemindersToNotifications = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+
+      const BASE_URL = 'http://localhost:4000'; // Backend URL
+      const response = await fetch(`${BASE_URL}/test/sync-reminders-to-notifications`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ cleanOld: true })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Reminders synced to notifications:', data);
+      }
+    } catch (error) {
+      console.error('Error syncing reminders to notifications:', error);
+    }
+  };
+
   const handleSaveReminder = async () => {
     if (!reminderForm.itemId) return;
     const item = wbs.find((i) => i.id === reminderForm.itemId);
     if (item) {
+      // 1. Update WBS item description and end date
       const newDesc =
         (item.description || "") +
         `\n[REMINDER]: ${reminderForm.note} due ${reminderForm.date}`;
@@ -876,8 +964,28 @@ export default function SchedulingPlanning() {
           data: { description: newDesc, endDate: reminderForm.date },
         })
       );
+      
+      // 2. Create actual reminder in database
+      const reminderData = {
+        projectId: selectedProjectId,
+        wbsId: reminderForm.itemId,
+        title: `Reminder: ${reminderForm.itemName}`,
+        note: reminderForm.note,
+        deadline: new Date(reminderForm.date),
+        reminderType: "deadline"
+      };
+      
+      console.log('🔔 Creating reminder:', reminderData);
+      await dispatch(createReminder(reminderData));
+      
       toast.success("Reminder set successfully!");
       setReminderDialogOpen(false);
+      
+      // 3. Refresh reminders list
+      dispatch(fetchReminders());
+      
+      // 4. Sync to notifications after creating reminder
+      setTimeout(() => syncRemindersToNotifications(), 1000);
     }
   };
 
@@ -1401,20 +1509,39 @@ export default function SchedulingPlanning() {
                 {/* Reminders Sidebar */}
                 <Card className="lg:col-span-1 flex flex-col h-full max-h-[650px]">
                   <CardHeader className="border-b bg-orange-50/30">
-                    <CardTitle className="flex items-center gap-2 text-orange-700">
-                      <Bell className="w-5 h-5" /> Reminders
-                    </CardTitle>
-                    <CardDescription>Upcoming Deadlines</CardDescription>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle className="flex items-center gap-2 text-orange-700">
+                          <Bell className="w-5 h-5" /> Reminders
+                        </CardTitle>
+                        <CardDescription>Upcoming Deadlines</CardDescription>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={syncRemindersToNotifications}
+                        className="text-xs"
+                        title="Sync reminders to notification bell"
+                      >
+                        🔔 Sync to Bell
+                      </Button>
+                    </div>
                   </CardHeader>
                   <CardContent className="flex-1 overflow-y-auto p-4">
-                    {reminders.length === 0 ? (
+                    {remindersLoading ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <div className="animate-spin w-6 h-6 border-2 border-orange-500 border-t-transparent rounded-full mx-auto mb-2"></div>
+                        <p>Loading reminders...</p>
+                      </div>
+                    ) : allReminders.length === 0 ? (
                       <div className="text-center py-8 text-muted-foreground">
                         <CheckSquare className="w-12 h-12 mx-auto mb-2 opacity-20" />
                         <p>No pending reminders.</p>
+                        <p className="text-xs mt-1">Create reminders for your tasks to see them here.</p>
                       </div>
                     ) : (
                       <div className="space-y-3">
-                        {reminders.map((item) => (
+                        {allReminders.map((item) => (
                           <div
                             key={item.id}
                             className="p-3 rounded-lg border bg-white shadow-sm flex flex-col gap-2 hover:shadow-md transition-shadow"
@@ -1428,23 +1555,42 @@ export default function SchedulingPlanning() {
                               </span>
                               <Badge
                                 variant={
-                                  item.daysLeft < 3 ? "destructive" : "outline"
+                                  item.daysLeft < 0 ? "destructive" : 
+                                  item.daysLeft === 0 ? "destructive" :
+                                  item.daysLeft < 3 ? "secondary" : "outline"
                                 }
                                 className="text-[10px]"
                               >
                                 {item.daysLeft < 0
                                   ? "Overdue"
+                                  : item.daysLeft === 0
+                                  ? "Today"
                                   : `${item.daysLeft} days`}
                               </Badge>
                             </div>
                             <div className="text-xs text-muted-foreground flex justify-between items-center">
-                              <span className="capitalize text-slate-500 bg-slate-100 px-1 rounded">
-                                {item.type}
-                              </span>
+                              <div className="flex items-center gap-1">
+                                <span className="capitalize text-slate-500 bg-slate-100 px-1 rounded">
+                                  {item.type}
+                                </span>
+                                {item.source === 'database' && (
+                                  <span className="text-[9px] bg-blue-100 text-blue-700 px-1 rounded font-medium">
+                                    DB
+                                  </span>
+                                )}
+                              </div>
                               <span className="flex items-center gap-1">
-                                {format(parseISO(item.endDate!), "MMM dd")}
+                                {format(parseISO(item.endDate), "MMM dd")}
                                 <ArrowRight className="w-3 h-3" />
                               </span>
+                            </div>
+                            {item.note && (
+                              <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded">
+                                {item.note}
+                              </div>
+                            )}
+                            <div className="text-xs text-gray-500">
+                              <span className="font-medium">{item.projectName}</span> • {item.wbsName}
                             </div>
                           </div>
                         ))}

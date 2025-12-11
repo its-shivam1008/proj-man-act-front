@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { useLocation } from "react-router-dom";
 import { AppDispatch, RootState } from "@/redux/store";
 import { fetchNotifications, respondToInvite } from "@/redux/slices/notificationSlice";
+import { fetchReminders } from "@/redux/slices/reminderSlice";
 import {
   Bell,
   RefreshCcw,
@@ -27,6 +28,7 @@ export default function NotificationHeader() {
   const dispatch = useDispatch<AppDispatch>();
   const location = useLocation();
   const { list: notifications, loading } = useSelector((state: RootState) => state.notification);
+  const { reminders, loading: remindersLoading } = useSelector((state: RootState) => state.reminders);
   const { userProfile } = useSelector((state: RootState) => state.auth);
   
   const [cooldown, setCooldown] = useState(0);
@@ -42,17 +44,32 @@ export default function NotificationHeader() {
     if (path.includes("/purchase/rfq")) return "rfq.purchase";
     if (path.includes("/inventory/operations/deliveries")) return "delivery.inventory";
     if (path === "/" || path.includes("/dashboard")) return "dashboard";
+    if (path.includes("/scheduling")) return "scheduling";
     return null;
+  }, [location.pathname]);
+
+  // Check if we should show reminders on this page
+  const shouldShowReminders = useMemo(() => {
+    const path = location.pathname;
+    return path.includes("/scheduling") || path.includes("/dashboard") || path === "/";
   }, [location.pathname]);
 
   // Fetch notifications
   const fetchNotificationHelper = () => {
-    if (currentDestination === "dashboard" && userProfile) {
-      dispatch(fetchNotifications({ receiverId: userProfile?._id }));
-    } else if (currentDestination) {
-      dispatch(fetchNotifications({ destination: currentDestination }));
-    } else if (organisationId) {
-      dispatch(fetchNotifications({ receiverId: organisationId, status: "unread" }));
+    if (!userProfile) {
+      console.log('❌ No user profile found');
+      return;
+    }
+    
+    console.log('🔔 Fetching notifications for user:', userProfile._id, 'org:', organisationId, 'on page:', currentDestination);
+    
+    // Fetch user-specific notifications (general notifications)
+    dispatch(fetchNotifications({ receiverId: userProfile._id, status: "unread" }));
+    
+    // Fetch page-specific notifications based on current page
+    if (currentDestination) {
+      console.log('📍 Fetching page-specific notifications for:', currentDestination);
+      dispatch(fetchNotifications({ destination: currentDestination, status: "unread" }));
     }
   };
 
@@ -67,10 +84,42 @@ export default function NotificationHeader() {
     }
   }, [isOpen]);
 
+  // Auto-refresh notifications every 5 seconds for testing (COMMENTED OUT FOR PRODUCTION)
+  // useEffect(() => {
+  //   const interval = setInterval(() => {
+  //     if (userProfile) {
+  //       console.log('🔄 Auto-refreshing notifications...');
+  //       fetchNotificationHelper();
+  //     }
+  //   }, 5000); // Refresh every 5 seconds
+
+  //   return () => clearInterval(interval);
+  // }, [userProfile]);
+
   // Filter notifications based on current page
   const filteredNotifications = useMemo(() => {
-    if (!currentDestination) return notifications;
-    return notifications.filter((n) => n.destination === currentDestination);
+    console.log('🔍 Filtering notifications:', {
+      total: notifications.length,
+      currentDestination,
+      notifications: notifications.map(n => ({ 
+        id: n._id, 
+        type: n.type, 
+        destination: n.destination, 
+        status: n.status,
+        title: n.title || n.itemName 
+      }))
+    });
+    
+    // Show only page-specific notifications
+    if (currentDestination) {
+      // On specific pages: show ONLY that page's notifications
+      return notifications.filter(n => n.destination === currentDestination);
+    } else {
+      // On dashboard/general pages: show general notifications (no specific destination)
+      return notifications.filter(n => 
+        !n.destination || n.destination === "dashboard"
+      );
+    }
   }, [notifications, currentDestination]);
 
   // Auto-open logic for pending invites
@@ -130,16 +179,30 @@ export default function NotificationHeader() {
     }
   };
 
-  const unreadCount = filteredNotifications.filter((n: any) => n.status === "unread").length;
+  // Debug: Show real notifications only
+  const allNotifications = filteredNotifications;
+  const unreadCount = allNotifications.filter((n: any) => n.status === "unread").length;
+  
+  console.log('🔔 NotificationHeader Debug:', {
+    notifications: notifications,
+    filteredNotifications: filteredNotifications.length,
+    allNotifications: allNotifications.length,
+    unreadCount,
+    userProfile: userProfile?._id,
+    organisationId,
+    loading,
+    currentDestination
+  });
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
         <Button variant="ghost" size="icon" className="relative">
           <Bell className="h-6 w-6 text-gray-600" />
-          {unreadCount > 0 && (
+          {/* Show notification count - force show if any notifications exist */}
+          {(unreadCount > 0 || allNotifications.length > 0) && (
             <span className="absolute top-0 right-0 flex h-4 w-4 items-center justify-center rounded-full bg-red-600 text-[10px] font-bold text-white ring-2 ring-white">
-              {unreadCount > 9 ? "9+" : unreadCount}
+              {unreadCount > 9 ? "9+" : Math.max(unreadCount, allNotifications.length)}
             </span>
           )}
         </Button>
@@ -185,7 +248,7 @@ export default function NotificationHeader() {
               <RefreshCcw className="h-8 w-8 animate-spin mb-2" />
               <p className="text-sm">Checking for updates...</p>
             </div>
-          ) : filteredNotifications.length === 0 ? (
+          ) : allNotifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8 text-center">
               <CheckCircle className="h-12 w-12 text-gray-200 mb-4" />
               <p className="font-medium">All caught up!</p>
@@ -193,7 +256,7 @@ export default function NotificationHeader() {
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
-              {filteredNotifications.map((notification: any) => {
+              {allNotifications.map((notification: any) => {
                 const isInvite = notification.type === 'invite';
                 const isPendingInvite = isInvite && notification.inviteResponse === 'pending';
 
@@ -210,12 +273,15 @@ export default function NotificationHeader() {
                       {/* Icon */}
                       <div className={`mt-0.5 p-2.5 rounded-xl shrink-0 shadow-sm ${
                           isInvite ? "bg-gradient-to-br from-purple-100 to-purple-200 text-purple-700" :
+                          notification.type === "deadline_reminder" ? "bg-gradient-to-br from-red-100 to-red-200 text-red-700" :
                           notification.source?.includes("procurement") ? "bg-gradient-to-br from-orange-100 to-orange-200 text-orange-700" :
                           notification.source?.includes("purchase") ? "bg-gradient-to-br from-blue-100 to-blue-200 text-blue-700" :
                           notification.source?.includes("delivery") ? "bg-gradient-to-br from-green-100 to-green-200 text-green-700" :
                           "bg-gradient-to-br from-gray-100 to-gray-200 text-gray-700"
                       }`}>
-                        {isInvite ? <UserPlus className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+                        {isInvite ? <UserPlus className="h-4 w-4" /> : 
+                         notification.type === "deadline_reminder" ? <Bell className="h-4 w-4" /> :
+                         <AlertCircle className="h-4 w-4" />}
                       </div>
 
                       {/* Content */}
@@ -223,7 +289,9 @@ export default function NotificationHeader() {
                         <div className="flex justify-between items-start gap-2">
                           <div className="flex-1">
                             <p className="text-sm font-bold text-gray-900 leading-tight">
-                              {isInvite ? "Organization Invitation" : (notification.itemName || "New Update")}
+                              {isInvite ? "Organization Invitation" : 
+                               notification.type === "deadline_reminder" ? notification.title :
+                               (notification.itemName || "New Update")}
                             </p>
                             {notification.status === "unread" && (
                               <span className="inline-block mt-1 px-2 py-0.5 bg-blue-600 text-white text-[10px] font-semibold rounded-full">
@@ -237,8 +305,21 @@ export default function NotificationHeader() {
                         </div>
                         
                         <p className="text-sm text-gray-700 break-words leading-relaxed">
-                          {notification.remark || "No additional remarks provided."}
+                          {notification.type === "deadline_reminder" ? 
+                            notification.message : 
+                            (notification.remark || "No additional remarks provided.")}
                         </p>
+                        
+                        {/* Deadline Reminder Info */}
+                        {notification.type === "deadline_reminder" && notification.metadata && (
+                          <div className="mt-2 p-2 bg-red-50 rounded-lg border border-red-200">
+                            <div className="text-xs text-red-800 space-y-1">
+                              <div><strong>Project:</strong> {notification.metadata.projectName}</div>
+                              <div><strong>Task:</strong> {notification.metadata.wbsName}</div>
+                              <div><strong>Deadline:</strong> {new Date(notification.metadata.deadline).toLocaleDateString()}</div>
+                            </div>
+                          </div>
+                        )}
                         
                         {/* Invite Actions */}
                         {isPendingInvite && (
@@ -276,7 +357,7 @@ export default function NotificationHeader() {
                                 {notification.source}
                               </Badge>
                             )}
-                            {notification.status === "unread" && (
+                            {notification.status === "unread" && !notification.isReminder && (
                               <Button
                                 size="sm"
                                 variant="ghost"
@@ -285,6 +366,11 @@ export default function NotificationHeader() {
                               >
                                 <Check className="h-3 w-3 mr-1" /> Mark as Read
                               </Button>
+                            )}
+                            {notification.isReminder && (
+                              <Badge variant="outline" className="text-[10px] h-5 px-2 font-medium text-red-600 bg-red-50 border-red-200">
+                                Upcoming Deadline
+                              </Badge>
                             )}
                           </div>
                         )}

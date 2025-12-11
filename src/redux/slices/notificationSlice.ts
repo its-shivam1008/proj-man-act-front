@@ -20,6 +20,7 @@ interface FetchNotificationFilters {
   itemId?: string;
   status?: string;
   receiverId?:any;
+  type?: string;
 }
 
 // 1. Async Thunk for Fetching with Filters
@@ -35,10 +36,16 @@ export const fetchNotifications = createAsyncThunk(
       if (filters.itemId) params.append("itemId", filters.itemId);
       if (filters.status) params.append("status", filters.status);
       if (filters.receiverId) params.append("receiverId", filters.receiverId);
+      if (filters.type) params.append("type", filters.type);
 
-      const response = await api.get(`/notifications/list?${params.toString()}`);
+      const url = `/notifications/list?${params.toString()}`;
+      console.log('🚀 Fetching notifications from:', url, 'with filters:', filters);
+      
+      const response = await api.get(url);
+      console.log('✅ Notifications API response:', response.data);
       return response.data;
     } catch (error: any) {
+      console.error('❌ Notifications API error:', error.response?.data || error.message);
       return rejectWithValue(error.response?.data?.message || "Failed to fetch");
     }
   }
