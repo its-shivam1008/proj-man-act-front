@@ -34,6 +34,8 @@ import activityCostReducer from "./slices/activityCostSlice";
 import machineryReducer from "./slices/plantandmachinary/machinerySlice";
 import inventoryMasterReducer from "./slices/inventoryMasterSlice";
 import materialMovementReducer from "./slices/materialMovementSlice";
+import rackReducer from './slices/rackSlice'
+import shelfReducer from './slices/shelfSlice'
 import reminderReducer from "./slices/reminderSlice";
 export const store = configureStore({
   reducer: {
@@ -72,6 +74,8 @@ export const store = configureStore({
     machinery: machineryReducer,
     inventoryMaster: inventoryMasterReducer,
     materialMovement: materialMovementReducer,
+    rack: rackReducer,
+    shelf: shelfReducer,
     reminders: reminderReducer,
   },
 });
