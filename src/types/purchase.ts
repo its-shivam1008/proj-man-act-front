@@ -54,7 +54,7 @@ export interface PurchaseOrderProductLine {
   taxes: number;
   subtotal: number;
   organisationId:string;
-  location: string | { name: string; } | any;
+  warehouse: string | { name: string; } | any;
   // Raw Material specific fields
   itemCode?: string;
   unitOfMeasure?: string;

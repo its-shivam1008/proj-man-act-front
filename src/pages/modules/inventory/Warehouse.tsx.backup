@@ -1,0 +1,2176 @@
+import { usePermission } from "@/hooks/userPermission";
+import React, { useState, useEffect } from "react";
+import {
+  Warehouse,
+  Plus,
+  Package,
+  MapPin,
+  Edit,
+  Trash2,
+  XCircle,
+  ShieldAlert,
+  History,
+  Box,
+} from "lucide-react";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useDispatch, useSelector } from "react-redux";
+import {
+  fetchWarehouses,
+  addWarehouse,
+  updateWarehouse,
+  deleteWarehouse,
+} from "@/redux/slices/warehouseSlice";
+import { fetchProducts } from "@/redux/slices/productSlice";
+import { toast } from "sonner";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
+import {
+  fetchRacks,
+  createRack,
+} from "@/redux/slices/rackSlice";
+import {
+  fetchShelves,
+  createShelf,
+} from "@/redux/slices/shelfSlice";
+import {
+  fetchMaterials
+} from "@/redux/slices/rawmaterialSlice"
+interface Product {
+  _id: string;
+  name: string;
+  sku: string;
+  quantity: number;
+  minStock: number;
+  unitCost: number;
+}
+
+interface ProductLocation {
+  rackId?: string | null;
+  rackName?: string | null;
+  shelfId?: string | null;
+  shelfName?: string | null;
+  quantity?: number | string;   // optional quantity
+}
+
+interface WarehouseProduct {
+  productId: string;
+  productName: string;
+  quantity: number;
+  unit: string;
+  lastGRN: { date?: string; qty?: number; po?: string } | null;
+  lastIssue: { date?: string; qty?: number; dept?: string } | null;
+  ageing: { "0-30": number; "30-60": number; "60-90": number; "90+": number };
+  inTransit: number;
+  reorderAlerts: string[];
+  bins: string[];
+  locations: ProductLocation[];
+}
+interface RawMaterialEntry {
+  materialId: string;
+  materialName: string;
+  quantity: number;
+  unit: string;
+  lastGRN: { date?: string; qty?: number; po?: string } | null;
+  lastIssue: { date?: string; qty?: number; dept?: string } | null;
+  ageing: { "0-30": number; "30-60": number; "60-90": number; "90+": number };
+  inTransit: number;
+  reorderAlerts: string[];
+  bins: string[];
+  locations: Location[];
+}
+interface WarehouseData {
+  _id: string;
+  name: string;
+  type: string;
+  location: string | { _id: string; name: string };
+  capacity: number;
+  products: WarehouseProduct[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface EnrichedWarehouse extends WarehouseData {
+  products: (WarehouseProduct & { meta: Product | null })[];
+  rawMaterials?: RawMaterialEntry[];
+}
+
+const WarehouseManagement: React.FC = () => {
+  const [page, setPage] = useState(1);
+  const limit = 5;
+
+  const dispatch = useDispatch();
+  const canView = usePermission("warehouses", "view");
+  const canCreate = usePermission("warehouses", "create");
+  const canEdit = usePermission("warehouses", "edit");
+  const canDelete = usePermission("warehouses", "delete");
+
+  const { products = [] } = useSelector((state: any) => state.products);
+  const { warehouses, loading, total } = useSelector((state: any) => state.warehouse);
+
+  const racks = useSelector((state: any) => state.rack?.racks || []);
+  const shelves = useSelector((state: any) => state.shelf?.shelves || []);
+  const { materials = [] } = useSelector((state: any) => state.rawMaterials);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const { userProfile } = useSelector((state: any) => state.auth);
+  const { locations } = useSelector((state: any) => state.masterData);
+
+  const isLocationRestricted = userProfile?.role !== 'admin' && !!userProfile?.location;
+  const [locationFilter, setLocationFilter] = useState(isLocationRestricted ? userProfile.location : "all");
+
+  const getLocationName = (loc: string | { name: string } | undefined) => {
+    if (!loc) return "N/A";
+    if (typeof loc === 'object') return loc.name || "N/A";
+    const found = locations.find((l: any) => l._id === loc);
+    return found ? found.name : "N/A";
+  };
+
+  useEffect(() => {
+    dispatch(fetchMasterData("location"));
+    dispatch(fetchProducts({ page: 1, limit: 200 })); // Load more products
+    dispatch(fetchWarehouses({ page, limit, location: locationFilter }));
+    dispatch(fetchMaterials({ page: 1, limit: 200 }));
+  }, [dispatch, page, locationFilter]);
+
+  const hasPrev = page > 1;
+  const hasNext = page * limit < total;
+
+  const enrichedWarehouses: EnrichedWarehouse[] = warehouses.map((w: WarehouseData) => ({
+    ...w,
+    products: w.products.map((p) => ({
+      ...p,
+      meta: products.find((prod) => prod._id === p.productId) || null,
+    })),
+  }));
+
+  const getStockStatus = (qty: number, minStock: number) => {
+    if (qty === 0) return { label: "Out of Stock", color: "bg-red-100 text-red-800" };
+    if (qty <= minStock) return { label: "Low Stock", color: "bg-yellow-100 text-yellow-800" };
+    return { label: "In Stock", color: "bg-green-100 text-green-800" };
+  };
+
+  const handleEdit = (id: string) => {
+    setEditingId(id);
+    setShowForm(true);
+  };
+
+  const handleDelete = (id: string) => {
+    if (!id) return toast.error("Invalid warehouse id");
+    if (!window.confirm("Are you sure you want to delete this warehouse?")) return;
+
+    dispatch(deleteWarehouse(id))
+      .unwrap()
+      .then(() => {
+        toast.success("Warehouse deleted");
+        if (enrichedWarehouses.length === 1 && page > 1) setPage(p => p - 1);
+        dispatch(fetchWarehouses({ page, limit }));
+      })
+      .catch(() => toast.error("Failed to delete"));
+  }
+
+  const handleClose = () => {
+    setShowForm(false);
+    setEditingId(null);
+  };
+
+  const currentWarehouse = editingId
+    ? enrichedWarehouses.find((w) => w._id === editingId)
+    : null;
+
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
+        <p className="text-gray-600">You do not have permission to view this page.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-7xl mx-auto space-y-8">
+        <div className="flex justify-between items-center">
+          <h1 className="text-4xl font-bold flex items-center gap-3 text-gray-800">
+            <Warehouse className="w-10 h-10 text-blue-600" />
+            Warehouse Management
+          </h1>
+          <div className="flex gap-2">
+            <Select value={locationFilter} onValueChange={setLocationFilter} disabled={isLocationRestricted}>
+              <SelectTrigger className="w-[200px] bg-white">
+                <SelectValue placeholder="Filter Location" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Locations</SelectItem>
+                {locations.map(l => <SelectItem key={l._id} value={l._id}>{l.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+
+            <Button disabled={!canCreate} onClick={() => setShowForm(true)} size="lg">
+              <Plus className="w-5 h-5 mr-2" /> Add Warehouse
+            </Button>
+          </div>
+        </div>
+
+        {enrichedWarehouses.length === 0 && !loading && (
+          <div className="text-center py-20 bg-white rounded-2xl shadow">
+            <Warehouse className="w-20 h-20 mx-auto text-gray-300 mb-4" />
+            <p className="text-xl text-gray-500">No warehouses created yet</p>
+            <Button onClick={() => setShowForm(true)} className="mt-6">
+              Create Your First Warehouse
+            </Button>
+          </div>
+        )}
+
+        <Accordion type="single" collapsible className="space-y-6">
+          {enrichedWarehouses.map((w) => {
+            const totalStock = w.products.reduce((sum, p) => sum + p.quantity, 0);
+
+            return (
+              <AccordionItem
+                key={w._id}
+                value={w._id}
+                className="bg-white rounded-2xl shadow-lg overflow-hidden border hover:shadow-2xl transition-all"
+              >
+                <AccordionTrigger className="px-8 py-6 hover:no-underline">
+                  <div className="grid grid-cols-12 w-full items-center gap-6">
+                    <div className="col-span-5">
+                      <div className="flex items-center gap-4">
+                        <Package className="w-9 h-9 text-blue-600" />
+                        <div>
+                          <h3 className="text-xl font-bold text-gray-900">{w.name}</h3>
+                          {w.products.length > 0 ? (
+                            <div className="space-y-2 mt-2">
+                              {w.products.slice(0, 3).map((p, i) => (
+                                <div key={i} className="bg-gray-50 p-3 rounded-lg flex justify-between text-sm">
+                                  <div>
+                                    <div className="font-medium">{p.productName}</div>
+                                    <div className="text-xs text-gray-500">
+                                      {p.quantity} {p.unit}
+                                    </div>
+                                  </div>
+                                  <div className="text-right">
+                                    <div className="text-xs text-gray-500">
+                                      Cost: ₹{p.meta?.unitCost ?? 0}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                              {w.products.length > 3 && (
+                                <div className="text-xs text-gray-500">+{w.products.length - 3} more</div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-sm text-red-600">No products</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="col-span-2">
+                      <Badge variant="secondary">{w.type}</Badge>
+                    </div>
+
+                    <div className="col-span-2 text-sm text-gray-600 flex items-center gap-2">
+                      <MapPin className="w-5 h-5" />
+                      {/* [!code --] {w.location} */}
+                      {getLocationName(w.location)} {/* [!code ++] */}
+                    </div>
+
+                    <div className="col-span-3 text-right">
+                      <div className="text-3xl font-bold text-gray-800">
+                        {totalStock.toLocaleString()}
+                      </div>
+                      <div className="text-sm text-gray-500">Total Units</div>
+                    </div>
+                  </div>
+                </AccordionTrigger>
+
+                <AccordionContent className="bg-gradient-to-r from-gray-50 to-white px-8 py-8 border-t">
+                  <div className="flex justify-end gap-3 mb-6">
+                    <Button disabled={!canEdit} size="sm" variant="outline" onClick={() => handleEdit(w._id)}>
+                      <Edit className="w-4 h-4 mr-2" /> Edit
+                    </Button>
+                    <Button disabled={!canDelete} size="sm" variant="destructive" onClick={() => handleDelete(w._id)}>
+                      <Trash2 className="w-4 h-4 mr-2" /> Delete
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    {/* Stock Details */}
+                    <div className="space-y-4">
+                      <h4 className="font-bold text-lg flex items-center gap-2">
+                        <Box className="w-5 h-5 text-blue-600" />
+                        Stock Details
+                      </h4>
+                      {w.products.map((p) => {
+                        const meta = p.meta;
+                        const status = meta ? getStockStatus(p.quantity, meta.minStock) : null;
+                        const value = meta ? p.quantity * meta.unitCost : 0;
+
+                        return (
+                          <div key={p.productId} className="bg-blue-50 p-5 rounded-xl">
+                            <div className="font-semibold text-lg">{p.productName}</div>
+                            <div className="text-2xl font-bold">{p.quantity} {p.unit}</div>
+                            {status && <Badge className={`mt-2 ${status.color}`}>{status.label}</Badge>}
+                            {meta && (
+                              <div className="mt-2 text-sm">
+                                <div>Global Stock: {meta.quantity}</div>
+                                <div>Value: <strong className="text-green-600">₹{value.toLocaleString()}</strong></div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Recent Activity */}
+                    <div className="space-y-4">
+                      <h4 className="font-bold text-lg flex items-center gap-2">
+                        <History className="w-5 h-5 text-purple-600" />
+                        Recent Activity
+                      </h4>
+                      <div className="space-y-3">
+                        {w.products.flatMap((p) => [
+                          p.lastGRN && (
+                            <div key={p.productId + "-grn"} className="bg-green-50 p-3 rounded text-sm">
+                              <strong>GRN</strong>: +{p.lastGRN.qty} {p.unit} • {p.lastGRN.date}
+                            </div>
+                          ),
+                          p.lastIssue && (
+                            <div key={p.productId + "-issue"} className="bg-blue-50 p-3 rounded text-sm">
+                              <strong>Issue</strong>: -{p.lastIssue.qty} → {p.lastIssue.dept}
+                            </div>
+                          ),
+                        ].filter(Boolean))}
+                      </div>
+                    </div>
+
+                    {/* Stock Ageing */}
+                    <div>
+                      <h4 className="font-bold text-lg mb-4">Stock Ageing</h4>
+                      {w.products.map((p) => (
+                        <div key={p.productId} className="bg-white p-4 rounded-lg shadow mb-4">
+                          <p className="font-medium mb-3">{p.productName}</p>
+                          <div className="grid grid-cols-4 gap-3 text-center text-sm">
+                            <div>
+                              <p className="text-gray-500">0–30</p>
+                              <p className="font-bold text-green-600">{p.ageing["0-30"]}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-500">30–60</p>
+                              <p className="font-bold text-yellow-600">{p.ageing["30-60"]}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-500">60–90</p>
+                              <p className="font-bold text-orange-600">{p.ageing["60-90"]}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-500">90+</p>
+                              <p className="font-bold text-red-600">{p.ageing["90+"]}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {/* ---------------- RACKS & SHELVES – BASED ONLY ON PRODUCT LOCATIONS ---------------- */}
+                    <div className="col-span-1 lg:col-span-3">
+                      <h4 className="font-bold text-lg mb-3">Racks & Shelves</h4>
+
+                      {(() => {
+                        // ⭐ Collect all locations from all products
+                        const allLocations = w.products.flatMap((p) => p.locations || []);
+
+                        if (allLocations.length === 0) {
+                          return <p className="text-sm text-gray-500">No rack & shelf assigned.</p>;
+                        }
+
+                        // ⭐ Group locations by rackId
+                        const racksMap: Record<string, { rackName: string; shelves: any[] }> = {};
+
+                        allLocations.forEach((loc) => {
+                          if (!loc.rackId) return;
+
+                          if (!racksMap[loc.rackId]) {
+                            racksMap[loc.rackId] = {
+                              rackName: loc.rackName || "Unnamed Rack",
+                              shelves: [],
+                            };
+                          }
+
+                          racksMap[loc.rackId].shelves.push({
+                            shelfId: loc.shelfId,
+                            shelfName: loc.shelfName || "Unnamed Shelf",
+                            quantity: loc.quantity,
+                          });
+                        });
+
+                        // Render racks grouped with shelves
+                        return (
+                          <div className="space-y-4">
+                            {Object.entries(racksMap).map(([rackId, rackData]) => (
+                              <div key={rackId} className="bg-white p-3 rounded-lg border">
+
+                                {/* Rack Name */}
+                                <div className="font-semibold text-lg">{rackData.rackName}</div>
+
+                                {/* Shelves under this rack */}
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {rackData.shelves.map((shelf) => (
+                                    <span
+                                      key={shelf.shelfId}
+                                      className="px-3 py-1 rounded bg-blue-50 text-blue-700 text-sm flex items-center gap-1"
+                                    >
+                                      {shelf.shelfName}
+                                      <span className="text-xs text-gray-600">(Qty: {shelf.quantity})</span>
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                    {/* ==================== RAW MATERIALS – CLEAN LIST STYLE (NO CARDS) ==================== */}
+                    <div className="col-span-1 lg:col-span-3 w-full">
+                      <h4 className="text-2xl font-bold text-orange-700 border-b-2 border-orange-300 pb-2 mb-6">
+                        Raw Materials Overview
+                      </h4>
+
+                      {w.rawMaterials && w.rawMaterials.length > 0 ? (
+                        <div className="space-y-6 w-full">
+                          {w.rawMaterials.map((m, idx) => (
+                            <div
+                              key={m.materialId}
+                              className={`pb-4 ${idx !== w.rawMaterials.length - 1 ? "border-b border-gray-300" : ""
+                                }`}
+                            >
+                              {/* ROW */}
+                              <div className="flex flex-wrap items-start gap-10">
+                                {/* Name + Qty */}
+                                <div className="min-w-[180px]">
+                                  <div className="text-lg font-semibold text-gray-900">
+                                    {m.materialName}
+                                  </div>
+                                  <div className="text-3xl font-extrabold text-orange-700">
+                                    {m.quantity} {m.unit}
+                                  </div>
+                                </div>
+
+                                {/* Transit + Alerts */}
+                                <div className="text-sm space-y-1 min-w-[120px]">
+                                  <div className="text-gray-700">
+                                    In Transit:{" "}
+                                    <span className="font-semibold text-orange-600">
+                                      {m.inTransit || 0}
+                                    </span>
+                                  </div>
+                                  <div className="text-gray-700">
+                                    Alerts:{" "}
+                                    <span
+                                      className={`font-bold px-2 py-0.5 rounded text-xs ${m.reorderAlerts.length > 0
+                                        ? "bg-red-100 text-red-700"
+                                        : "bg-green-100 text-green-700"
+                                        }`}
+                                    >
+                                      {m.reorderAlerts.length}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Ageing */}
+                                <div className="text-sm min-w-[240px]">
+                                  <div className="text-gray-700 font-medium">Ageing:</div>
+                                  <div className="flex flex-wrap gap-4 mt-1">
+                                    <span className="text-green-700">
+                                      0–30d: <strong>{m.ageing["0-30"]}</strong>
+                                    </span>
+                                    <span className="text-yellow-700">
+                                      30–60d: <strong>{m.ageing["30-60"]}</strong>
+                                    </span>
+                                    <span className="text-orange-700">
+                                      60–90d: <strong>{m.ageing["60-90"]}</strong>
+                                    </span>
+                                    <span className="text-red-700">
+                                      90+d: <strong>{m.ageing["90+"]}</strong>
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Location */}
+                                <div className="text-sm min-w-[250px]">
+                                  <div className="text-gray-700 font-medium">Location:</div>
+                                  <div className="text-gray-900 mt-1">
+                                    {m.locations
+                                      .map(
+                                        (loc) =>
+                                          `${loc.rackName || "—"} → ${loc.shelfName || "—"
+                                          } (${loc.quantity || 0})`
+                                      )
+                                      .join(" | ")}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="py-10 text-center text-gray-500 border-2 border-dashed border-gray-300 rounded-xl">
+                          No raw materials assigned to this warehouse.
+                        </div>
+                      )}
+                    </div>
+
+
+
+
+
+
+
+
+
+
+
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            );
+          })}
+        </Accordion>
+
+        {/* Pagination */}
+        <div className="flex justify-between items-center mt-8 bg-white p-4 rounded-xl shadow">
+          <button disabled={!hasPrev} onClick={() => setPage(p => p - 1)} className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50">
+            Previous
+          </button>
+          <span>Page {page}</span>
+          <button disabled={!hasNext} onClick={() => setPage(p => p + 1)} className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50">
+            Next
+          </button>
+        </div>
+      </div>
+
+      {showForm && (
+        <WarehouseForm
+          warehouse={currentWarehouse}
+          products={products}
+          materials={materials}
+          onClose={handleClose}
+          isEdit={!!editingId}
+        />
+      )}
+    </div>
+  );
+};
+
+const WarehouseForm: React.FC<{
+  warehouse: EnrichedWarehouse | null;
+  products: Product[];
+  materials: any[];
+  onClose: () => void;
+  isEdit: boolean;
+}> = ({ warehouse, products, materials, onClose, isEdit }) => {
+  const dispatch = useDispatch();
+  const racks = useSelector((state: any) => state.rack?.racks || []);
+  const shelves = useSelector((state: any) => state.shelf?.shelves || []);
+  const { userProfile } = useSelector((state: any) => state.auth);
+  const { locations } = useSelector((state: any) => state.masterData);
+
+  const isLocationRestricted = userProfile?.role !== 'admin' && !!userProfile?.location;
+  const [locationFilter, setLocationFilter] = useState(isLocationRestricted ? userProfile.location : "all");
+
+  const [formData, setFormData] = useState({
+    name: warehouse?.name || "",
+    type: warehouse?.type || "General",
+    location: warehouse?.location
+      ? (typeof warehouse.location === 'object' ? warehouse.location._id : warehouse.location)
+      : (isLocationRestricted ? userProfile.location : ""),
+    capacity: warehouse?.capacity?.toString() || "0",
+products: warehouse?.products?.length
+  ? warehouse.products.map((p) => ({
+      productId: p.productId,
+      productName: p.productName,
+      quantity: p.quantity.toString(),
+      unit: p.unit,
+      lastGRN: { date: p.lastGRN?.date || "", qty: p.lastGRN?.qty?.toString() || "", po: p.lastGRN?.po || "" },
+      lastIssue: { date: p.lastIssue?.date || "", qty: p.lastIssue?.qty?.toString() || "", dept: p.lastIssue?.dept || "" },
+      ageing: {
+        "0-30": p.ageing["0-30"].toString(),
+        "30-60": p.ageing["30-60"].toString(),
+        "60-90": p.ageing["60-90"].toString(),
+        "90+": p.ageing["90+"].toString(),
+      },
+      inTransit: p.inTransit.toString(),
+      reorderAlerts: p.reorderAlerts.join(", "),
+      bins: p.bins.join(", "),
+      locations: p.locations?.length
+        ? p.locations.map((loc: any) => ({
+          rackId: loc.rackId?._id
+            ? String(loc.rackId._id)
+            : loc.rackId
+              ? String(loc.rackId)
+              : "",
+          rackName: loc.rackName || "",
+          shelfId: loc.shelfId?._id
+            ? String(loc.shelfId._id)
+            : loc.shelfId
+              ? String(loc.shelfId)
+              : "",
+          shelfName: loc.shelfName || "",
+          quantity: loc.quantity?.toString() || "0",
+        }))
+        : [
+          {
+            rackId: "",
+            rackName: "",
+            shelfId: "",
+            shelfName: "",
+            quantity: "0",
+          },
+        ]
+    }))
+  : [{ // This is the default object for when products array is empty
+    productId: "", productName: "", quantity: "0", unit: "PCS",
+    lastGRN: { date: "", qty: "", po: "" },
+    lastIssue: { date: "", qty: "", dept: "" },
+    ageing: { "0-30": "0", "30-60": "0", "60-90": "0", "90+": "0" },
+    inTransit: "0", reorderAlerts: "", bins: "",
+    locations: [
+      {
+        rackId: "",
+        rackName: "",
+        shelfId: "",
+        shelfName: "",
+        quantity: "0"
+      }
+    ]
+  }],
+    materials: warehouse?.rawMaterials?.length
+      ? warehouse.rawMaterials.map((m: any) => ({
+        materialId: m.materialId,
+        materialName: m.materialName,
+        quantity: m.quantity?.toString() || "0",
+        unit: m.unit || "KG",
+        lastGRN: { date: m.lastGRN?.date || "", qty: m.lastGRN?.qty?.toString() || "", po: m.lastGRN?.po || "" },
+        lastIssue: { date: m.lastIssue?.date || "", qty: m.lastIssue?.qty?.toString() || "", dept: m.lastIssue?.dept || "" },
+
+        ageing: {
+          "0-30": m.ageing["0-30"].toString(),
+          "30-60": m.ageing["30-60"].toString(),
+          "60-90": m.ageing["60-90"].toString(),
+          "90+": m.ageing["90+"].toString(),
+        },
+
+        inTransit: m.inTransit?.toString() || "0",
+        reorderAlerts: m.reorderAlerts.join(", "),
+        bins: m.bins.join(", "),
+
+        locations: m.locations?.length
+          ? m.locations.map((loc: any) => ({
+            rackId: String(loc.rackId || ""),
+            rackName: loc.rackName || "",
+            shelfId: String(loc.shelfId || ""),
+            shelfName: loc.shelfName || "",
+            quantity: loc.quantity?.toString() || "0",
+          }))
+          : [
+            {
+              rackId: "",
+              rackName: "",
+              shelfId: "",
+              shelfName: "",
+              quantity: "0",
+            },
+          ],
+      }))
+      : [
+        {
+          materialId: "",
+          materialName: "",
+          quantity: "0",
+          unit: "KG",
+          ageing: {
+            "0-30": "0",
+            "30-60": "0",
+            "60-90": "0",
+            "90+": "0",
+          },
+          inTransit: "0",
+          reorderAlerts: "",
+          bins: "",
+          locations: [
+            {
+              rackId: "",
+              rackName: "",
+              shelfId: "",
+              shelfName: "",
+              quantity: "0",
+            },
+          ],
+        },
+      ],
+  });
+
+  useEffect(() => {
+    if (warehouse?._id) {
+      console.log("FETCH RACKS ONCE for warehouse:", warehouse._id);
+      dispatch(fetchRacks(warehouse._id));
+    }
+  }, [warehouse?._id]);
+
+
+
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    // 🚀 Build payload properly
+    const payload = {
+      name: formData.name,
+      type: formData.type,
+      location: formData.location,
+      capacity: Number(formData.capacity || 0),
+
+      products: (formData.products || [])
+        .filter((p) => p.productId)
+        .map((p) => ({
+          productId: p.productId,
+          productName: p.productName,
+          quantity: Number(p.quantity || 0),
+          unit: p.unit,
+
+          lastGRN: p.lastGRN.date
+            ? {
+              date: p.lastGRN.date,
+              qty: Number(p.lastGRN.qty || 0),
+              po: p.lastGRN.po,
+            }
+            : null,
+
+          lastIssue: p.lastIssue.date
+            ? {
+              date: p.lastIssue.date,
+              qty: Number(p.lastIssue.qty || 0),
+              dept: p.lastIssue.dept,
+            }
+            : null,
+
+          ageing: {
+            "0-30": Number(p.ageing["0-30"] || 0),
+            "30-60": Number(p.ageing["30-60"] || 0),
+            "60-90": Number(p.ageing["60-90"] || 0),
+            "90+": Number(p.ageing["90+"] || 0),
+          },
+
+          inTransit: Number(p.inTransit || 0),
+
+          reorderAlerts: p.reorderAlerts
+            ?.split(",")
+            .map((s) => s.trim())
+            .filter(Boolean) || [],
+
+          bins: p.bins
+            ?.split(",")
+            .map((s) => s.trim())
+            .filter(Boolean) || [],
+
+          // ⭐ FINAL FIX — SAVE LOCATIONS PROPERLY ⭐
+          locations: (p.locations || []).map((loc) => ({
+            rackId: String(loc.rackId),
+            rackName: loc.rackName || "",
+            shelfId: String(loc.shelfId),
+            shelfName: loc.shelfName || "",
+            quantity: Number(loc.quantity || 0),
+          })),
+
+        })),
+      rawMaterials: (formData.materials || [])  // ← NOT "materials"
+        .filter(m => m.materialId)
+        .map(m => ({
+          materialId: m.materialId,
+          materialName: m.materialName,
+          quantity: Number(m.quantity || 0),
+          unit: m.unit,
+          lastGRN: m.lastGRN?.date ? { date: m.lastGRN.date, qty: Number(m.lastGRN.qty), po: m.lastGRN.po } : null,
+          lastIssue: m.lastIssue?.date ? { date: m.lastIssue.date, qty: Number(m.lastIssue.qty), dept: m.lastIssue.dept } : null,
+          ageing: {
+            "0-30": Number(m.ageing["0-30"] || 0),
+            "30-60": Number(m.ageing["30-60"] || 0),
+            "60-90": Number(m.ageing["60-90"] || 0),
+            "90+": Number(m.ageing["90+"] || 0),
+          },
+          inTransit: Number(m.inTransit || 0),
+          reorderAlerts: (m.reorderAlerts || "").split(",").map(s => s.trim()).filter(Boolean),
+          bins: (m.bins || "").split(",").map(s => s.trim()).filter(Boolean),
+          locations: (m.locations || [])
+            .filter(loc => loc.rackId)
+            .map(loc => ({
+              rackId: loc.rackId,
+              rackName: loc.rackName,
+              shelfId: loc.shelfId,
+              shelfName: loc.shelfName,
+              quantity: Number(loc.quantity || 0),
+            })),
+        })),
+    };
+
+    console.log("📦 FINAL PAYLOAD SENT TO BACKEND:", payload);
+
+    try {
+      if (isEdit && warehouse) {
+        await dispatch(
+          updateWarehouse({ id: warehouse._id, data: payload })
+        ).unwrap();
+
+        toast.success("Warehouse updated!");
+      } else {
+        await dispatch(addWarehouse(payload)).unwrap();
+        toast.success("Warehouse created!");
+      }
+
+      // Refresh list
+      dispatch(fetchWarehouses({ page: 1, limit: 5 }));
+
+      // Close modal
+      onClose();
+    } catch (err) {
+      console.error("❌ Warehouse save failed:", err);
+      toast.error("Operation failed");
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto p-8">
+        <div className="flex justify-between items-center mb-8">
+          <h2 className="text-3xl font-bold">{isEdit ? "Edit" : "Create"} Warehouse</h2>
+          <button onClick={onClose}><XCircle className="w-9 h-9 text-gray-500 hover:text-gray-700" /></button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div><Label>Warehouse Name *</Label><Input required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} /></div>
+            <div><Label>Type</Label>
+              <Select value={formData.type} onValueChange={v => setFormData({ ...formData, type: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="General">General</SelectItem>
+                  <SelectItem value="Cold Storage">Cold Storage</SelectItem>
+                  <SelectItem value="Bonded">Bonded</SelectItem>
+                  <SelectItem value="Quarantine">Quarantine</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div><Label>Location *</Label>
+              {/* [!code ++] */}
+              <Select
+                value={formData.location}
+                onValueChange={v => setFormData({ ...formData, location: v })}
+                disabled={isEdit ? false : isLocationRestricted} // Disable only on create if restricted
+              >
+                <SelectTrigger><SelectValue placeholder="Select Location" /></SelectTrigger>
+                <SelectContent>
+                  {locations.map(l => <SelectItem key={l._id} value={l._id}>{l.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div><Label>Capacity (%)</Label><Input type="number" value={formData.capacity} onChange={e => setFormData({ ...formData, capacity: e.target.value })} /></div>
+          </div>
+          {/* poduct form */}
+          {isEdit &&
+            <>
+              <div className="flex justify-between items-center">
+                <h3 className="text-xl font-bold">Products</h3>
+                {/* Add Product (guarded) */}
+                <Button
+                  type="button"
+                  onClick={() => {
+                    // if we're creating a new warehouse (not editing) and there's no saved warehouse id, block
+                    if (!isEdit && !warehouse?._id) {
+                      return toast.error("Please create the warehouse first before adding products.");
+                    }
+
+                    setFormData({
+                      ...formData,
+                      products: [
+                        ...formData.products,
+                        {
+                          productId: "",
+                          productName: "",
+                          quantity: "0",
+                          unit: "PCS",
+                          lastGRN: { date: "", qty: "", po: "" },
+                          lastIssue: { date: "", qty: "", dept: "" },
+                          ageing: { "0-30": "0", "30-60": "0", "60-90": "0", "90+": "0" },
+                          inTransit: "0",
+                          reorderAlerts: "",
+                          bins: "",
+                          locations: [{ rackId: "", rackName: "", shelfId: "", shelfName: "", quantity: "0" }],
+                        },
+                      ],
+                    });
+                  }}
+                >
+                  Add Product
+                </Button>
+
+              </div>
+              {/* Map products */}
+              {formData.products?.map((prod: any, index: number) => (
+                <div key={index} className="p-6 bg-gray-100 rounded-xl border space-y-4">
+                  {/* Top row: Product select / qty / unit */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <Label>Product *</Label>
+                      <Select
+                        value={prod.productId}
+                        onValueChange={(productId: string) => {
+                          const sel = products.find((p: any) => p._id === productId);
+                          const updated = [...formData.products];
+                          updated[index] = {
+                            ...updated[index],
+                            productId,
+                            productName: sel?.name || "",
+                          };
+                          setFormData({ ...formData, products: updated });
+                        }}
+                      >
+                        <SelectTrigger><SelectValue placeholder="Select product" /></SelectTrigger>
+                        <SelectContent>
+                          {products.map((p: any) => (
+                            <SelectItem key={p._id} value={p._id}>
+                              {p.name} ({p.sku})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
+                      <Label>Quantity</Label>
+                      <Input
+                        type="number"
+                        value={prod.quantity}
+                        onChange={(e) => {
+                          const updated = [...formData.products];
+                          updated[index].quantity = e.target.value;
+                          setFormData({ ...formData, products: updated });
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <Label>Unit</Label>
+                      <Select
+                        value={prod.unit}
+                        onValueChange={(v: string) => {
+                          const updated = [...formData.products];
+                          updated[index].unit = v;
+                          setFormData({ ...formData, products: updated });
+                        }}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="PCS">PCS</SelectItem>
+                          <SelectItem value="KG">KG</SelectItem>
+                          <SelectItem value="Litre">Litre</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {/* Last GRN */}
+                  <div className="p-4 bg-white rounded-md space-y-3">
+                    <h4 className="font-bold">Last GRN</h4>
+                    <Input
+                      placeholder="GRN Date"
+                      value={prod.lastGRN?.date || ""}
+                      onChange={(e) => {
+                        const updated = [...formData.products];
+                        updated[index].lastGRN = { ...updated[index].lastGRN, date: e.target.value };
+                        setFormData({ ...formData, products: updated });
+                      }}
+                    />
+                    <Input
+                      type="number"
+                      placeholder="GRN Qty"
+                      value={prod.lastGRN?.qty || ""}
+                      onChange={(e) => {
+                        const updated = [...formData.products];
+                        updated[index].lastGRN = { ...updated[index].lastGRN, qty: e.target.value };
+                        setFormData({ ...formData, products: updated });
+                      }}
+                    />
+                    <Input
+                      placeholder="PO Number"
+                      value={prod.lastGRN?.po || ""}
+                      onChange={(e) => {
+                        const updated = [...formData.products];
+                        updated[index].lastGRN = { ...updated[index].lastGRN, po: e.target.value };
+                        setFormData({ ...formData, products: updated });
+                      }}
+                    />
+                  </div>
+
+                  {/* Rack & Shelf Management */}
+                  <div className="space-y-4">
+                    <h4 className="font-bold">Rack & Shelf Management</h4>
+                    
+                    {/* Create Rack & Shelf Section */}
+                    <div className="p-4 bg-gray-50 rounded-lg border space-y-3">
+                      <h5 className="font-semibold text-gray-700">Create New Rack & Shelves</h5>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div>
+                          <Label>New Rack Name</Label>
+                          <Input
+                            placeholder="Enter rack name"
+                            value={prod.tempRackName || ""}
+                            onChange={(e) => {
+                              const updated = [...formData.products];
+                              updated[index].tempRackName = e.target.value;
+                              setFormData({ ...formData, products: updated });
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <Label>New Shelf Name</Label>
+                          <Input
+                            placeholder="Enter shelf name"
+                            value={prod.tempShelfName || ""}
+                            onChange={(e) => {
+                              const updated = [...formData.products];
+                              updated[index].tempShelfName = e.target.value;
+                              setFormData({ ...formData, products: updated });
+                            }}
+                          />
+                        </div>
+                        <div className="flex items-end gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={async () => {
+                              if (!prod.tempRackName?.trim()) return toast.error("Enter rack name");
+                              try {
+                                const res = await dispatch(createRack({ rackName: prod.tempRackName, warehouseId: warehouse?._id })).unwrap();
+                                toast.success("Rack created");
+                                dispatch(fetchRacks(warehouse?._id));
+                                const updated = [...formData.products];
+                                updated[index].tempRackName = "";
+                                setFormData({ ...formData, products: updated });
+                              } catch {
+                                toast.error("Failed to create rack");
+                              }
+                            }}
+                          >
+                            Create Rack
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={async () => {
+                              if (!prod.tempShelfName?.trim()) return toast.error("Enter shelf name");
+                              if (!prod.selectedRackForShelf) return toast.error("Select a rack first");
+                              try {
+                                const res = await dispatch(createShelf({
+                                  shelfName: prod.tempShelfName,
+                                  rackId: prod.selectedRackForShelf,
+                                  warehouseId: warehouse?._id,
+                                })).unwrap();
+                                toast.success("Shelf created");
+                                dispatch(fetchShelves(prod.selectedRackForShelf));
+                                const updated = [...formData.products];
+                                updated[index].tempShelfName = "";
+                                setFormData({ ...formData, products: updated });
+                              } catch {
+                                toast.error("Failed to create shelf");
+                              }
+                            }}
+                          >
+                            Create Shelf
+                          </Button>
+                        </div>
+                      </div>
+                      <div>
+                        <Label>Select Rack for New Shelf</Label>
+                        <Select
+                          value={prod.selectedRackForShelf || ""}
+                          onValueChange={(rackId: string) => {
+                            const updated = [...formData.products];
+                            updated[index].selectedRackForShelf = rackId;
+                            setFormData({ ...formData, products: updated });
+                          }}
+                        >
+                          <SelectTrigger><SelectValue placeholder="Select rack to add shelf" /></SelectTrigger>
+                          <SelectContent>
+                            {racks
+                              .filter((r: any) => String(r.warehouseId) === String(warehouse?._id))
+                              .map((r: any) => (
+                                <SelectItem key={r._id} value={r._id}>
+                                  {r.rackName}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    {/* Add Shelves to Locations Section */}
+                    <div className="p-4 bg-blue-50 rounded-lg border space-y-3">
+                      <h5 className="font-semibold text-blue-700">Add Shelves to Product Locations</h5>
+                      
+                      {/* Step 1: Select Rack */}
+                      <div>
+                        <Label>Select Rack</Label>
+                        <Select
+                          value={prod.selectedRackId || ""}
+                          onValueChange={(rackId: string) => {
+                            dispatch(fetchShelves(rackId));
+                            const rackObj = racks.find((r: any) => String(r._id) === String(rackId));
+                            const updated = [...formData.products];
+                            updated[index].selectedRackId = rackId;
+                            updated[index].selectedRackName = rackObj?.rackName || "";
+                            updated[index].selectedShelves = [];
+                            setFormData({ ...formData, products: updated });
+                          }}
+                        >
+                          <SelectTrigger><SelectValue placeholder="Choose a rack" /></SelectTrigger>
+                          <SelectContent>
+                            {racks
+                              .filter((r: any) => String(r.warehouseId) === String(warehouse?._id))
+                              .map((r: any) => (
+                                <SelectItem key={r._id} value={r._id}>
+                                  {r.rackName}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Step 2: Select Shelves with Quantities */}
+                      {prod.selectedRackId && (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <Label>Select Shelves and Set Quantities</Label>
+                            <div className="flex gap-2">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  const updated = [...formData.products];
+                                  const availableShelves = (shelves || [])
+                                    .filter((s: any) => String(s.rackId) === String(prod.selectedRackId));
+                                  
+                                  updated[index].selectedShelves = availableShelves.map((shelf: any) => ({
+                                    shelfId: shelf._id,
+                                    shelfName: shelf.shelfName,
+                                    quantity: "0",
+                                    selected: true
+                                  }));
+                                  setFormData({ ...formData, products: updated });
+                                }}
+                              >
+                                Select All
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  const updated = [...formData.products];
+                                  updated[index].selectedShelves = [];
+                                  setFormData({ ...formData, products: updated });
+                                }}
+                              >
+                                Clear All
+                              </Button>
+                            </div>
+                          </div>
+                          
+                          {/* Shelves Selection Grid */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-60 overflow-y-auto p-2 border rounded-lg bg-white">
+                            {(shelves || [])
+                              .filter((s: any) => String(s.rackId) === String(prod.selectedRackId))
+                              .map((shelf: any) => {
+                                const selectedShelf = (prod.selectedShelves || []).find((ss: any) => ss.shelfId === shelf._id);
+                                const isSelected = selectedShelf?.selected || false;
+                                
+                                return (
+                                  <div key={shelf._id} className={`p-3 border rounded-lg transition-all duration-200 cursor-pointer hover:shadow-md ${isSelected ? 'bg-green-50 border-green-400 shadow-sm' : 'bg-gray-50 border-gray-300 hover:border-blue-300'}`}>
+                                    <div className="flex items-center space-x-2 mb-2">
+                                      <input
+                                        type="checkbox"
+                                        checked={isSelected}
+                                        onChange={(e) => {
+                                          const updated = [...formData.products];
+                                          let selectedShelves = updated[index].selectedShelves || [];
+                                          
+                                          if (e.target.checked) {
+                                            const existingIndex = selectedShelves.findIndex((ss: any) => ss.shelfId === shelf._id);
+                                            if (existingIndex >= 0) {
+                                              selectedShelves[existingIndex].selected = true;
+                                            } else {
+                                              selectedShelves.push({
+                                                shelfId: shelf._id,
+                                                shelfName: shelf.shelfName,
+                                                quantity: "0",
+                                                selected: true
+                                              });
+                                            }
+                                          } else {
+                                            selectedShelves = selectedShelves.filter((ss: any) => ss.shelfId !== shelf._id);
+                                          }
+                                          
+                                          updated[index].selectedShelves = selectedShelves;
+                                          setFormData({ ...formData, products: updated });
+                                        }}
+                                        className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                                      />
+                                      <label className="font-medium text-sm cursor-pointer flex-1">{shelf.shelfName}</label>
+                                    </div>
+                                    
+                                    {isSelected && (
+                                      <Input
+                                        type="number"
+                                        placeholder="Quantity"
+                                        value={selectedShelf?.quantity || "0"}
+                                        onChange={(e) => {
+                                          const updated = [...formData.products];
+                                          const selectedShelves = updated[index].selectedShelves || [];
+                                          const shelfIndex = selectedShelves.findIndex((ss: any) => ss.shelfId === shelf._id);
+                                          if (shelfIndex >= 0) {
+                                            selectedShelves[shelfIndex].quantity = e.target.value;
+                                            setFormData({ ...formData, products: updated });
+                                          }
+                                        }}
+                                        className="mt-2 text-sm"
+                                        min="0"
+                                      />
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            
+                            {(shelves || []).filter((s: any) => String(s.rackId) === String(prod.selectedRackId)).length === 0 && (
+                              <div className="col-span-full text-center py-8 text-gray-500">
+                                <Package className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                                <p>No shelves available in this rack</p>
+                                <p className="text-sm">Create shelves using the section above</p>
+                              </div>
+                            )}
+                          </div>
+                          
+                          {/* Add to Locations Button */}
+                          <Button
+                            type="button"
+                            onClick={() => {
+                              const updated = [...formData.products];
+                              const selectedShelves = (updated[index].selectedShelves || []).filter((ss: any) => ss.selected);
+                              
+                              const newLocations = selectedShelves.map((shelf: any) => ({
+                                rackId: prod.selectedRackId,
+                                rackName: prod.selectedRackName,
+                                shelfId: shelf.shelfId,
+                                shelfName: shelf.shelfName,
+                                quantity: shelf.quantity
+                              }));
+                              
+                              // Add to existing locations (remove duplicates from same rack)
+                              updated[index].locations = [
+                                ...(updated[index].locations || []).filter((loc: any) => 
+                                  loc.rackId !== prod.selectedRackId
+                                ),
+                                ...newLocations
+                              ];
+                              
+                              // Clear selection
+                              updated[index].selectedRackId = "";
+                              updated[index].selectedShelves = [];
+                              
+                              setFormData({ ...formData, products: updated });
+                              toast.success(`Added ${newLocations.length} shelf locations`);
+                            }}
+                            disabled={!(prod.selectedShelves || []).some((ss: any) => ss.selected)}
+                            className="w-full"
+                          >
+                            Add Selected Shelves to Locations ({(prod.selectedShelves || []).filter((ss: any) => ss.selected).length})
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Current Locations Display */}
+                    {(prod.locations || []).length > 0 && (
+                      <div className="space-y-2">
+                        <h5 className="font-semibold">Current Locations:</h5>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          {(prod.locations || []).map((loc: any, locIndex: number) => (
+                            <div key={locIndex} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
+                              <div className="flex items-center space-x-3">
+                                <div className="flex items-center space-x-2">
+                                  <Package className="w-4 h-4 text-blue-600" />
+                                  <span className="font-medium">{loc.rackName}</span>
+                                </div>
+                                <span className="text-gray-500">→</span>
+                                <span className="text-sm">{loc.shelfName}</span>
+                                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                  Qty: {loc.quantity}
+                                </span>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => {
+                                  const updated = [...formData.products];
+                                  updated[index].locations.splice(locIndex, 1);
+                                  setFormData({ ...formData, products: updated });
+                                }}
+                              >
+                                Remove
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* LEGACY CODE - COMMENTED OUT (New enhanced functionality added above)
+                    {(prod.locations || []).map((loc: any, locIndex: number) => (
+                      <div key={locIndex} className="p-4 bg-white rounded-md border space-y-3">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                          {/* Rack select */}
+                          <div>
+                            <Label>Rack</Label>
+                            <Select
+                              value={loc.rackId || ""}
+                              onValueChange={(rackId: string) => {
+                                // fetch shelves for selected rack
+                                dispatch(fetchShelves(rackId));
+                                const rackObj = racks.find((r: any) => String(r._id) === String(rackId));
+                                const updated = [...formData.products];
+                                updated[index].locations[locIndex] = {
+                                  ...updated[index].locations[locIndex],
+                                  rackId,
+                                  rackName: rackObj?.rackName || "",
+                                  // reset shelf when rack changes
+                                  shelfId: "",
+                                  shelfName: "",
+                                };
+                                setFormData({ ...formData, products: updated });
+                              }}
+                            >
+                              <SelectTrigger><SelectValue placeholder="Select Rack" /></SelectTrigger>
+                              <SelectContent>
+                                {racks
+                                  .filter((r: any) => String(r.warehouseId) === String(warehouse?._id))
+                                  .map((r: any) => (
+                                    <SelectItem key={r._id} value={r._id}>
+                                      {r.rackName}
+                                    </SelectItem>
+                                  ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Shelf select */}
+                          <div>
+                            <Label>Shelf</Label>
+                            <Select
+                              value={loc.shelfId || ""}
+                              onValueChange={(shelfId: string) => {
+                                const shelfObj = shelves.find((s: any) => String(s._id) === String(shelfId));
+                                const updated = [...formData.products];
+                                updated[index].locations[locIndex] = {
+                                  ...updated[index].locations[locIndex],
+                                  shelfId,
+                                  shelfName: shelfObj?.shelfName || "",
+                                };
+                                setFormData({ ...formData, products: updated });
+                              }}
+                            >
+                              <SelectTrigger><SelectValue placeholder="Select Shelf" /></SelectTrigger>
+                              <SelectContent>
+                                {(shelves || [])
+                                  .filter((s: any) =>
+                                    String(s.rackId) === String(loc.rackId?._id || loc.rackId)
+                                  )
+                                  .map((s: any) => (
+                                    <SelectItem key={s._id} value={s._id}>
+                                      {s.shelfName}
+                                    </SelectItem>
+                                  ))
+                                }
+                              </SelectContent>
+
+
+                            </Select>
+                          </div>
+
+                          {/* Quantity per location (optional) */}
+                          <div>
+                            <Label>Quantity (optional)</Label>
+                            <Input
+                              type="number"
+                              value={loc.quantity}
+                              onChange={(e) => {
+                                const updated = [...formData.products];
+                                updated[index].locations[locIndex] = {
+                                  ...updated[index].locations[locIndex],
+                                  quantity: e.target.value,
+                                };
+                                setFormData({ ...formData, products: updated });
+                              }}
+                            />
+                          </div>
+
+                          {/* Remove location */}
+                          <div className="flex items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              onClick={() => {
+                                const updated = [...formData.products];
+                                updated[index].locations.splice(locIndex, 1);
+                                // ensure at least one empty location remains (optional choice)
+                                if (updated[index].locations.length === 0) {
+                                  updated[index].locations = [{ rackId: "", rackName: "", shelfId: "", shelfName: "", quantity: "0" }];
+                                }
+                                setFormData({ ...formData, products: updated });
+                              }}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        </div>
+
+                        {/* Inline create rack/shelf inputs (used when racks array for this warehouse is empty or user wants to create) */}
+                        <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
+                          <div>
+                            <Label>Create Rack (quick)</Label>
+                            <Input
+                              placeholder="New rack name"
+                              value={prod.tempRackName || ""}
+                              onChange={(e) => {
+                                const updated = [...formData.products];
+                                updated[index].tempRackName = e.target.value;
+                                setFormData({ ...formData, products: updated });
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <Label>Create Shelf (quick)</Label>
+                            <Input
+                              placeholder="New shelf name"
+                              value={prod.tempShelfName || ""}
+                              onChange={(e) => {
+                                const updated = [...formData.products];
+                                updated[index].tempShelfName = e.target.value;
+                                setFormData({ ...formData, products: updated });
+                              }}
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              type="button"
+                              onClick={async () => {
+                                // create rack then refresh racks list
+                                if (!prod.tempRackName?.trim()) return toast.error("Enter rack name");
+                                try {
+                                  const res = await dispatch(createRack({ rackName: prod.tempRackName, warehouseId: warehouse?._id })).unwrap();
+                                  toast.success("Rack created");
+                                  dispatch(fetchRacks(warehouse?._id));
+                                  // optionally preselect this rack in the current location
+                                  const newRackId = res?.rack?._id || res?._id || null;
+                                  const updated = [...formData.products];
+                                  if (newRackId) {
+                                    updated[index].locations[locIndex] = {
+                                      ...updated[index].locations[locIndex],
+                                      rackId: newRackId,
+                                      rackName: prod.tempRackName,
+                                    };
+                                    dispatch(fetchShelves(newRackId));;
+                                  }
+                                  updated[index].tempRackName = "";
+                                  setFormData({ ...formData, products: updated });
+                                } catch {
+                                  toast.error("Failed to create rack");
+                                }
+                              }}
+                            >
+                              Create Rack
+                            </Button>
+
+                            <Button
+                              type="button"
+                              onClick={async () => {
+                                // create shelf for the currently selected rack in this location
+                                const currentLoc = prod.locations[locIndex];
+                                if (!currentLoc?.rackId) return toast.error("Select a rack first");
+                                if (!prod.tempShelfName?.trim()) return toast.error("Enter shelf name");
+                                try {
+                                  const res = await dispatch(createShelf({
+                                    shelfName: prod.tempShelfName,
+                                    rackId: currentLoc.rackId,
+                                    warehouseId: warehouse?._id,
+                                  })).unwrap();
+                                  toast.success("Shelf created");
+                                  dispatch(fetchShelves(currentLoc.rackId));
+                                  const shelfIdNew = res?.shelf?._id || res?._id || null;
+                                  const updated = [...formData.products];
+                                  if (shelfIdNew) {
+                                    updated[index].locations[locIndex] = {
+                                      ...updated[index].locations[locIndex],
+                                      shelfId: shelfIdNew,
+                                      shelfName: prod.tempShelfName,
+                                    };
+                                  }
+                                  updated[index].tempShelfName = "";
+                                  setFormData({ ...formData, products: updated });
+                                } catch {
+                                  toast.error("Failed to create shelf");
+                                }
+                              }}
+                            >
+                              Create Shelf
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                  </div> */}
+                  {/* Remove product button */}
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      onClick={() => {
+                        const updated = [...formData.products];
+                        updated.splice(index, 1);
+                        setFormData({ ...formData, products: updated });
+                      }}
+                    >
+                      Remove Product
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </>
+          }
+          {/* Raw material form */}
+          {isEdit &&
+            <>
+              <div className="flex justify-between items-center">
+
+                <h3 className="text-xl font-bold">Raw Materials</h3>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    if (!isEdit && !warehouse?._id) {
+                      return toast.error("Please create the warehouse first before adding products.");
+                    }
+                    setFormData({
+                      ...formData,
+                      materials: [
+                        ...(formData.materials || []),
+                        {
+                          materialId: "",
+                          materialName: "",
+                          quantity: "0",
+                          unit: "KG",
+                          ageing: { "0-30": "0", "30-60": "0", "60-90": "0", "90+": "0" },
+                          inTransit: "0",
+                          reorderAlerts: "",
+                          bins: "",
+                          locations: [
+                            { rackId: "", rackName: "", shelfId: "", shelfName: "", quantity: "0" },
+                          ],
+                          lastGRN: { date: "", qty: "", po: "" },
+                          lastIssue: { date: "", qty: "", dept: "" },
+                        },
+                      ],
+                    })
+                  }
+                  }
+                >
+                  Add Raw Material
+                </Button>
+              </div>
+
+              {formData.materials?.map((mat, index) => (
+                <div key={index} className="p-6 bg-gray-100 rounded-xl border space-y-4">
+
+                  {/* Select Raw Material */}
+                  <div>
+                    <Label>Raw Material *</Label>
+                    <Select
+                      value={mat.materialId}
+                      onValueChange={(materialId) => {
+                        const sel = materials.find((r) => r._id === materialId);
+                        const updated = [...formData.materials];
+                        updated[index] = {
+                          ...updated[index],
+                          materialId,
+                          materialName: sel?.name || "",
+                        };
+                        setFormData({ ...formData, materials: updated });
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select Raw Material" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {materials.map((r) => (
+                          <SelectItem key={r._id} value={r._id}>
+                            {r.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Quantity */}
+                  <div>
+                    <Label>Total Quantity</Label>
+                    <Input
+                      type="number"
+                      value={mat.quantity}
+                      onChange={(e) => {
+                        const updated = [...formData.materials];
+                        updated[index].quantity = e.target.value;
+                        setFormData({ ...formData, materials: updated });
+                      }}
+                    />
+                  </div>
+
+                  {/* Rack & Shelf Management for Raw Materials */}
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <h4 className="font-bold">Locations (Racks & Shelves)</h4>
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          const updated = [...formData.materials];
+                          updated[index].showRackSelector = true;
+                          updated[index].selectedRackId = "";
+                          updated[index].selectedShelves = [];
+                          setFormData({ ...formData, materials: updated });
+                        }}
+                      >
+                        Select Rack & Multiple Shelves
+                      </Button>
+                    </div>
+
+                    {/* Enhanced Rack & Shelf Selector for Raw Materials */}
+                    {mat.showRackSelector && (
+                      <div className="p-4 bg-orange-50 rounded-lg border-2 border-orange-200 space-y-4">
+                        <h5 className="font-semibold text-orange-800">Select Rack and Multiple Shelves</h5>
+                        
+                        {/* Step 1: Select Rack */}
+                        <div>
+                          <Label>Select Rack</Label>
+                          <Select
+                            value={mat.selectedRackId || ""}
+                            onValueChange={(rackId: string) => {
+                              dispatch(fetchShelves(rackId));
+                              const rackObj = racks.find((r: any) => String(r._id) === String(rackId));
+                              const updated = [...formData.materials];
+                              updated[index].selectedRackId = rackId;
+                              updated[index].selectedRackName = rackObj?.rackName || "";
+                              updated[index].selectedShelves = [];
+                              setFormData({ ...formData, materials: updated });
+                            }}
+                          >
+                            <SelectTrigger><SelectValue placeholder="Choose a rack first" /></SelectTrigger>
+                            <SelectContent>
+                              {racks
+                                .filter((r: any) => String(r.warehouseId) === String(warehouse?._id))
+                                .map((r: any) => (
+                                  <SelectItem key={r._id} value={r._id}>
+                                    {r.rackName}
+                                  </SelectItem>
+                                ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Step 2: Select Multiple Shelves with Quantities */}
+                        {mat.selectedRackId && (
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <Label>Select Shelves and Set Quantities</Label>
+                              <div className="flex gap-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    const updated = [...formData.materials];
+                                    const availableShelves = (shelves || [])
+                                      .filter((s: any) => String(s.rackId) === String(mat.selectedRackId));
+                                    
+                                    updated[index].selectedShelves = availableShelves.map((shelf: any) => ({
+                                      shelfId: shelf._id,
+                                      shelfName: shelf.shelfName,
+                                      quantity: "0",
+                                      selected: true
+                                    }));
+                                    setFormData({ ...formData, materials: updated });
+                                  }}
+                                >
+                                  Select All
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    const updated = [...formData.materials];
+                                    updated[index].selectedShelves = [];
+                                    setFormData({ ...formData, materials: updated });
+                                  }}
+                                >
+                                  Clear All
+                                </Button>
+                              </div>
+                            </div>
+                            
+                            {/* Shelves Grid */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-60 overflow-y-auto p-2 border rounded-lg bg-gray-50">
+                              {(shelves || [])
+                                .filter((s: any) => String(s.rackId) === String(mat.selectedRackId))
+                                .map((shelf: any) => {
+                                  const selectedShelf = (mat.selectedShelves || []).find((ss: any) => ss.shelfId === shelf._id);
+                                  const isSelected = selectedShelf?.selected || false;
+                                  
+                                  return (
+                                    <div key={shelf._id} className={`p-3 border rounded-lg transition-all duration-200 cursor-pointer hover:shadow-md ${isSelected ? 'bg-green-50 border-green-400 shadow-sm' : 'bg-white border-gray-300 hover:border-orange-300'}`}>
+                                      <div className="flex items-center space-x-2 mb-2">
+                                        <input
+                                          type="checkbox"
+                                          checked={isSelected}
+                                          onChange={(e) => {
+                                            const updated = [...formData.materials];
+                                            let selectedShelves = updated[index].selectedShelves || [];
+                                            
+                                            if (e.target.checked) {
+                                              // Add shelf to selection
+                                              const existingIndex = selectedShelves.findIndex((ss: any) => ss.shelfId === shelf._id);
+                                              if (existingIndex >= 0) {
+                                                selectedShelves[existingIndex].selected = true;
+                                              } else {
+                                                selectedShelves.push({
+                                                  shelfId: shelf._id,
+                                                  shelfName: shelf.shelfName,
+                                                  quantity: "0",
+                                                  selected: true
+                                                });
+                                              }
+                                            } else {
+                                              // Remove shelf from selection
+                                              selectedShelves = selectedShelves.filter((ss: any) => ss.shelfId !== shelf._id);
+                                            }
+                                            
+                                            updated[index].selectedShelves = selectedShelves;
+                                            setFormData({ ...formData, materials: updated });
+                                          }}
+                                          className="w-4 h-4 text-orange-600 rounded focus:ring-2 focus:ring-orange-500"
+                                        />
+                                        <label className="font-medium text-sm cursor-pointer flex-1">{shelf.shelfName}</label>
+                                      </div>
+                                      
+                                      {isSelected && (
+                                        <Input
+                                          type="number"
+                                          placeholder="Enter quantity"
+                                          value={selectedShelf?.quantity || "0"}
+                                          onChange={(e) => {
+                                            const updated = [...formData.materials];
+                                            const selectedShelves = updated[index].selectedShelves || [];
+                                            const shelfIndex = selectedShelves.findIndex((ss: any) => ss.shelfId === shelf._id);
+                                            if (shelfIndex >= 0) {
+                                              selectedShelves[shelfIndex].quantity = e.target.value;
+                                              setFormData({ ...formData, materials: updated });
+                                            }
+                                          }}
+                                          className="mt-2 text-sm"
+                                          min="0"
+                                        />
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              
+                              {(shelves || []).filter((s: any) => String(s.rackId) === String(mat.selectedRackId)).length === 0 && (
+                                <div className="col-span-full text-center py-8 text-gray-500">
+                                  <Package className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                                  <p>No shelves available in this rack</p>
+                                  <p className="text-sm">Create shelves using the quick create option below</p>
+                                </div>
+                              )}
+                            </div>
+                            
+                            {/* Action Buttons */}
+                            <div className="flex gap-2 pt-3">
+                              <Button
+                                type="button"
+                                onClick={() => {
+                                  // Add selected shelves to locations
+                                  const updated = [...formData.materials];
+                                  const selectedShelves = (updated[index].selectedShelves || []).filter((ss: any) => ss.selected);
+                                  
+                                  const newLocations = selectedShelves.map((shelf: any) => ({
+                                    rackId: mat.selectedRackId,
+                                    rackName: mat.selectedRackName,
+                                    shelfId: shelf.shelfId,
+                                    shelfName: shelf.shelfName,
+                                    quantity: shelf.quantity
+                                  }));
+                                  
+                                  // Add to existing locations (remove duplicates from same rack)
+                                  updated[index].locations = [
+                                    ...(updated[index].locations || []).filter((loc: any) => 
+                                      loc.rackId !== mat.selectedRackId
+                                    ),
+                                    ...newLocations
+                                  ];
+                                  
+                                  // Clear selection interface
+                                  updated[index].showRackSelector = false;
+                                  updated[index].selectedRackId = "";
+                                  updated[index].selectedShelves = [];
+                                  
+                                  setFormData({ ...formData, materials: updated });
+                                  toast.success(`Added ${newLocations.length} shelf locations to ${mat.selectedRackName}`);
+                                }}
+                                disabled={!(mat.selectedShelves || []).some((ss: any) => ss.selected)}
+                              >
+                                Add Selected Shelves ({(mat.selectedShelves || []).filter((ss: any) => ss.selected).length})
+                              </Button>
+                              
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => {
+                                  const updated = [...formData.materials];
+                                  updated[index].showRackSelector = false;
+                                  updated[index].selectedRackId = "";
+                                  updated[index].selectedShelves = [];
+                                  setFormData({ ...formData, materials: updated });
+                                }}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Display Current Locations for Raw Materials */}
+                    {(mat.locations || []).length > 0 && (
+                      <div className="space-y-2">
+                        <h5 className="font-semibold">Current Locations:</h5>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          {(mat.locations || []).map((loc: any, locIndex: number) => (
+                            <div key={locIndex} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
+                              <div className="flex items-center space-x-3">
+                                <div className="flex items-center space-x-2">
+                                  <Package className="w-4 h-4 text-orange-600" />
+                                  <span className="font-medium">{loc.rackName}</span>
+                                </div>
+                                <span className="text-gray-500">→</span>
+                                <span className="text-sm">{loc.shelfName}</span>
+                                <span className="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded">
+                                  Qty: {loc.quantity}
+                                </span>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => {
+                                  const updated = [...formData.materials];
+                                  updated[index].locations.splice(locIndex, 1);
+                                  setFormData({ ...formData, materials: updated });
+                                }}
+                              >
+                                Remove
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Legacy single location addition (for backward compatibility) */}
+                    <div className="pt-2 border-t">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const updated = [...formData.materials];
+                          updated[index].locations = [
+                            ...updated[index].locations,
+                            { rackId: "", rackName: "", shelfId: "", shelfName: "", quantity: "0" },
+                          ];
+                          setFormData({ ...formData, materials: updated });
+                        }}
+                      >
+                        Add Single Location (Legacy)
+                      </Button>
+                    </div>
+
+                    {/* LEGACY RAW MATERIALS CODE - COMMENTED OUT (New enhanced functionality added above)
+                    {(mat.locations || []).map((loc, locIndex) => (
+                      <div key={locIndex} className="p-4 bg-white rounded-md border space-y-3">
+
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+
+                          {/* Rack Select */}
+                          <div>
+                            <Label>Rack</Label>
+                            <Select
+                              value={loc.rackId || ""}
+                              onValueChange={(rackId) => {
+                                dispatch(fetchShelves(rackId));
+                                const rackObj = racks.find((r) => String(r._id) === String(rackId));
+
+                                const updated = [...formData.materials];
+                                updated[index].locations[locIndex] = {
+                                  ...updated[index].locations[locIndex],
+                                  rackId,
+                                  rackName: rackObj?.rackName || "",
+                                  shelfId: "",
+                                  shelfName: "",
+                                };
+                                setFormData({ ...formData, materials: updated });
+                              }}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select Rack" />
+                              </SelectTrigger>
+
+                              <SelectContent>
+                                {racks
+                                  .filter((r) => String(r.warehouseId) === String(warehouse?._id))
+                                  .map((r) => (
+                                    <SelectItem key={r._id} value={r._id}>
+                                      {r.rackName}
+                                    </SelectItem>
+                                  ))
+                                }
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Shelf Select */}
+                          <div>
+                            <Label>Shelf</Label>
+                            <Select
+                              value={loc.shelfId || ""}
+                              onValueChange={(shelfId) => {
+                                const shelfObj = shelves.find((s) => String(s._id) === String(shelfId));
+
+                                const updated = [...formData.materials];
+                                updated[index].locations[locIndex] = {
+                                  ...updated[index].locations[locIndex],
+                                  shelfId,
+                                  shelfName: shelfObj?.shelfName || "",
+                                };
+                                setFormData({ ...formData, materials: updated });
+                              }}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select Shelf" />
+                              </SelectTrigger>
+
+                              <SelectContent>
+                                {shelves
+                                  ?.filter((s) => String(s.rackId) === String(loc.rackId))
+                                  .map((s) => (
+                                    <SelectItem key={s._id} value={s._id}>
+                                      {s.shelfName}
+                                    </SelectItem>
+                                  ))
+                                }
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Quantity per location */}
+                          <div>
+                            <Label>Quantity</Label>
+                            <Input
+                              type="number"
+                              value={loc.quantity}
+                              onChange={(e) => {
+                                const updated = [...formData.materials];
+                                updated[index].locations[locIndex].quantity = e.target.value;
+                                setFormData({ ...formData, materials: updated });
+                              }}
+                            />
+                          </div>
+
+                          {/* Remove Location */}
+                          <div>
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              onClick={() => {
+                                const updated = [...formData.materials];
+                                updated[index].locations.splice(locIndex, 1);
+                                if (updated[index].locations.length === 0) {
+                                  updated[index].locations = [
+                                    { rackId: "", rackName: "", shelfId: "", shelfName: "", quantity: "0" }
+                                  ];
+                                }
+                                setFormData({ ...formData, materials: updated });
+                              }}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+
+                        </div>
+
+                        {/* QUICK CREATE RACK / SHELF */}
+                        <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
+                          <div>
+                            <Label>Create Rack (quick)</Label>
+                            <Input
+                              placeholder="New rack name"
+                              value={mat.tempRackName || ""}
+                              onChange={(e) => {
+                                const updated = [...formData.materials];
+                                updated[index].tempRackName = e.target.value;
+                                setFormData({ ...formData, materials: updated });
+                              }}
+                            />
+                          </div>
+
+                          <div>
+                            <Label>Create Shelf (quick)</Label>
+                            <Input
+                              placeholder="New shelf name"
+                              value={mat.tempShelfName || ""}
+                              onChange={(e) => {
+                                const updated = [...formData.materials];
+                                updated[index].tempShelfName = e.target.value;
+                                setFormData({ ...formData, materials: updated });
+                              }}
+                            />
+                          </div>
+
+                          <div className="flex gap-2">
+                            <Button
+                              type="button"
+                              onClick={async () => {
+                                if (!mat.tempRackName?.trim()) return toast.error("Enter rack name");
+
+                                const res = await dispatch(
+                                  createRack({ rackName: mat.tempRackName, warehouseId: warehouse?._id })
+                                ).unwrap();
+
+                                const newRackId = res?.rack?._id || res?._id;
+                                dispatch(fetchRacks(warehouse?._id));
+
+                                const updated = [...formData.materials];
+                                updated[index].locations[locIndex].rackId = newRackId;
+                                updated[index].locations[locIndex].rackName = mat.tempRackName;
+                                updated[index].tempRackName = "";
+
+                                setFormData({ ...formData, materials: updated });
+                              }}
+                            >
+                              Create Rack
+                            </Button>
+
+                            <Button
+                              type="button"
+                              onClick={async () => {
+                                const loc = mat.locations[locIndex];
+                                if (!loc?.rackId) return toast.error("Select rack first");
+                                if (!mat.tempShelfName?.trim()) return toast.error("Enter shelf name");
+
+                                const res = await dispatch(
+                                  createShelf({
+                                    shelfName: mat.tempShelfName,
+                                    rackId: loc.rackId,
+                                    warehouseId: warehouse?._id,
+                                  })
+                                ).unwrap();
+
+                                const newShelfId = res?.shelf?._id || res?._id;
+                                dispatch(fetchShelves(loc.rackId));
+
+                                const updated = [...formData.materials];
+                                updated[index].locations[locIndex].shelfId = newShelfId;
+                                updated[index].locations[locIndex].shelfName = mat.tempShelfName;
+                                updated[index].tempShelfName = "";
+
+                                setFormData({ ...formData, materials: updated });
+                              }}
+                            >
+                              Create Shelf
+                            </Button>
+                          </div>
+                        </div>
+
+                      </div>
+                    ))}
+                  </div> */}
+
+                  {/* REMOVE Material */}
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      onClick={() => {
+                        const updated = [...formData.materials];
+                        updated.splice(index, 1);
+                        setFormData({ ...formData, materials: updated });
+                      }}
+                    >
+                      Remove Material
+                    </Button>
+                  </div>
+
+                </div>
+              ))}
+            </>
+          }
+
+
+
+
+          {/* Submit */}
+          <div className="flex justify-end gap-4 pt-6">
+            <Button type="button" variant="outline" size="lg" onClick={onClose}>Cancel</Button>
+            <Button type="submit" size="lg">{isEdit ? "Update Warehouse" : "Create Warehouse"}</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+export default WarehouseManagement;

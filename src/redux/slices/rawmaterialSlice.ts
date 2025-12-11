@@ -3,13 +3,24 @@ import api from "@/utils/axiosApi";
 import { toast } from "sonner";
 
 export interface RawMaterial {
-  _id: string;
-  organisationId: string;
+  _id?: string;
+  organisationId?: string;
   name: string;
-  unit: string;
-  quantity: number;
-  location: string | { _id: string; name: string };
-  createdAt: string;
+  unit?: string;
+  quantity?: number;
+  location?: string | { _id: string; name: string };
+  warehouse?: string | { _id: string; name: string };
+  createdAt?: string;
+  // Extended fields used in the component
+  itemCode?: string;
+  unitOfMeasure?: string;
+  valuationMethod?: string;
+  unitCost?: number;
+  reorderLevel?: number;
+  trackInventory?: boolean;
+  hsn?: string;
+  gstPercent?: number;
+  technicalSpecs?: string;
 }
 
 export interface RawMaterialState {
@@ -32,11 +43,15 @@ const initialState: RawMaterialState = {
 
 export const fetchMaterials = createAsyncThunk(
   "rawMaterials/fetch",
-  async ({ page = 1, limit = 10, location = "" }: { page: number; limit: number, location?: string }) => { // [!code ++]
+  async ({ page = 1, limit = 10, location = "", warehouse = "" }: { page: number; limit: number, location?: string, warehouse?: string }) => {
     const orgId = localStorage.getItem("organisationId");
 
+    // Use warehouse parameter if provided, otherwise fall back to location for backward compatibility
+    const filterParam = warehouse || location;
+    const filterKey = warehouse ? "warehouse" : "location";
+
     const res = await api.get(
-      `/raw/all/?page=${page}&limit=${limit}&location=${location}`, // [!code ++]
+      `/raw/all/?page=${page}&limit=${limit}&${filterKey}=${filterParam}`,
       {
         headers: { organisationId: orgId },
       }

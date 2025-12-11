@@ -62,15 +62,26 @@ export default function NotificationHeader() {
     }
     
     console.log('🔔 Fetching notifications for user:', userProfile._id, 'org:', organisationId, 'on page:', currentDestination);
+    console.log('👤 Full user profile:', {
+      id: userProfile._id,
+      email: userProfile.email,
+      name: userProfile.fullname,
+      organisationId: userProfile.organisationId
+    });
     
-    // Fetch user-specific notifications (general notifications)
-    dispatch(fetchNotifications({ receiverId: userProfile._id, status: "unread" }));
+    // Make a single call that gets both invite notifications and page-specific notifications
+    const filters: any = { status: "unread" };
     
-    // Fetch page-specific notifications based on current page
+    // Add user ID to get invite notifications for this user
+    filters.receiverId = userProfile._id;
+    
+    // Add destination filter if on a specific page
     if (currentDestination) {
-      console.log('📍 Fetching page-specific notifications for:', currentDestination);
-      dispatch(fetchNotifications({ destination: currentDestination, status: "unread" }));
+      filters.destination = currentDestination;
     }
+    
+    console.log('📍 Fetching notifications with filters:', filters);
+    dispatch(fetchNotifications(filters));
   };
 
   useEffect(() => {

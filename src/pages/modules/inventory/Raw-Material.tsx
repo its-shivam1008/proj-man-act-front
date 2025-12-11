@@ -27,6 +27,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { fetchMasterData } from "@/redux/slices/masterDataSlice";
+import { fetchWarehouses } from "@/redux/slices/warehouseSlice";
 import {
   Table,
   TableBody,
@@ -65,12 +66,68 @@ export default function RawMaterialMaster() {
 
   const { userProfile } = useSelector((state: RootState) => state.auth);
   const { locations } = useSelector((state: RootState) => state.masterData);
+  const { warehouses } = useSelector((state: RootState) => state.warehouse);
 
   const getLocationName = (loc: string | { name: string } | undefined) => {
     if (!loc) return "N/A";
     if (typeof loc === 'object') return loc.name || "N/A";
     const found = locations.find((l: any) => l._id === loc);
     return found ? found.name : loc;
+  };
+
+  const getWarehouseName = (warehouseId: string | { name: string } | undefined) => {
+    if (!warehouseId) return "N/A";
+    if (typeof warehouseId === 'object') return warehouseId.name || "N/A";
+    const found = warehouses.find((w: any) => w._id === warehouseId);
+    return found ? found.name : "N/A";
+  };
+
+  // Function to get all warehouses where a material is available
+  const getWarehousesForMaterial = (materialId: string) => {
+    if (!warehouses || warehouses.length === 0) return [];
+    
+    const availableWarehouses = warehouses.filter((warehouse: any) => {
+      return warehouse.rawMaterials && warehouse.rawMaterials.some((material: any) => 
+        material.materialId === materialId && (material.quantity || 0) > 0
+      );
+    });
+    
+    return availableWarehouses;
+  };
+
+  // Function to display warehouses for a material
+  const displayWarehousesForMaterial = (material: any) => {
+    const materialWarehouses = getWarehousesForMaterial(material._id);
+    
+    if (materialWarehouses.length === 0) {
+      // Fallback to warehouse field or location field for backward compatibility
+      return getWarehouseName(material.warehouse || material.location);
+    }
+    
+    if (materialWarehouses.length === 1) {
+      return materialWarehouses[0].name;
+    }
+    
+    // Multiple warehouses - show all warehouse names
+    if (materialWarehouses.length <= 3) {
+      // For 3 or fewer warehouses, show vertically
+      return (
+        <div className="flex flex-col gap-1">
+          {materialWarehouses.map((warehouse: any) => (
+            <span key={warehouse._id} className="text-sm">
+              {warehouse.name}
+            </span>
+          ))}
+        </div>
+      );
+    } else {
+      // For more than 3 warehouses, show as comma-separated to save space
+      return (
+        <div className="text-sm">
+          {materialWarehouses.map(w => w.name).join(', ')}
+        </div>
+      );
+    }
   };
 
   // Redux State
@@ -82,8 +139,7 @@ export default function RawMaterialMaster() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<RawMaterial | null>(null);
 
-  const isLocationRestricted = userProfile?.role !== 'admin' && !!userProfile?.location;
-  const [locationFilter, setLocationFilter] = useState(isLocationRestricted ? userProfile.location : "all");
+  const [warehouseFilter, setWarehouseFilter] = useState("all");
 
   const {
     register,
@@ -95,7 +151,7 @@ export default function RawMaterialMaster() {
   } = useForm<RawMaterial>({
     defaultValues: {
       name: "",
-      location: isLocationRestricted ? userProfile.location : "",
+      warehouse: "",
       unitOfMeasure: "",
       valuationMethod: "FIFO",
       quantity: 0,
@@ -258,17 +314,18 @@ export default function RawMaterialMaster() {
 
   useEffect(() => {
     dispatch(fetchMasterData("location"));
-    dispatch(fetchMaterials({ page, limit, location: locationFilter }));
+    dispatch(fetchWarehouses(localStorage.getItem("organisationId")));
+    dispatch(fetchMaterials({ page, limit, warehouse: warehouseFilter }));
     dispatch(fetchInventoryMaster({ type: "hsn", page: 1, limit: 100 }));
     fetchNotifications();
-  }, [dispatch, page, limit, locationFilter]);
+  }, [dispatch, page, limit, warehouseFilter]);
 
-  // Ensure default location is set for new entries
+  // Ensure default warehouse is set for new entries
   useEffect(() => {
-    if (isLocationRestricted && open && !editing) {
-      setValue("location", userProfile.location);
+    if (open && !editing && warehouses.length > 0) {
+      setValue("warehouse", warehouses[0]._id);
     }
-  }, [open, editing, isLocationRestricted, userProfile.location, setValue]);
+  }, [open, editing, warehouses, setValue]);
 
   const isSearching = search.trim() !== "";
   const filtered = useMemo(() => {
@@ -289,7 +346,7 @@ export default function RawMaterialMaster() {
       } else {
         await dispatch(addMaterial(data)).unwrap();
       }
-      dispatch(fetchMaterials({ page, limit, location: locationFilter }));
+      dispatch(fetchMaterials({ page, limit, warehouse: warehouseFilter }));
       reset();
       setEditing(null);
       setOpen(false);
@@ -302,12 +359,12 @@ export default function RawMaterialMaster() {
   const startEdit = (it: RawMaterial) => {
     setEditing(it);
     
-    // Prepare form data: safely extract location ID if it's an object
+    // Prepare form data: safely extract warehouse ID if it's an object, fallback to location for backward compatibility
     const formData = {
       ...it,
-      location: typeof it.location === 'object' && it.location 
-        ? (it.location as any)._id 
-        : (it.location || ""),
+      warehouse: it.warehouse 
+        ? (typeof it.warehouse === 'object' ? (it.warehouse as any)._id : it.warehouse)
+        : (typeof it.location === 'object' ? (it.location as any)._id : (it.location || "")),
     };
     
     reset(formData);
@@ -320,7 +377,7 @@ export default function RawMaterialMaster() {
     // Explicitly reset form to empty defaults
     reset({
       name: "",
-      location: isLocationRestricted ? userProfile.location : "",
+      warehouse: "",
       unitOfMeasure: "",
       valuationMethod: "FIFO",
       quantity: 0,
@@ -419,17 +476,16 @@ export default function RawMaterialMaster() {
             className="w-64"
           />
           <Select 
-              value={locationFilter} 
-              onValueChange={setLocationFilter} 
-              disabled={isLocationRestricted}
+              value={warehouseFilter} 
+              onValueChange={setWarehouseFilter}
            >
             <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Filter Location" />
+              <SelectValue placeholder="Filter Warehouse" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Locations</SelectItem>
-              {locations.map((loc) => (
-                <SelectItem key={loc._id} value={loc._id}>{loc.name}</SelectItem>
+              <SelectItem value="all">All Warehouses</SelectItem>
+              {warehouses.map((warehouse: any) => (
+                <SelectItem key={warehouse._id} value={warehouse._id}>{warehouse.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -491,22 +547,21 @@ export default function RawMaterialMaster() {
                   />
                 </div>
                 <div className="col-span-2">
-                  <Label>Location</Label>
+                  <Label>Warehouse</Label>
                   <Controller
-                    name="location" 
+                    name="warehouse" 
                     control={control}
                     render={({ field }) => (
                       <Select 
                         onValueChange={field.onChange} 
-                        value={field.value} // Value should now be ID string
-                        disabled={isLocationRestricted}
+                        value={field.value}
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder="Select Location" />
+                          <SelectValue placeholder="Select Warehouse" />
                         </SelectTrigger>
                         <SelectContent>
-                          {locations.map((loc) => (
-                             <SelectItem key={loc._id} value={loc._id}>{loc.name}</SelectItem>
+                          {warehouses.map((warehouse: any) => (
+                             <SelectItem key={warehouse._id} value={warehouse._id}>{warehouse.name}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -618,7 +673,7 @@ export default function RawMaterialMaster() {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Code</TableHead>
-                <TableHead>Location</TableHead> 
+                <TableHead>Warehouse</TableHead> 
                 <TableHead>UoM</TableHead>
                 <TableHead>Qty</TableHead>
                 <TableHead>Cost</TableHead>
@@ -632,8 +687,8 @@ export default function RawMaterialMaster() {
                 <TableRow key={m._id}>
                   <TableCell>{m.name}</TableCell>
                   <TableCell>{m.itemCode}</TableCell>
-                  {/* [!code ++] Display Location Name */}
-                  <TableCell>{getLocationName(m.location)}</TableCell>
+                  {/* Display Warehouses */}
+                  <TableCell>{displayWarehousesForMaterial(m)}</TableCell>
                   <TableCell>{m.unitOfMeasure}</TableCell>
                   <TableCell>{m.quantity}</TableCell>
                   <TableCell>₹{m.unitCost}</TableCell>
@@ -654,7 +709,7 @@ export default function RawMaterialMaster() {
                         className="h-4 w-4 cursor-pointer text-red-500"
                         onClick={() =>
                           dispatch(deleteMaterial(m._id!)).then(() => {
-                            dispatch(fetchMaterials({ page, limit, location: locationFilter })).then((res: any) => {
+                            dispatch(fetchMaterials({ page, limit, warehouse: warehouseFilter })).then((res: any) => {
                               const items = res.payload?.materials || [];
                               if (items.length === 0 && page > 1) {
                                 setPage((p) => p - 1);
@@ -703,8 +758,14 @@ export default function RawMaterialMaster() {
               <div className="space-y-3">
                 <p><strong>Name:</strong> {viewItem?.name}</p>
                 <p><strong>Item Code:</strong> {viewItem?.itemCode}</p>
-                {/* [!code ++] Show Location */}
-                <p><strong>Location:</strong> {getLocationName(viewItem?.location)}</p>
+                {/* Show Warehouses */}
+                <p><strong>Warehouses:</strong> {viewItem ? (() => {
+                  const warehouses = getWarehousesForMaterial(viewItem._id || '');
+                  if (warehouses.length === 0) {
+                    return getWarehouseName(viewItem.warehouse || viewItem.location);
+                  }
+                  return warehouses.map(w => w.name).join(', ');
+                })() : 'N/A'}</p>
                 <p><strong>Unit:</strong> {viewItem?.unitOfMeasure}</p>
                 <p><strong>Qty:</strong> {viewItem?.quantity}</p>
                 <p><strong>Cost:</strong> ₹{viewItem?.unitCost}</p>
