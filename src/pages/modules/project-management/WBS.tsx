@@ -9,6 +9,7 @@ import {
   createWbsItem,
   updateWbsItem,
   deleteWbsItem,
+  WBSItem as ImportedWBSItem,
 } from "@/redux/slices/wbsSlice";
 
 import {
@@ -41,10 +42,16 @@ import {
   ChevronsUpDown,
   Check,
   ShieldAlert,
+  CheckCircle,
+  Clock,
+  Truck,
+  AlertCircle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { fetchProjects } from "@/redux/slices/projectSlice";
+import { Project } from "@/types/project";
+import { fetchMRS } from "@/redux/slices/mrsSlice";
 import { useDebounce } from "@/hooks/useDebounce";
 import {
   Popover,
@@ -59,6 +66,12 @@ import {
   CommandList,
   CommandGroup,
 } from "@/components/ui/command";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 // --- IMPORT THE SEPARATE MODAL COMPONENT ---
 import TeamSelectionDialog from "@/components/TeamSelectionDialog";
@@ -74,26 +87,12 @@ interface LinkedMaterial {
   materialId: string;
   quantity: number;
   unit: string;
+  name?: string;
+  status?: 'pending' | 'sent' | 'in-transit' | 'received';
 }
 
-interface WBSItem {
-  id: string;
-  projectId: string;
-  parentId: string | null;
-  name: string;
-  description?: string;
-  type: WBSItemType;
-  startDate?: string;
-  endDate?: string;
-  duration?: number;
-  plannedCost?: number;
-  actualCost: number;
-  dependencies: string[];
-  status: wbstatus;
-  drawingCode?: string;
-  progress: number;
-  createdAt: string;
-  // Added this field
+// Extend the imported WBSItem type
+interface WBSItem extends Omit<ImportedWBSItem, 'linkedMaterials'> {
   linkedMaterials?: LinkedMaterial[];
 }
 
@@ -114,6 +113,13 @@ interface WBSNodeProps {
   onDelete: (id: string) => void;
   onLinkTeam: (item: WBSItem) => void; // Prop to trigger modal
   onShowToast: (message: string) => void;
+  getMaterialStatusSummary: (wbsItem: WBSItem) => {
+    total: number;
+    received: number;
+    inTransit: number;
+    sent: number;
+    pending: number;
+  };
 }
 
 const WBSNode: React.FC<WBSNodeProps> = ({
@@ -124,6 +130,7 @@ const WBSNode: React.FC<WBSNodeProps> = ({
   onDelete,
   onLinkTeam,
   onShowToast,
+  getMaterialStatusSummary,
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
 
@@ -145,7 +152,10 @@ const WBSNode: React.FC<WBSNodeProps> = ({
     return updatedItem || linkingMaterialItem;
   }, [linkingMaterialItem, allwbs]);
 
-  const getStatusColor = (status: wbstatus) => {
+
+
+  const getStatusColor = (status?: wbstatus) => {
+    if (!status) return "bg-gray-100 text-gray-800 border-gray-200";
     const colors: Record<wbstatus, string> = {
       "not-started": "bg-gray-100 text-gray-800 border-gray-200",
       "in-progress": "bg-blue-100 text-blue-800 border-blue-200",
@@ -190,7 +200,7 @@ const WBSNode: React.FC<WBSNodeProps> = ({
         </div>
         <div className="w-24 text-center">
           <Badge className={getStatusColor(item.status)} variant="outline">
-            {item.status.replace("-", " ")}
+            {item.status?.replace("-", " ") || "not-started"}
           </Badge>
         </div>
         <div className="w-20 text-center text-sm text-muted-foreground">
@@ -203,6 +213,56 @@ const WBSNode: React.FC<WBSNodeProps> = ({
           <span className='text-xs'>{item.progress}%</span>
           <Progress value={item.progress} className="w-16" />
         </div>
+        {/* Material Status Indicators */}
+        <div className="w-32 flex justify-center">
+          {(() => {
+            const summary = getMaterialStatusSummary(item);
+            return summary.total > 0 ? (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="flex items-center space-x-1">
+                      {summary.received > 0 && (
+                        <div className="flex items-center">
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                          <span className="text-xs text-green-600 ml-1">{summary.received}</span>
+                        </div>
+                      )}
+                      {summary.inTransit > 0 && (
+                        <div className="flex items-center">
+                          <Truck className="h-4 w-4 text-blue-600" />
+                          <span className="text-xs text-blue-600 ml-1">{summary.inTransit}</span>
+                        </div>
+                      )}
+                      {summary.sent > 0 && (
+                        <div className="flex items-center">
+                          <Clock className="h-4 w-4 text-orange-600" />
+                          <span className="text-xs text-orange-600 ml-1">{summary.sent}</span>
+                        </div>
+                      )}
+                      {summary.pending > 0 && (
+                        <div className="flex items-center">
+                          <AlertCircle className="h-4 w-4 text-gray-500" />
+                          <span className="text-xs text-gray-500 ml-1">{summary.pending}</span>
+                        </div>
+                      )}
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <div className="text-sm">
+                      <p className="font-semibold">Received Materials for {item.name}:</p>
+                      <div className="space-y-1 mt-1">
+                        <p className="text-green-600">✅ {summary.received} Materials Received & Available</p>
+                        <p className="text-xs text-gray-400 mt-2">Click Package icon to view/return materials</p>
+                      </div>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : null;
+          })()}
+        </div>
+
         <div className="w-48 flex justify-around text-center items-center space-x-2 pr-4">
           {canEdit && (
             <div className="space-x-3">
@@ -263,6 +323,7 @@ const WBSNode: React.FC<WBSNodeProps> = ({
             onDelete={onDelete}
             onLinkTeam={onLinkTeam} // Pass down prop
             onShowToast={onShowToast}
+            getMaterialStatusSummary={getMaterialStatusSummary}
           />
         ))}
     </div>
@@ -271,18 +332,16 @@ const WBSNode: React.FC<WBSNodeProps> = ({
 
 // --- MAIN COMPONENT ---
 export default function WBS() {
-  const organisationId = localStorage.getItem("organisationId");
   const dispatch = useDispatch<AppDispatch>();
-  const { wbs, loading } = useSelector((state: RootState) => state.wbs);
+  const { wbs } = useSelector((state: RootState) => state.wbs);
+  const { list: mrsList } = useSelector((state: RootState) => state.mrs);
 
   const canView = usePermission("wbsManagement", "view");
   const canCreate = usePermission("wbsManagement", "create");
-  const canEdit = usePermission("wbsManagement", "edit");
-  const canDelete = usePermission("wbsManagement", "delete");
 
   const { projects, loading: projectLoading } = useSelector(
     (state: RootState) => state.projects
-  );
+  ) as { projects: Project[], loading: boolean };
 
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     null
@@ -296,6 +355,9 @@ export default function WBS() {
 
   // --- TEAM LINKING STATE ---
   const [linkingItem, setLinkingItem] = useState<WBSItem | null>(null);
+
+  // --- MATERIAL STATUS TRACKING ---
+  const [, setMaterialStatusSync] = useState<Record<string, string>>({});
 
   const { toast } = useToast();
 
@@ -419,6 +481,62 @@ export default function WBS() {
     });
   };
 
+  // Get material status from localStorage sync
+  const getMaterialStatus = (materialId: string) => {
+    const syncData = JSON.parse(localStorage.getItem('MRS_STATUS_SYNC') || '{}');
+    return syncData[materialId] || 'pending';
+  };
+
+  // Get MRS materials for a specific WBS task
+  const getMRSMaterialsForTask = (taskName: string) => {
+    if (!selectedProjectId || !mrsList) return [];
+    
+    return mrsList.filter((mrs: any) => {
+      const mrsProjectId = String(mrs.projectId || '');
+      const selectedId = String(selectedProjectId || '');
+      return mrsProjectId === selectedId && mrs.task === taskName;
+    });
+  };
+
+  // Get material status summary for WBS item (only show received materials)
+  const getMaterialStatusSummary = (wbsItem: WBSItem) => {
+    // Get materials from both sources
+    const linkedMaterials = (wbsItem as any).linkedMaterials || [];
+    const mrsMaterials = getMRSMaterialsForTask(wbsItem.name);
+    
+    // Combine both sources
+    const allMaterials = [
+      ...linkedMaterials.map((lm: any) => ({ id: lm.materialId, source: 'linked' })),
+      ...mrsMaterials.map((mrs: any) => ({ id: mrs.id || mrs._id, source: 'mrs' }))
+    ];
+
+    // Remove duplicates (in case material is both linked and in MRS)
+    const uniqueMaterials = allMaterials.filter((material, index, self) => 
+      index === self.findIndex(m => m.id === material.id)
+    );
+
+    // Filter to only show received materials
+    const receivedMaterials = uniqueMaterials.filter(material => {
+      const status = getMaterialStatus(material.id);
+      return status === 'received';
+    });
+
+    if (receivedMaterials.length === 0) {
+      return { total: 0, received: 0, inTransit: 0, sent: 0, pending: 0 };
+    }
+
+    // For display purposes, we only show received count
+    const summary = { 
+      total: receivedMaterials.length, 
+      received: receivedMaterials.length, 
+      inTransit: 0, 
+      sent: 0, 
+      pending: 0 
+    };
+
+    return summary;
+  };
+
   const handleLinkTeam = (item: WBSItem) => {
     setLinkingItem(item);
   };
@@ -502,7 +620,57 @@ export default function WBS() {
   useEffect(() => {
     if (selectedProjectId) {
       dispatch(fetchWbsByProject(selectedProjectId));
+      dispatch(fetchMRS()); // Also fetch MRS data
     }
+  }, [selectedProjectId, dispatch]);
+
+
+
+
+
+  // Load material status sync from localStorage and listen for updates
+  useEffect(() => {
+    // Load initial status
+    const syncData = localStorage.getItem('MRS_STATUS_SYNC');
+    if (syncData) {
+      setMaterialStatusSync(JSON.parse(syncData));
+    }
+
+    // Listen for MRS status changes
+    const handleMrsStatusChange = (event: CustomEvent) => {
+      const { itemId, status } = event.detail;
+      setMaterialStatusSync(prev => ({
+        ...prev,
+        [itemId]: status
+      }));
+    };
+
+    // Listen for WBS materials updates
+    const handleWbsMaterialsUpdate = () => {
+      // Refresh both WBS and MRS data when materials are updated
+      if (selectedProjectId) {
+        dispatch(fetchWbsByProject(selectedProjectId));
+        dispatch(fetchMRS());
+      }
+    };
+
+    window.addEventListener('mrsStatusChanged', handleMrsStatusChange as EventListener);
+    window.addEventListener('wbsMaterialsUpdated', handleWbsMaterialsUpdate);
+
+    // Periodic sync check
+    const interval = setInterval(() => {
+      const syncData = localStorage.getItem('MRS_STATUS_SYNC');
+      if (syncData) {
+        const parsed = JSON.parse(syncData);
+        setMaterialStatusSync(parsed);
+      }
+    }, 2000);
+
+    return () => {
+      window.removeEventListener('mrsStatusChanged', handleMrsStatusChange as EventListener);
+      window.removeEventListener('wbsMaterialsUpdated', handleWbsMaterialsUpdate);
+      clearInterval(interval);
+    };
   }, [selectedProjectId, dispatch]);
 
   if (!canView) {
@@ -620,6 +788,8 @@ export default function WBS() {
           </Popover>
 
           {/* CREATE/EDIT DIALOG */}
+
+
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
               {canCreate && (
@@ -920,8 +1090,9 @@ export default function WBS() {
             <div className="w-20 text-center">Start Date</div>
             <div className="w-20 text-center">End Date</div>
             <div className="w-20 text-center">Progress</div>
+            <div className="w-32 text-center">Materials</div>
             <div className="w-48 text-right pr-4">Actions</div>
-          </div>
+          </div>        
         </CardHeader>
         <CardContent>
           {!selectedProjectId ? (
@@ -954,6 +1125,7 @@ export default function WBS() {
                 onDelete={handleDelete}
                 onLinkTeam={handleLinkTeam} // Pass link handler
                 onShowToast={showToast}
+                getMaterialStatusSummary={getMaterialStatusSummary}
               />
             ))
           )}

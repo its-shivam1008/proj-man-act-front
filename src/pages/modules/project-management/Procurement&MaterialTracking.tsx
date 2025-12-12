@@ -53,68 +53,40 @@ import { receivePO } from "@/redux/slices/poSlice";
 import { fetchProjects } from "@/redux/slices/projectSlice";
 import { fetchWbsByProject, WBSItem } from "@/redux/slices/wbsSlice";
 import { fetchMaterials, RawMaterial } from "@/redux/slices/rawmaterialSlice";
+import { Project } from "@/types/project";
 
 // Hooks
 import { useDebounce } from "@/hooks/useDebounce";
 import { usePermission } from "@/hooks/userPermission";
+import api from "@/utils/axiosApi";
 
-// --- Types ---
-type MRSItem = {
-    id: string;
-    _id?: string;
-    projectId?: string;
-    task?: string;
-    item: string; // This will hold Raw Material Name
-    quantity: number;
+// Import Types
+import { MRSItem, PurchaseRequest, PurchaseOrder, InventoryItem } from "@/types/procurement";
+
+// Extended types for local use
+interface ExtendedMRSItem extends Omit<MRSItem, '_id' | 'status'> {
+    id?: string; // Helper for compatibility
+    _id?: string; // Make optional for compatibility
     price?: number;
-    requiredDate?: string;
-    status?: "open" | "sent" | "ordered" | "received" | "cancelled" | "planned";
-    remarks?: string;
-    createdAt?: string;
-    updatedAt?: string;
     isWbsLinked?: boolean; // Helper flag
     unit?: string; // Helper for display
-};
+    status?: "open" | "sent" | "ordered" | "received" | "cancelled" | "planned"; // Extended status
+}
 
-type PurchaseRequest = {
-    id: string;
-    _id?: string;
-    mrsIds: string[];
-    createdAt: string;
-    status: "open" | "converted" | "closed";
-};
-
-type PurchaseOrder = {
-    id: string;
-    _id?: string;
-    prId: string;
-    supplier?: string;
-    poNo?: string;
-    items: { mrsId: string; item: string; qty: number }[];
-    createdAt: string;
-    deliveryDate?: string;
-    received?: number;
-    issued?: number;
-    status?: "open" | "delivered" | "partial" | "closed";
-};
-
-type InventoryItem = {
-    id: string;
-    item: string;
-    qty: number;
-    uom?: string;
-    location?: string;
-};
+interface ExtendedInventoryItem extends Omit<InventoryItem, '_id'> {
+    id?: string; // Helper for compatibility
+    _id?: string; // Make optional for compatibility
+}
 
 // --- Helper: Generate ID ---
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
 // --- Local Inventory Helpers ---
-const getInventory = (): InventoryItem[] => {
+const getInventory = (): ExtendedInventoryItem[] => {
     const stored = localStorage.getItem('INVENTORY');
     return stored ? JSON.parse(stored) : [];
 };
-const saveInventory = (list: InventoryItem[]) => localStorage.setItem('INVENTORY', JSON.stringify(list));
+const saveInventory = (list: ExtendedInventoryItem[]) => localStorage.setItem('INVENTORY', JSON.stringify(list));
 
 // --- Component ---
 export default function ProcurementPage() {
@@ -123,7 +95,7 @@ export default function ProcurementPage() {
     const [remarkDialogOpen, setRemarkDialogOpen] = useState(false);
     const [remarkText, setRemarkText] = useState("");
     const [notificationTarget, setNotificationTarget] = useState<{
-        item: MRSItem;
+        item: ExtendedMRSItem;
         type: "INVENTORY" | "PURCHASE"; // To distinguish between the two buttons
     } | null>(null);
 
@@ -133,13 +105,13 @@ export default function ProcurementPage() {
     const canDelete = usePermission('procurementMaterialTracking', 'delete');
 
 
-    const handleOpenRemarkDialog = (item: MRSItem, type: "INVENTORY" | "PURCHASE") => {
+    const handleOpenRemarkDialog = (item: ExtendedMRSItem, type: "INVENTORY" | "PURCHASE") => {
         setNotificationTarget({ item, type });
         setRemarkText(""); // Reset remark
         setRemarkDialogOpen(true);
     };
 
-    const handleSendClick = (item: MRSItem, type: "INVENTORY" | "PURCHASE") => {
+    const handleSendClick = (item: ExtendedMRSItem, type: "INVENTORY" | "PURCHASE") => {
         const itemId = item.id || item._id || item.item;
         const key = `${itemId}_${type}`;
         
@@ -210,12 +182,12 @@ export default function ProcurementPage() {
         }
     };
     // Redux Selectors
-    const mrsListRaw = useSelector((state: RootState) => state.mrs.list) as MRSItem[];
+    const mrsListRaw = useSelector((state: RootState) => state.mrs.list) as ExtendedMRSItem[];
     const wbsList = useSelector((state: RootState) => state.wbs.wbs) as WBSItem[]; 
     const rawMaterials = useSelector((state: RootState) => state.rawMaterials.materials) as RawMaterial[];
-    const projects = useSelector((state: RootState) => state.projects.projects);
+    const projects = useSelector((state: RootState) => state.projects.projects) as Project[];
     const prs = useSelector((state: RootState) => state.pr.list) as PurchaseRequest[];
-    const pos = useSelector((state: RootState) => state.po.list) as PurchaseOrder[];
+    const pos = useSelector((state: RootState) => state.po.list);
     
     // Loading States
     const mrsLoading = useSelector((state: RootState) => state.mrs.loading);
@@ -225,7 +197,7 @@ export default function ProcurementPage() {
     const wbsLoading = useSelector((state: RootState) => state.wbs.loading);
 
     // Local State
-    const [inventory, setInventory] = useState<InventoryItem[]>([]);
+    const [inventory, setInventory] = useState<ExtendedInventoryItem[]>([]);
     const [mrsStatusSync, setMrsStatusSync] = useState<Record<string, string>>({});
     const [sendClickCounts, setSendClickCounts] = useState<Record<string, number>>({});
     
@@ -243,11 +215,14 @@ export default function ProcurementPage() {
 
     // Dialog / Form State
     const [isDialogOpen, setIsDialogOpen] = useState(false);
-    const [editing, setEditing] = useState<MRSItem | null>(null);
-    const [form, setForm] = useState<Partial<MRSItem>>({ item: "", quantity: 1, price: 0, requiredDate: "" });
-    const [multipleItems, setMultipleItems] = useState<Partial<MRSItem>[]>([]);
+    const [editing, setEditing] = useState<ExtendedMRSItem | null>(null);
+    const [form, setForm] = useState<Partial<ExtendedMRSItem>>({ item: "", quantity: 1, price: 0, requiredDate: "" });
+    const [multipleItems, setMultipleItems] = useState<Partial<ExtendedMRSItem>[]>([]);
     const [taskPopoverOpen, setTaskPopoverOpen] = useState(false);
     const [taskSearch, setTaskSearch] = useState("");
+    const [itemPopoverOpen, setItemPopoverOpen] = useState(false);
+    const [itemSearch, setItemSearch] = useState("");
+    const [isCustomItem, setIsCustomItem] = useState(false);
 
     // Initial Data Load
     useEffect(() => {
@@ -309,7 +284,7 @@ export default function ProcurementPage() {
         let currentItem: WBSItem | undefined = item;
         
         while (currentItem?.parentId) {
-            const parent = allWbs.find(w => w.id === currentItem.parentId);
+            const parent = allWbs.find(w => w.id === currentItem!.parentId);
             if (parent) {
                 path.unshift(parent.name);
                 currentItem = parent;
@@ -357,7 +332,7 @@ export default function ProcurementPage() {
 
 
     // --- CRUD Actions ---
-    const persistInventory = (list: InventoryItem[]) => {
+    const persistInventory = (list: ExtendedInventoryItem[]) => {
         setInventory(list);
         saveInventory(list);
     };
@@ -366,6 +341,7 @@ export default function ProcurementPage() {
         setEditing(null);
         setForm({ item: "", quantity: 1, price: 0, requiredDate: "", projectId: selectedProjectId || undefined });
         setMultipleItems([]);
+        setIsCustomItem(false);
         setIsDialogOpen(true);
     };
 
@@ -388,17 +364,23 @@ export default function ProcurementPage() {
             projectId: form.projectId,
             task: form.task,
         });
+        setIsCustomItem(false);
         
         toast.success(`${multipleItems.length + 1} item(s) ready to save. Fill in the next item.`);
     };
 
-    const openEdit = (m: MRSItem) => {
+    const openEdit = (m: ExtendedMRSItem) => {
         if (m.isWbsLinked) {
             alert(`This item is linked to WBS Task: "${m.task}". Please edit it in the WBS module.`);
             return;
         }
         setEditing(m);
         setForm(m);
+        
+        // Check if the item is a custom item (not in raw materials list)
+        const isInRawMaterials = rawMaterials.some(material => material.name === m.item);
+        setIsCustomItem(!isInRawMaterials);
+        
         setIsDialogOpen(true);
     };
 
@@ -409,7 +391,7 @@ export default function ProcurementPage() {
                 toast.error("Item and quantity are required");
                 return;
             }
-            const cleanForm: Partial<MRSItem> = {
+            const cleanForm: Partial<ExtendedMRSItem> = {
                 ...form,
                 item: form.item.trim(),
                 quantity: Number(form.quantity),
@@ -418,12 +400,13 @@ export default function ProcurementPage() {
                 projectId: form.projectId || selectedProjectId || undefined, 
             };
             
-            await dispatch(updateMRS({ id: editing._id || editing.id, data: cleanForm }));
+            await dispatch(updateMRS({ id: editing._id || editing.id || '', data: cleanForm as any }));
             await dispatch(fetchMRS());
             
             setIsDialogOpen(false);
             setEditing(null);
             setForm({ item: "", quantity: 1, price: 0, requiredDate: "" });
+            setIsCustomItem(false);
             return;
         }
 
@@ -436,9 +419,47 @@ export default function ProcurementPage() {
         // Combine multipleItems with current form
         const allItems = [...multipleItems, form];
 
-        // Save all items
+        // Check stock availability and deduct from raw materials
         for (const item of allItems) {
-            const cleanForm: Partial<MRSItem> = {
+            const materialName = item.item?.trim();
+            const requestedQty = Number(item.quantity);
+            
+            // Find the raw material
+            const rawMaterial = rawMaterials.find(rm => rm.name === materialName);
+            
+            if (rawMaterial) {
+                // Check if enough stock is available
+                const currentStock = rawMaterial.quantity || 0;
+                if (currentStock < requestedQty) {
+                    toast.error(`Not enough stock for ${materialName}. Available: ${currentStock}, Requested: ${requestedQty}`);
+                    return;
+                }
+                
+                // Deduct from raw material stock
+                try {
+                    const organisationId = localStorage.getItem("organisationId");
+                    const updateData = {
+                        ...rawMaterial,
+                        quantity: currentStock - requestedQty
+                    };
+                    console.log(`🔍 Updating raw material ${rawMaterial._id}:`, updateData);
+                    
+                    await api.put(`/raw/update/${rawMaterial._id}`, updateData, {
+                        headers: { organisationId }
+                    });
+                    console.log(`✅ Deducted ${requestedQty} from ${materialName}. New stock: ${currentStock - requestedQty}`);
+                } catch (error: any) {
+                    console.error('Failed to update raw material stock:', error);
+                    const errorMsg = error.response?.data?.message || error.message || 'Unknown error';
+                    toast.error(`Failed to update stock for ${materialName}: ${errorMsg}`);
+                    return;
+                }
+            }
+        }
+
+        // Save all MRS items
+        for (const item of allItems) {
+            const cleanForm: Partial<ExtendedMRSItem> = {
                 ...item,
                 item: item.item?.trim(),
                 quantity: Number(item.quantity),
@@ -447,18 +468,20 @@ export default function ProcurementPage() {
                 projectId: item.projectId || selectedProjectId || undefined, 
             };
             
-            await dispatch(createMRS(cleanForm));
+            await dispatch(createMRS(cleanForm as any));
         }
         
-        // Refetch MRS list
+        // Refetch both MRS and raw materials to show updated stock
         await dispatch(fetchMRS());
+        await dispatch(fetchMaterials({ page: 1, limit: 1000 }));
         
-        toast.success(`${allItems.length} MRS item(s) created successfully.`);
+        toast.success(`${allItems.length} MRS item(s) created successfully. Stock updated.`);
         
         setIsDialogOpen(false);
         setEditing(null);
         setMultipleItems([]);
         setForm({ item: "", quantity: 1, price: 0, requiredDate: "" });
+        setIsCustomItem(false);
     };
 
     const handleDelete = async (id: string, isWbsLinked?: boolean) => {
@@ -482,9 +505,10 @@ export default function ProcurementPage() {
         
         try {
             // Get selected MRS items
-            const selectedItems = displayedMrsList.filter(item => 
-                mrsIds.includes(item.id || item._id)
-            );
+            const selectedItems = displayedMrsList.filter(item => {
+                const itemId = item.id || item._id;
+                return itemId && mrsIds.includes(itemId);
+            });
             
             if (selectedItems.length === 0) {
                 toast.error("No valid items selected");
@@ -531,22 +555,22 @@ export default function ProcurementPage() {
 
     const receiveAgainstPO = async (poId: string, qtyReceived: number) => {
         await dispatch(receivePO({ poId, qty: qtyReceived }));
-        const po = pos.find(p => p.id === poId || p._id === poId);
-        if (po) {
+        const po = (pos as any[]).find((p: any) => p._id === poId);
+        if (po && po.items) {
             const inv = getInventory();
-            (po.items || []).forEach((it) => {
+            (po.items || []).forEach((it: any) => {
                 const existing = inv.find((x) => x.item.toLowerCase() === it.item.toLowerCase());
                 if (existing) {
                     existing.qty += qtyReceived; 
                 } else {
-                    inv.push({ id: generateId(), item: it.item, qty: qtyReceived });
+                    inv.push({ _id: generateId(), id: generateId(), item: it.item, qty: qtyReceived });
                 }
             });
             persistInventory(inv);
         }
     };
 
-    const handleCheckStatus = (m: MRSItem) => {
+    const handleCheckStatus = (m: ExtendedMRSItem) => {
         // 1. Try to find by ID (for WBS items)
         let foundMaterial = rawMaterials.find(r => r._id === m._id);
         
@@ -563,13 +587,83 @@ export default function ProcurementPage() {
         }
     };
     
-    const handleItemReceived = (m: MRSItem) => {
+    const handleItemReceived = async (m: ExtendedMRSItem) => {
         // Mark item as received using unique ID
         const syncData = JSON.parse(localStorage.getItem('MRS_STATUS_SYNC') || '{}');
         const itemId = m.id || m._id;
-        syncData[itemId] = 'received'; // Use unique ID instead of item name
+        if (itemId) {
+            syncData[itemId] = 'received'; // Use unique ID instead of item name
+        }
         localStorage.setItem('MRS_STATUS_SYNC', JSON.stringify(syncData));
         setMrsStatusSync(syncData);
+        
+        // Dispatch custom event to notify other components
+        window.dispatchEvent(new CustomEvent('mrsStatusChanged', { 
+          detail: { itemId, status: 'received', item: m } 
+        }));
+        
+        // 🚀 AUTOMATICALLY ADD TO WBS SAVED MATERIALS 🚀
+        if (m.task && selectedProjectId) {
+            try {
+                // Find the WBS item for this task
+                const wbsResponse = await api.get(`/wbs/project/${selectedProjectId}`);
+                const wbsItems = wbsResponse.data?.data || [];
+                const wbsItem = wbsItems.find((item: any) => item.name === m.task);
+                
+                if (wbsItem) {
+                    // Prepare material data for WBS
+                    const materialData = {
+                        materialId: m._id || m.id,
+                        name: m.item,
+                        quantity: m.quantity || 1,
+                        unit: m.unit || 'kg',
+                        remarks: `Auto-added from MRS (Received: ${new Date().toLocaleDateString()})`
+                    };
+                    
+                    // Try to add material to WBS item via API
+                    try {
+                        await api.post(`/wbs/item/${wbsItem.id}/materials`, materialData);
+                        toast.success(`✅ ${m.item} automatically added to WBS task "${m.task}" saved materials!`);
+                    } catch (apiError) {
+                        // Fallback: Add to localStorage for MaterialSelectionDialog
+                        const savedMaterialsKey = `WBS_SAVED_MATERIALS_${wbsItem.id}`;
+                        const existingSavedMaterials = JSON.parse(localStorage.getItem(savedMaterialsKey) || '[]');
+                        
+                        // Check if material already exists
+                        const existingIndex = existingSavedMaterials.findIndex((saved: any) => 
+                            saved.name === materialData.name || saved.materialId === materialData.materialId
+                        );
+                        
+                        if (existingIndex >= 0) {
+                            // Update existing material quantity
+                            existingSavedMaterials[existingIndex].quantity = 
+                                (existingSavedMaterials[existingIndex].quantity || 0) + materialData.quantity;
+                        } else {
+                            // Add new material
+                            existingSavedMaterials.push({
+                                ...materialData,
+                                id: Date.now().toString(), // Generate unique ID
+                                addedAt: new Date().toISOString()
+                            });
+                        }
+                        
+                        localStorage.setItem(savedMaterialsKey, JSON.stringify(existingSavedMaterials));
+                        
+                        // Dispatch event to refresh MaterialSelectionDialog
+                        window.dispatchEvent(new CustomEvent('wbsMaterialsUpdated', { 
+                            detail: { wbsItemId: wbsItem.id, materials: existingSavedMaterials } 
+                        }));
+                        
+                        toast.success(`✅ ${m.item} automatically added to WBS task "${m.task}" saved materials!`);
+                    }
+                } else {
+                    console.warn(`WBS task "${m.task}" not found for auto-addition`);
+                }
+            } catch (error) {
+                console.error('Error auto-adding material to WBS:', error);
+                // Don't show error toast to user, just log it
+            }
+        }
         
         // Update delivery status to delivered
         const materialRequests = JSON.parse(localStorage.getItem('MATERIAL_REQUESTS') || '[]');
@@ -587,22 +681,24 @@ export default function ProcurementPage() {
     // --- Material Status Tracker ---
     const materialStatus = useMemo(() => {
         const rows: any[] = [];
-        (pos || []).forEach((po) => {
-            (po.items || []).forEach((it) => {
-                const invItem = inventory.find((x) => x.item.toLowerCase() === it.item.toLowerCase());
-                const received = po.received || 0;
-                const issued = po.issued || 0;
-                const remaining = (invItem?.qty || 0) - issued;
-                rows.push({
-                    item: it.item,
-                    poNo: po.poNo,
-                    supplier: po.supplier,
-                    deliveryDate: po.deliveryDate,
-                    received,
-                    issued,
-                    remaining: remaining < 0 ? 0 : remaining,
+        (pos || []).forEach((po: any) => {
+            if (po.items) { // Only process if it has items (PurchaseOrder)
+                (po.items || []).forEach((it: any) => {
+                    const invItem = inventory.find((x) => x.item.toLowerCase() === it.item.toLowerCase());
+                    const received = po.received || 0;
+                    const issued = po.issued || 0;
+                    const remaining = (invItem?.qty || 0) - issued;
+                    rows.push({
+                        item: it.item,
+                        poNo: po.poNo,
+                        supplier: po.supplier,
+                        deliveryDate: po.deliveryDate,
+                        received,
+                        issued,
+                        remaining: remaining < 0 ? 0 : remaining,
+                    });
                 });
-            });
+            }
         });
         return rows;
     }, [pos, inventory]);
@@ -620,9 +716,9 @@ export default function ProcurementPage() {
 
     const bootstrapInventory = () => {
         if (inventory.length > 0) return;
-        const sample: InventoryItem[] = [
-            { id: generateId(), item: "Cement 50kg", qty: 250, uom: "bag" },
-            { id: generateId(), item: "Steel 8mm", qty: 1200, uom: "kg" },
+        const sample: ExtendedInventoryItem[] = [
+            { _id: generateId(), id: generateId(), item: "Cement 50kg", qty: 250, uom: "bag" },
+            { _id: generateId(), id: generateId(), item: "Steel 8mm", qty: 1200, uom: "kg" },
         ];
         persistInventory(sample);
     };
@@ -811,7 +907,7 @@ export default function ProcurementPage() {
                                     <TableCell>
                                         {(() => {
                                             const itemId = m.id || m._id;
-                                            const status = mrsStatusSync[itemId];
+                                            const status = itemId ? mrsStatusSync[itemId] : undefined;
                                             console.log(`Item: ${m.item}, ID: ${itemId}, Status: ${status}`);
                                             return status === 'in-transit' ? (
                                                 <Button 
@@ -920,9 +1016,9 @@ export default function ProcurementPage() {
                         {(prs || []).length === 0 ? <div className="text-muted-foreground">No PRs yet.</div> : (
                             <div className="max-h-[300px] overflow-y-auto space-y-2">
                                 {prs.map((pr) => (
-                                    <div key={pr.id || pr._id} className="rounded-md border p-3 flex justify-between items-center">
+                                    <div key={pr._id} className="rounded-md border p-3 flex justify-between items-center">
                                         <div>
-                                            <div className="font-semibold text-sm">PR #{pr.id?.substring(0,6) || pr._id?.substring(0,6)}</div>
+                                            <div className="font-semibold text-sm">PR #{pr._id?.substring(0,6)}</div>
                                             <div className="text-xs text-muted-foreground">{new Date(pr.createdAt).toLocaleDateString()}</div>
                                         </div>
                                         <Badge>{pr.status}</Badge>
@@ -939,13 +1035,13 @@ export default function ProcurementPage() {
                         {poLoading && <div className="text-center py-4">Loading...</div>}
                         {(pos || []).length === 0 ? <div className="text-muted-foreground">No POs yet.</div> : (
                             <div className="max-h-[300px] overflow-y-auto space-y-2">
-                                {pos.map((po) => (
-                                    <div key={po._id || po.id} className="rounded-md border p-3 flex justify-between items-center">
+                                {(pos as any[]).filter((po: any) => po.items).map((po: any) => (
+                                    <div key={po._id} className="rounded-md border p-3 flex justify-between items-center">
                                         <div>
                                             <div className="font-semibold text-sm">{po.poNo || "PO-###"}</div>
                                             <div className="text-xs text-muted-foreground">{po.supplier}</div>
                                         </div>
-                                        <Button size="sm" variant="secondary" onClick={() => receiveAgainstPO(po._id || po.id, 1)}>
+                                        <Button size="sm" variant="secondary" onClick={() => receiveAgainstPO(po._id, 1)}>
                                             Mark Received
                                         </Button>
                                     </div>
@@ -1070,7 +1166,99 @@ export default function ProcurementPage() {
                             </div>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
-                            <div><Label>Item</Label><Input value={form.item || ""} onChange={(e) => setForm({ ...form, item: e.target.value })} /></div>
+                            <div className="space-y-2">
+                                <Label>Item</Label>
+                                {!isCustomItem ? (
+                                    <Popover open={itemPopoverOpen} onOpenChange={setItemPopoverOpen}>
+                                        <PopoverTrigger asChild>
+                                            <Button
+                                                variant="outline"
+                                                role="combobox"
+                                                aria-expanded={itemPopoverOpen}
+                                                className="w-full justify-between"
+                                            >
+                                                {form.item || "Select material..."}
+                                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-[400px] p-0">
+                                            <Command>
+                                                <CommandInput
+                                                    placeholder="Search materials..."
+                                                    value={itemSearch}
+                                                    onValueChange={setItemSearch}
+                                                />
+                                                <CommandList>
+                                                    <CommandEmpty>No materials found.</CommandEmpty>
+                                                    <CommandGroup>
+                                                        {/* Raw Materials */}
+                                                        {rawMaterials
+                                                            .filter((material) => {
+                                                                if (!itemSearch) return true;
+                                                                return material.name.toLowerCase().includes(itemSearch.toLowerCase()) ||
+                                                                       material.itemCode?.toLowerCase().includes(itemSearch.toLowerCase());
+                                                            })
+                                                            .map((material) => (
+                                                                <CommandItem
+                                                                    key={material._id}
+                                                                    value={material.name}
+                                                                    onSelect={() => {
+                                                                        setForm({ ...form, item: material.name });
+                                                                        setItemPopoverOpen(false);
+                                                                    }}
+                                                                >
+                                                                    <Check
+                                                                        className={`mr-2 h-4 w-4 ${
+                                                                            form.item === material.name ? "opacity-100" : "opacity-0"
+                                                                        }`}
+                                                                    />
+                                                                    <div className="flex flex-col">
+                                                                        <span className="font-medium">{material.name}</span>
+                                                                        <span className="text-xs text-muted-foreground">
+                                                                            {material.itemCode} | Stock: <span className={(material.quantity || 0) > 0 ? 'text-green-600' : 'text-red-600'}>{material.quantity || 0}</span> {material.unitOfMeasure}
+                                                                        </span>
+                                                                    </div>
+                                                                </CommandItem>
+                                                            ))}
+                                                        
+                                                        {/* Other Option */}
+                                                        <CommandItem
+                                                            value="other"
+                                                            onSelect={() => {
+                                                                setIsCustomItem(true);
+                                                                setForm({ ...form, item: "" });
+                                                                setItemPopoverOpen(false);
+                                                            }}
+                                                        >
+                                                            <Plus className="mr-2 h-4 w-4" />
+                                                            <span className="font-medium">Other (Custom Item)</span>
+                                                        </CommandItem>
+                                                    </CommandGroup>
+                                                </CommandList>
+                                            </Command>
+                                        </PopoverContent>
+                                    </Popover>
+                                ) : (
+                                    <div className="space-y-2">
+                                        <Input 
+                                            value={form.item || ""} 
+                                            onChange={(e) => setForm({ ...form, item: e.target.value })}
+                                            placeholder="Enter custom item name..."
+                                        />
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => {
+                                                setIsCustomItem(false);
+                                                setForm({ ...form, item: "" });
+                                            }}
+                                        >
+                                            ← Back to Material List
+                                        </Button>
+                                    </div>
+                                )}
+                            </div>
                             <div><Label>Quantity</Label><Input type="number" value={form.quantity ?? 1} onChange={(e) => setForm({ ...form, quantity: parseFloat(e.target.value || "0") })} /></div>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
