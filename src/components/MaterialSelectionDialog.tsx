@@ -13,6 +13,7 @@ import { fetchWbsByProject } from "@/redux/slices/wbsSlice";
 import { fetchMRS } from "@/redux/slices/mrsSlice";
 import api from "@/utils/axiosApi";
 import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
 
 type MaterialItem = {
   _id: string;
@@ -63,6 +64,7 @@ export default function MaterialSelectionDialog({
   const { list: mrsList } = useSelector((state: RootState) => state.mrs);
 
   const [savedMaterials, setSavedMaterials] = useState<SelectedMaterial[]>([]);
+  const [searchTerm, setSearchTerm] = useState<string>("");
 
   const [isEditingMode, setIsEditingMode] = useState(false); // not used heavily here but kept for clarity
   const [materialInput, setMaterialInput] = useState<MaterialInputState>({
@@ -145,23 +147,43 @@ export default function MaterialSelectionDialog({
     }
   }, [isOpen, materials, wbsItem, wbsItem?.linkedMaterials, isUpdateMode]);
 
-  // Centralized function to calculate saved materials
+  // Centralized function to calculate saved materials from database
   const calculateSavedMaterials = () => {
     if (!isOpen || !wbsItem?.name || materials.length === 0) return [];
 
-    // Get material status and returns from localStorage
-    const materialStatusSync = JSON.parse(localStorage.getItem('MRS_STATUS_SYNC') || '{}');
-    const mrsReturns = JSON.parse(localStorage.getItem('MRS_RETURNS') || '{}');
-
     console.log(`🔍 Calculating saved materials for task: ${wbsItem.name}`);
-    console.log('📊 MRS Returns data:', mrsReturns);
+    console.log('📊 Total MRS list:', mrsList?.length || 0);
+    
+    // First, let's see ALL MRS items for debugging
+    console.log('🔍 ALL MRS Items:');
+    (mrsList || []).forEach((mrs: any, index: number) => {
+      console.log(`  ${index + 1}. ${mrs.item} - Task: ${mrs.task} - DeliveryStatus: ${mrs.deliveryStatus} - Status: ${mrs.status} - Deleted: ${mrs.isDeleted}`);
+    });
+    
+    // Now let's see items for this specific task
+    console.log(`🔍 MRS Items for task "${wbsItem.name}":`);
+    const allTaskItems = (mrsList || []).filter((mrs: any) => mrs.task === wbsItem.name && !mrs.isDeleted);
+    allTaskItems.forEach((mrs: any, index: number) => {
+      console.log(`  ${index + 1}. ${mrs.item} - DeliveryStatus: ${mrs.deliveryStatus} - Status: ${mrs.status}`);
+    });
 
-    // Get MRS materials for this specific task (only received ones)
+    // Get MRS materials for this specific task (only received ones from database)
     const taskMRSMaterials = (mrsList || []).filter((mrs: any) => {
       const isForThisTask = mrs.task === wbsItem.name && !mrs.isDeleted;
-      const materialId = mrs.id || mrs._id;
-      const status = materialStatusSync[materialId] || 'pending';
-      return isForThisTask && status === 'received';
+      
+      // Check database delivery status - look for 'received' status in deliveryStatus or status
+      const isReceived = mrs.deliveryStatus === 'received' || mrs.status === 'received';
+      
+      console.log(`📋 MRS ${mrs.item} (${mrs.id || mrs._id}):`, {
+        task: mrs.task,
+        isForThisTask,
+        deliveryStatus: mrs.deliveryStatus,
+        status: mrs.status,
+        deliveryDetails: mrs.deliveryDetails,
+        isReceived
+      });
+      
+      return isForThisTask && isReceived;
     });
 
     console.log(`📦 Found ${taskMRSMaterials.length} received MRS materials for task`);
@@ -170,24 +192,26 @@ export default function MaterialSelectionDialog({
     const mrsAsSavedMaterials = taskMRSMaterials.map((mrs: any) => {
       const materialDetails = materials.find((m) => m.name.toLowerCase() === mrs.item.toLowerCase());
       
-      // Calculate remaining quantity after returns
+      // Use database quantity (consider returns if stored in database)
       const originalQuantity = mrs.quantity || 1;
-      const returnedQuantity = mrsReturns[mrs.id || mrs._id] || 0;
-      const remainingQuantity = originalQuantity - returnedQuantity;
+      const receivedQuantity = mrs.deliveryDetails?.receivedQuantity || originalQuantity;
+      const returnedQuantity = mrs.deliveryDetails?.returnedQuantity || 0;
+      const availableQuantity = receivedQuantity - returnedQuantity;
       
       console.log(`🧮 Material ${mrs.item} (${mrs.id || mrs._id}):`, {
         original: originalQuantity,
+        received: receivedQuantity,
         returned: returnedQuantity,
-        remaining: remainingQuantity
+        available: availableQuantity
       });
       
       return {
         materialId: mrs.id || mrs._id,
         name: mrs.item,
-        quantity: remainingQuantity > 0 ? remainingQuantity : 0,
-        unit: materialDetails?.unitOfMeasure || 'units',
+        quantity: availableQuantity,
+        unit: materialDetails?.unitOfMeasure || mrs.unit || 'units',
       } as SelectedMaterial;
-    }).filter(material => Number(material.quantity) > 0); // Only show materials with remaining quantity
+    }).filter(material => Number(material.quantity) > 0);
 
     // Get existing linkedMaterials
     const linkedMaterials = (wbsItem?.linkedMaterials || []).map((link: any) => {
@@ -200,15 +224,27 @@ export default function MaterialSelectionDialog({
       } as SelectedMaterial;
     });
 
-    // Combine both sources, avoiding duplicates
+    // Combine both sources, merging duplicate materials by adding quantities
     const allMaterials = [...linkedMaterials];
     
     mrsAsSavedMaterials.forEach(mrsMaterial => {
-      const exists = allMaterials.find(existing => 
+      const existingIndex = allMaterials.findIndex(existing => 
         existing.name.toLowerCase() === mrsMaterial.name.toLowerCase()
       );
-      if (!exists) {
+      
+      if (existingIndex >= 0) {
+        // Material already exists, add the quantities
+        const existing = allMaterials[existingIndex];
+        allMaterials[existingIndex] = {
+          ...existing,
+          quantity: Number(existing.quantity) + Number(mrsMaterial.quantity),
+          materialId: existing.materialId || mrsMaterial.materialId // Keep existing ID if available
+        };
+        console.log(`🔄 Combined duplicate material ${mrsMaterial.name}: ${existing.quantity} + ${mrsMaterial.quantity} = ${allMaterials[existingIndex].quantity}`);
+      } else {
+        // New material, add it
         allMaterials.push(mrsMaterial);
+        console.log(`➕ Added new material ${mrsMaterial.name}: ${mrsMaterial.quantity}`);
       }
     });
 
@@ -216,23 +252,36 @@ export default function MaterialSelectionDialog({
     return allMaterials;
   };
 
-  // Main useEffect to calculate and set saved materials
+  // Main useEffect to calculate and set saved materials from database
   useEffect(() => {
-    const calculatedMaterials = calculateSavedMaterials();
-    setSavedMaterials(calculatedMaterials);
-  }, [isOpen, wbsItem?.name, mrsList, materials, wbsItem?.linkedMaterials]);
-
-  // Listen for material return events to refresh saved materials
-  useEffect(() => {
-    const handleMaterialReturn = () => {
-      console.log('🔄 Material return event received, recalculating saved materials...');
+    if (isOpen && wbsItem?.name) {
+      console.log('🔄 Recalculating materials due to data change...');
       const calculatedMaterials = calculateSavedMaterials();
       setSavedMaterials(calculatedMaterials);
+    }
+  }, [isOpen, wbsItem?.name, mrsList, materials, wbsItem?.linkedMaterials]);
+
+  // Listen for database updates to refresh saved materials
+  useEffect(() => {
+    const handleDatabaseUpdate = () => {
+      console.log('🔄 Database update event received, refetching MRS data...');
+      dispatch(fetchMRS());
     };
 
-    window.addEventListener('materialReturned', handleMaterialReturn);
-    return () => window.removeEventListener('materialReturned', handleMaterialReturn);
-  }, [isOpen, wbsItem?.name, materials, mrsList]);
+    const handleMRSStatusChange = (event: any) => {
+      console.log('🔄 MRS status change event received:', event.detail);
+      console.log('🔄 Refetching MRS data from database...');
+      dispatch(fetchMRS());
+    };
+
+    window.addEventListener('materialReturned', handleDatabaseUpdate);
+    window.addEventListener('mrsStatusChanged', handleMRSStatusChange);
+    
+    return () => {
+      window.removeEventListener('materialReturned', handleDatabaseUpdate);
+      window.removeEventListener('mrsStatusChanged', handleMRSStatusChange);
+    };
+  }, [isOpen, dispatch]);
 
   const openMaterialModalForAdd = (m: MaterialItem) => {
     setMaterialInput({
@@ -425,11 +474,8 @@ export default function MaterialSelectionDialog({
       );
 
       if (isMRSMaterial) {
-        // Handle MRS material return
-        // For MRS materials, we'll update the material status and create a return record
-        
-        // Update material status to indicate partial return
-        const materialStatusSync = JSON.parse(localStorage.getItem('MRS_STATUS_SYNC') || '{}');
+        // Handle MRS material return using database API
+        console.log(`🔄 Processing MRS material return for ${it.name}, quantity: ${returnQty}`);
         
         // Find the MRS entry
         const mrsEntry = mrsList?.find((mrs: any) => 
@@ -437,68 +483,49 @@ export default function MaterialSelectionDialog({
         );
         
         if (mrsEntry) {
-          // Find the corresponding raw material and add back to stock
-          const rawMaterial = materials.find(rm => rm.name === it.name);
-          
-          if (rawMaterial) {
-            try {
-              // Add back to raw material stock
-              const currentStock = rawMaterial.quantity || 0;
-              const organisationId = localStorage.getItem("organisationId");
-              await api.put(`/raw/update/${rawMaterial._id}`, {
-                ...rawMaterial,
-                quantity: currentStock + returnQty
-              }, {
-                headers: { organisationId }
-              });
-              console.log(`✅ Added back ${returnQty} to ${it.name}. New stock: ${currentStock + returnQty}`);
-            } catch (error: any) {
-              console.error('Failed to update raw material stock:', error);
-              const errorMsg = error.response?.data?.message || error.message || 'Unknown error';
-              alert(`Failed to update stock for ${it.name}: ${errorMsg}`);
-              setReturnModal((r) => ({ ...r, submitting: false }));
-              return;
+          try {
+            // 1. Update MRS return quantity in database
+            console.log(`📦 Updating MRS return quantity in database for ID: ${it.materialId}`);
+            await api.patch(`/mrs/${it.materialId}/return-material`, {
+              returnedQuantity: returnQty,
+              returnReason: 'Material returned from WBS',
+              returnedBy: 'Current User'
+            });
+            console.log(`✅ MRS return updated in database`);
+            
+            // 2. Add back to raw material stock
+            const rawMaterial = materials.find(rm => rm.name === it.name);
+            if (rawMaterial) {
+              try {
+                const currentStock = rawMaterial.quantity || 0;
+                const organisationId = localStorage.getItem("organisationId");
+                await api.put(`/raw/update/${rawMaterial._id}`, {
+                  ...rawMaterial,
+                  quantity: currentStock + returnQty
+                }, {
+                  headers: { organisationId }
+                });
+                console.log(`✅ Added back ${returnQty} to ${it.name}. New stock: ${currentStock + returnQty}`);
+              } catch (error: any) {
+                console.error('Failed to update raw material stock:', error);
+                const errorMsg = error.response?.data?.message || error.message || 'Unknown error';
+                alert(`Failed to update stock for ${it.name}: ${errorMsg}`);
+                setReturnModal((r) => ({ ...r, submitting: false }));
+                return;
+              }
             }
+            
+            // 3. Refresh MRS data to get updated return quantities
+            console.log(`🔄 Refreshing MRS data to reflect return...`);
+            dispatch(fetchMRS());
+            
+          } catch (error: any) {
+            console.error('Failed to process MRS return:', error);
+            const errorMsg = error.response?.data?.message || error.message || 'Unknown error';
+            alert(`Failed to return material: ${errorMsg}`);
+            setReturnModal((r) => ({ ...r, submitting: false }));
+            return;
           }
-          
-          // Create a return entry in localStorage or backend
-          const returnData = {
-            mrsId: it.materialId,
-            materialName: it.name,
-            originalQuantity: it.assignedQty,
-            returnedQuantity: returnQty,
-            remainingQuantity: it.assignedQty - returnQty,
-            returnDate: new Date().toISOString(),
-            taskName: wbsItem?.name,
-            projectId: wbsItem?.projectId
-          };
-          
-          // Store return record
-          const existingReturns = JSON.parse(localStorage.getItem('MATERIAL_RETURNS') || '[]');
-          existingReturns.push(returnData);
-          localStorage.setItem('MATERIAL_RETURNS', JSON.stringify(existingReturns));
-          
-          // Update MRS quantity in localStorage to track returns
-          const mrsReturns = JSON.parse(localStorage.getItem('MRS_RETURNS') || '{}');
-          const currentReturned = mrsReturns[it.materialId] || 0;
-          mrsReturns[it.materialId] = currentReturned + returnQty;
-          localStorage.setItem('MRS_RETURNS', JSON.stringify(mrsReturns));
-          
-          console.log(`📦 Updated MRS_RETURNS for ${it.materialId}:`, {
-            previousReturned: currentReturned,
-            newReturn: returnQty,
-            totalReturned: mrsReturns[it.materialId],
-            originalQuantity: it.assignedQty,
-            remainingQuantity: it.assignedQty - mrsReturns[it.materialId]
-          });
-          
-          // If fully returned, update status
-          if (returnQty >= it.assignedQty) {
-            materialStatusSync[it.materialId] = 'returned';
-            localStorage.setItem('MRS_STATUS_SYNC', JSON.stringify(materialStatusSync));
-          }
-          
-          console.log('✅ MRS Material returned:', returnData);
         }
       } else {
         // Handle linkedMaterial return (existing logic)
@@ -509,29 +536,45 @@ export default function MaterialSelectionDialog({
         });
       }
 
-      // Force immediate refresh of saved materials with updated return data
-      setTimeout(() => {
-        const event = new CustomEvent('materialReturned', { 
-          detail: { materialId: it.materialId, returnedQty: returnQty } 
-        });
-        window.dispatchEvent(event);
-      }, 50); // Small delay to ensure localStorage is updated
-
+      // 4. Optimistically update local state immediately
+      console.log(`🔄 Optimistically updating local state for ${it.name}`);
+      setSavedMaterials(prevMaterials => 
+        prevMaterials.map(material => {
+          if (material.materialId === it.materialId) {
+            const newQuantity = Number(material.quantity) - returnQty;
+            console.log(`📊 Updating ${material.name}: ${material.quantity} - ${returnQty} = ${newQuantity}`);
+            return {
+              ...material,
+              quantity: Math.max(0, newQuantity) // Ensure quantity doesn't go negative
+            };
+          }
+          return material;
+        }).filter(material => Number(material.quantity) > 0) // Remove materials with 0 quantity
+      );
+      
+      // Close modal and show success message
+      setReturnModal({ open: false, item: null, submitting: false });
+      toast.success(`Successfully returned ${returnQty} ${it.unit} of ${it.name}. Stock updated.`);
+      
+      // Refresh materials data
+      dispatch(fetchMaterials({ page: 1, limit: 100 }));
+      
+      // Refresh WBS data if needed
       if (wbsItem?.projectId) {
         dispatch(fetchWbsByProject(wbsItem.projectId));
       }
       
-      setReturnModal({ open: false, item: null, submitting: false });
-      
-      // Show success message
-      const stockMessage = isMRSMaterial ? ` Stock updated.` : '';
-      alert(`Successfully returned ${returnQty} ${it.unit} of ${it.name}.${stockMessage}`);
-      
-      // 🔥 Refetch both materials and MRS to update all data (with small delay)
+      // Delay MRS refetch to allow database to update, then sync with server
       setTimeout(async () => {
-        await dispatch(fetchMaterials({ page: 1, limit: 100 }));
+        console.log(`🔄 Syncing with database after return...`);
         await dispatch(fetchMRS());
-      }, 500);
+        // After fresh data, recalculate to ensure accuracy
+        setTimeout(() => {
+          const calculatedMaterials = calculateSavedMaterials();
+          setSavedMaterials(calculatedMaterials);
+          console.log(`✅ Materials synced with database after return`);
+        }, 500);
+      }, 2000); // Longer delay to ensure database is updated
       
     } catch (err) {
       console.error("Return failed", err);
@@ -621,15 +664,75 @@ export default function MaterialSelectionDialog({
 
             {/* RIGHT: SAVED MATERIALS (READ-ONLY UNLESS EDIT MODE) */}
             <div>
-              <p className="text-sm font-medium mb-2">Saved Materials</p>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium">Saved Materials</p>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="text"
+                    placeholder="Search materials..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-48 h-8 text-xs"
+                  />
+                  {searchTerm && (
+                    <button
+                      onClick={() => setSearchTerm("")}
+                      className="text-gray-400 hover:text-gray-600"
+                      title="Clear search"
+                    >
+                      ✕
+                    </button>
+                  )}
+                  {/* Debug button - commented out for production */}
+                  {/* <button
+                    onClick={() => {
+                      console.log('🔄 Manual refresh triggered');
+                      console.log('🔄 Current MRS List:', mrsList);
+                      dispatch(fetchMRS());
+                      setTimeout(() => {
+                        const calculatedMaterials = calculateSavedMaterials();
+                        setSavedMaterials(calculatedMaterials);
+                      }, 1000);
+                    }}
+                    className="text-blue-600 hover:text-blue-800 text-xs px-2 py-1 border border-blue-300 rounded"
+                    title="Refresh materials"
+                  >
+                    🔄 Debug
+                  </button> */}
+                </div>
+              </div>
 
               <div className="space-y-3 h-[380px] overflow-y-auto pr-2 border rounded p-2 bg-gray-50">
-                {savedMaterials.length === 0 ? (
-                  <p className="text-sm text-gray-500">
-                    No materials saved yet.
-                  </p>
-                ) : (
-                  savedMaterials.map((m) => {
+                {(() => {
+                  // Filter materials based on search term
+                  const filteredMaterials = savedMaterials.filter((material) => {
+                    if (!searchTerm.trim()) return true;
+                    
+                    const searchLower = searchTerm.toLowerCase();
+                    return (
+                      material.name.toLowerCase().includes(searchLower) ||
+                      material.unit.toLowerCase().includes(searchLower) ||
+                      material.quantity.toString().includes(searchLower)
+                    );
+                  });
+
+                  if (savedMaterials.length === 0) {
+                    return (
+                      <p className="text-sm text-gray-500">
+                        No materials saved yet.
+                      </p>
+                    );
+                  }
+
+                  if (filteredMaterials.length === 0) {
+                    return (
+                      <p className="text-sm text-gray-500">
+                        No materials found matching "{searchTerm}".
+                      </p>
+                    );
+                  }
+
+                  return filteredMaterials.map((m) => {
                     // Check if this is from MRS or linkedMaterials
                     const isMRSMaterial = mrsList?.some((mrs: any) => 
                       (mrs.id === m.materialId || mrs._id === m.materialId) && mrs.task === wbsItem?.name
@@ -702,27 +805,15 @@ export default function MaterialSelectionDialog({
                         )}
                       </div>
                     );
-                  })
-                )}
+                  });
+                })()}
               </div>
             </div>
           </div>
 
           {/* NOTE: We don't show inline editing here. Editing done via modal on Update. */}
           <div className="mt-4 flex justify-end gap-2">
-            {/* <Button
-              variant="outline"
-              onClick={() => {
-                // Refresh all data
-                dispatch(fetchMaterials({ page: 1, limit: 100 }));
-                dispatch(fetchMRS());
-                if (wbsItem?.projectId) {
-                  dispatch(fetchWbsByProject(wbsItem.projectId));
-                }
-              }}
-            >
-              🔄 Refresh
-            </Button> */}
+
             <Button
               variant="outline"
               onClick={() => {

@@ -1014,7 +1014,7 @@ const PurchaseOrderComponent: React.FC = () => {
       vendorId: viewingPo.vendorId,
       orderDate: viewingPo.orderDate?.split("T")[0] || "",
       deliveryAddress: viewingPo.deliveryAddress,
-      warehouse: viewingPo.warehouse,
+      // warehouse: viewingPo.warehouse,
       incoterms: viewingPo.incoterms,
       deliveryMethod: viewingPo.deliveryMethod,
       warehouse: viewingPo.warehouse 

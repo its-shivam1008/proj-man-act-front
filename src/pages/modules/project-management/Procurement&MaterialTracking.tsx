@@ -47,7 +47,13 @@ import {
     createMRS,
     updateMRS,
     deleteMRS,
+    markAsSent,
+    markAsInTransit,
+    markAsReceived,
+    returnMaterial,
+    fetchDeliveryStatistics,
 } from "@/redux/slices/mrsSlice";
+import { createMaterialRequest, fetchMaterialRequests, updateMaterialRequestStatus } from "@/redux/slices/materialRequestSlice";
 import { convertToPR } from "@/redux/slices/prSlice";
 import { receivePO } from "@/redux/slices/poSlice";
 import { fetchProjects } from "@/redux/slices/projectSlice";
@@ -112,21 +118,21 @@ export default function ProcurementPage() {
     };
 
     const handleSendClick = (item: ExtendedMRSItem, type: "INVENTORY" | "PURCHASE") => {
-        const itemId = item.id || item._id || item.item;
-        const key = `${itemId}_${type}`;
+        // Only increment count for PURCHASE type (Send button)
+        if (type === "PURCHASE") {
+            const itemId = item.id || item._id || item.item;
+            const key = `${itemId}_${type}`;
+            
+            const newCounts = {
+                ...sendClickCounts,
+                [key]: (sendClickCounts[key] || 0) + 1
+            };
+            
+            setSendClickCounts(newCounts);
+            localStorage.setItem('SEND_CLICK_COUNTS', JSON.stringify(newCounts));
+        }
         
-        // Increment the click count
-        const newCounts = {
-            ...sendClickCounts,
-            [key]: (sendClickCounts[key] || 0) + 1
-        };
-        
-        setSendClickCounts(newCounts);
-        
-        // Save to localStorage
-        localStorage.setItem('SEND_CLICK_COUNTS', JSON.stringify(newCounts));
-        
-        // Open the remark dialog
+        // Open the remark dialog for both INVENTORY and PURCHASE
         handleOpenRemarkDialog(item, type);
     };
 
@@ -153,6 +159,25 @@ export default function ProcurementPage() {
             : "rfq.purchase";        // Clicked "Send" button
 
         try {
+            // 🚀 For INVENTORY type, update MRS delivery status first
+            if (type === "INVENTORY") {
+                const itemId = item.id || item._id;
+                if (itemId) {
+                    // Mark as sent for delivery in database
+                    await dispatch(markAsSent({
+                        id: itemId,
+                        transportDetails: {
+                            method: 'Standard Delivery',
+                            estimatedDelivery: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+                            deliveryNotes: remarkText
+                        }
+                    }));
+                    console.log('✅ MRS marked as sent in database');
+                    
+                    // Material request will be created only when delivery team accepts the notification
+                }
+            }
+
             // Create notification with complete item details
             await dispatch(createNotification({
                 source,
@@ -173,9 +198,15 @@ export default function ProcurementPage() {
                 }
             })).unwrap();
 
+            // 🚀 Refresh MRS data to show updated delivery status
+            if (type === "INVENTORY") {
+                dispatch(fetchMRS());
+            }
+
             toast.success(`Notification sent to ${type === "INVENTORY" ? "Delivery Management" : "Purchase"}`);
             setRemarkDialogOpen(false);
             setNotificationTarget(null);
+            setRemarkText("");
         } catch (error) {
             toast.error("Failed to send notification");
             console.error(error);
@@ -228,6 +259,7 @@ export default function ProcurementPage() {
     useEffect(() => {
         dispatch(fetchMRS());
         dispatch(fetchMaterials({ page: 1, limit: 1000 })); // Fetch Raw Materials to map names
+        dispatch(fetchDeliveryStatistics()); // 🚀 Fetch delivery statistics
         setInventory(getInventory());
         
         // Load MRS status sync from localStorage
@@ -588,94 +620,265 @@ export default function ProcurementPage() {
     };
     
     const handleItemReceived = async (m: ExtendedMRSItem) => {
-        // Mark item as received using unique ID
-        const syncData = JSON.parse(localStorage.getItem('MRS_STATUS_SYNC') || '{}');
-        const itemId = m.id || m._id;
-        if (itemId) {
-            syncData[itemId] = 'received'; // Use unique ID instead of item name
-        }
-        localStorage.setItem('MRS_STATUS_SYNC', JSON.stringify(syncData));
-        setMrsStatusSync(syncData);
-        
-        // Dispatch custom event to notify other components
-        window.dispatchEvent(new CustomEvent('mrsStatusChanged', { 
-          detail: { itemId, status: 'received', item: m } 
-        }));
-        
-        // 🚀 AUTOMATICALLY ADD TO WBS SAVED MATERIALS 🚀
-        if (m.task && selectedProjectId) {
-            try {
-                // Find the WBS item for this task
-                const wbsResponse = await api.get(`/wbs/project/${selectedProjectId}`);
-                const wbsItems = wbsResponse.data?.data || [];
-                const wbsItem = wbsItems.find((item: any) => item.name === m.task);
-                
-                if (wbsItem) {
-                    // Prepare material data for WBS
-                    const materialData = {
-                        materialId: m._id || m.id,
-                        name: m.item,
-                        quantity: m.quantity || 1,
-                        unit: m.unit || 'kg',
-                        remarks: `Auto-added from MRS (Received: ${new Date().toLocaleDateString()})`
-                    };
+        try {
+            const itemId = m.id || m._id;
+            if (!itemId) {
+                toast.error('Invalid item ID');
+                return;
+            }
+
+            // 🚀 Mark as received in database (replaces localStorage)
+            await dispatch(markAsReceived({
+                id: itemId,
+                receivedBy: 'Current User', // You can get this from auth context
+                receivedQuantity: m.quantity,
+                deliveryNotes: `Item received on ${new Date().toLocaleDateString()}`
+            }));
+
+            // Update localStorage sync for backward compatibility with WBS
+            const syncData = JSON.parse(localStorage.getItem('MRS_STATUS_SYNC') || '{}');
+            syncData[itemId] = 'received';
+            localStorage.setItem('MRS_STATUS_SYNC', JSON.stringify(syncData));
+            setMrsStatusSync(syncData);
+            
+            // Dispatch custom event to notify other components
+            window.dispatchEvent(new CustomEvent('mrsStatusChanged', { 
+              detail: { itemId, status: 'received', item: m } 
+            }));
+            
+            // 🚀 AUTOMATICALLY ADD TO WBS SAVED MATERIALS 🚀
+            if (m.task && selectedProjectId) {
+                try {
+                    // Find the WBS item for this task
+                    const wbsResponse = await api.get(`/wbs/project/${selectedProjectId}`);
+                    const wbsItems = wbsResponse.data?.data || [];
+                    const wbsItem = wbsItems.find((item: any) => item.name === m.task);
                     
-                    // Try to add material to WBS item via API
-                    try {
-                        await api.post(`/wbs/item/${wbsItem.id}/materials`, materialData);
-                        toast.success(`✅ ${m.item} automatically added to WBS task "${m.task}" saved materials!`);
-                    } catch (apiError) {
-                        // Fallback: Add to localStorage for MaterialSelectionDialog
-                        const savedMaterialsKey = `WBS_SAVED_MATERIALS_${wbsItem.id}`;
-                        const existingSavedMaterials = JSON.parse(localStorage.getItem(savedMaterialsKey) || '[]');
+                    if (wbsItem) {
+                        // Prepare material data for WBS
+                        const materialData = {
+                            materialId: m._id || m.id,
+                            name: m.item,
+                            quantity: m.quantity || 1,
+                            unit: m.unit || 'kg',
+                            remarks: `Auto-added from MRS (Received: ${new Date().toLocaleDateString()})`
+                        };
                         
-                        // Check if material already exists
-                        const existingIndex = existingSavedMaterials.findIndex((saved: any) => 
-                            saved.name === materialData.name || saved.materialId === materialData.materialId
+                        // Try to add material to WBS item via API
+                        try {
+                            await api.post(`/wbs/item/${wbsItem.id}/materials`, materialData);
+                            toast.success(`✅ ${m.item} automatically added to WBS task "${m.task}" saved materials!`);
+                        } catch (apiError) {
+                            // Fallback: Add to localStorage for MaterialSelectionDialog
+                            const savedMaterialsKey = `WBS_SAVED_MATERIALS_${wbsItem.id}`;
+                            const existingSavedMaterials = JSON.parse(localStorage.getItem(savedMaterialsKey) || '[]');
+                            
+                            // Check if material already exists
+                            const existingIndex = existingSavedMaterials.findIndex((saved: any) => 
+                                saved.name === materialData.name || saved.materialId === materialData.materialId
+                            );
+                            
+                            if (existingIndex >= 0) {
+                                // Update existing material quantity
+                                existingSavedMaterials[existingIndex].quantity = 
+                                    (existingSavedMaterials[existingIndex].quantity || 0) + materialData.quantity;
+                            } else {
+                                // Add new material
+                                existingSavedMaterials.push({
+                                    ...materialData,
+                                    id: Date.now().toString(), // Generate unique ID
+                                    addedAt: new Date().toISOString()
+                                });
+                            }
+                            
+                            localStorage.setItem(savedMaterialsKey, JSON.stringify(existingSavedMaterials));
+                            
+                            // Dispatch event to refresh MaterialSelectionDialog
+                            window.dispatchEvent(new CustomEvent('wbsMaterialsUpdated', { 
+                                detail: { wbsItemId: wbsItem.id, materials: existingSavedMaterials } 
+                            }));
+                            
+                            toast.success(`✅ ${m.item} automatically added to WBS task "${m.task}" saved materials!`);
+                        }
+                    } else {
+                        console.warn(`WBS task "${m.task}" not found for auto-addition`);
+                    }
+                } catch (error) {
+                    console.error('Error auto-adding material to WBS:', error);
+                    // Don't show error toast to user, just log it
+                }
+            }
+            
+            // Update material request status to delivered in database
+            try {
+                console.log('🔍 Looking for material request with itemId:', itemId, 'item:', m.item, 'task:', m.task);
+                
+                // Get all material requests and search more broadly
+                const allRequestsResponse = await api.get('/api/material-requests', {
+                    headers: { organisationId: localStorage.getItem('organisationId') }
+                });
+                
+                console.log('📦 All material requests response:', allRequestsResponse.data);
+                
+                if (allRequestsResponse.data.success) {
+                    const allRequests = allRequestsResponse.data.requests || allRequestsResponse.data;
+                    console.log('📋 Total material requests found:', allRequests.length);
+                    
+                    // Log all requests for debugging
+                    allRequests.forEach((req: any, index: number) => {
+                        console.log(`Request ${index + 1}:`, {
+                            id: req._id,
+                            itemId: req.itemId,
+                            item: req.item,
+                            sourceTask: req.sourceTask,
+                            status: req.status,
+                            isDeleted: req.isDeleted
+                        });
+                    });
+                    
+                    // Try multiple search strategies
+                    let matchingRequest = null;
+                    
+                    // Strategy 1: Find by itemId
+                    matchingRequest = allRequests.find((req: any) => 
+                        req.itemId === itemId && 
+                        req.status === 'in-transit' &&
+                        !req.isDeleted
+                    );
+                    
+                    if (!matchingRequest) {
+                        console.log('🔍 Strategy 1 failed, trying by item name and task...');
+                        // Strategy 2: Find by item name and task
+                        matchingRequest = allRequests.find((req: any) => 
+                            req.item === m.item && 
+                            req.sourceTask === m.task &&
+                            req.status === 'in-transit' &&
+                            !req.isDeleted
+                        );
+                    }
+                    
+                    if (!matchingRequest) {
+                        console.log('🔍 Strategy 2 failed, trying by item name only...');
+                        // Strategy 3: Find by item name only (most recent in-transit)
+                        const itemRequests = allRequests.filter((req: any) => 
+                            req.item === m.item && 
+                            req.status === 'in-transit' &&
+                            !req.isDeleted
+                        );
+                        matchingRequest = itemRequests.sort((a: any, b: any) => 
+                            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+                        )[0];
+                    }
+                    
+                    if (matchingRequest) {
+                        console.log('✅ Found matching request:', matchingRequest);
+                        console.log('📊 Current status:', matchingRequest.status);
+                        
+                        console.log('🚀 Updating status to delivered...');
+                        console.log('📋 Request ID:', matchingRequest._id);
+                        console.log('📋 Organisation ID:', localStorage.getItem('organisationId'));
+                        
+                        try {
+                            // Test API connectivity first
+                            console.log('🔗 Testing API connectivity...');
+                            const testResponse = await api.get('/api/material-requests', {
+                                headers: { organisationId: localStorage.getItem('organisationId') }
+                            });
+                            console.log('✅ API is reachable, proceeding with update...');
+                            
+                            // Verify the material request exists before updating
+                            console.log('🔍 Verifying material request exists...');
+                            const verifyResponse = await api.get(`/api/material-requests/${matchingRequest._id}`, {
+                                headers: { organisationId: localStorage.getItem('organisationId') }
+                            });
+                            console.log('📋 Verification response:', verifyResponse.data);
+                            
+                            const updateResponse = await api.patch(`/api/material-requests/${matchingRequest._id}/status`, {
+                                status: 'delivered'
+                            }, {
+                                headers: { 
+                                    organisationId: localStorage.getItem('organisationId'),
+                                    'Content-Type': 'application/json'
+                                }
+                            });
+                            
+                            console.log('📋 Update response:', updateResponse.data);
+                            
+                            if (updateResponse.data.success) {
+                                console.log('✅ Updated material request status to delivered');
+                                
+                                // Refresh material requests in delivery page
+                                dispatch(fetchMaterialRequests({}));
+                                toast.success('✅ Delivery status updated to delivered!');
+                            } else {
+                                console.log('❌ Update failed:', updateResponse.data.message);
+                                toast.error(`Failed to update delivery status: ${updateResponse.data.message}`);
+                            }
+                        } catch (updateError: any) {
+                            console.error('❌ API call failed:', updateError);
+                            console.error('❌ Error response:', updateError.response?.data);
+                            console.error('❌ Error status:', updateError.response?.status);
+                            console.error('❌ Error message:', updateError.message);
+                            console.error('❌ Full error:', updateError);
+                            
+                            // Show specific error message to user
+                            const errorMessage = updateError.response?.data?.message || 
+                                               updateError.message || 
+                                               'Unknown error occurred';
+                            console.log('🔍 Showing error to user:', errorMessage);
+                            
+                            // Try alternative approach using Redux action
+                            try {
+                                console.log('🔄 Trying alternative update method...');
+                                await dispatch(updateMaterialRequestStatus({
+                                    id: matchingRequest._id,
+                                    status: 'delivered'
+                                }));
+                                
+                                console.log('✅ Updated via Redux action');
+                                toast.success('✅ Delivery status updated to delivered!');
+                                
+                                // Refresh material requests
+                                dispatch(fetchMaterialRequests({}));
+                            } catch (reduxError) {
+                                console.error('❌ Redux update also failed:', reduxError);
+                                toast.error('Failed to update delivery status. Please try again or contact support.');
+                            }
+                        }
+                    } else {
+                        console.log('❌ No in-transit material request found for item:', m.item);
+                        
+                        // Check if there are any requests for this item at all
+                        const anyRequests = allRequests.filter((req: any) => 
+                            req.item === m.item && !req.isDeleted
                         );
                         
-                        if (existingIndex >= 0) {
-                            // Update existing material quantity
-                            existingSavedMaterials[existingIndex].quantity = 
-                                (existingSavedMaterials[existingIndex].quantity || 0) + materialData.quantity;
+                        if (anyRequests.length > 0) {
+                            console.log('📋 Found requests for this item but not in-transit:', anyRequests);
+                            toast.info(`Found delivery requests for ${m.item} but none are in-transit. Current statuses: ${anyRequests.map((r: any) => r.status).join(', ')}`);
                         } else {
-                            // Add new material
-                            existingSavedMaterials.push({
-                                ...materialData,
-                                id: Date.now().toString(), // Generate unique ID
-                                addedAt: new Date().toISOString()
-                            });
+                            toast.info('No delivery request found for this item. It may not have been sent to delivery yet.');
                         }
-                        
-                        localStorage.setItem(savedMaterialsKey, JSON.stringify(existingSavedMaterials));
-                        
-                        // Dispatch event to refresh MaterialSelectionDialog
-                        window.dispatchEvent(new CustomEvent('wbsMaterialsUpdated', { 
-                            detail: { wbsItemId: wbsItem.id, materials: existingSavedMaterials } 
-                        }));
-                        
-                        toast.success(`✅ ${m.item} automatically added to WBS task "${m.task}" saved materials!`);
                     }
                 } else {
-                    console.warn(`WBS task "${m.task}" not found for auto-addition`);
+                    console.log('❌ Failed to fetch material requests');
+                    toast.error('Failed to fetch delivery requests');
                 }
             } catch (error) {
-                console.error('Error auto-adding material to WBS:', error);
-                // Don't show error toast to user, just log it
+                console.error('❌ Failed to update material request status:', error);
+                console.error('Error details:', (error as any)?.response?.data || (error as any)?.message);
+                toast.error('Failed to update delivery status');
             }
+            
+            // Refresh MRS data to show updated delivery status
+            dispatch(fetchMRS());
+            
+            toast.success(`${m.item} marked as received and delivery status updated in database`);
+            
+        } catch (error) {
+            console.error('Error marking item as received:', error);
+            toast.error('Failed to mark item as received');
         }
-        
-        // Update delivery status to delivered
-        const materialRequests = JSON.parse(localStorage.getItem('MATERIAL_REQUESTS') || '[]');
-        const updatedRequests = materialRequests.map((req: any) => {
-            if (req.item === m.item && req.status === 'in-transit') {
-                return { ...req, status: 'delivered' };
-            }
-            return req;
-        });
-        localStorage.setItem('MATERIAL_REQUESTS', JSON.stringify(updatedRequests));
-        
-        toast.success(`${m.item} marked as received and delivery status updated to delivered`);
     };
 
     // --- Material Status Tracker ---
@@ -875,15 +1078,16 @@ export default function ProcurementPage() {
                                 <TableHead>Item / Material</TableHead>
                                 <TableHead>Quantity</TableHead>
                                 <TableHead>Status</TableHead>
+                                <TableHead>Delivery Status</TableHead>
                                 <TableHead>Required Date</TableHead>
                                 <TableHead>Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {mrsLoading && <TableRow><TableCell colSpan={7} className="text-center">Loading MRS...</TableCell></TableRow>}
+                            {mrsLoading && <TableRow><TableCell colSpan={8} className="text-center">Loading MRS...</TableCell></TableRow>}
                             
                             {!mrsLoading && paginatedMrsItems.length === 0 && (
-                                <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">No materials found.</TableCell></TableRow>
+                                <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">No materials found.</TableCell></TableRow>
                             )}
 
                             {paginatedMrsItems.map((m) => (
@@ -933,17 +1137,29 @@ export default function ProcurementPage() {
                                                     variant="outline"
                                                     onClick={() => handleSendClick(m, "INVENTORY")}
                                                 >
-                                                    Sent {(() => {
-                                                        const itemId = m.id || m._id || m.item;
-                                                        const key = `${itemId}_INVENTORY`;
-                                                        const count = sendClickCounts[key];
-                                                        return count ? (
-                                                            <span className="ml-1 px-1.5 py-0.5 bg-blue-100 text-blue-800 text-xs rounded-full font-semibold">
-                                                                {count}
-                                                            </span>
-                                                        ) : '';
-                                                    })()}
+                                                    Sent
                                                 </Button>
+                                            );
+                                        })()}
+                                    </TableCell>
+                                    <TableCell>
+                                        {(() => {
+                                            const deliveryStatus = m.deliveryStatus || 'pending';
+                                            const getStatusColor = (status: string) => {
+                                                switch (status) {
+                                                    case 'pending': return 'bg-gray-100 text-gray-800';
+                                                    case 'sent': return 'bg-blue-100 text-blue-800';
+                                                    case 'in-transit': return 'bg-yellow-100 text-yellow-800';
+                                                    case 'received': return 'bg-green-100 text-green-800';
+                                                    case 'returned': return 'bg-red-100 text-red-800';
+                                                    default: return 'bg-gray-100 text-gray-800';
+                                                }
+                                            };
+                                            
+                                            return (
+                                                <Badge className={`${getStatusColor(deliveryStatus)} capitalize`}>
+                                                    {deliveryStatus.replace('-', ' ')}
+                                                </Badge>
                                             );
                                         })()}
                                     </TableCell>

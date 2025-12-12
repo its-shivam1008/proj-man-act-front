@@ -10,6 +10,34 @@ export interface MRSItem {
   remarks?: string;
   createdAt?: string;
   updatedAt?: string;
+  
+  // 🚀 NEW: Delivery Status Tracking Fields
+  deliveryStatus?: "pending" | "sent" | "in-transit" | "received" | "returned";
+  deliveryDetails?: {
+    sentDate?: string;
+    inTransitDate?: string;
+    receivedDate?: string;
+    returnedDate?: string;
+    transportDetails?: {
+      method?: string;
+      vehicleNo?: string;
+      driverName?: string;
+      driverContact?: string;
+      estimatedDelivery?: string;
+    };
+    receivedBy?: string;
+    receivedQuantity?: number;
+    returnedQuantity?: number;
+    deliveryNotes?: string;
+    deliveryImages?: string[];
+  };
+  statusHistory?: Array<{
+    status?: string;
+    deliveryStatus?: string;
+    changedBy?: string;
+    changedAt?: string;
+    remarks?: string;
+  }>;
 }
 
 export interface PurchaseRequest {

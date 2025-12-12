@@ -8,6 +8,14 @@ import {
   deleteDelivery,
 } from "@/redux/slices/deliverySlice";
 import {
+  fetchMaterialRequests,
+  createMaterialRequest,
+  updateMaterialRequestStatus,
+  deleteMaterialRequest,
+  migrateMaterialRequestsFromLocalStorage,
+  fetchMaterialRequestStatistics,
+} from "@/redux/slices/materialRequestSlice";
+import {
   Select,
   SelectTrigger,
   SelectContent,
@@ -39,6 +47,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { BASE_URL } from "@/utils/constants";
+import MaterialRequestMigration from "@/components/MaterialRequestMigration";
 
 interface DeliveryItem {
   _id: string;
@@ -66,9 +75,9 @@ const Deliveries: React.FC = () => {
   const [loadingNotifications, setLoadingNotifications] = useState(false);
   
   // Material Requests state
-  const [materialRequests, setMaterialRequests] = useState<any[]>([]);
   const [editingRequest, setEditingRequest] = useState<any>(null);
   const [showEditStatusDialog, setShowEditStatusDialog] = useState(false);
+  const [migrationCompleted, setMigrationCompleted] = useState(false);
   
   // Stock Transfers state (lifted from child component for stats)
   const [stockTransfers, setStockTransfers] = useState<any[]>([]);
@@ -93,6 +102,9 @@ const Deliveries: React.FC = () => {
   );
   const { warehouses, loading: warehouseLoading } = useSelector(
     (state: any) => state.warehouse
+  );
+  const { requests: materialRequestsFromDB, loading: materialRequestsLoading, statistics } = useSelector(
+    (state: any) => state.materialRequests
   );
 
   const [statusFilter, setStatusFilter] = useState("all");
@@ -160,24 +172,28 @@ const Deliveries: React.FC = () => {
     try {
       const apiUrl = BASE_URL || 'http://localhost:4000';
       
-      // If accepted, add to material requests table
+      // If accepted, add to material requests database
       if (response === 'accepted' && notification?.materialData) {
         const newRequest = {
-          id: notification.itemId || Date.now().toString(), // Use original MRS item ID
+          itemId: notification.itemId || Date.now().toString(), // Use original MRS item ID
           item: notification.materialData.item || 'Unknown Item',
           sourceTask: notification.materialData.sourceTask || 'N/A',
           quantity: notification.materialData.quantity || 0,
           unit: notification.materialData.unit || 'units',
           requiredDate: notification.materialData.requiredDate,
           sentDate: notification.materialData.sentDate,
+          projectId: notification.materialData.projectId,
           projectName: notification.materialData.projectName || 'N/A',
           remark: notification.remark || '',
-          status: 'ready',
+          status: 'ready' as const,
           acceptedAt: new Date().toISOString()
         };
         
-        const currentRequests = [...materialRequests, newRequest];
-        saveMaterialRequests(currentRequests);
+        console.log('🚀 Creating material request with status:', newRequest.status);
+        console.log('📦 Full request data:', newRequest);
+        
+        await dispatch(createMaterialRequest(newRequest) as any);
+        console.log('✅ Material request created successfully');
       }
       
       const res = await fetch(`${apiUrl}/notifications/${notificationId}/respond`, {
@@ -200,47 +216,56 @@ const Deliveries: React.FC = () => {
   };
   
   // Handle status update
-  const handleUpdateStatus = (newStatus: string) => {
+  const handleUpdateStatus = async (newStatus: string) => {
     if (!editingRequest) return;
     
-    const updatedRequests = materialRequests.map(req => 
-      req.id === editingRequest.id ? { ...req, status: newStatus } : req
-    );
-    saveMaterialRequests(updatedRequests);
-    
-    // Update MRS status sync using unique ID instead of item name
-    if (newStatus === 'in-transit') {
-      const mrsStatusSync = JSON.parse(localStorage.getItem('MRS_STATUS_SYNC') || '{}');
-      mrsStatusSync[editingRequest.id] = 'in-transit'; // Use unique ID
-      localStorage.setItem('MRS_STATUS_SYNC', JSON.stringify(mrsStatusSync));
+    try {
+      await dispatch(updateMaterialRequestStatus({
+        id: editingRequest._id,
+        status: newStatus
+      }));
+      
+      // Update MRS status sync using unique ID instead of item name
+      if (newStatus === 'in-transit') {
+        const mrsStatusSync = JSON.parse(localStorage.getItem('MRS_STATUS_SYNC') || '{}');
+        mrsStatusSync[editingRequest.itemId] = 'in-transit'; // Use itemId (original MRS ID)
+        localStorage.setItem('MRS_STATUS_SYNC', JSON.stringify(mrsStatusSync));
+      }
+      
+      setShowEditStatusDialog(false);
+      setEditingRequest(null);
+      toast.success(`Status updated to ${newStatus}`);
+    } catch (error) {
+      toast.error('Failed to update status');
     }
-    
-    setShowEditStatusDialog(false);
-    setEditingRequest(null);
-    toast.success(`Status updated to ${newStatus}`);
   };
   
   // Handle delete request
-  const handleDeleteRequest = (id: string) => {
+  const handleDeleteRequest = async (id: string) => {
     if (!confirm('Delete this material request?')) return;
     
-    const updatedRequests = materialRequests.filter(req => req.id !== id);
-    saveMaterialRequests(updatedRequests);
-    toast.success('Material request deleted');
-  };
-  
-  // Fetch material requests from localStorage
-  const fetchMaterialRequests = () => {
-    const stored = localStorage.getItem('MATERIAL_REQUESTS');
-    if (stored) {
-      setMaterialRequests(JSON.parse(stored));
+    try {
+      await dispatch(deleteMaterialRequest(id));
+      toast.success('Material request deleted');
+    } catch (error) {
+      toast.error('Failed to delete material request');
     }
   };
   
-  // Save material requests to localStorage
-  const saveMaterialRequests = (requests: any[]) => {
-    localStorage.setItem('MATERIAL_REQUESTS', JSON.stringify(requests));
-    setMaterialRequests(requests);
+  // Migration function to move localStorage data to database
+  const performMigration = async () => {
+    try {
+      const localStorageData = localStorage.getItem('MATERIAL_REQUESTS');
+      if (localStorageData && !migrationCompleted) {
+        console.log('🔄 Migrating material requests from localStorage to database...');
+        await dispatch(migrateMaterialRequestsFromLocalStorage());
+        setMigrationCompleted(true);
+        toast.success('Material requests migrated to database successfully');
+      }
+    } catch (error) {
+      console.error('Migration failed:', error);
+      toast.error('Failed to migrate material requests');
+    }
   };
   
   useEffect(() => {
@@ -248,17 +273,23 @@ const Deliveries: React.FC = () => {
     dispatch(fetchProducts(orgId));
     dispatch(fetchWarehouses({ page: 1, limit: 200 }));
     fetchNotifications();
-    fetchMaterialRequests();
+    
+    // Fetch material requests from database
+    dispatch(fetchMaterialRequests({}));
+    dispatch(fetchMaterialRequestStatistics());
+    
+    // Perform migration if needed
+    performMigration();
   }, [dispatch]);
   
   // Auto-refresh material requests to sync with MRS updates
   useEffect(() => {
     const interval = setInterval(() => {
-      fetchMaterialRequests();
-    }, 2000); // Refresh every 2 seconds
+      dispatch(fetchMaterialRequests({}));
+    }, 5000); // Refresh every 5 seconds
     
     return () => clearInterval(interval);
-  }, []);
+  }, [dispatch]);
 
   const filteredDeliveries = deliveries.filter((d: DeliveryItem) => {
     const matchesSearch =
@@ -636,7 +667,7 @@ const Deliveries: React.FC = () => {
   };
 
   // Filter material requests and stock transfers
-  const filteredMaterialRequests = materialRequests.filter((request) => {
+  const filteredMaterialRequests = (materialRequestsFromDB || []).filter((request) => {
     const matchesSearch = request.item?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          request.sourceTask?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          request.projectName?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -670,6 +701,9 @@ const Deliveries: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Migration Component */}
+      <MaterialRequestMigration />
+      
       {/* Material Request Notifications */}
       {notifications.length > 0 && (
         <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-lg shadow-sm">
@@ -803,7 +837,7 @@ const Deliveries: React.FC = () => {
           <div>
             <p className="text-sm text-gray-500">High Priority</p>
             <p className="text-2xl font-bold">
-              {materialRequests.filter((r: any) => r.priority === "high").length + 
+              {(materialRequestsFromDB || []).filter((r: any) => r.priority === "high").length + 
                stockTransfers.filter((t: any) => t.priority === "high").length}
             </p>
           </div>
@@ -930,15 +964,13 @@ const Deliveries: React.FC = () => {
                       <Select
                         defaultValue={d.status}
                         onValueChange={(value) =>
-                          dispatch(
-                            updateDelivery({
+                          dispatch(updateDelivery({
                               id: d._id,
                               data: {
                                 status: value,
                                 warehouseId: d.warehouseId,
                               },
-                            })
-                          )
+                            }))
                         }
                       >
                         <SelectTrigger className="w-[150px] text-xs">
@@ -1084,7 +1116,7 @@ const Deliveries: React.FC = () => {
                     </td>
                   </tr>
                 ) : paginatedRequests.map((request) => (
-                  <tr key={request.id} className="hover:bg-gray-50">
+                  <tr key={request._id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 text-sm font-medium text-gray-900">{request.item}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">{request.sourceTask}</td>
                     <td className="px-6 py-4 text-sm text-gray-900">{request.quantity} {request.unit}</td>
@@ -1117,7 +1149,7 @@ const Deliveries: React.FC = () => {
                           <Edit className="h-5 w-5" />
                         </button>
                         <button
-                          onClick={() => handleDeleteRequest(request.id)}
+                          onClick={() => handleDeleteRequest(request._id)}
                           className="text-red-600 hover:text-red-800"
                           title="Delete Request"
                         >

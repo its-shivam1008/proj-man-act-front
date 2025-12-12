@@ -824,7 +824,7 @@ const Products: React.FC = () => {
 
         <div className="space-y-3">
           <p><strong>Type:</strong> {warehouse.type}</p>
-          <p><strong>Location:</strong> {warehouse.location}</p>
+          <p><strong>Location:</strong> {typeof warehouse.location === 'object' ? warehouse.location?.name || 'N/A' : warehouse.location || 'N/A'}</p>
           <p><strong>Capacity:</strong> {warehouse.capacity}</p>
 
           <div className="mt-3">
@@ -868,7 +868,9 @@ const Products: React.FC = () => {
               className="w-full text-left p-3 border rounded-md hover:bg-gray-100"
             >
               <strong>{w.name}</strong>
-              <p className="text-sm text-gray-600">{w.location}</p>
+              <p className="text-sm text-gray-600">
+                {typeof w.location === 'object' ? w.location?.name || 'N/A' : w.location || 'N/A'}
+              </p>
             </button>
           ))}
         </div>
@@ -895,7 +897,7 @@ const Products: React.FC = () => {
         </div>
 
         <p><strong>Type:</strong> {warehouse.type}</p>
-        <p><strong>Location:</strong> {warehouse.location}</p>
+        <p><strong>Location:</strong> {typeof warehouse.location === 'object' ? warehouse.location?.name || 'N/A' : warehouse.location || 'N/A'}</p>
         <p><strong>Capacity:</strong> {warehouse.capacity}</p>
 
         <div className="mt-3">
@@ -1220,7 +1222,7 @@ const Products: React.FC = () => {
               <strong>Stock:</strong> {item.quantity} (Min: {item.minStock})
             </div>
             <div>
-              <strong>Location:</strong> {item.location}
+              <strong>Location:</strong> {typeof item.location === 'object' ? item.location?.name || 'N/A' : item.location || 'N/A'}
             </div>
             {item.barcode && (
               <div>
