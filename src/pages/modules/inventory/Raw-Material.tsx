@@ -1035,7 +1035,9 @@ export default function RawMaterialMaster() {
                                     </TableRow>
                                   </TableHeader>
                                   <TableBody>
-                                    {purchaseHistory[m._id!].map((purchase: any, index: number) => (
+                                    {purchaseHistory[m._id!].map((purchase: any, index: number) => {
+                                      const progress = (((purchase.originalQuantity || purchase.quantity) - (purchase.remainingQuantity || 0)) / (purchase.originalQuantity || purchase.quantity || 0)) * 100
+                                      return (
                                       <TableRow key={purchase._id || index} className="text-sm">
                                         <TableCell className="text-xs">
                                           {purchase.movementDate ? 
@@ -1064,17 +1066,17 @@ export default function RawMaterialMaster() {
                                             <div className="w-full bg-gray-200 rounded-full h-2">
                                               <div 
                                                 className={`h-2 rounded-full ${
-                                                  purchase.progressPercentage >= 100 ? 'bg-red-500' : 
-                                                  purchase.progressPercentage >= 75 ? 'bg-orange-500' : 
-                                                  purchase.progressPercentage >= 25 ? 'bg-yellow-500' : 'bg-green-500'
+                                                  progress >= 100 ? 'bg-red-500' : 
+                                                  progress >= 75 ? 'bg-orange-500' : 
+                                                  progress >= 25 ? 'bg-yellow-500' : 'bg-green-500'
                                                 }`}
                                                 style={{ 
-                                                  width: `${Math.min(purchase.progressPercentage || 0, 100)}%` 
+                                                  width: `${Math.min(progress || 0, 100)}%` 
                                                 }}
                                               ></div>
                                             </div>
                                             <div className="text-xs text-gray-500">
-                                              {(purchase.progressPercentage || 0).toFixed(1)}% consumed
+                                              {(progress || 0).toFixed(1)}% consumed
                                             </div>
                                           </div>
                                         </TableCell>
@@ -1087,8 +1089,8 @@ export default function RawMaterialMaster() {
                                         <TableCell className="text-xs">
                                           {purchase.remarks || 'Material purchase'}
                                         </TableCell>
-                                      </TableRow>
-                                    ))}
+                                      </TableRow>)
+                                    })}
                                   </TableBody>
                                 </Table>
                                 

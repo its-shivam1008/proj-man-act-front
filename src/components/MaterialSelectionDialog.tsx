@@ -38,6 +38,7 @@ type SelectedMaterial = {
   name: string;
   quantity: number | string;
   unit: string;
+  usedQuantity?: number;
 };
 
 type MaterialInputState = {
@@ -213,12 +214,14 @@ export default function MaterialSelectionDialog({
         returned: returnedQuantity,
         available: availableQuantity
       });
+      const usedQuantity = mrs.usedQuantity || 0;
       
       return {
         materialId: mrs.id || mrs._id,
         name: mrs.item,
         quantity: availableQuantity,
         unit: materialDetails?.unitOfMeasure || mrs.unit || 'units',
+        usedQuantity: usedQuantity 
       } as SelectedMaterial;
     }).filter(material => Number(material.quantity) > 0);
 
@@ -476,34 +479,33 @@ export default function MaterialSelectionDialog({
       if (!returnQty || returnQty <= 0) return;
 
       setReturnModal((r) => ({ ...r, submitting: true }));
-
       console.log(`🔄 Starting material return for ${it.name}, quantity: ${returnQty}`);
 
-      // STEP 1: Always try WBS return API first (works for both MRS and linked materials)
-      try {
-        console.log(`📤 Calling WBS return API...`);
-        await api.post("/wbs/return-material", {
-          wbsId,
-          materialId: it.materialId,
-          returnQty,
-        });
-        console.log(`✅ WBS return API successful`);
-      } catch (wbsError: any) {
-        console.warn(`⚠️ WBS return API failed:`, wbsError.message);
+      // 🔍 DETECT ITEM TYPE
+      // Check if this ID belongs to an MRS entry
+      const mrsEntry = mrsList?.find((m: any) => 
+        (m.id === it.materialId || m._id === it.materialId)
+      );
+
+      if (mrsEntry) {
+        // ============================================================
+        // CASE 1: MRS ITEM RETURN
+        // We must update the MRS record AND manually restore stock
+        // ============================================================
+        console.log(`📦 Identified as MRS Item. Updating MRS status...`);
         
-        // STEP 2: Fallback - Update raw material stocks
+        // 1. Update MRS Record (Marks it as returned in Procurement)
+        await api.patch(`/mrs/${it.materialId}/return-material`, {
+          returnedQuantity: returnQty,
+          returnReason: "Returned from WBS Task",
+          returnedBy: "User"
+        });
+
+        // 2. Restore Physical Stock (Manual Update)
+        // Since MRS return API doesn't auto-update inventory, we do it here
         const rawMaterial = materials.find(rm => rm.name === it.name);
         if (rawMaterial) {
-          console.log(`🔄 Using fallback: Update raw material stocks`);
-          
-          // Calculate current total stock from stocks array
-          const currentTotalStock = (rawMaterial.stocks || []).reduce((sum: number, stock: any) => 
-            sum + (stock.remainingQuantity || 0), 0
-          );
-          
-          console.log(`📊 Current total stock: ${currentTotalStock}`);
-          console.log(`📈 Will increase by: ${returnQty}`);
-          
+          console.log(`🔄 Restoring raw material stock...`);
           // Update the first stock's remaining quantity
           if (rawMaterial.stocks && rawMaterial.stocks.length > 0) {
             const updatedStocks = [...rawMaterial.stocks];
@@ -519,18 +521,30 @@ export default function MaterialSelectionDialog({
             }, {
               headers: { organisationId }
             });
-            console.log(`✅ Raw material stocks updated - first stock increased by ${returnQty}`);
           }
         }
+      } else {
+        // ============================================================
+        // CASE 2: WBS LINKED MATERIAL RETURN
+        // The WBS API handles both link removal and stock restoration
+        // ============================================================
+        console.log(`🔗 Identified as Linked Material. Calling WBS return...`);
+        await api.post("/wbs/return-material", {
+          wbsId,
+          materialId: it.materialId,
+          returnQty,
+        });
       }
 
-      // STEP 3: Update local UI state
-      console.log(`🔄 Updating local UI state`);
+      // ============================================================
+      // COMMON SUCCESS HANDLING
+      // ============================================================
+      
+      // Update local UI state immediately to reflect change
       setSavedMaterials(prevMaterials => 
         prevMaterials.map(material => {
           if (material.materialId === it.materialId) {
             const newQuantity = Number(material.quantity) - returnQty;
-            console.log(`📊 UI Update: ${material.name} ${material.quantity} - ${returnQty} = ${newQuantity}`);
             return {
               ...material,
               quantity: Math.max(0, newQuantity)
@@ -540,19 +554,20 @@ export default function MaterialSelectionDialog({
         }).filter(material => Number(material.quantity) > 0)
       );
       
-      // STEP 4: Close modal and refresh data
+      toast.success(`✅ Returned ${returnQty} ${it.unit} of ${it.name}. Stock updated!`);
+      
+      // Close modal
       setReturnModal({ open: false, item: null, submitting: false });
-      toast.success(`✅ Returned ${returnQty} ${it.unit} of ${it.name}. Raw material quantity increased!`);
       
-      // Refresh all data to ensure consistency
-      console.log(`🔄 Refreshing all data...`);
-      dispatch(fetchMaterials({ page: 1, limit: 100 }));
-      dispatch(fetchMRS());
-      
-      if (wbsItem?.projectId) {
-        dispatch(fetchWbsByProject(wbsItem.projectId));
-      }
-      
+      // Refresh all data
+      setTimeout(() => {
+        dispatch(fetchMaterials({ page: 1, limit: 100 }));
+        dispatch(fetchMRS()); // Crucial: Refetches MRS to see the new "Returned" status
+        if (wbsItem?.projectId) {
+          dispatch(fetchWbsByProject(wbsItem.projectId));
+        }
+      }, 500);
+
     } catch (err: any) {
       console.error("❌ Return failed:", err);
       const errorMsg = err.response?.data?.message || err.message || 'Return failed';
@@ -750,9 +765,16 @@ export default function MaterialSelectionDialog({
                                 {materialStatus.replace('-', ' ')}
                               </span>
                             </div>
-                            <p className="text-xs text-gray-600">
-                              Qty: <strong>{m.quantity}</strong> {m.unit}
-                            </p>
+                            <div className="flex gap-4 mt-1">
+                              <p className="text-xs text-gray-600">
+                                Available: <strong>{m.quantity}</strong> {m.unit}
+                              </p>
+                              
+                              {/* [!code ++] Display Used Quantity */}
+                              <p className="text-xs text-blue-600">
+                                Used: <strong>{m.usedQuantity || 0}</strong> {m.unit}
+                              </p>
+                          </div>
                           </div>
 
                           <div className="flex gap-2">
@@ -777,11 +799,11 @@ export default function MaterialSelectionDialog({
                         </div>
 
                         {/* Show status info */}
-                        {materialStatus === 'received' && (
+                        {/* {materialStatus === 'received' && (
                           <p className="text-xs text-green-600 mt-2 flex items-center">
                             ✅ Material received and available
                           </p>
-                        )}
+                        )} */}
                       </div>
                     );
                   });

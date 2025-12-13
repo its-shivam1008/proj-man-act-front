@@ -11,7 +11,8 @@ import {
   AlertCircle,
   UserPlus,
   Check,
-  X
+  X,
+  Package
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -44,6 +45,7 @@ export default function NotificationHeader() {
     if (path.includes("/purchase/rfq")) return "rfq.purchase";
     if (path.includes("/inventory/operations/deliveries")) return "delivery.inventory";
     if (path === "/" || path.includes("/dashboard")) return "dashboard";
+    if (path.includes("/wbs")) return "wbs";
     if (path.includes("/scheduling")) return "scheduling";
     return null;
   }, [location.pathname]);
@@ -270,7 +272,9 @@ export default function NotificationHeader() {
               {allNotifications.map((notification: any) => {
                 const isInvite = notification.type === 'invite';
                 const isPendingInvite = isInvite && notification.inviteResponse === 'pending';
-
+                // [!code focus:1] Check for material request type
+                const isMaterialRequest = notification.type === 'material_request';
+                console.log("here we go=",notification)
                 return (
                   <div
                     key={notification._id}
@@ -281,10 +285,12 @@ export default function NotificationHeader() {
                     }`}
                   >
                     <div className="flex items-start gap-3">
-                      {/* Icon */}
+                      {/* Icon Section */}
                       <div className={`mt-0.5 p-2.5 rounded-xl shrink-0 shadow-sm ${
                           isInvite ? "bg-gradient-to-br from-purple-100 to-purple-200 text-purple-700" :
                           notification.type === "deadline_reminder" ? "bg-gradient-to-br from-red-100 to-red-200 text-red-700" :
+                          // [!code focus:2] Add styling for Material Request
+                          isMaterialRequest ? "bg-gradient-to-br from-indigo-100 to-indigo-200 text-indigo-700" :
                           notification.source?.includes("procurement") ? "bg-gradient-to-br from-orange-100 to-orange-200 text-orange-700" :
                           notification.source?.includes("purchase") ? "bg-gradient-to-br from-blue-100 to-blue-200 text-blue-700" :
                           notification.source?.includes("delivery") ? "bg-gradient-to-br from-green-100 to-green-200 text-green-700" :
@@ -292,6 +298,8 @@ export default function NotificationHeader() {
                       }`}>
                         {isInvite ? <UserPlus className="h-4 w-4" /> : 
                          notification.type === "deadline_reminder" ? <Bell className="h-4 w-4" /> :
+                         // [!code focus:1] Add Package Icon
+                         isMaterialRequest ? <Package className="h-4 w-4" /> :
                          <AlertCircle className="h-4 w-4" />}
                       </div>
 
@@ -302,7 +310,8 @@ export default function NotificationHeader() {
                             <p className="text-sm font-bold text-gray-900 leading-tight">
                               {isInvite ? "Organization Invitation" : 
                                notification.type === "deadline_reminder" ? notification.title :
-                               (notification.itemName || "New Update")}
+                               // [!code focus:1] Use title (which contains "Material Request from X") or fallback
+                               (notification.title || notification.itemName || "New Update")}
                             </p>
                             {notification.status === "unread" && (
                               <span className="inline-block mt-1 px-2 py-0.5 bg-blue-600 text-white text-[10px] font-semibold rounded-full">
@@ -315,23 +324,25 @@ export default function NotificationHeader() {
                           </span>
                         </div>
                         
-                        <p className="text-sm text-gray-700 break-words leading-relaxed">
+                        <p className="text-sm text-gray-700 break-words leading-relaxed whitespace-pre-line">
                           {notification.type === "deadline_reminder" ? 
                             notification.message : 
                             (notification.remark || "No additional remarks provided.")}
                         </p>
                         
-                        {/* Deadline Reminder Info */}
-                        {notification.type === "deadline_reminder" && notification.metadata && (
-                          <div className="mt-2 p-2 bg-red-50 rounded-lg border border-red-200">
-                            <div className="text-xs text-red-800 space-y-1">
-                              <div><strong>Project:</strong> {notification.metadata.projectName}</div>
-                              <div><strong>Task:</strong> {notification.metadata.wbsName}</div>
-                              <div><strong>Deadline:</strong> {new Date(notification.metadata.deadline).toLocaleDateString()}</div>
-                            </div>
-                          </div>
+                        {/* [!code focus:11] Render Metadata if available */}
+                        {isMaterialRequest && notification.metadata && (
+                           <div className="mt-2 p-2 bg-indigo-50 rounded-lg border border-indigo-100">
+                             <div className="text-xs text-indigo-900 space-y-1">
+                               <div className="flex justify-between">
+                                 {/* <span><strong>Project:</strong> {notification.metadata.projectName}</span> */}
+                                 <span><strong>WBS:</strong> {notification.metadata.wbsName}</span>
+                                 <span>remark: {notification.metadata?.remarks}</span>
+                               </div>
+                               <div><strong>Requester:</strong> {notification.metadata.requestedBy}</div>
+                             </div>
+                           </div>
                         )}
-                        
                         {/* Invite Actions */}
                         {isPendingInvite && (
                           <div className="flex gap-2 mt-3">
