@@ -48,13 +48,22 @@ export interface RFQ {
 
 export interface PurchaseOrderProductLine {
   itemType?: "material" | "product";
+
+  /** Item name (existing or new) */
   product: string;
+
+  /** NEW FIELDS — REQUIRED FOR NEW MATERIAL/PRODUCT SUPPORT */
+  isNew?: boolean;
+  newProductName?: string;
+
   quantity: number;
   unitPrice: number;
   taxes: number;
   subtotal: number;
-  organisationId:string;
-  warehouse: string | { name: string; } | any;
+
+  organisationId: string;
+  warehouse: string | { name: string } | any;
+
   // Raw Material specific fields
   itemCode?: string;
   unitOfMeasure?: string;
@@ -63,6 +72,7 @@ export interface PurchaseOrderProductLine {
   valuationMethod?: string;
   reorderLevel?: number;
   technicalSpecs?: string;
+
   // Product specific fields
   productType?: string;
   category?: string;
@@ -71,6 +81,7 @@ export interface PurchaseOrderProductLine {
   warehouseLocation?: string;
   description?: string;
 }
+
 
 export interface PurchaseOrder {
   id: string;

@@ -1,5 +1,15 @@
 // Forecasting.tsx - EXACT ORIGINAL UI + FULL REDUX INTEGRATION
 import React, { useEffect, useState } from "react";
+
+// Recharts (for premium animated chart)
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 import { useDispatch, useSelector } from "react-redux";
 import {
   getForecasts,
@@ -8,6 +18,7 @@ import {
   deleteForecast,
 } from "@/redux/slices/forecastSlice";
 import { fetchProducts } from "@/redux/slices/productSlice";
+import { fetchPredictedRate } from "@/redux/slices/forecastSlice";
 import { usePermission } from "@/hooks/userPermission";
 import {
   TrendingUp,
@@ -29,17 +40,19 @@ import {
   X,
   ShieldAlert,
 } from "lucide-react";
+import { fetchMaterials } from "@/redux/slices/rawmaterialSlice";
 
 interface ForecastItem {
-  _id: string;
-  productId: string;
+  productId?: string;
+  rawMaterialId?: string;
   currentStock: number;
   demandForecast: number;
   suggestedReplenishment: number;
   leadTime: number;
-  priority: "low" | "medium" | "high" | "critical";
-  replenishmentRule: "automatic" | "manual";
+  priority: string;
+  replenishmentRule: string;
 }
+
 
 const Forecasting: React.FC = () => {
   const canView = usePermission("forecasting", "view");
@@ -47,7 +60,8 @@ const Forecasting: React.FC = () => {
   const canEdit = usePermission("forecasting", "edit");
   const canDelete = usePermission("forecasting", "delete");
   const dispatch = useDispatch();
-
+  const { materials, total, page: currentPage, limit: perPage, loading } =
+    useSelector((state: RootState) => state.rawMaterials);
   if (!canView) {
     return (
       <div className="text-center py-12 px-4">
@@ -69,6 +83,8 @@ const Forecasting: React.FC = () => {
     (state: any) => state.products
   );
 
+
+  const { pricePrediction } = useSelector((state: any) => state.forecast);
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [ruleFilter, setRuleFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
@@ -81,7 +97,10 @@ const Forecasting: React.FC = () => {
   useEffect(() => {
     dispatch(getForecasts());
     dispatch(fetchProducts(orgId));
+    dispatch(fetchMaterials(orgId))
   }, [dispatch]);
+
+
 
   const filteredForecastItems = forecastItems.filter(
     (forecast: ForecastItem) => {
@@ -137,6 +156,21 @@ const Forecasting: React.FC = () => {
         return "bg-gray-100 text-gray-800";
     }
   };
+  useEffect(() => {
+    if (!showViewForm || !viewingId) return;
+    if (productLoading) return; // ⛔ WAIT until products are loaded
+
+    const forecast = forecastItems.find((f) => f._id === viewingId);
+    if (!forecast) return;
+
+    const product = products.find(p => p._id === forecast.productId);
+    const material = materials.find(m => m._id === forecast.rawMaterialId);
+    if (!product?.name) return;
+
+   fetchPredictedRate(forecast.productId || forecast.rawMaterialId);
+
+
+  }, [showViewForm, viewingId, productLoading]);
 
   const calculateStockStatus = (
     currentStock: number,
@@ -159,7 +193,8 @@ const Forecasting: React.FC = () => {
 
   const handleSubmit = (formData: any) => {
     const payload = {
-      productId: formData.productId,
+      productId: formData.productId || null,
+      rawMaterialId: formData.rawMaterialId || null,  // ⭐ ADD THIS
       currentStock: Number(formData.currentStock),
       demandForecast: Number(formData.demandForecast),
       suggestedReplenishment: Number(formData.suggestedReplenishment),
@@ -173,8 +208,10 @@ const Forecasting: React.FC = () => {
     } else {
       dispatch(createForecast(payload));
     }
+
     handleCloseForms();
   };
+
 
   const ForecastForm = ({
     initialData,
@@ -183,6 +220,7 @@ const Forecasting: React.FC = () => {
   }) => {
     const [formData, setFormData] = useState({
       productId: initialData?.productId || "",
+      rawMaterialId: (initialData as any)?.rawMaterialId || "",  // ⭐ REQUIRED
       currentStock: (initialData?.currentStock || 0).toString(),
       demandForecast: (initialData?.demandForecast || 0).toString(),
       suggestedReplenishment: (
@@ -223,23 +261,48 @@ const Forecasting: React.FC = () => {
             <form onSubmit={handleFormSubmit} className="space-y-4">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Product *
-                  </label>
+                  <label className="block text-sm font-medium mb-1">Select Item *</label>
+
                   <select
-                    value={formData.productId}
-                    onChange={handleChange("productId")}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full p-2 border rounded-lg"
                     required
+                    value={
+                      formData.productId
+                        ? `PRODUCT|${formData.productId}`
+                        : formData.rawMaterialId
+                          ? `RAW|${formData.rawMaterialId}`
+                          : ""
+                    }
+                    onChange={(e) => {
+                      const [type, id] = e.target.value.split("|");
+                      if (type === "PRODUCT") {
+                        setFormData((prev) => ({ ...prev, productId: id, rawMaterialId: "" }));
+                      } else {
+                        setFormData((prev) => ({ ...prev, rawMaterialId: id, productId: "" }));
+                      }
+                    }}
                   >
-                    <option value="">Select Product</option>
-                    {products.map((item: any) => (
-                      <option key={item._id} value={item._id}>
-                        {item.name}
-                      </option>
-                    ))}
+                    <option value="">Select Item</option>
+
+                    <optgroup label="Products">
+                      {products.map((p) => (
+                        <option key={p._id} value={`PRODUCT|${p._id}`}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </optgroup>
+
+                    <optgroup label="Raw Materials">
+                      {materials.map((m) => (
+                        <option key={m._id} value={`RAW|${m._id}`}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </optgroup>
                   </select>
                 </div>
+
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Current Stock *
@@ -340,21 +403,20 @@ const Forecasting: React.FC = () => {
                   Cancel
                 </button>
                 <button
-  type="submit"
-  disabled={initialData ? !canEdit : !canCreate}
-  className={`px-4 py-2 rounded-lg text-white
-    ${
-      initialData
-        ? canEdit
-          ? "bg-blue-600 hover:bg-blue-700"
-          : "bg-gray-400 cursor-not-allowed"
-        : canCreate
-        ? "bg-blue-600 hover:bg-blue-700"
-        : "bg-gray-400 cursor-not-allowed"
-    }`}
->
-  {initialData ? "Update Rule" : "Add Rule"}
-</button>
+                  type="submit"
+                  disabled={initialData ? !canEdit : !canCreate}
+                  className={`px-4 py-2 rounded-lg text-white
+    ${initialData
+                      ? canEdit
+                        ? "bg-blue-600 hover:bg-blue-700"
+                        : "bg-gray-400 cursor-not-allowed"
+                      : canCreate
+                        ? "bg-blue-600 hover:bg-blue-700"
+                        : "bg-gray-400 cursor-not-allowed"
+                    }`}
+                >
+                  {initialData ? "Update Rule" : "Add Rule"}
+                </button>
 
               </div>
             </form>
@@ -363,19 +425,27 @@ const Forecasting: React.FC = () => {
       </div>
     );
   };
+  // Add this useEffect — REPLACES the old one
+
+
 
   const ViewForecastForm = ({ item }: { item: ForecastItem | undefined }) => {
     if (!item) return null;
+
+    // FIND PRODUCT OR RAW MATERIAL
     const product = products.find((p: any) => p._id === item.productId);
+    const material = materials.find((m: any) => m._id === item.rawMaterialId);
+
     const stockStatus = calculateStockStatus(
       item.currentStock,
       item.demandForecast
     );
 
     return (
-      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-scroll h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white overflow-y-scroll">
           <div className="mt-3">
+            {/* HEADER */}
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-medium text-gray-900">
                 View Forecast: {item._id}
@@ -389,25 +459,37 @@ const Forecasting: React.FC = () => {
             </div>
 
             <div className="space-y-4">
+              {/* ITEM NAME BLOCK */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Product
+                    Item
                   </label>
-                  <p className="text-sm text-gray-900">
-                    {product?.name || "Unknown Product"}
-                  </p>
+
+                  <span className="font-medium text-gray-900 flex items-center gap-2">
+                    {product
+                      ? product.name
+                      : material
+                        ? material.name
+                        : "Unknown Item"}
+
+                    {/* ITEM TYPE BADGE */}
+                    <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">
+                      {product ? "Product" : material ? "Raw Material" : ""}
+                    </span>
+                  </span>
                 </div>
+
+                {/* CURRENT STOCK */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Current Stock
                   </label>
-                  <p className="text-sm text-gray-900">
-                    {item.currentStock} units
-                  </p>
+                  <p className="text-sm text-gray-900">{item.currentStock} units</p>
                 </div>
               </div>
 
+              {/* DEMAND & REPLENISHMENT */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -417,6 +499,7 @@ const Forecasting: React.FC = () => {
                     {item.demandForecast} units
                   </p>
                 </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Suggested Replenishment
@@ -427,6 +510,7 @@ const Forecasting: React.FC = () => {
                 </div>
               </div>
 
+              {/* LEAD TIME & PRIORITY */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -434,10 +518,12 @@ const Forecasting: React.FC = () => {
                   </label>
                   <p className="text-sm text-gray-900">{item.leadTime} days</p>
                 </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Priority
                   </label>
+
                   <span
                     className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getPriorityColor(
                       item.priority
@@ -448,19 +534,23 @@ const Forecasting: React.FC = () => {
                 </div>
               </div>
 
+              {/* STOCK STATUS & RULE */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Stock Status
                   </label>
+
                   <span className={`font-medium ${stockStatus.color}`}>
                     {stockStatus.status}
                   </span>
                 </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Replenishment Rule
                   </label>
+
                   <span
                     className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getRuleColor(
                       item.replenishmentRule
@@ -471,6 +561,7 @@ const Forecasting: React.FC = () => {
                 </div>
               </div>
 
+              {/* CLOSE BUTTON */}
               <div className="flex justify-end pt-4">
                 <button
                   type="button"
@@ -480,6 +571,159 @@ const Forecasting: React.FC = () => {
                   Close
                 </button>
               </div>
+
+              {/* PRICE PREDICTION UI */}
+              {pricePrediction && (
+                <div className="mt-6 rounded-3xl p-1 border shadow-xl">
+                  <div className="rounded-[22px] bg-white p-6 text-gray-900">
+
+                    {/* Header */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="p-2 bg-blue-100 rounded-lg border">
+                          <TrendingUp className="h-5 w-5 text-blue-600" />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-bold text-gray-800">
+                            Price Forecast
+                          </h3>
+                          <p className="text-xs text-blue-600/70">Trend Analysis</p>
+                        </div>
+                      </div>
+
+                      <span className="px-3 py-1 rounded-full text-xs font-bold bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md">
+                        Forecast
+                      </span>
+                    </div>
+
+                    {/* Price Summary */}
+                    <div className="mt-8 flex items-end justify-between">
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Projected Next Price</p>
+
+                        <span className="text-4xl font-extrabold bg-gradient-to-r from-blue-700 to-blue-400 bg-clip-text text-transparent">
+                          ₹{pricePrediction.predictedNextPrice}
+                        </span>
+                      </div>
+
+                      {/* Percentage Badge */}
+                      <div
+                        className={`flex flex-col items-end ${pricePrediction.predictedNextPrice > pricePrediction.lastPrice
+                            ? "text-red-600"
+                            : "text-emerald-600"
+                          }`}
+                      >
+                        <div
+                          className={`px-3 py-1.5 rounded-xl border flex items-center gap-1.5 shadow-md ${pricePrediction.predictedNextPrice > pricePrediction.lastPrice
+                              ? "bg-red-50 border-red-200"
+                              : "bg-emerald-50 border-emerald-200"
+                            }`}
+                        >
+                          {pricePrediction.predictedNextPrice > pricePrediction.lastPrice ? (
+                            <TrendingUp className="h-4 w-4" />
+                          ) : (
+                            <TrendingUp className="h-4 w-4 rotate-180" />
+                          )}
+
+                          <span className="font-bold">
+                            {(
+                              (Math.abs(
+                                pricePrediction.predictedNextPrice -
+                                pricePrediction.lastPrice
+                              ) /
+                                pricePrediction.lastPrice) *
+                              100
+                            ).toFixed(1)}
+                            %
+                          </span>
+                        </div>
+
+                        <span className="text-xs mt-1 opacity-70">
+                          {pricePrediction.predictedNextPrice > pricePrediction.lastPrice
+                            ? "Expected Rise"
+                            : "Expected Drop"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Premium White-Themed Line Chart */}
+                    <div className="mt-10 rounded-xl bg-white p-4 border border-gray-200 shadow-inner">
+                      <ResponsiveContainer width="100%" height={250}>
+                        <LineChart
+                          data={[
+                            { label: "Previous", price: pricePrediction.previousPrice },
+                            { label: "Current", price: pricePrediction.lastPrice },
+                            { label: "Forecast", price: pricePrediction.predictedNextPrice },
+                          ]}
+                        >
+                          <defs>
+                            <linearGradient id="whiteLine" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#2563eb" stopOpacity={0.9} />
+                              <stop offset="100%" stopColor="#60a5fa" stopOpacity={0.5} />
+                            </linearGradient>
+
+                            <linearGradient id="whiteFill" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#93c5fd" stopOpacity={0.25} />
+                              <stop offset="100%" stopColor="#ffffff" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+
+                          <XAxis
+                            dataKey="label"
+                            tick={{ fill: "#6b7280", fontSize: 12 }}
+                            axisLine={{ stroke: "#d1d5db" }}
+                          />
+
+                          <YAxis
+                            tick={{ fill: "#6b7280", fontSize: 12 }}
+                            axisLine={{ stroke: "#d1d5db" }}
+                            tickFormatter={(v) => `₹${v}`}
+                          />
+
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: "white",
+                              borderRadius: "8px",
+                              border: "1px solid #e5e7eb",
+                              color: "#111827",
+                            }}
+                            labelStyle={{ color: "#111827", fontWeight: "bold" }}
+                            formatter={(v) => [`₹${v}`, "Price"]}
+                          />
+
+                          <Line
+                            type="monotone"
+                            dataKey="price"
+                            stroke="url(#whiteLine)"
+                            strokeWidth={3}
+                            dot={{ fill: "#2563eb", strokeWidth: 2, r: 5 }}
+                            activeDot={{ r: 7, fill: "#1e40af" }}
+                            fill="url(#whiteFill)"
+                            animationDuration={800}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    {/* Comparison Grid */}
+                    <div className="mt-6 grid grid-cols-2 gap-3">
+                      <div className="bg-gray-50 border border-gray-200 rounded-xl p-3">
+                        <p className="text-xs text-gray-500">Previous Price</p>
+                        <p className="text-xl font-semibold text-gray-900 mt-1">
+                          ₹{pricePrediction.previousPrice}
+                        </p>
+                      </div>
+
+                      <div className="bg-gray-50 border border-gray-200 rounded-xl p-3">
+                        <p className="text-xs text-gray-500">Current Price</p>
+                        <p className="text-xl font-semibold text-blue-700 mt-1">
+                          ₹{pricePrediction.lastPrice}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -719,27 +963,24 @@ const Forecasting: React.FC = () => {
           <tbody className="divide-y divide-gray-200">
             {forecastLoading || productLoading ? (
               <tr>
-                <td
-                  colSpan={9}
-                  className="py-16 text-center text-gray-500 text-sm"
-                >
+                <td colSpan={9} className="py-16 text-center text-gray-500 text-sm">
                   Loading forecasts...
                 </td>
               </tr>
             ) : filteredForecastItems.length === 0 ? (
               <tr>
-                <td
-                  colSpan={9}
-                  className="py-16 text-center text-gray-500 text-sm"
-                >
+                <td colSpan={9} className="py-16 text-center text-gray-500 text-sm">
                   No forecast items found
                 </td>
               </tr>
             ) : (
               filteredForecastItems.map((forecast: ForecastItem) => {
-                const product = products.find(
-                  (p: any) => p._id === forecast.productId
+                // 🔥 FIND PRODUCT OR MATERIAL
+                const product = products.find((p: any) => p._id === forecast.productId);
+                const material = materials.find(
+                  (m: any) => m._id === forecast.rawMaterialId
                 );
+
                 const stockStatus = calculateStockStatus(
                   forecast.currentStock,
                   forecast.demandForecast
@@ -750,39 +991,50 @@ const Forecasting: React.FC = () => {
                     key={forecast._id}
                     className="transition hover:bg-gray-50/70 cursor-pointer"
                   >
+                    {/* ITEM NAME COLUMN */}
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
                         <Package className="h-4 w-4 text-gray-400" />
-                        <span className="font-medium text-gray-900">
-                          {product?.name || "Unknown Product"}
-                        </span>
+
+                        <div className="flex flex-col">
+                          <span className="font-medium text-gray-900">
+                            {product
+                              ? product.name
+                              : material
+                                ? material.name
+                                : "Unknown Item"}
+                          </span>
+
+                          <span className="text-[10px] mt-1 px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 w-fit">
+                            {product ? "Product" : material ? "Raw Material" : ""}
+                          </span>
+                        </div>
                       </div>
                     </td>
 
+                    {/* CURRENT STOCK */}
                     <td className="px-6 py-4">
-                      <span className="font-medium">
-                        {forecast.currentStock}
-                      </span>{" "}
-                      units
+                      <span className="font-medium">{forecast.currentStock}</span> units
                     </td>
 
+                    {/* DEMAND FORECAST */}
                     <td className="px-6 py-4">
-                      <span className="font-medium">
-                        {forecast.demandForecast}
-                      </span>{" "}
-                      units
+                      <span className="font-medium">{forecast.demandForecast}</span> units
                     </td>
 
+                    {/* STOCK STATUS */}
                     <td className="px-6 py-4">
                       <span className={`font-semibold ${stockStatus.color}`}>
                         {stockStatus.status}
                       </span>
                     </td>
 
+                    {/* SUGGESTED REPLENISHMENT */}
                     <td className="px-6 py-4 text-blue-600 font-semibold">
                       {forecast.suggestedReplenishment} units
                     </td>
 
+                    {/* LEAD TIME */}
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-1 text-gray-800">
                         <Calendar className="h-4 w-4 text-gray-400" />
@@ -790,6 +1042,7 @@ const Forecasting: React.FC = () => {
                       </div>
                     </td>
 
+                    {/* PRIORITY */}
                     <td className="px-6 py-4">
                       <div className="flex items-center">
                         {getPriorityIcon(forecast.priority)}
@@ -803,6 +1056,7 @@ const Forecasting: React.FC = () => {
                       </div>
                     </td>
 
+                    {/* RULE */}
                     <td className="px-6 py-4">
                       <span
                         className={`px-2 py-1 text-xs font-semibold rounded-full ${getRuleColor(
@@ -813,24 +1067,27 @@ const Forecasting: React.FC = () => {
                       </span>
                     </td>
 
+                    {/* ACTIONS */}
                     <td className="px-6 py-4 text-center">
                       <div className="flex items-center justify-center gap-4">
+                        {/* VIEW */}
                         <button
                           className="text-blue-600 hover:text-blue-800 transition"
                           onClick={() => {
                             setViewingId(forecast._id);
                             setShowViewForm(true);
+                            dispatch(fetchPredictedRate(forecast.productId || forecast.rawMaterialId));
                           }}
                         >
                           <Eye className="h-4 w-4" />
                         </button>
 
+                        {/* EDIT */}
                         <button
                           disabled={!canEdit}
                           onClick={() =>
                             canEdit &&
-                            (setEditingId(forecast._id),
-                              setShowUpdateForm(true))
+                            (setEditingId(forecast._id), setShowUpdateForm(true))
                           }
                           className={`${canEdit
                               ? "text-green-600"
@@ -840,6 +1097,7 @@ const Forecasting: React.FC = () => {
                           <Edit className="h-4 w-4" />
                         </button>
 
+                        {/* DELETE */}
                         <button
                           disabled={!canDelete}
                           onClick={() => {
@@ -861,6 +1119,7 @@ const Forecasting: React.FC = () => {
               })
             )}
           </tbody>
+
         </table>
       </div>
 
@@ -886,8 +1145,8 @@ const Forecasting: React.FC = () => {
                   <div
                     key={forecast._id}
                     className={`border rounded-lg p-4 ${forecast.priority === "critical"
-                        ? "border-red-200 bg-red-50"
-                        : "border-orange-200 bg-orange-50"
+                      ? "border-red-200 bg-red-50"
+                      : "border-orange-200 bg-orange-50"
                       }`}
                   >
                     <div className="flex items-center justify-between">
@@ -906,8 +1165,8 @@ const Forecasting: React.FC = () => {
                       <div className="flex items-center space-x-2">
                         <span
                           className={`text-sm font-medium ${forecast.priority === "critical"
-                              ? "text-red-600"
-                              : "text-orange-600"
+                            ? "text-red-600"
+                            : "text-orange-600"
                             }`}
                         >
                           Order {forecast.suggestedReplenishment} units
@@ -925,7 +1184,7 @@ const Forecasting: React.FC = () => {
       </div>
 
       {/* Modals */}
-    
+
 
       {showCreateForm && <ForecastForm />}
       {showUpdateForm && editingId && (

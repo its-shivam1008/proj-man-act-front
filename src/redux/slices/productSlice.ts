@@ -32,7 +32,13 @@ export const fetchProducts = createAsyncThunk(
     return response.data;
   }
 );
-
+export const addProductPurchase = createAsyncThunk(
+  "product/addProductPurchase",
+  async (payload: { productId: string; quantity: number; rate: number; batchNumber?: string }) => {
+    const res = await axiosApi.post("/product/purchase", payload);
+    return res.data.data || res.data;
+  }
+);
 // ✅ CREATE PRODUCT
 export const addProduct = createAsyncThunk(
   "products/addProduct",
@@ -129,13 +135,13 @@ const productSlice = createSlice({
     });
 
     // 🔹 Update Product
-    builder.addCase(updateProduct.fulfilled, (state) => {});
+    builder.addCase(updateProduct.fulfilled, (state) => { });
     builder.addCase(updateProduct.rejected, (state, action) => {
       state.error = (action.payload as any)?.message || action.error.message || null;
     });
 
     // 🔹 Delete Product
-    builder.addCase(deleteProduct.fulfilled, (state) => {});
+    builder.addCase(deleteProduct.fulfilled, (state) => { });
     builder.addCase(deleteProduct.rejected, (state, action) => {
       state.error = (action.payload as any)?.message || action.error.message || null;
     });
@@ -152,6 +158,11 @@ const productSlice = createSlice({
       .addCase(transferStock.rejected, (state, action) => {
         state.loading = false;
         state.error = (action.payload as any)?.message || action.error.message || "Transfer failed";
+      }).addCase(addProductPurchase.fulfilled, (state, action) => {
+        const updated = action.payload;
+        const idx = state.products.findIndex((p: any) => p._id === updated._id || p.id === updated.id);
+        if (idx >= 0) state.products[idx] = updated;
+        else state.products.unshift(updated);
       });
   },
 });

@@ -19,6 +19,7 @@ interface ForecastState {
     selected: Forecast | null;
     loading: boolean;
     error: string | null;
+    pricePrediction: any | null;     // <-- added
 }
 
 const initialState: ForecastState = {
@@ -26,7 +27,35 @@ const initialState: ForecastState = {
     selected: null,
     loading: false,
     error: null,
+    pricePrediction: null          // <-- now valid
 };
+
+export const fetchPredictedRate = createAsyncThunk(
+    "forecast/fetchPredictedRate",
+    async (itemId: string, { rejectWithValue }) => {
+        try {
+            const token = localStorage.getItem("token");
+
+            const res = await axiosApi.get(`/forecast/predict-rate/${itemId}`, {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            });
+
+            // axios returns data directly — NO res.json()
+            const data = res.data;
+
+            if (!data.success) {
+                return rejectWithValue(data.message || "Prediction failed");
+            }
+
+            return data; // { previousPrice, lastPrice, predictedNextPrice }
+        } catch (err: any) {
+            return rejectWithValue(err.response?.data?.message || err.message);
+        }
+    }
+);
+
 
 export const createForecast = createAsyncThunk(
     "forecast/create",
@@ -144,7 +173,19 @@ const forecastSlice = createSlice({
                 state.items = state.items.filter((item) => item._id !== action.payload);
 
                 toast.success("Forecast deleted");
+            })
+            .addCase(fetchPredictedRate.pending, (state) => {
+                state.loading = true;
+            })
+            .addCase(fetchPredictedRate.fulfilled, (state, action) => {
+                state.loading = false;
+                state.pricePrediction = action.payload;
+            })
+            .addCase(fetchPredictedRate.rejected, (state, action) => {
+                state.loading = false;
+                state.error = action.payload as string;
             });
+
     },
 });
 

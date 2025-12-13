@@ -139,7 +139,7 @@ const rawMaterialSlice = createSlice({
 
       .addCase(fetchMaterials.fulfilled, (state, action) => {
         state.loading = false;
-        state.materials = action.payload.materials;
+        state.materials = action.payload.materials; 
         state.total = action.payload.total;
         state.page = action.payload.page;
         state.limit = action.payload.limit;

@@ -30,6 +30,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { toast } from "sonner";
+import { fetchProducts } from "@/redux/slices/productSlice";
 
 const PurchaseOrderComponent: React.FC = () => {
   const [showUpdatePo, setShowUpdatePo] = useState(false);
@@ -113,11 +114,11 @@ const PurchaseOrderComponent: React.FC = () => {
       scheduledDeliveryDate: "",
       itemType: "rawMaterial" as "rawMaterial" | "product",
       productLines: [
-        { 
-          product: "", 
-          quantity: 0, 
-          unitPrice: 0, 
-          taxes: 0, 
+        {
+          product: "",
+          quantity: 0,
+          unitPrice: 0,
+          taxes: 0,
           subtotal: 0,
           organisationId: localStorage.getItem("organisationId") || "",
           warehouse: ""
@@ -138,7 +139,8 @@ const PurchaseOrderComponent: React.FC = () => {
         vendorId: selectedVendor ? selectedVendor._id : "",
       });
     };
-
+    const { materials, total, page: currentPage, limit: perPage, loading } =
+      useSelector((state: RootState) => state.rawMaterials);
     const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
       setSubmitting(true);
@@ -146,7 +148,7 @@ const PurchaseOrderComponent: React.FC = () => {
         await dispatch(
           createPurchaseOrder({
             ...formData,
-            warehouse: itemType === "rawMaterial" ? formData.warehouse : undefined, 
+            warehouse: itemType === "rawMaterial" ? formData.warehouse : undefined,
             status: "draft",
             organisationId: localStorage.getItem("organisationId"),
           })
@@ -171,6 +173,15 @@ const PurchaseOrderComponent: React.FC = () => {
       }
 
     };
+    const { products, loading: productLoading } = useSelector(
+      (state: any) => state.products
+    );
+
+    const orgId2 = localStorage.getItem('organisationId')
+    useEffect(() => {
+      dispatch(fetchMaterials(orgId2))
+      dispatch(fetchProducts(orgId2))
+    }, [orgId2])
     if (!canCreate) {
       return (
         <p className="text-center text-red-600 py-6">
@@ -205,14 +216,16 @@ const PurchaseOrderComponent: React.FC = () => {
                     onChange={(e) => {
                       const newType = e.target.value as "rawMaterial" | "product";
                       setItemType(newType);
-                      setFormData({ 
-                        ...formData, 
+                      setFormData({
+                        ...formData,
                         itemType: newType,
-                        productLines: [{ 
-                          product: "", 
-                          quantity: 0, 
-                          unitPrice: 0, 
-                          taxes: 0, 
+                        productLines: [{
+                          product: "",
+                          quantity: 0,
+                          isNew: false,            // <-- ADD THIS
+                          newProductName: "",
+                          unitPrice: 0,
+                          taxes: 0,
                           subtotal: 0,
                           organisationId: localStorage.getItem("organisationId") || "",
                           warehouse: ""
@@ -359,19 +372,65 @@ const PurchaseOrderComponent: React.FC = () => {
                           <div className="grid grid-cols-3 gap-3 mb-3">
                             <div>
                               <label className="text-xs font-medium text-gray-600">Material Name *</label>
-                              <input
-                                type="text"
-                                value={line.product}
+
+                              {/* SELECT existing or create new */}
+                              <select
+                                value={line.isNew ? "__new" : line.product}
                                 onChange={(e) => {
-                                  const newLines = [...formData.productLines];
-                                  newLines[index].product = e.target.value;
-                                  setFormData({ ...formData, productLines: newLines });
+                                  const updated = [...formData.productLines];
+                                  const selected = e.target.value;
+
+                                  if (selected === "__new") {
+                                    updated[index].isNew = true;
+                                    updated[index].product = "";            // actual name empty
+                                    updated[index].newProductName = "";     // reset input
+                                  } else {
+                                    updated[index].isNew = false;
+                                    updated[index].product = selected;       // save actual name
+                                    updated[index].newProductName = "";
+
+                                    const existing = materials.find(m => m.name === selected);
+                                    if (existing) {
+                                      updated[index].unitOfMeasure = existing.unitOfMeasure;
+                                      updated[index].hsn = existing.hsn;
+                                      updated[index].gstPercent = existing.gstPercent;
+                                      updated[index].valuationMethod = existing.valuationMethod || "FIFO";
+                                      updated[index].reorderLevel = existing.reorderLevel || 0;
+                                    }
+                                  }
+
+                                  setFormData({ ...formData, productLines: updated });
                                 }}
                                 className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                                placeholder="Enter material name"
-                                required
-                              />
+                              >
+                                <option value="">Select Material</option>
+                                {materials.map((mat) => (
+                                  <option key={mat._id} value={mat.name}>
+                                    {mat.name}
+                                  </option>
+                                ))}
+                                <option value="__new">+ Create New Material</option>
+                              </select>
+
+                              {/* NEW MATERIAL TEXT INPUT */}
+                              {line.isNew && (
+                                <input
+                                  type="text"
+                                  placeholder="Enter new material name"
+                                  className="mt-2 w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                  value={line.newProductName}
+                                  onChange={(e) => {
+                                    const updated = [...formData.productLines];
+                                    updated[index].newProductName = e.target.value;  // user typing
+                                    updated[index].product = e.target.value;         // actual saved name
+                                    setFormData({ ...formData, productLines: updated });
+                                  }}
+                                />
+                              )}
                             </div>
+
+
+
                             <div>
                               <label className="text-xs font-medium text-gray-600">Item Code</label>
                               <input
@@ -580,64 +639,63 @@ const PurchaseOrderComponent: React.FC = () => {
                     <>
                       {formData.productLines.map((line, index) => (
                         <div key={index} className="border-b pb-4 mb-4 last:border-b-0">
-                          <div className="grid grid-cols-3 gap-3 mb-3">
-                            <div>
-                              <label className="text-xs font-medium text-gray-600">Product Name *</label>
+                          <div>
+                            <label className="text-xs font-medium text-gray-600">Product Name *</label>
+
+                            <select
+                              value={line.product || ""}
+                              onChange={(e) => {
+                                const updated = [...formData.productLines];
+                                const selected = e.target.value;
+
+                                updated[index].product = selected;
+
+                                // If existing product is selected — auto-fill fields
+                                if (selected !== "__new") {
+                                  const existing = products.find((p: any) => p.name === selected);
+                                  if (existing) {
+                                    updated[index].unitPrice = Number(existing.unitCost) || 0;
+                                    updated[index].taxes = Number(existing.purchaseTax) || 0;
+                                    updated[index].subtotal =
+                                      updated[index].unitPrice * updated[index].quantity;
+                                  }
+
+                                  updated[index].newProductName = ""; // clear new input
+                                }
+
+                                setFormData({ ...formData, productLines: updated });
+                              }}
+                              className="w-full px-2 py-1 border rounded"
+                              required
+                            >
+                              <option value="">Select Product</option>
+
+                              {products.map((p: any) => (
+                                <option key={p._id} value={p.name}>
+                                  {p.name}
+                                </option>
+                              ))}
+
+                              <option value="__new">+ Create New Product</option>
+                            </select>
+
+                            {/* CREATE NEW PRODUCT INPUT */}
+                            {line.product === "__new" && (
                               <input
                                 type="text"
-                                value={line.product}
+                                placeholder="Enter new product name"
+                                className="mt-1 w-full border px-2 py-1 rounded"
+                                value={line.newProductName || ""}
                                 onChange={(e) => {
-                                  const newLines = [...formData.productLines];
-                                  newLines[index].product = e.target.value;
-                                  setFormData({ ...formData, productLines: newLines });
+                                  const updated = [...formData.productLines];
+                                  updated[index].newProductName = e.target.value; // store separately
+                                  setFormData({ ...formData, productLines: updated });
                                 }}
-                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                                placeholder="Enter product name"
-                                required
                               />
-                            </div>
-                            <div>
-                              <label className="text-xs font-medium text-gray-600">Product Type</label>
-                              <select
-                                value={line.productType || "goods"}
-                                onChange={(e) => {
-                                  const newLines = [...formData.productLines];
-                                  newLines[index].productType = e.target.value;
-                                  setFormData({ ...formData, productLines: newLines });
-                                }}
-                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                              >
-                                <option value="goods">Goods</option>
-                                <option value="services">Services</option>
-                                <option value="combo">Combo</option>
-                              </select>
-                            </div>
-                            <div>
-                              <label className="text-xs font-medium text-gray-600">Category</label>
-                              <select
-                                value={line.category || ""}
-                                onChange={(e) => {
-                                  const newLines = [...formData.productLines];
-                                  newLines[index].category = e.target.value;
-                                  setFormData({ ...formData, productLines: newLines });
-                                }}
-                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                              >
-                                <option value="">Select Category</option>
-                                {categories && categories.length > 0 ? (
-                                  categories.map((cat: any) => (
-                                    <option key={cat._id} value={cat.name}>
-                                      {cat.name}
-                                    </option>
-                                  ))
-                                ) : (
-                                  <option value="" disabled>
-                                    No categories available
-                                  </option>
-                                )}
-                              </select>
-                            </div>
+                            )}
                           </div>
+
+
                           <div className="grid grid-cols-3 gap-3 mb-3">
                             <div>
                               <label className="text-xs font-medium text-gray-600">
@@ -1004,6 +1062,46 @@ const PurchaseOrderComponent: React.FC = () => {
   };
   const UpdatePoModal = () => {
     if (!viewingPo) return null;
+    const buildUpdatePayload = () => {
+      const cleanedLines = formData.productLines
+        .filter(l => l.product && l.product.trim() !== "")
+        .map(l => {
+          const quantity = Number(l.quantity) || 0;
+          const unitPrice = Number(l.unitPrice) || 0;
+          const taxes = Number(l.taxes) || 0;
+
+          return {
+            product: l.product.trim(),
+            quantity,
+            unitPrice,
+            taxes,
+            subtotal: Number(
+              (quantity * unitPrice * (1 + taxes / 100)).toFixed(6)
+            ),
+
+            ...(itemType === "rawMaterial" && {
+              warehouse: l.warehouse,
+              unitOfMeasure: l.unitOfMeasure
+            })
+          };
+        });
+
+      return {
+        poNo: formData.poNo?.trim() || undefined,
+        vendor: formData.vendor,
+        vendorId: formData.vendorId || undefined,
+        orderDate: formData.orderDate || undefined,
+        deliveryAddress: formData.deliveryAddress || "",
+        warehouse: itemType === "rawMaterial" ? formData.warehouse : undefined,
+        incoterms: formData.incoterms,
+        deliveryMethod: formData.deliveryMethod,
+        scheduledDeliveryDate: formData.scheduledDeliveryDate || undefined,
+        productLines: cleanedLines,
+        responsibleUser: formData.responsibleUser,
+        totalAmount: cleanedLines.reduce((s, l) => s + l.subtotal, 0),
+        organisationId: localStorage.getItem("organisationId")
+      };
+    };
 
     const [itemType, setItemType] = useState<"rawMaterial" | "product">(
       viewingPo.itemType || "rawMaterial"
@@ -1011,20 +1109,37 @@ const PurchaseOrderComponent: React.FC = () => {
     const [formData, setFormData] = useState({
       poNo: viewingPo.poNo,
       vendor: viewingPo.vendor,
-      vendorId: viewingPo.vendorId,
+      vendorId:
+        typeof viewingPo.vendorId === "object"
+          ? viewingPo.vendorId?._id
+          : viewingPo.vendorId || "",
+
       orderDate: viewingPo.orderDate?.split("T")[0] || "",
       deliveryAddress: viewingPo.deliveryAddress,
       // warehouse: viewingPo.warehouse,
       incoterms: viewingPo.incoterms,
       deliveryMethod: viewingPo.deliveryMethod,
-      warehouse: viewingPo.warehouse 
+      warehouse: viewingPo.warehouse
         ? (typeof viewingPo.warehouse === 'object' ? viewingPo.warehouse._id : viewingPo.warehouse)
         : "",
       scheduledDeliveryDate: viewingPo.scheduledDeliveryDate
         ? viewingPo.scheduledDeliveryDate.split("T")[0]
         : "",
       itemType: viewingPo.itemType || "rawMaterial" as "rawMaterial" | "product",
-      productLines: viewingPo.productLines || [],
+      productLines: (viewingPo.productLines || []).map(line => ({
+        product: line.product || "",
+        quantity: line.quantity || 0,
+        unitPrice: line.unitPrice || 0,
+        taxes: line.taxes || 0,
+        subtotal: line.subtotal || 0,
+
+        // raw material only
+        warehouse: line.warehouse || "",
+        unitOfMeasure: line.unitOfMeasure || "",
+
+        // keep extensible
+      })),
+
       responsibleUser: viewingPo.responsibleUser,
       totalAmount: viewingPo.totalAmount,
     });
@@ -1039,7 +1154,6 @@ const PurchaseOrderComponent: React.FC = () => {
         vendorId: selected?._id || "",
       });
     };
-
     const handleSubmit = async (e: any) => {
       e.preventDefault();
       setSubmitting(true);
@@ -1048,10 +1162,7 @@ const PurchaseOrderComponent: React.FC = () => {
         await dispatch(
           updatePurchaseOrder({
             id: viewingPo._id,
-            data: {
-              ...formData,
-              organisationId: localStorage.getItem("organisationId"),
-            },
+            data: buildUpdatePayload()
           })
         ).unwrap();
 
@@ -1074,6 +1185,41 @@ const PurchaseOrderComponent: React.FC = () => {
         setSubmitting(false);
       }
     };
+
+    // const handleSubmit = async (e: any) => {
+    //   e.preventDefault();
+    //   setSubmitting(true);
+
+    //   try {
+    //     await dispatch(
+    //       updatePurchaseOrder({
+    //         id: viewingPo._id,
+    //         data: {
+    //           ...formData,
+    //           organisationId: localStorage.getItem("organisationId"),
+    //         },
+    //       })
+    //     ).unwrap();
+
+    //     toast.success("Purchase Order updated successfully");
+
+    //     dispatch(
+    //       fetchPurchaseOrders({
+    //         page,
+    //         limit,
+    //         q: search,
+    //         organisationId: localStorage.getItem("organisationId"),
+    //       })
+    //     );
+
+    //     setShowUpdatePo(false);
+    //     setViewingPo(null);
+    //   } catch (err) {
+    //     toast.error("Failed to update Purchase Order");
+    //   } finally {
+    //     setSubmitting(false);
+    //   }
+    // };
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-40 overflow-y-auto z-50">
@@ -1103,14 +1249,14 @@ const PurchaseOrderComponent: React.FC = () => {
                   onChange={(e) => {
                     const newType = e.target.value as "rawMaterial" | "product";
                     setItemType(newType);
-                    setFormData({ 
-                      ...formData, 
+                    setFormData({
+                      ...formData,
                       itemType: newType,
-                      productLines: [{ 
-                        product: "", 
-                        quantity: 0, 
-                        unitPrice: 0, 
-                        taxes: 0, 
+                      productLines: [{
+                        product: "",
+                        quantity: 0,
+                        unitPrice: 0,
+                        taxes: 0,
                         subtotal: 0,
                         organisationId: localStorage.getItem("organisationId") || "",
                         warehouse: ""
@@ -1264,22 +1410,26 @@ const PurchaseOrderComponent: React.FC = () => {
                     />
                     {/* [!code ++] Conditional Location for Update */}
                     {itemType === "rawMaterial" && (
-                        <div>
-                          <select
-                            value={line.warehouse}
-                            onChange={(e) => {
-                              const updated = [...formData.productLines];
-                              updated[index].warehouse = e.target.value;
-                              setFormData({ ...formData, productLines: updated });
-                            }}
-                            className="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          >
-                            <option value="">Select Warehouse</option>
-                            {warehouses.map((warehouse: any) => (
-                              <option key={warehouse._id} value={warehouse._id}>{warehouse.name}</option>
-                            ))}
-                          </select>
-                        </div>
+                      <div>
+                        <select
+                          value={line.warehouse}
+                          onChange={(e) => {
+                            const updated = formData.productLines.map((l, i) =>
+                              i === index ? { ...l, warehouse: e.target.value } : l
+                            );
+
+                            setFormData({ ...formData, productLines: updated });
+
+                            setFormData({ ...formData, productLines: updated });
+                          }}
+                          className="w-full border px-3 py-2 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="">Select Warehouse</option>
+                          {warehouses.map((warehouse: any) => (
+                            <option key={warehouse._id} value={warehouse._id}>{warehouse.name}</option>
+                          ))}
+                        </select>
+                      </div>
                     )}
                     <input
                       type="number"
