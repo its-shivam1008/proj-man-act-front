@@ -5,6 +5,7 @@ export interface MRSItem {
   task?: string;
   item: string;
   quantity: number;
+  price?: number;
   requiredDate?: string;
   status?: "open" | "sent" | "ordered" | "received" | "cancelled";
   remarks?: string;

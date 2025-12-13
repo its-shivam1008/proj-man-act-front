@@ -460,30 +460,52 @@ export default function ProcurementPage() {
             const rawMaterial = rawMaterials.find(rm => rm.name === materialName);
             
             if (rawMaterial) {
-                // Check if enough stock is available
-                const currentStock = rawMaterial.quantity || 0;
+                // 🚀 Check FIFO stock availability (calculate from remainingQuantity in stocks)
+                let currentStock = 0;
+                if (rawMaterial.stocks && Array.isArray(rawMaterial.stocks)) {
+                    currentStock = rawMaterial.stocks.reduce((total: number, stock: any) => {
+                        return total + (stock.remainingQuantity || 0);
+                    }, 0);
+                } else {
+                    currentStock = rawMaterial.quantity || 0;
+                }
+                
+                console.log(`📊 FIFO Stock check for ${materialName}: Available=${currentStock}, Requested=${requestedQty}`);
+                
                 if (currentStock < requestedQty) {
                     toast.error(`Not enough stock for ${materialName}. Available: ${currentStock}, Requested: ${requestedQty}`);
                     return;
                 }
                 
-                // Deduct from raw material stock
+                // 🚀 Deduct from raw material stock using FIFO
                 try {
                     const organisationId = localStorage.getItem("organisationId");
-                    const updateData = {
-                        ...rawMaterial,
-                        quantity: currentStock - requestedQty
-                    };
-                    console.log(`🔍 Updating raw material ${rawMaterial._id}:`, updateData);
                     
-                    await api.put(`/raw/update/${rawMaterial._id}`, updateData, {
-                        headers: { organisationId }
+                    console.log(`🔍 Using FIFO to consume ${requestedQty} of ${materialName}`);
+                    
+                    const fifoResponse = await api.post('/fifo/consume-stock', {
+                        materialId: rawMaterial._id,
+                        quantity: requestedQty,
+                        reason: `MRS Creation - ${item.task || 'Material Requirement'}`,
+                        referenceId: `MRS-${Date.now()}`
+                    }, {
+                        headers: { 
+                            organisationId,
+                            'Authorization': `Bearer ${localStorage.getItem('token')}`
+                        }
                     });
-                    console.log(`✅ Deducted ${requestedQty} from ${materialName}. New stock: ${currentStock - requestedQty}`);
+                    
+                    if (fifoResponse.data.success) {
+                        console.log(`✅ FIFO consumption successful:`, fifoResponse.data.data);
+                        console.log(`📊 Consumed from ${fifoResponse.data.data.consumedBatches.length} batches`);
+                        console.log(`💰 Average cost: ₹${fifoResponse.data.data.averageCost}`);
+                    } else {
+                        throw new Error(fifoResponse.data.message || 'FIFO consumption failed');
+                    }
                 } catch (error: any) {
-                    console.error('Failed to update raw material stock:', error);
-                    const errorMsg = error.response?.data?.message || error.message || 'Unknown error';
-                    toast.error(`Failed to update stock for ${materialName}: ${errorMsg}`);
+                    console.error('Failed to consume stock using FIFO:', error);
+                    const errorMsg = error.response?.data?.message || error.message || 'FIFO consumption failed';
+                    toast.error(`Failed to consume stock for ${materialName}: ${errorMsg}`);
                     return;
                 }
             }
@@ -507,7 +529,7 @@ export default function ProcurementPage() {
         await dispatch(fetchMRS());
         await dispatch(fetchMaterials({ page: 1, limit: 1000 }));
         
-        toast.success(`${allItems.length} MRS item(s) created successfully. Stock updated.`);
+        toast.success(`${allItems.length} MRS item(s) created successfully. Stock updated using FIFO.`);
         
         setIsDialogOpen(false);
         setEditing(null);
@@ -1432,6 +1454,11 @@ export default function ProcurementPage() {
                                                                         <span className="font-medium">{material.name}</span>
                                                                         <span className="text-xs text-muted-foreground">
                                                                             {material.itemCode} | Stock: <span className={(material.quantity || 0) > 0 ? 'text-green-600' : 'text-red-600'}>{material.quantity || 0}</span> {material.unitOfMeasure}
+                                                                            {material.stocks && material.stocks.length > 0 && (
+                                                                                <span className="ml-2 text-blue-600">
+                                                                                    | FIFO: {material.stocks.filter((s: any) => s.remainingQuantity > 0).length} batches
+                                                                                </span>
+                                                                            )}
                                                                         </span>
                                                                     </div>
                                                                 </CommandItem>

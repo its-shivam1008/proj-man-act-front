@@ -22,6 +22,15 @@ type MaterialItem = {
   quantity?: number;
   itemCode?: string;
   reorderLevel?: number;
+  stocks?: Array<{
+    _id?: string;
+    warehouseId?: string | { _id: string };
+    quantity?: number;
+    remainingQuantity?: number;
+    unitCost?: number;
+    purchaseDate?: string;
+    batchId?: string;
+  }>;
 };
 
 type SelectedMaterial = {
@@ -468,116 +477,86 @@ export default function MaterialSelectionDialog({
 
       setReturnModal((r) => ({ ...r, submitting: true }));
 
-      // Check if this is an MRS material or linkedMaterial
-      const isMRSMaterial = mrsList?.some((mrs: any) => 
-        (mrs.id === it.materialId || mrs._id === it.materialId) && mrs.task === wbsItem?.name
-      );
+      console.log(`🔄 Starting material return for ${it.name}, quantity: ${returnQty}`);
 
-      if (isMRSMaterial) {
-        // Handle MRS material return using database API
-        console.log(`🔄 Processing MRS material return for ${it.name}, quantity: ${returnQty}`);
-        
-        // Find the MRS entry
-        const mrsEntry = mrsList?.find((mrs: any) => 
-          (mrs.id === it.materialId || mrs._id === it.materialId)
-        );
-        
-        if (mrsEntry) {
-          try {
-            // 1. Update MRS return quantity in database
-            console.log(`📦 Updating MRS return quantity in database for ID: ${it.materialId}`);
-            await api.patch(`/mrs/${it.materialId}/return-material`, {
-              returnedQuantity: returnQty,
-              returnReason: 'Material returned from WBS',
-              returnedBy: 'Current User'
-            });
-            console.log(`✅ MRS return updated in database`);
-            
-            // 2. Add back to raw material stock
-            const rawMaterial = materials.find(rm => rm.name === it.name);
-            if (rawMaterial) {
-              try {
-                const currentStock = rawMaterial.quantity || 0;
-                const organisationId = localStorage.getItem("organisationId");
-                await api.put(`/raw/update/${rawMaterial._id}`, {
-                  ...rawMaterial,
-                  quantity: currentStock + returnQty
-                }, {
-                  headers: { organisationId }
-                });
-                console.log(`✅ Added back ${returnQty} to ${it.name}. New stock: ${currentStock + returnQty}`);
-              } catch (error: any) {
-                console.error('Failed to update raw material stock:', error);
-                const errorMsg = error.response?.data?.message || error.message || 'Unknown error';
-                alert(`Failed to update stock for ${it.name}: ${errorMsg}`);
-                setReturnModal((r) => ({ ...r, submitting: false }));
-                return;
-              }
-            }
-            
-            // 3. Refresh MRS data to get updated return quantities
-            console.log(`🔄 Refreshing MRS data to reflect return...`);
-            dispatch(fetchMRS());
-            
-          } catch (error: any) {
-            console.error('Failed to process MRS return:', error);
-            const errorMsg = error.response?.data?.message || error.message || 'Unknown error';
-            alert(`Failed to return material: ${errorMsg}`);
-            setReturnModal((r) => ({ ...r, submitting: false }));
-            return;
-          }
-        }
-      } else {
-        // Handle linkedMaterial return (existing logic)
+      // STEP 1: Always try WBS return API first (works for both MRS and linked materials)
+      try {
+        console.log(`📤 Calling WBS return API...`);
         await api.post("/wbs/return-material", {
           wbsId,
           materialId: it.materialId,
           returnQty,
         });
+        console.log(`✅ WBS return API successful`);
+      } catch (wbsError: any) {
+        console.warn(`⚠️ WBS return API failed:`, wbsError.message);
+        
+        // STEP 2: Fallback - Update raw material stocks
+        const rawMaterial = materials.find(rm => rm.name === it.name);
+        if (rawMaterial) {
+          console.log(`🔄 Using fallback: Update raw material stocks`);
+          
+          // Calculate current total stock from stocks array
+          const currentTotalStock = (rawMaterial.stocks || []).reduce((sum: number, stock: any) => 
+            sum + (stock.remainingQuantity || 0), 0
+          );
+          
+          console.log(`📊 Current total stock: ${currentTotalStock}`);
+          console.log(`📈 Will increase by: ${returnQty}`);
+          
+          // Update the first stock's remaining quantity
+          if (rawMaterial.stocks && rawMaterial.stocks.length > 0) {
+            const updatedStocks = [...rawMaterial.stocks];
+            updatedStocks[0] = {
+              ...updatedStocks[0],
+              remainingQuantity: (updatedStocks[0].remainingQuantity || 0) + returnQty
+            };
+            
+            const organisationId = localStorage.getItem("organisationId");
+            await api.put(`/raw/update/${rawMaterial._id}`, {
+              ...rawMaterial,
+              stocks: updatedStocks
+            }, {
+              headers: { organisationId }
+            });
+            console.log(`✅ Raw material stocks updated - first stock increased by ${returnQty}`);
+          }
+        }
       }
 
-      // 4. Optimistically update local state immediately
-      console.log(`🔄 Optimistically updating local state for ${it.name}`);
+      // STEP 3: Update local UI state
+      console.log(`🔄 Updating local UI state`);
       setSavedMaterials(prevMaterials => 
         prevMaterials.map(material => {
           if (material.materialId === it.materialId) {
             const newQuantity = Number(material.quantity) - returnQty;
-            console.log(`📊 Updating ${material.name}: ${material.quantity} - ${returnQty} = ${newQuantity}`);
+            console.log(`📊 UI Update: ${material.name} ${material.quantity} - ${returnQty} = ${newQuantity}`);
             return {
               ...material,
-              quantity: Math.max(0, newQuantity) // Ensure quantity doesn't go negative
+              quantity: Math.max(0, newQuantity)
             };
           }
           return material;
-        }).filter(material => Number(material.quantity) > 0) // Remove materials with 0 quantity
+        }).filter(material => Number(material.quantity) > 0)
       );
       
-      // Close modal and show success message
+      // STEP 4: Close modal and refresh data
       setReturnModal({ open: false, item: null, submitting: false });
-      toast.success(`Successfully returned ${returnQty} ${it.unit} of ${it.name}. Stock updated.`);
+      toast.success(`✅ Returned ${returnQty} ${it.unit} of ${it.name}. Raw material quantity increased!`);
       
-      // Refresh materials data
+      // Refresh all data to ensure consistency
+      console.log(`🔄 Refreshing all data...`);
       dispatch(fetchMaterials({ page: 1, limit: 100 }));
+      dispatch(fetchMRS());
       
-      // Refresh WBS data if needed
       if (wbsItem?.projectId) {
         dispatch(fetchWbsByProject(wbsItem.projectId));
       }
       
-      // Delay MRS refetch to allow database to update, then sync with server
-      setTimeout(async () => {
-        console.log(`🔄 Syncing with database after return...`);
-        await dispatch(fetchMRS());
-        // After fresh data, recalculate to ensure accuracy
-        setTimeout(() => {
-          const calculatedMaterials = calculateSavedMaterials();
-          setSavedMaterials(calculatedMaterials);
-          console.log(`✅ Materials synced with database after return`);
-        }, 500);
-      }, 2000); // Longer delay to ensure database is updated
-      
-    } catch (err) {
-      console.error("Return failed", err);
+    } catch (err: any) {
+      console.error("❌ Return failed:", err);
+      const errorMsg = err.response?.data?.message || err.message || 'Return failed';
+      toast.error(`Failed to return material: ${errorMsg}`);
       setReturnModal((r) => ({ ...r, submitting: false }));
     }
   };

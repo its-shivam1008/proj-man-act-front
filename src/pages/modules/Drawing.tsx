@@ -29,6 +29,7 @@ import {
 import { fetchProjects } from "@/redux/slices/projectSlice";
 import { fetchWbsByProject } from "@/redux/slices/wbsSlice";
 import { createBulkMRS } from "@/redux/slices/mrsSlice";
+import { fetchMaterials } from "@/redux/slices/rawmaterialSlice";
 import { toast } from 'sonner'; // Assuming you use sonner or similar for toasts
 
 // --- TYPES ---
@@ -68,6 +69,7 @@ const Drawing: React.FC = () => {
   // --- REDUX STATE ---
   const { projects } = useSelector((state: RootState) => state.projects);
   const { wbs } = useSelector((state: RootState) => state.wbs);
+  const { materials } = useSelector((state: RootState) => state.rawMaterials);
 
   // --- UI STATE ---
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -82,6 +84,13 @@ const Drawing: React.FC = () => {
   const [selectedWbsId, setSelectedWbsId] = useState<string>("");
   const [requiredDate, setRequiredDate] = useState<string>("");
   const [isSaving, setIsSaving] = useState(false);
+
+  // --- AUTOCOMPLETE STATE ---
+  const [autocompleteStates, setAutocompleteStates] = useState<{[key: string]: {
+    isOpen: boolean;
+    searchTerm: string;
+    filteredMaterials: any[];
+  }}>({});
 
   // --- HISTORY MODAL STATE ---
   const [viewHistoryItem, setViewHistoryItem] = useState<OCRScan | null>(null);
@@ -120,6 +129,8 @@ const Drawing: React.FC = () => {
   useEffect(() => {
     // Fetch Projects for Dropdown
     dispatch(fetchProjects({ page: 1, limit: 100 }));
+    // Fetch Raw Materials for Autocomplete
+    dispatch(fetchMaterials({ page: 1, limit: 1000 }));
   }, [dispatch]);
 
   // Fetch WBS when Project Changes
@@ -363,6 +374,59 @@ const processExtractedText = (text: string, masters: MasterPair[]): ScanResultIt
     ));
   };
 
+  // --- AUTOCOMPLETE HANDLERS ---
+  const initAutocompleteState = (itemId: string) => {
+    if (!autocompleteStates[itemId]) {
+      setAutocompleteStates(prev => ({
+        ...prev,
+        [itemId]: {
+          isOpen: false,
+          searchTerm: '',
+          filteredMaterials: []
+        }
+      }));
+    }
+  };
+
+  const updateAutocompleteState = (itemId: string, updates: Partial<typeof autocompleteStates[string]>) => {
+    setAutocompleteStates(prev => ({
+      ...prev,
+      [itemId]: {
+        ...prev[itemId],
+        ...updates
+      }
+    }));
+  };
+
+  const handleAutocompleteInput = (itemId: string, value: string) => {
+    // Update the actual item value
+    updateResultItem(itemId, 'value', value);
+    
+    // Filter materials based on input
+    const filtered = materials.filter((material: any) => 
+      material.name.toLowerCase().includes(value.toLowerCase())
+    ).slice(0, 10); // Limit to 10 results
+    
+    updateAutocompleteState(itemId, {
+      searchTerm: value,
+      filteredMaterials: filtered,
+      isOpen: value.length > 0 && filtered.length > 0
+    });
+  };
+
+  const selectMaterial = (itemId: string, materialName: string) => {
+    updateResultItem(itemId, 'value', materialName);
+    updateAutocompleteState(itemId, {
+      searchTerm: materialName,
+      filteredMaterials: [],
+      isOpen: false
+    });
+  };
+
+  const closeAutocomplete = (itemId: string) => {
+    updateAutocompleteState(itemId, { isOpen: false });
+  };
+
   const deleteResultItem = (id: string) => {
     setScanResults(prev => prev.filter(item => item.id !== id));
   };
@@ -532,7 +596,65 @@ const processExtractedText = (text: string, masters: MasterPair[]): ScanResultIt
                             </div>
                             <div className="flex items-center gap-2">
                               <span className="text-[10px] uppercase font-bold text-gray-400 w-8">Value</span>
-                              <input type="text" placeholder="Required for save..." value={item.value} onChange={(e) => updateResultItem(item.id, 'value', e.target.value)} className={`w-full border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 ${!item.value ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} />
+                              <div className="relative w-full">
+                                <input 
+                                  type="text" 
+                                  placeholder="Required for save..." 
+                                  value={item.value} 
+                                  onChange={(e) => {
+                                    initAutocompleteState(item.id);
+                                    handleAutocompleteInput(item.id, e.target.value);
+                                  }}
+                                  onFocus={() => {
+                                    initAutocompleteState(item.id);
+                                    if (item.value.length > 0) {
+                                      const filtered = materials.filter((material: any) => 
+                                        material.name.toLowerCase().includes(item.value.toLowerCase())
+                                      ).slice(0, 10);
+                                      updateAutocompleteState(item.id, {
+                                        filteredMaterials: filtered,
+                                        isOpen: filtered.length > 0
+                                      });
+                                    }
+                                  }}
+                                  onBlur={() => {
+                                    // Delay closing to allow clicking on dropdown items
+                                    setTimeout(() => closeAutocomplete(item.id), 150);
+                                  }}
+                                  className={`w-full border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 ${!item.value ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} 
+                                />
+                                
+                                {/* Autocomplete Dropdown */}
+                                {autocompleteStates[item.id]?.isOpen && (
+                                  <div className="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded-md shadow-lg z-50 max-h-48 overflow-y-auto">
+                                    {autocompleteStates[item.id].filteredMaterials.map((material: any) => (
+                                      <div
+                                        key={material._id}
+                                        onClick={() => selectMaterial(item.id, material.name)}
+                                        className="px-3 py-2 hover:bg-indigo-50 cursor-pointer text-sm border-b border-gray-100 last:border-b-0"
+                                      >
+                                        <div className="font-medium text-gray-900">{material.name}</div>
+                                        {material.itemCode && (
+                                          <div className="text-xs text-gray-500">Code: {material.itemCode}</div>
+                                        )}
+                                      </div>
+                                    ))}
+                                    
+                                    {/* Show "Add as custom" option if no exact match */}
+                                    {item.value && !materials.some((m: any) => m.name.toLowerCase() === item.value.toLowerCase()) && (
+                                      <div
+                                        onClick={() => selectMaterial(item.id, item.value)}
+                                        className="px-3 py-2 hover:bg-green-50 cursor-pointer text-sm border-t border-gray-200 bg-green-25"
+                                      >
+                                        <div className="font-medium text-green-700 flex items-center gap-2">
+                                          <Plus className="w-3 h-3" />
+                                          Add "{item.value}" as custom material
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
                           <button onClick={() => deleteResultItem(item.id)} className="text-gray-400 hover:text-red-500 self-center p-2"><Trash2 className="w-4 h-4" /></button>

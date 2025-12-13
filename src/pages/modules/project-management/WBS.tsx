@@ -884,7 +884,6 @@ export default function WBS() {
                     </Select>
                   </div>
                 </div>
-
                 <div className="space-y-2">
                   <Label htmlFor="name">Name *</Label>
                   <Input

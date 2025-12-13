@@ -21,6 +21,17 @@ export interface RawMaterial {
   hsn?: string;
   gstPercent?: number;
   technicalSpecs?: string;
+  // FIFO fields
+  stocks?: Array<{
+    warehouseId: string;
+    quantity: number;
+    unitCost: number;
+    purchaseDate: string;
+    batchId: string;
+    purchaseOrderId?: string;
+    movementId?: string;
+    remainingQuantity: number;
+  }>;
 }
 
 export interface RawMaterialState {
