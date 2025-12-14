@@ -71,6 +71,14 @@ const PurchaseOrderComponent: React.FC = () => {
   const [search, setSearch] = useState<string>("");
 
 
+  // const uniqueMaterials = Array.from(
+  //   new Map(
+  //     materials.map((m: any) => [
+  //       m.materialName.trim().toLowerCase(),
+  //       m
+  //     ])
+  //   ).values()
+  // );
 
 
 
@@ -141,6 +149,16 @@ const PurchaseOrderComponent: React.FC = () => {
     };
     const { materials, total, page: currentPage, limit: perPage, loading } =
       useSelector((state: RootState) => state.rawMaterials);
+
+    const uniqueMaterials = Array.from(
+      new Map(
+        materials.map((m: any) => [
+          m.materialName?.trim()?.toLowerCase(),
+          m
+        ])
+      ).values()
+    );
+
     const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
       setSubmitting(true);
@@ -189,6 +207,14 @@ const PurchaseOrderComponent: React.FC = () => {
         </p>
       );
     }
+    const uniqueProducts = Array.from(
+      new Map(
+        products.map((p: any) => [
+          p.name.trim().toLowerCase(), // normalize
+          p
+        ])
+      ).values()
+    );
 
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
@@ -375,58 +401,75 @@ const PurchaseOrderComponent: React.FC = () => {
 
                               {/* SELECT existing or create new */}
                               <select
-                                value={line.isNew ? "__new" : line.product}
+                                value={line.isNew ? "__new" : line.materialId || ""}
                                 onChange={(e) => {
                                   const updated = [...formData.productLines];
                                   const selected = e.target.value;
 
                                   if (selected === "__new") {
-                                    updated[index].isNew = true;
-                                    updated[index].product = "";            // actual name empty
-                                    updated[index].newProductName = "";     // reset input
+                                    updated[index] = {
+                                      ...updated[index],
+                                      isNew: true,
+                                      materialId: "",
+                                      product: "",
+                                      newProductName: "",
+                                      unitPrice: 0,
+                                      taxes: 0,
+                                      subtotal: 0,
+                                    };
                                   } else {
-                                    updated[index].isNew = false;
-                                    updated[index].product = selected;       // save actual name
-                                    updated[index].newProductName = "";
+                                    const material = uniqueMaterials.find(
+                                      (m: any) => m._id === selected
+                                    );
 
-                                    const existing = materials.find(m => m.name === selected);
-                                    if (existing) {
-                                      updated[index].unitOfMeasure = existing.unitOfMeasure;
-                                      updated[index].hsn = existing.hsn;
-                                      updated[index].gstPercent = existing.gstPercent;
-                                      updated[index].valuationMethod = existing.valuationMethod || "FIFO";
-                                      updated[index].reorderLevel = existing.reorderLevel || 0;
-                                    }
+                                    updated[index] = {
+                                      ...updated[index],
+                                      isNew: false,
+                                      materialId: material._id,
+                                      product: material.materialName, // ✅ store NAME
+                                      newProductName: "",
+                                      unitPrice: Number(material.unitCost || 0),
+                                      taxes: Number(material.purchaseTax || 0),
+                                      subtotal:
+                                        (updated[index].quantity || 0) *
+                                        Number(material.unitCost || 0),
+                                    };
                                   }
 
                                   setFormData({ ...formData, productLines: updated });
                                 }}
-                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                className="w-full px-2 py-1 border rounded"
+                                required
                               >
                                 <option value="">Select Material</option>
-                                {materials.map((mat) => (
-                                  <option key={mat._id} value={mat.name}>
-                                    {mat.name}
+                                {uniqueMaterials.map((m: any) => (
+                                  <option key={m._id} value={m._id}>
+                                    {/* FIX: Use m._id or a fallback label if materialName is empty */}
+                                    {m.name || `Material ID: ${m._id}`}
                                   </option>
                                 ))}
+
                                 <option value="__new">+ Create New Material</option>
                               </select>
+
 
                               {/* NEW MATERIAL TEXT INPUT */}
                               {line.isNew && (
                                 <input
                                   type="text"
                                   placeholder="Enter new material name"
-                                  className="mt-2 w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                                  value={line.newProductName}
+                                  className="mt-2 w-full border px-2 py-1 rounded"
+                                  value={line.newProductName || ""}
                                   onChange={(e) => {
                                     const updated = [...formData.productLines];
-                                    updated[index].newProductName = e.target.value;  // user typing
-                                    updated[index].product = e.target.value;         // actual saved name
+                                    updated[index].newProductName = e.target.value;
+                                    updated[index].product = e.target.value; // ✅ REAL NAME
                                     setFormData({ ...formData, productLines: updated });
                                   }}
+                                  required
                                 />
                               )}
+
                             </div>
 
 
@@ -643,24 +686,25 @@ const PurchaseOrderComponent: React.FC = () => {
                             <label className="text-xs font-medium text-gray-600">Product Name *</label>
 
                             <select
-                              value={line.product || ""}
+                              value={line.isNew ? "__new" : line.product || ""}
                               onChange={(e) => {
                                 const updated = [...formData.productLines];
                                 const selected = e.target.value;
 
-                                updated[index].product = selected;
-
-                                // If existing product is selected — auto-fill fields
-                                if (selected !== "__new") {
-                                  const existing = products.find((p: any) => p.name === selected);
-                                  if (existing) {
-                                    updated[index].unitPrice = Number(existing.unitCost) || 0;
-                                    updated[index].taxes = Number(existing.purchaseTax) || 0;
-                                    updated[index].subtotal =
-                                      updated[index].unitPrice * updated[index].quantity;
-                                  }
-
-                                  updated[index].newProductName = ""; // clear new input
+                                if (selected === "__new") {
+                                  updated[index] = {
+                                    ...updated[index],
+                                    isNew: true,
+                                    product: "",
+                                    newProductName: "",
+                                  };
+                                } else {
+                                  updated[index] = {
+                                    ...updated[index],
+                                    isNew: false,
+                                    product: selected,
+                                    newProductName: "",
+                                  };
                                 }
 
                                 setFormData({ ...formData, productLines: updated });
@@ -670,7 +714,7 @@ const PurchaseOrderComponent: React.FC = () => {
                             >
                               <option value="">Select Product</option>
 
-                              {products.map((p: any) => (
+                              {uniqueProducts.map((p: any) => (
                                 <option key={p._id} value={p.name}>
                                   {p.name}
                                 </option>
@@ -679,18 +723,21 @@ const PurchaseOrderComponent: React.FC = () => {
                               <option value="__new">+ Create New Product</option>
                             </select>
 
+
                             {/* CREATE NEW PRODUCT INPUT */}
-                            {line.product === "__new" && (
+                            {line.isNew && (
                               <input
                                 type="text"
                                 placeholder="Enter new product name"
-                                className="mt-1 w-full border px-2 py-1 rounded"
+                                className="mt-2 w-full border px-2 py-1 rounded"
                                 value={line.newProductName || ""}
                                 onChange={(e) => {
                                   const updated = [...formData.productLines];
-                                  updated[index].newProductName = e.target.value; // store separately
+                                  updated[index].newProductName = e.target.value;
+                                  updated[index].product = e.target.value; // ✅ REAL NAME
                                   setFormData({ ...formData, productLines: updated });
                                 }}
+                                required
                               />
                             )}
                           </div>
@@ -730,21 +777,23 @@ const PurchaseOrderComponent: React.FC = () => {
                             <div>
                               <label className="text-xs font-medium text-gray-600">Warehouse</label>
                               <select
-                                value={line.warehouseLocation || ""}
+                                value={line.warehouse || ""}
                                 onChange={(e) => {
                                   const newLines = [...formData.productLines];
-                                  newLines[index].warehouseLocation = e.target.value;
+                                  newLines[index].warehouse = e.target.value; // ✅ ID
                                   setFormData({ ...formData, productLines: newLines });
                                 }}
                                 className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                required
                               >
                                 <option value="">Select Warehouse</option>
-                                {warehouses?.map((wh) => (
-                                  <option key={wh._id} value={wh.name}>
+                                {warehouses.map((wh) => (
+                                  <option key={wh._id} value={wh._id}>
                                     {wh.name}
                                   </option>
                                 ))}
                               </select>
+
                             </div>
                           </div>
                           <div className="mb-3">
@@ -1072,17 +1121,20 @@ const PurchaseOrderComponent: React.FC = () => {
 
           return {
             product: l.product.trim(),
+
+            // 🔥 THIS IS THE FIX (DO NOT SKIP)
+            ...(itemType === "rawMaterial" && {
+              materialId: l.materialId,     // ✅ KEEP MATERIAL ID
+              warehouse: l.warehouse,
+              unitOfMeasure: l.unitOfMeasure,
+            }),
+
             quantity,
             unitPrice,
             taxes,
             subtotal: Number(
               (quantity * unitPrice * (1 + taxes / 100)).toFixed(6)
             ),
-
-            ...(itemType === "rawMaterial" && {
-              warehouse: l.warehouse,
-              unitOfMeasure: l.unitOfMeasure
-            })
           };
         });
 
@@ -1099,7 +1151,7 @@ const PurchaseOrderComponent: React.FC = () => {
         productLines: cleanedLines,
         responsibleUser: formData.responsibleUser,
         totalAmount: cleanedLines.reduce((s, l) => s + l.subtotal, 0),
-        organisationId: localStorage.getItem("organisationId")
+        organisationId: localStorage.getItem("organisationId"),
       };
     };
 
@@ -1132,6 +1184,10 @@ const PurchaseOrderComponent: React.FC = () => {
         unitPrice: line.unitPrice || 0,
         taxes: line.taxes || 0,
         subtotal: line.subtotal || 0,
+        materialId:
+          typeof line.materialId === "object"
+            ? line.materialId?._id
+            : line.materialId || "",
 
         // raw material only
         warehouse: line.warehouse || "",

@@ -90,11 +90,26 @@ const Products: React.FC = () => {
       </div>
     );
   }
-  const getWarehouseCountForProduct = (productId: string) => {
-    return warehouses.filter((w) =>
-      w.products.some((p) => p.productId === productId)
-    ).length;
+  const getTotalStock = (product: any) => {
+    if (!Array.isArray(product.stocks)) return 0;
+    return product.stocks.reduce((sum: number, s: any) => sum + (s.quantity || 0), 0);
   };
+
+  const getAvgUnitCost = (product: any) => {
+    if (!Array.isArray(product.stocks) || product.stocks.length === 0) return 0;
+    const total = product.stocks.reduce((sum: number, s: any) => sum + (s.unitCost || 0), 0);
+    return total / product.stocks.length;
+  };
+
+  const getWarehousesFromStock = (product: any) => {
+    if (!Array.isArray(product.stocks)) return [];
+    return product.stocks.map((s: any) => s.warehouseId);
+  };
+
+  const getWarehouseCountForProduct = (product: any) => {
+    return Array.isArray(product.stocks) ? product.stocks.length : 0;
+  };
+
 
   const [page, setPage] = useState(1);
   const limit = 10;
@@ -109,7 +124,7 @@ const Products: React.FC = () => {
   // Notification state
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
-  
+
   // Reject dialog state
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [rejectingNotification, setRejectingNotification] = useState<any>(null);
@@ -124,27 +139,27 @@ const Products: React.FC = () => {
     try {
       const apiUrl = BASE_URL || 'http://localhost:4000';
       const url = `${apiUrl}/notifications/list?destination=inventory.products&status=unread`;
-      
+
       const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
           'Content-Type': 'application/json'
         }
       });
-      
+
       if (!response.ok) {
         setNotifications([]);
         return;
       }
-      
+
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
         setNotifications([]);
         return;
       }
-      
+
       const data = await response.json();
-      
+
       if (Array.isArray(data)) {
         const filtered = data.filter((n: any) => n.type === 'productPurchase' && n.inviteResponse === 'pending');
         setNotifications(filtered);
@@ -168,7 +183,7 @@ const Products: React.FC = () => {
         setShowRejectDialog(true);
         return;
       }
-      
+
       const apiUrl = BASE_URL || 'http://localhost:4000';
       const res = await fetch(`${apiUrl}/purchase/orders/product-response`, {
         method: 'POST',
@@ -178,7 +193,7 @@ const Products: React.FC = () => {
         },
         body: JSON.stringify({ notificationId, response })
       });
-      
+
       if (res.ok) {
         // Refresh notifications and products
         fetchNotifications();
@@ -193,14 +208,14 @@ const Products: React.FC = () => {
       toast.error('Failed to process response');
     }
   };
-  
+
   // Handle reject with reason
   const handleRejectWithReason = async () => {
     if (!rejectReason.trim()) {
       toast.error('Please enter a reason for rejection');
       return;
     }
-    
+
     try {
       // Add to scrap orders
       const scrapOrder = {
@@ -217,14 +232,14 @@ const Products: React.FC = () => {
         rejectedDate: new Date().toISOString(),
         status: 'pending'
       };
-      
+
       console.log('Saving product scrap order:', scrapOrder); // Debug log
-      
+
       // Save to localStorage for Scrap Orders page
       const scrapOrders = JSON.parse(localStorage.getItem('SCRAP_ORDERS') || '[]');
       scrapOrders.unshift(scrapOrder);
       localStorage.setItem('SCRAP_ORDERS', JSON.stringify(scrapOrders));
-      
+
       // Create material movement for outbound (rejection)
       const movementData = {
         organisationId: localStorage.getItem("organisationId"),
@@ -241,9 +256,9 @@ const Products: React.FC = () => {
         totalCost: scrapOrder.unitPrice * scrapOrder.quantity,
         itemType: "product",
       };
-      
+
       console.log("Creating product movement with data:", movementData); // Debug log
-      
+
       try {
         const result = await dispatch(createMovement(movementData)).unwrap();
         console.log("Outbound movement created successfully:", result);
@@ -252,7 +267,7 @@ const Products: React.FC = () => {
         console.error("Failed to create movement record:", error);
         toast.error(`Failed to create movement: ${error.message || error}`);
       }
-      
+
       // Mark notification as rejected
       const apiUrl = BASE_URL || 'http://localhost:4000';
       const res = await fetch(`${apiUrl}/purchase/orders/product-response`, {
@@ -263,7 +278,7 @@ const Products: React.FC = () => {
         },
         body: JSON.stringify({ notificationId: rejectingNotification._id, response: 'rejected' })
       });
-      
+
       if (res.ok) {
         fetchNotifications();
         dispatch(fetchProducts({ page, limit }));
@@ -989,7 +1004,7 @@ const Products: React.FC = () => {
         const warehousesWithProduct = warehouses.filter((w) =>
           w.products?.some((p) => p.productId === product._id || p.productId === product.id)
         );
-        
+
         if (warehousesWithProduct.length > 0) {
           const warehouseNames = warehousesWithProduct.map((w) => w.name).join(", ");
           toast.error(`This product is available in: ${warehouseNames}. Please select correct source warehouse.`);
@@ -1023,7 +1038,7 @@ const Products: React.FC = () => {
         const transportCost = Number(form.transportCost) || 0;
         const quantity = Number(form.quantity) || 0;
         const totalTransportCost = transportCost * quantity;
-        
+
         transfers.unshift({
           date: new Date().toISOString(),
           productName: product.name,
@@ -1427,14 +1442,15 @@ const Products: React.FC = () => {
                   {item.category}
                 </td>
                 <td className="px-6 py-4 text-sm">
-                  <span className="font-bold">{item.quantity}</span>
+                  <span className="font-bold">{getTotalStock(item)}</span>
                   <span className="text-gray-500"> / {item.minStock} min</span>
+
                 </td>
                 <td className="px-6 py-4 text-sm">
-                  ${Number(item.unitCost).toFixed(2)}
+                  ₹{getAvgUnitCost(item).toFixed(2)}
                 </td>
                 <td className="px-6 py-4 text-sm font-bold text-gray-900">
-                  ${(item.quantity * Number(item.unitCost)).toLocaleString()}
+                  ₹{(getTotalStock(item) * getAvgUnitCost(item)).toLocaleString()}
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap">
 
@@ -1450,13 +1466,17 @@ const Products: React.FC = () => {
                   <button
                     className="flex items-center gap-2 underline hover:text-blue-900"
                     onClick={() => {
+                      const warehouseIds = item.stocks?.map((s: any) => String(s.warehouseId)) || [];
+
                       const list = warehouses.filter(w =>
-                        w.products.some(p => p.productId === item._id)
+                        warehouseIds.includes(String(w._id))
                       );
+
                       setWarehouseListModal(list);
                     }}
+
                   >
-                    <span>{getWarehouseCountForProduct(item._id)}</span>
+                    <span>{getWarehouseCountForProduct(item)}</span>
                     <span>warehouses</span>
                   </button>
                 </td>
@@ -1602,7 +1622,7 @@ const Products: React.FC = () => {
       {selectedWarehouse && (
         <WarehouseDetailsModal warehouse={selectedWarehouse} />
       )}
-      
+
       {/* Reject Dialog */}
       {showRejectDialog && rejectingNotification && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -1618,13 +1638,13 @@ const Products: React.FC = () => {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            
+
             <div className="space-y-4">
               <div>
                 <p className="text-sm text-gray-600 mb-2">Product: <strong>{rejectingNotification.materialData?.product}</strong></p>
                 <p className="text-sm text-gray-600">Quantity: <strong>{rejectingNotification.materialData?.quantity}</strong></p>
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Reason for Rejection *</label>
                 <select
@@ -1640,7 +1660,7 @@ const Products: React.FC = () => {
                   <option value="obsolete">Obsolete</option>
                 </select>
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Additional Remark</label>
                 <textarea
@@ -1652,7 +1672,7 @@ const Products: React.FC = () => {
                 />
               </div>
             </div>
-            
+
             <div className="flex justify-end gap-3 mt-6">
               <button
                 onClick={() => {

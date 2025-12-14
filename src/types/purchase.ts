@@ -48,7 +48,7 @@ export interface RFQ {
 
 export interface PurchaseOrderProductLine {
   itemType?: "material" | "product";
-
+    materialId?: string | { _id: string; materialName?: string };
   /** Item name (existing or new) */
   product: string;
 

@@ -158,19 +158,26 @@ const Forecasting: React.FC = () => {
   };
   useEffect(() => {
     if (!showViewForm || !viewingId) return;
-    if (productLoading) return; // ⛔ WAIT until products are loaded
+    if (productLoading) return;
 
     const forecast = forecastItems.find((f) => f._id === viewingId);
     if (!forecast) return;
 
-    const product = products.find(p => p._id === forecast.productId);
-    const material = materials.find(m => m._id === forecast.rawMaterialId);
-    if (!product?.name) return;
-
-   fetchPredictedRate(forecast.productId || forecast.rawMaterialId);
-
-
-  }, [showViewForm, viewingId, productLoading]);
+    if (forecast.productId) {
+      dispatch(fetchPredictedRate({
+        type: "product",
+        id: forecast.productId,
+      }));
+    } else if (forecast.rawMaterialId) {
+      dispatch(fetchPredictedRate({
+        type: "rawMaterial",
+        id: forecast.rawMaterialId,
+      }));
+    }
+  }, [showViewForm, viewingId, productLoading, forecastItems, dispatch]);
+  useEffect(() => {
+  console.log("pricePrediction =>", pricePrediction);
+}, [pricePrediction]);
 
   const calculateStockStatus = (
     currentStock: number,
@@ -609,14 +616,14 @@ const Forecasting: React.FC = () => {
                       {/* Percentage Badge */}
                       <div
                         className={`flex flex-col items-end ${pricePrediction.predictedNextPrice > pricePrediction.lastPrice
-                            ? "text-red-600"
-                            : "text-emerald-600"
+                          ? "text-red-600"
+                          : "text-emerald-600"
                           }`}
                       >
                         <div
                           className={`px-3 py-1.5 rounded-xl border flex items-center gap-1.5 shadow-md ${pricePrediction.predictedNextPrice > pricePrediction.lastPrice
-                              ? "bg-red-50 border-red-200"
-                              : "bg-emerald-50 border-emerald-200"
+                            ? "bg-red-50 border-red-200"
+                            : "bg-emerald-50 border-emerald-200"
                             }`}
                         >
                           {pricePrediction.predictedNextPrice > pricePrediction.lastPrice ? (
@@ -1076,8 +1083,8 @@ const Forecasting: React.FC = () => {
                           onClick={() => {
                             setViewingId(forecast._id);
                             setShowViewForm(true);
-                            dispatch(fetchPredictedRate(forecast.productId || forecast.rawMaterialId));
                           }}
+
                         >
                           <Eye className="h-4 w-4" />
                         </button>
@@ -1090,8 +1097,8 @@ const Forecasting: React.FC = () => {
                             (setEditingId(forecast._id), setShowUpdateForm(true))
                           }
                           className={`${canEdit
-                              ? "text-green-600"
-                              : "text-gray-400 cursor-not-allowed"
+                            ? "text-green-600"
+                            : "text-gray-400 cursor-not-allowed"
                             }`}
                         >
                           <Edit className="h-4 w-4" />
@@ -1106,8 +1113,8 @@ const Forecasting: React.FC = () => {
                             }
                           }}
                           className={`${canDelete
-                              ? "text-red-600"
-                              : "text-gray-400 cursor-not-allowed"
+                            ? "text-red-600"
+                            : "text-gray-400 cursor-not-allowed"
                             }`}
                         >
                           <Trash2 className="h-4 w-4" />

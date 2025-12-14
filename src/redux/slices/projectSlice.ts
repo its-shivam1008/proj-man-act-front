@@ -9,7 +9,16 @@ export interface Project {
   budget: number;
   actualCost: number;
   userId: string;
+
+  // 🔽 ADD THESE (Lifecycle / Report fields)
+  code?: string;
+  status?: "planning" | "active" | "on-hold" | "completed" | "cancelled";
+
+  projectCreatedAt?: string;
+  projectClosedAt?: string | null;
+  projectDurationInDays?: number | null;
 }
+
 export const updateProjectActualCost = createAsyncThunk(
   "projects/updateActualCost",
   async (
@@ -33,13 +42,13 @@ export const fetchProjects = createAsyncThunk(
   async (args: any, { rejectWithValue }) => {
     const { page, limit, status, search, location } = args;
     try {
-      
+
       const organisationId = localStorage.getItem("organisationId");
 
-      
+
       const res = await api.get(`/get/project`, {
         params: {
-          organisationId, 
+          organisationId,
           page,
           limit,
           status,
@@ -48,7 +57,7 @@ export const fetchProjects = createAsyncThunk(
         },
       });
 
-      return res.data; 
+      return res.data;
     } catch (error: any) {
       return rejectWithValue(
         error?.response?.data?.message || "Failed to fetch projects."
@@ -133,16 +142,16 @@ const projectsSlice = createSlice({
     builder
       // FETCH
       .addCase(fetchProjects.pending, (state) => {
-        state.loading = true; 
+        state.loading = true;
       })
       .addCase(fetchProjects.fulfilled, (state, action) => {
-        // We now receive a pagination object
-        state.projects = action.payload.projects || [];
+        state.loading = false;
+        state.projects = action.payload.projects; // ✅ Project[]
         state.currentPage = action.payload.currentPage;
         state.totalPages = action.payload.totalPages;
         state.totalProjects = action.payload.totalProjects;
-        state.loading = false;
       })
+
       .addCase(fetchProjects.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload as any;

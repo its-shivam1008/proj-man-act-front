@@ -1082,6 +1082,7 @@ const budgetVsActualData = useMemo(() => {
           <TabsTrigger value="resource-utilisation">Resource Utilisation</TabsTrigger>
           {/* <TabsTrigger value="budget-vs-actual">Budget vs Actual Cost</TabsTrigger> */}
           <TabsTrigger value="activity-cost">Activity-wise Cost Sheet</TabsTrigger>
+          <TabsTrigger value="project-create-close">Project Creation and Completion</TabsTrigger>
 
 
         </TabsList>
@@ -1902,7 +1903,154 @@ const budgetVsActualData = useMemo(() => {
             </CardContent>
           </Card>
         </TabsContent>
+        <TabsContent value="project-create-close">
+   <Card className="shadow-lg border border-muted">
+  <CardHeader className="flex flex-row items-center justify-between">
+    <div>
+      <CardTitle className="flex items-center gap-2 text-lg">
+        <Calendar className="h-5 w-5 text-primary" />
+        Project Lifecycle Report
+      </CardTitle>
+      <CardDescription className="mt-1">
+        Creation, completion & duration with exact timestamps
+      </CardDescription>
+    </div>
 
+    <Badge variant="outline" className="text-xs px-3 py-1">
+      {projects.length} Projects
+    </Badge>
+  </CardHeader>
+
+  <CardContent className="overflow-x-auto">
+    <Table>
+      <TableHeader>
+        <TableRow className="bg-muted/50">
+          <TableHead>Project</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Created</TableHead>
+          <TableHead>Completed</TableHead>
+          <TableHead className="text-right">Duration</TableHead>
+        </TableRow>
+      </TableHeader>
+
+      <TableBody>
+        {projects.length === 0 ? (
+          <TableRow>
+            <TableCell
+              colSpan={5}
+              className="text-center py-10 text-muted-foreground"
+            >
+              No project lifecycle data available
+            </TableCell>
+          </TableRow>
+        ) : (
+          projects.map((project) => {
+            const durationDays =
+              project.projectDurationInDays ??
+              (project.projectClosedAt && project.projectCreatedAt
+                ? Math.ceil(
+                    (new Date(project.projectClosedAt).getTime() -
+                      new Date(project.projectCreatedAt).getTime()) /
+                      (1000 * 60 * 60 * 24)
+                  )
+                : null);
+
+            return (
+              <TableRow
+                key={project._id}
+                className="hover:bg-muted/40 transition"
+              >
+                {/* Project */}
+                <TableCell>
+                  <div className="font-semibold">{project.name}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {project.code}
+                  </div>
+                </TableCell>
+
+                {/* Status */}
+                <TableCell>
+                  <Badge
+                    className={
+                      project.status === "completed"
+                        ? "bg-green-100 text-green-800"
+                        : project.status === "active"
+                        ? "bg-blue-100 text-blue-800"
+                        : project.status === "on-hold"
+                        ? "bg-yellow-100 text-yellow-800"
+                        : "bg-gray-100 text-gray-700"
+                    }
+                  >
+                    {project.status.toUpperCase()}
+                  </Badge>
+                </TableCell>
+
+                {/* Created */}
+                <TableCell>
+                  {project.projectCreatedAt ? (
+                    <div>
+                      <div className="font-medium">
+                        {new Date(
+                          project.projectCreatedAt
+                        ).toLocaleDateString()}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {new Date(
+                          project.projectCreatedAt
+                        ).toLocaleTimeString()}
+                      </div>
+                    </div>
+                  ) : (
+                    "—"
+                  )}
+                </TableCell>
+
+                {/* Completed */}
+                <TableCell>
+                  {project.projectClosedAt ? (
+                    <div>
+                      <div className="font-medium text-green-700">
+                        {new Date(
+                          project.projectClosedAt
+                        ).toLocaleDateString()}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {new Date(
+                          project.projectClosedAt
+                        ).toLocaleTimeString()}
+                      </div>
+                    </div>
+                  ) : (
+                    <Badge
+                      variant="outline"
+                      className="text-xs text-muted-foreground"
+                    >
+                      In Progress
+                    </Badge>
+                  )}
+                </TableCell>
+
+                {/* Duration */}
+                <TableCell className="text-right">
+                  {durationDays ? (
+                    <Badge className="bg-purple-100 text-purple-800 px-3 py-1">
+                      ⏱ {durationDays} days
+                    </Badge>
+                  ) : (
+                    "—"
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })
+        )}
+      </TableBody>
+    </Table>
+  </CardContent>
+</Card>
+
+
+        </TabsContent>
         {/* All Projects Profitability Tab */}
         <TabsContent value="all-profitability" className="space-y-6 mt-6">
           <Card>

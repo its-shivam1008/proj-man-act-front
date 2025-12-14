@@ -19,7 +19,7 @@ interface ForecastState {
     selected: Forecast | null;
     loading: boolean;
     error: string | null;
-    pricePrediction: any | null;     // <-- added
+    pricePrediction: any | null;
 }
 
 const initialState: ForecastState = {
@@ -27,34 +27,42 @@ const initialState: ForecastState = {
     selected: null,
     loading: false,
     error: null,
-    pricePrediction: null          // <-- now valid
+    pricePrediction: null
 };
 
 export const fetchPredictedRate = createAsyncThunk(
     "forecast/fetchPredictedRate",
-    async (itemId: string, { rejectWithValue }) => {
+    async (
+        { type, id }: { type: "product" | "rawMaterial"; id: string },
+        { rejectWithValue }
+    ) => {
         try {
             const token = localStorage.getItem("token");
 
-            const res = await axiosApi.get(`/forecast/predict-rate/${itemId}`, {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-            });
+            const res = await axiosApi.get(
+                `/forecast/predict-rate/${type}/${id}`,
+                {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                }
+            );
 
-            // axios returns data directly — NO res.json()
             const data = res.data;
 
             if (!data.success) {
                 return rejectWithValue(data.message || "Prediction failed");
             }
 
-            return data; // { previousPrice, lastPrice, predictedNextPrice }
+            return data;
         } catch (err: any) {
-            return rejectWithValue(err.response?.data?.message || err.message);
+            return rejectWithValue(
+                err.response?.data?.message || err.message
+            );
         }
     }
 );
+
 
 
 export const createForecast = createAsyncThunk(
@@ -176,15 +184,26 @@ const forecastSlice = createSlice({
             })
             .addCase(fetchPredictedRate.pending, (state) => {
                 state.loading = true;
+                state.pricePrediction = null;
             })
             .addCase(fetchPredictedRate.fulfilled, (state, action) => {
+                console.log("🟣 Reducer fulfilled payload:", action.payload);
+
                 state.loading = false;
-                state.pricePrediction = action.payload;
+                state.pricePrediction = {
+                    previousPrice: action.payload.previousPrice,
+                    lastPrice: action.payload.lastPrice,
+                    predictedNextPrice: action.payload.predictedNextPrice,
+                };
             })
+
             .addCase(fetchPredictedRate.rejected, (state, action) => {
                 state.loading = false;
+                state.pricePrediction = null;
                 state.error = action.payload as string;
             });
+
+
 
     },
 });
