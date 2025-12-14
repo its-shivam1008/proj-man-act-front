@@ -330,18 +330,123 @@ export default function NotificationHeader() {
                             (notification.remark || "No additional remarks provided.")}
                         </p>
                         
-                        {/* [!code focus:11] Render Metadata if available */}
-                        {isMaterialRequest && notification.metadata && (
+                        {/* Enhanced Material Information for RFQ/Procurement notifications */}
+                        {notification.materialData && notification.destination === "rfq.purchase" && (
+                          <div className="mt-2 p-3 bg-orange-50 rounded-lg border border-orange-200">
+                            <div className="text-xs text-orange-900 space-y-2">
+                              <div className="flex justify-between items-center">
+                                <span className="font-semibold text-orange-800">📦 Quantity Required: {notification.materialData.quantity} {notification.materialData.unit}</span>
+                                {notification.materialData.procurementContext?.urgency === 'High' && (
+                                  <Badge variant="destructive" className="text-[10px] h-4 px-1">
+                                    Urgent
+                                  </Badge>
+                                )}
+                              </div>
+                              {notification.materialData.sourceTask && notification.materialData.sourceTask !== 'N/A' && (
+                                <div><strong>Source Task:</strong> {notification.materialData.sourceTask}</div>
+                              )}
+                              {notification.materialData.projectName && notification.materialData.projectName !== 'N/A' && (
+                                <div><strong>Project:</strong> {notification.materialData.projectName}</div>
+                              )}
+                              {notification.materialData.requiredDate && (
+                                <div><strong>Required By:</strong> {new Date(notification.materialData.requiredDate).toLocaleDateString()}</div>
+                              )}
+                              {notification.materialData.financialInfo?.estimatedCost && notification.materialData.financialInfo.estimatedCost > 0 && (
+                                <div><strong>Estimated Cost:</strong> ₹{notification.materialData.financialInfo.estimatedCost.toLocaleString()}</div>
+                              )}
+                              {notification.materialData.materialSpecs && (
+                                <div className="mt-2 pt-2 border-t border-orange-200">
+                                  <div className="grid grid-cols-2 gap-2 text-[11px]">
+                                    {notification.materialData.materialSpecs.itemCode && notification.materialData.materialSpecs.itemCode !== 'N/A' && (
+                                      <div><strong>Item Code:</strong> {notification.materialData.materialSpecs.itemCode}</div>
+                                    )}
+                                    {notification.materialData.materialSpecs.hsn && notification.materialData.materialSpecs.hsn !== 'N/A' && (
+                                      <div><strong>HSN:</strong> {notification.materialData.materialSpecs.hsn}</div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Material Information for Delivery notifications */}
+                        {notification.materialData && notification.destination === "delivery.inventory" && (
+                          <div className="mt-2 p-3 bg-green-50 rounded-lg border border-green-200">
+                            <div className="text-xs text-green-900 space-y-2">
+                              <div className="font-semibold text-green-800">🚚 Quantity to Deliver: {notification.materialData.quantity} {notification.materialData.unit}</div>
+                              {notification.materialData.sourceTask && notification.materialData.sourceTask !== 'N/A' && (
+                                <div><strong>Destination Task:</strong> {notification.materialData.sourceTask}</div>
+                              )}
+                              {notification.materialData.projectName && notification.materialData.projectName !== 'N/A' && (
+                                <div><strong>Project:</strong> {notification.materialData.projectName}</div>
+                              )}
+                              {notification.materialData.requiredDate && (
+                                <div><strong>Required By:</strong> {new Date(notification.materialData.requiredDate).toLocaleDateString()}</div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* RFQ Sent Information */}
+                        {notification.materialData && notification.source === "purchase.rfq" && notification.materialData.materials && (
+                          <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                            <div className="text-xs text-blue-900 space-y-2">
+                              <div className="flex justify-between items-center">
+                                <span className="font-semibold text-blue-800">📋 RFQ Details</span>
+                                <Badge variant="outline" className="text-[10px] h-4 px-1 text-blue-700 border-blue-300">
+                                  {notification.materialData.vendorsSent}/{notification.materialData.totalVendors} Vendors
+                                </Badge>
+                              </div>
+                              <div><strong>Items:</strong> {notification.materialData.totalItems}</div>
+                              <div><strong>Total Value:</strong> ₹{notification.materialData.totalEstimatedValue?.toLocaleString()}</div>
+                              {notification.materialData.deliveryDate && (
+                                <div><strong>Required Delivery:</strong> {new Date(notification.materialData.deliveryDate).toLocaleDateString()}</div>
+                              )}
+                              {notification.materialData.materials && notification.materialData.materials.length > 0 && (
+                                <div className="mt-2 pt-2 border-t border-blue-200">
+                                  <strong>Materials:</strong>
+                                  <div className="mt-1 space-y-1">
+                                    {notification.materialData.materials.slice(0, 2).map((material: any, index: number) => (
+                                      <div key={index} className="flex justify-between text-[11px]">
+                                        <span>{material.name}</span>
+                                        <span className="font-medium">{material.quantity} {material.unit}</span>
+                                      </div>
+                                    ))}
+                                    {notification.materialData.materials.length > 2 && (
+                                      <div className="text-gray-600 text-[11px]">...and {notification.materialData.materials.length - 2} more items</div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Legacy Material Request Metadata */}
+                        {isMaterialRequest && notification.metadata && !notification.materialData && (
                            <div className="mt-2 p-2 bg-indigo-50 rounded-lg border border-indigo-100">
                              <div className="text-xs text-indigo-900 space-y-1">
                                <div className="flex justify-between">
-                                 {/* <span><strong>Project:</strong> {notification.metadata.projectName}</span> */}
                                  <span><strong>WBS:</strong> {notification.metadata.wbsName}</span>
-                                 <span>remark: {notification.metadata?.remarks}</span>
+                                 <span><strong>Quantity:</strong> {notification.metadata.requestedQty} {notification.metadata.requestedUnit || 'units'}</span>
                                </div>
                                <div><strong>Requester:</strong> {notification.metadata.requestedBy}</div>
+                               {notification.metadata.remarks && (
+                                 <div><strong>Remarks:</strong> {notification.metadata.remarks}</div>
+                               )}
                              </div>
                            </div>
+                        )}
+
+                        {/* Stock Alert for low stock materials */}
+                        {notification.materialData?.stockInfo?.isLowStock && (
+                          <div className="mt-2 p-2 bg-red-50 rounded-lg border border-red-200">
+                            <div className="text-xs text-red-800 flex items-center gap-2">
+                              <AlertCircle className="h-3 w-3" />
+                              <span><strong>Low Stock Alert:</strong> Only {notification.materialData.stockInfo.currentStock} units available</span>
+                            </div>
+                          </div>
                         )}
                         {/* Invite Actions */}
                         {isPendingInvite && (

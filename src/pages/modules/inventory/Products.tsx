@@ -36,6 +36,9 @@ import {
   Store,
   ShieldAlert,
   Truck,
+  ChevronDown,
+  ChevronUp,
+  History,
 } from "lucide-react";
 import { BASE_URL } from "@/utils/constants";
 
@@ -95,6 +98,13 @@ const Products: React.FC = () => {
     return product.stocks.reduce((sum: number, s: any) => sum + (s.quantity || 0), 0);
   };
 
+  const getWarehouseName = (warehouseId: string | { name: string } | undefined) => {
+    if (!warehouseId) return "N/A";
+    if (typeof warehouseId === 'object') return warehouseId.name || "N/A";
+    const found = warehouses.find((w: any) => w._id === warehouseId);
+    return found ? found.name : "N/A";
+  };
+
   const getAvgUnitCost = (product: any) => {
     if (!Array.isArray(product.stocks) || product.stocks.length === 0) return 0;
     const total = product.stocks.reduce((sum: number, s: any) => sum + (s.unitCost || 0), 0);
@@ -130,6 +140,150 @@ const Products: React.FC = () => {
   const [rejectingNotification, setRejectingNotification] = useState<any>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [rejectRemark, setRejectRemark] = useState('');
+
+  // Purchase History State
+  const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
+  const [purchaseHistory, setPurchaseHistory] = useState<{[key: string]: any[]}>({});
+  const [loadingHistory, setLoadingHistory] = useState<{[key: string]: boolean}>({});
+
+  // Fetch purchase history for a product
+  const fetchPurchaseHistory = async (productId: string, forceRefresh = false) => {
+    setLoadingHistory(prev => ({ ...prev, [productId]: true }));
+    
+    try {
+      console.log(`🔍 Fetching FIFO stock summary for product: ${productId}`);
+      const organisationId = localStorage.getItem('organisationId');
+      
+      // First try to get FIFO stock summary which includes actual consumption data
+      const fifoResponse = await fetch(`${BASE_URL}/fifo/stock-summary/${productId}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (fifoResponse.ok) {
+        const fifoData = await fifoResponse.json();
+        
+        if (fifoData.success && fifoData.data.batches) {
+          const batches = fifoData.data.batches;
+          console.log(`📦 Found ${batches.length} FIFO batches for product ${productId}`, batches);
+          
+          // Convert FIFO batches to purchase history format with actual progress data
+          const purchaseHistoryWithProgress = batches.map((batch: any) => ({
+            _id: batch.batchId,
+            movementDate: batch.purchaseDate,
+            quantity: batch.originalQuantity || batch.quantity, // Original purchased quantity
+            remainingQuantity: batch.quantity, // Current remaining quantity
+            originalQuantity: batch.originalQuantity || batch.quantity, // Store original for progress calculation
+            consumedQuantity: batch.consumedQuantity || 0, // How much has been consumed
+            progressPercentage: batch.progressPercentage || 0, // Use FIFO service calculation
+            unitCost: batch.unitCost,
+            totalCost: (batch.originalQuantity || batch.quantity) * batch.unitCost,
+            source: 'Purchase Order',
+            referenceNumber: batch.batchId,
+            remarks: `FIFO Batch - ${batch.warehouseName || 'Warehouse'}`,
+            unit: batch.unit || 'units'
+          }));
+          
+          // Sort by purchase date (oldest first for FIFO order)
+          const sortedHistory = purchaseHistoryWithProgress.sort((a: any, b: any) => 
+            new Date(a.movementDate).getTime() - new Date(b.movementDate).getTime()
+          );
+          
+          setPurchaseHistory(prev => ({
+            ...prev,
+            [productId]: sortedHistory
+          }));
+          
+          if (forceRefresh) {
+            toast.success(`FIFO stock summary refreshed! Found ${sortedHistory.length} batches.`);
+          }
+        } else {
+          // Fallback to product movements if no FIFO data
+          await fetchMovementHistory(productId, forceRefresh);
+        }
+      } else {
+        // Fallback to product movements if FIFO API fails
+        await fetchMovementHistory(productId, forceRefresh);
+      }
+    } catch (error) {
+      console.error('Error fetching FIFO stock summary:', error);
+      // Fallback to product movements
+      await fetchMovementHistory(productId, forceRefresh);
+    } finally {
+      setLoadingHistory(prev => ({ ...prev, [productId]: false }));
+    }
+  };
+
+  // Fallback function to fetch from product movements
+  const fetchMovementHistory = async (productId: string, forceRefresh = false) => {
+    try {
+      console.log(`📦 Fallback: Fetching product movements for ${productId}`);
+      const organisationId = localStorage.getItem('organisationId');
+      
+      const response = await fetch(`${BASE_URL}/material-movements?organisationId=${organisationId}&materialId=${productId}&movementType=inbound&source=Purchase Order`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const movements = data.data || [];
+        
+        console.log(`📦 Found ${movements.length} purchase movements for product ${productId}`);
+        
+        // Add default progress data for movements (no FIFO data available)
+        const movementsWithProgress = movements.map((movement: any) => ({
+          ...movement,
+          remainingQuantity: movement.quantity, // Assume fully available if no FIFO data
+          originalQuantity: movement.quantity,
+          consumedQuantity: 0,
+          progressPercentage: 0 // No consumption data available
+        }));
+        
+        // Sort by date (oldest first for FIFO order)
+        const sortedMovements = movementsWithProgress.sort((a: any, b: any) => 
+          new Date(a.movementDate).getTime() - new Date(b.movementDate).getTime()
+        );
+        
+        setPurchaseHistory(prev => ({
+          ...prev,
+          [productId]: sortedMovements
+        }));
+        
+        if (forceRefresh) {
+          toast.success(`Purchase history refreshed! Found ${sortedMovements.length} purchases.`);
+        }
+      } else {
+        console.error('Failed to fetch product movements');
+        setPurchaseHistory(prev => ({
+          ...prev,
+          [productId]: []
+        }));
+      }
+    } catch (error) {
+      console.error('Error fetching product movements:', error);
+      setPurchaseHistory(prev => ({
+        ...prev,
+        [productId]: []
+      }));
+    }
+  };
+
+  // Toggle purchase history dropdown
+  const togglePurchaseHistory = (productId: string) => {
+    if (expandedProduct === productId) {
+      setExpandedProduct(null);
+    } else {
+      setExpandedProduct(productId);
+      if (!purchaseHistory[productId]) {
+        fetchPurchaseHistory(productId);
+      }
+    }
+  };
 
   const orgId = localStorage.getItem("organisationId");
 
@@ -177,10 +331,15 @@ const Products: React.FC = () => {
   // Handle accept/reject
   const handleProductResponse = async (notificationId: string, response: 'accepted' | 'rejected', notification?: any) => {
     try {
-      // If rejected, open dialog to get reason
       if (response === 'rejected') {
         setRejectingNotification(notification);
         setShowRejectDialog(true);
+        return;
+      }
+
+      // Validate warehouse before accepting
+      if (response === 'accepted' && notification?.materialData && !notification.materialData.warehouse && !notification.materialData.warehouseLocation) {
+        toast.error('Cannot accept: Warehouse information is missing from purchase order. Please ensure warehouse was selected when creating the purchase order.');
         return;
       }
 
@@ -314,7 +473,7 @@ const Products: React.FC = () => {
     }
   }, [dispatch, orgId, page]);
 
-
+  // Fetch purchase history
   const getStatusColor = (status: string) => {
     switch (status) {
       case "in-stock":
@@ -827,7 +986,7 @@ const Products: React.FC = () => {
   };
 
 
-  const WarehouseViewModal = ({ warehouse }) => (
+  const WarehouseViewModal = ({ warehouse }: { warehouse: any }) => (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 space-y-4">
         <div className="flex justify-between items-center border-b pb-3">
@@ -865,7 +1024,7 @@ const Products: React.FC = () => {
       </div>
     </div>
   );
-  const WarehouseListModal = ({ list }) => (
+  const WarehouseListModal = ({ list }: { list: any[] }) => (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 space-y-4">
         <div className="flex justify-between items-center border-b pb-3">
@@ -901,7 +1060,7 @@ const Products: React.FC = () => {
       </div>
     </div>
   );
-  const WarehouseDetailsModal = ({ warehouse }) => (
+  const WarehouseDetailsModal = ({ warehouse }: { warehouse: any }) => (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 space-y-4">
         <div className="flex justify-between items-center border-b pb-3">
@@ -938,7 +1097,7 @@ const Products: React.FC = () => {
     </div>
   );
 
-  const StockTransferModal = ({ product, onClose }) => {
+  const StockTransferModal = ({ product, onClose }: { product: any; onClose: () => void }) => {
     const dispatch = useDispatch();
     const { warehouses } = useSelector((s: RootState) => s.warehouse);
 
@@ -954,7 +1113,7 @@ const Products: React.FC = () => {
       notes: ""
     });
 
-    const handleChange = (field) => (e) => {
+    const handleChange = (field: string) => (e: any) => {
       setForm({ ...form, [field]: e.target.value });
     };
 
@@ -1291,8 +1450,11 @@ const Products: React.FC = () => {
                     {notification.materialData?.sku && (
                       <span>SKU: <strong>{notification.materialData.sku}</strong></span>
                     )}
-                    {notification.materialData?.warehouseLocation && (
-                      <span>Warehouse: <strong>{notification.materialData.warehouseLocation}</strong></span>
+                    {(notification.materialData?.warehouse || notification.materialData?.warehouseLocation) && (
+                      <span className="text-green-600">Warehouse: <strong>{getWarehouseName(notification.materialData.warehouse || notification.materialData.warehouseLocation)}</strong></span>
+                    )}
+                    {!(notification.materialData?.warehouse || notification.materialData?.warehouseLocation) && (
+                      <span className="text-red-600">⚠️ <strong>No Warehouse Selected</strong></span>
                     )}
                     {notification.materialData?.barcode && (
                       <span>Barcode: <strong>{notification.materialData.barcode}</strong></span>
@@ -1419,22 +1581,34 @@ const Products: React.FC = () => {
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {filteredProducts.map((item) => (
-              <tr key={item._id} className="hover:bg-gray-50 transition-colors">
-                <td className="px-6 py-4">
-                  <div className="flex items-center">
-                    {getStatusIcon(item.status)}
-                    <div className="ml-4">
-                      <div className="text-sm font-semibold text-gray-900">
-                        {item.name}
-                      </div>
-                      {item.description && (
-                        <div className="text-xs text-gray-500 truncate max-w-md">
-                          {item.description}
+              <React.Fragment key={item._id}>
+                <tr className="hover:bg-gray-50 transition-colors">
+                  <td className="px-6 py-4">
+                    <div className="flex items-center">
+                      <button
+                        onClick={() => togglePurchaseHistory(item._id!)}
+                        className="text-blue-600 hover:text-blue-800 mr-2"
+                        title="View Purchase History"
+                      >
+                        {expandedProduct === item._id ? (
+                          <ChevronUp className="h-4 w-4" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4" />
+                        )}
+                      </button>
+                      {getStatusIcon(item.status)}
+                      <div className="ml-4">
+                        <div className="text-sm font-semibold text-gray-900">
+                          {item.name}
                         </div>
-                      )}
+                        {item.description && (
+                          <div className="text-xs text-gray-500 truncate max-w-md">
+                            {item.description}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </td>
+                  </td>
                 <td className="px-6 py-4 text-sm text-gray-900 font-medium">
                   {item.sku}
                 </td>
@@ -1518,7 +1692,7 @@ const Products: React.FC = () => {
 
 
                     <button
-                      disabled={!canCreate}
+                      disabled={!canDelete}
                       className="text-red-600 hover:text-red-800"
                       onClick={() => handleDelete(item._id!)}
                     >
@@ -1526,8 +1700,164 @@ const Products: React.FC = () => {
                     </button>
                   </div>
                 </td>
-
               </tr>
+              
+              {/* Purchase History Dropdown */}
+              {expandedProduct === item._id && (
+                <tr>
+                  <td colSpan={9} className="bg-gray-50 p-0">
+                    <div className="p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <History className="h-4 w-4 text-blue-600" />
+                          <h4 className="font-semibold text-gray-900">Purchase History for {item.name}</h4>
+                        </div>
+                      </div>
+                      
+                      {purchaseHistory[item._id!] ? (
+                        purchaseHistory[item._id!].length > 0 ? (
+                          <div className="bg-white rounded-lg border">
+                            <div className="overflow-x-auto">
+                              <table className="min-w-full">
+                                <thead>
+                                  <tr className="bg-gray-100">
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Date</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Quantity</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Unit Cost</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Total Cost</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">FIFO Consumption</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Source</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Reference</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Remarks</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {purchaseHistory[item._id!].map((purchase: any, index: number) => {
+                                    const progress = (((purchase.originalQuantity || purchase.quantity) - (purchase.remainingQuantity || 0)) / (purchase.originalQuantity || purchase.quantity || 0)) * 100;
+                                    return (
+                                      <tr key={purchase._id || index} className="text-sm border-b">
+                                        <td className="px-4 py-2 text-xs">
+                                          {purchase.movementDate ? 
+                                            new Date(purchase.movementDate).toLocaleDateString('en-IN', {
+                                              day: '2-digit',
+                                              month: 'short',
+                                              year: 'numeric'
+                                            }) : 'N/A'
+                                          }
+                                        </td>
+                                        <td className="px-4 py-2 text-xs font-medium">
+                                          {purchase.quantity} {purchase.unit}
+                                        </td>
+                                        <td className="px-4 py-2 text-xs">
+                                          ₹{purchase.unitCost || 0}
+                                        </td>
+                                        <td className="px-4 py-2 text-xs font-medium">
+                                          ₹{purchase.totalCost || 0}
+                                        </td>
+                                        <td className="px-4 py-2 text-xs">
+                                          <div className="space-y-1">
+                                            <div className="flex justify-between text-xs">
+                                              <span>Used: {(purchase.originalQuantity || purchase.quantity) - (purchase.remainingQuantity || 0)}</span>
+                                              <span>Left: {purchase.remainingQuantity || 0}</span>
+                                            </div>
+                                            <div className="w-full bg-gray-200 rounded-full h-2">
+                                              <div 
+                                                className={`h-2 rounded-full ${
+                                                  progress >= 100 ? 'bg-red-500' : 
+                                                  progress >= 75 ? 'bg-orange-500' : 
+                                                  progress >= 25 ? 'bg-yellow-500' : 'bg-green-500'
+                                                }`}
+                                                style={{ 
+                                                  width: `${Math.min(progress || 0, 100)}%` 
+                                                }}
+                                              ></div>
+                                            </div>
+                                            <div className="text-xs text-gray-500">
+                                              {(progress || 0).toFixed(1)}% consumed
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td className="px-4 py-2 text-xs">
+                                          {purchase.source || 'Purchase Order'}
+                                        </td>
+                                        <td className="px-4 py-2 text-xs">
+                                          {purchase.referenceNumber || 'N/A'}
+                                        </td>
+                                        <td className="px-4 py-2 text-xs">
+                                          {purchase.remarks || 'Product purchase'}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                            
+                            {/* Summary */}
+                            <div className="p-3 bg-blue-50 border-t">
+                              <div className="grid grid-cols-2 gap-6 text-sm">
+                                <div className="space-y-2">
+                                  <div>
+                                    <span className="text-gray-600">Total Purchases:</span>
+                                    <span className="ml-2 font-semibold">{purchaseHistory[item._id!].length}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-600">Total Purchased:</span>
+                                    <span className="ml-2 font-semibold">
+                                      {purchaseHistory[item._id!].reduce((sum: number, p: any) => sum + (p.originalQuantity || p.quantity || 0), 0)} units
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-600">Total Value:</span>
+                                    <span className="ml-2 font-semibold">
+                                      ₹{purchaseHistory[item._id!].reduce((sum: number, p: any) => sum + (p.totalCost || 0), 0)}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="space-y-2">
+                                  <div>
+                                    <span className="text-gray-600">Total Consumed:</span>
+                                    <span className="ml-2 font-semibold text-red-600">
+                                      {purchaseHistory[item._id!].reduce((sum: number, p: any) => sum + ((p.originalQuantity || p.quantity || 0) - (p.remainingQuantity || 0)), 0)} units
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-600">Remaining Stock:</span>
+                                    <span className="ml-2 font-semibold text-green-600">
+                                      {purchaseHistory[item._id!].reduce((sum: number, p: any) => sum + (p.remainingQuantity || 0), 0)} units
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-600">Consumption Rate:</span>
+                                    <span className="ml-2 font-semibold text-blue-600">
+                                      {(() => {
+                                        const totalPurchased = purchaseHistory[item._id!].reduce((sum: number, p: any) => sum + (p.originalQuantity || p.quantity || 0), 0);
+                                        const totalConsumed = purchaseHistory[item._id!].reduce((sum: number, p: any) => sum + ((p.originalQuantity || p.quantity || 0) - (p.remainingQuantity || 0)), 0);
+                                        return totalPurchased > 0 ? ((totalConsumed / totalPurchased) * 100).toFixed(1) : '0.0';
+                                      })()}%
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-center py-4 text-gray-500">
+                            <Package className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                            <p>No purchase history found for this product</p>
+                          </div>
+                        )
+                      ) : (
+                        <div className="text-center py-4">
+                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
+                          <p className="text-gray-500 mt-2">Loading purchase history...</p>
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </React.Fragment>
             ))}
 
 

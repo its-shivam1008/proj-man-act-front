@@ -8,9 +8,15 @@ export const fetchMRS = createAsyncThunk<MRSItem[]>(
   "mrs/fetchMRS",
   async (_, { rejectWithValue }) => {
     try {
+      console.log("📋 Fetching MRS items...");
       const res = await api.get(`/get/mrs`);
-      return res.data as MRSItem[];
+      console.log("✅ Fetched MRS items:", res.data.length, "items");
+      // Filter out deleted items on frontend as well (double safety)
+      const filteredData = res.data.filter((item: any) => !item.isDeleted);
+      console.log("✅ Filtered MRS items (non-deleted):", filteredData.length, "items");
+      return filteredData as MRSItem[];
     } catch (err: any) {
+      console.error("❌ Fetch MRS error:", err);
       return rejectWithValue(err.response?.data || err.message);
     }
   }
@@ -63,9 +69,18 @@ export const deleteMRS = createAsyncThunk<string, string>(
   "mrs/deleteMRS",
   async (id, { rejectWithValue }) => {
     try {
-      await api.delete(`/delete/mrs/${id}`);
+      console.log("🗑️ Redux: Deleting MRS item with ID:", id);
+      console.log("🌐 Redux: Making DELETE request to:", `/delete/mrs/${id}`);
+      
+      const response = await api.delete(`/delete/mrs/${id}`);
+      console.log("✅ Redux: Delete MRS response:", response.data);
+      console.log("✅ Redux: Response status:", response.status);
+      
       return id;
     } catch (err: any) {
+      console.error("❌ Redux: Delete MRS error:", err);
+      console.error("❌ Redux: Error response:", err.response?.data);
+      console.error("❌ Redux: Error status:", err.response?.status);
       return rejectWithValue(err.response?.data || err.message);
     }
   }
@@ -216,6 +231,8 @@ const mrsSlice = createSlice({
         if (idx !== -1) state.list[idx] = updated;
       })
       .addCase(deleteMRS.fulfilled, (state, action: PayloadAction<string>) => {
+        // Since backend sets isDeleted: true and getAllMRS filters them out,
+        // we should remove from frontend list to match backend behavior
         state.list = state.list.filter((i) => i._id !== action.payload);
       })
       // 🚀 NEW: Delivery Status Actions

@@ -31,6 +31,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { fetchProducts } from "@/redux/slices/productSlice";
+import { setPage } from "@/redux/slices/masterDataSlice";
+import { setLimit } from "@/redux/slices/equipmentSlice";
 
 const PurchaseOrderComponent: React.FC = () => {
   const [showUpdatePo, setShowUpdatePo] = useState(false);
@@ -129,7 +131,7 @@ const PurchaseOrderComponent: React.FC = () => {
           taxes: 0,
           subtotal: 0,
           organisationId: localStorage.getItem("organisationId") || "",
-          warehouse: ""
+          warehouse: "" // Will be updated when warehouse is selected
         },
       ] as PurchaseOrderProductLine[],
       responsibleUser: "",
@@ -162,10 +164,37 @@ const PurchaseOrderComponent: React.FC = () => {
     const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
       setSubmitting(true);
+      
+      // Validation for raw materials
+      if (itemType === "rawMaterial") {
+        if (!formData.warehouse) {
+          toast.error("Please select a warehouse for raw materials");
+          setSubmitting(false);
+          return;
+        }
+        
+        // Check if any product line is missing warehouse
+        const linesWithoutWarehouse = formData.productLines.filter(line => !line.warehouse);
+        if (linesWithoutWarehouse.length > 0) {
+          toast.error("All material lines must have warehouse assigned");
+          setSubmitting(false);
+          return;
+        }
+      }
+      
       try {
+        // Ensure warehouse is assigned to all product lines for raw materials
+        const updatedFormData = { ...formData };
+        if (itemType === "rawMaterial" && formData.warehouse) {
+          updatedFormData.productLines = formData.productLines.map(line => ({
+            ...line,
+            warehouse: formData.warehouse // Ensure each line has the warehouse
+          }));
+        }
+
         await dispatch(
           createPurchaseOrder({
-            ...formData,
+            ...updatedFormData,
             warehouse: itemType === "rawMaterial" ? formData.warehouse : undefined,
             status: "draft",
             organisationId: localStorage.getItem("organisationId"),
@@ -200,6 +229,19 @@ const PurchaseOrderComponent: React.FC = () => {
       dispatch(fetchMaterials(orgId2))
       dispatch(fetchProducts(orgId2))
     }, [orgId2])
+
+    // Ensure all product lines have warehouse assigned when warehouse changes
+    useEffect(() => {
+      if (itemType === "rawMaterial" && formData.warehouse) {
+        setFormData(prev => ({
+          ...prev,
+          productLines: prev.productLines.map(line => ({
+            ...line,
+            warehouse: formData.warehouse
+          }))
+        }));
+      }
+    }, [formData.warehouse, itemType]);
     if (!canCreate) {
       return (
         <p className="text-center text-red-600 py-6">
@@ -254,7 +296,7 @@ const PurchaseOrderComponent: React.FC = () => {
                           taxes: 0,
                           subtotal: 0,
                           organisationId: localStorage.getItem("organisationId") || "",
-                          warehouse: ""
+                          warehouse: newType === "rawMaterial" ? formData.warehouse : "" // Assign warehouse for raw materials
                         }]
                       });
                     }}
@@ -494,7 +536,18 @@ const PurchaseOrderComponent: React.FC = () => {
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Warehouse *</label>
                                 <select
                                   value={formData.warehouse}
-                                  onChange={(e) => setFormData({ ...formData, warehouse: e.target.value })}
+                                  onChange={(e) => {
+                                    const warehouseId = e.target.value;
+                                    setFormData({ 
+                                      ...formData, 
+                                      warehouse: warehouseId,
+                                      // Also update all product lines with the selected warehouse
+                                      productLines: formData.productLines.map(line => ({
+                                        ...line,
+                                        warehouse: warehouseId
+                                      }))
+                                    });
+                                  }}
                                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                   required
                                 >
@@ -503,6 +556,11 @@ const PurchaseOrderComponent: React.FC = () => {
                                     <option key={warehouse._id} value={warehouse._id}>{warehouse.name}</option>
                                   ))}
                                 </select>
+                                {formData.warehouse && (
+                                  <div className="mt-1 text-xs text-green-600">
+                                    ✅ Warehouse selected: {warehouses.find(w => w._id === formData.warehouse)?.name}
+                                  </div>
+                                )}
                               </div>
                             )}
                             <div>
@@ -888,7 +946,7 @@ const PurchaseOrderComponent: React.FC = () => {
                             taxes: 0,
                             subtotal: 0,
                             organisationId: localStorage.getItem("organisationId") || "",
-                            warehouse: ""
+                            warehouse: itemType === "rawMaterial" ? formData.warehouse : "" // Auto-assign warehouse for raw materials
                           },
                         ],
                       })

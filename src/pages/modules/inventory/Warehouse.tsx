@@ -956,13 +956,16 @@ const WarehouseForm: React.FC<{
             .map((s: string) => s.trim())
             .filter(Boolean) || [],
 
-          locations: (p.locations || []).map((loc: any) => ({
-            rackId: String(loc.rackId),
-            rackName: loc.rackName || "",
-            shelfId: String(loc.shelfId),
-            shelfName: loc.shelfName || "",
-            quantity: Number(loc.quantity || 0),
-          })),
+          locations: (p.locations || [])
+            .filter((loc: any) => loc.rackId && loc.rackId.trim() !== '')
+            .map((loc: any) => ({
+              rackId: loc.rackId && loc.rackId.trim() !== '' ? loc.rackId : undefined,
+              rackName: loc.rackName || '',
+              shelfId: loc.shelfId && loc.shelfId.trim() !== '' ? loc.shelfId : undefined,
+              shelfName: loc.shelfName || '',
+              quantity: Number(loc.quantity || 0),
+            }))
+            .filter((loc: any) => loc.rackId), // Remove locations without valid rackId
 
         })),
       rawMaterials: (formData.materials || [])
@@ -984,14 +987,15 @@ const WarehouseForm: React.FC<{
           reorderAlerts: (m.reorderAlerts || "").split(",").map((s: string) => s.trim()).filter(Boolean),
           bins: (m.bins || "").split(",").map((s: string) => s.trim()).filter(Boolean),
           locations: (m.locations || [])
-            .filter((loc: any) => loc.rackId)
+            .filter((loc: any) => loc.rackId && loc.rackId.trim() !== '')
             .map((loc: any) => ({
-              rackId: String(loc.rackId),
-              rackName: loc.rackName,
-              shelfId: String(loc.shelfId),
-              shelfName: loc.shelfName,
+              rackId: loc.rackId && loc.rackId.trim() !== '' ? loc.rackId : undefined,
+              rackName: loc.rackName || '',
+              shelfId: loc.shelfId && loc.shelfId.trim() !== '' ? loc.shelfId : undefined,
+              shelfName: loc.shelfName || '',
               quantity: Number(loc.quantity || 0),
-            })),
+            }))
+            .filter((loc: any) => loc.rackId), // Remove locations without valid rackId
         })),
     };
 

@@ -88,6 +88,23 @@ export const respondToInvite = createAsyncThunk(
   }
 );
 
+export const respondToMaterialPurchase = createAsyncThunk(
+  "notifications/respondToMaterialPurchase",
+  async ({ notificationId, response }: { notificationId: string, response: "accepted" | "rejected" }, { rejectWithValue }) => {
+    try {
+      console.log("🚀 Sending material purchase response:", { notificationId, response });
+      const apiResponse = await api.post("/purchase/orders/material-response", { notificationId, response });
+      console.log("✅ Material purchase response success:", apiResponse.data);
+      return { ...apiResponse.data, notificationId, response };
+    } catch (error: any) {
+      console.error("❌ Material purchase response error:", error);
+      console.error("❌ Error response:", error.response?.data);
+      console.error("❌ Error status:", error.response?.status);
+      return rejectWithValue(error.response?.data?.message || "Failed to respond to material purchase");
+    }
+  }
+);
+
 export const markAsRead = createAsyncThunk(
   "notifications/markAsRead",
   async (notificationId: string, { rejectWithValue }) => {
@@ -154,6 +171,14 @@ const notificationSlice = createSlice({
       if (index !== -1) {
         state.list[index].inviteResponse = action.payload.response;
         state.list[index].status = 'read'; // Usually responding marks it as read
+      }
+    });
+    builder.addCase(respondToMaterialPurchase.fulfilled, (state, action) => {
+      // Update the specific material purchase notification in the list
+      const index = state.list.findIndex(n => n._id === action.payload.notificationId);
+      if (index !== -1) {
+        state.list[index].inviteResponse = action.payload.response;
+        state.list[index].status = 'read'; // Mark as read after responding
       }
     });
     builder.addCase(markAsRead.fulfilled, (state, action) => {

@@ -1,4 +1,6 @@
 import ActivityCostSheet from "@/components/reports/ActivityCostSheet";
+import MRSSheetCreation from "@/pages/modules/inventory/reporting/MRSSheetCreation";
+import MRSPurchaseOrder from "@/pages/modules/inventory/reporting/MRSPurchaseOrder";
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
@@ -1074,7 +1076,8 @@ const budgetVsActualData = useMemo(() => {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="flex justify-between items-center w-full max-w-2xl gap-5">
+        <div className="w-full overflow-x-auto">
+        <TabsList className="flex items-center w-full gap-1 overflow-x-auto scrollbar-hide px-2" style={{ minWidth: 'fit-content', whiteSpace: 'nowrap' }}>
           <TabsTrigger value="analytics">Analytics Reports</TabsTrigger>
           <TabsTrigger value="comparison">Project Comparison</TabsTrigger>
           <TabsTrigger value="all-health">All Projects Health</TabsTrigger>
@@ -1083,9 +1086,10 @@ const budgetVsActualData = useMemo(() => {
           {/* <TabsTrigger value="budget-vs-actual">Budget vs Actual Cost</TabsTrigger> */}
           <TabsTrigger value="activity-cost">Activity-wise Cost Sheet</TabsTrigger>
           <TabsTrigger value="project-create-close">Project Creation and Completion</TabsTrigger>
-
-
+          <TabsTrigger value="mrs-sheet-creation">MRS Sheet Creation</TabsTrigger>
+          <TabsTrigger value="mrs-purchase-order">MRS Purchase Order</TabsTrigger>
         </TabsList>
+        </div>
 
         {/* Analytics Tab */}
         <TabsContent value="analytics" className="space-y-6 mt-6">
@@ -2536,10 +2540,15 @@ const budgetVsActualData = useMemo(() => {
   <ActivityCostSheet selectedProjectId={selectedProjectId} />
 </TabsContent>
 
+{/* MRS Sheet Creation Tab */}
+<TabsContent value="mrs-sheet-creation" className="space-y-6 mt-6">
+  <MRSSheetCreation />
+</TabsContent>
 
-
-
-
+{/* MRS Purchase Order Tab */}
+<TabsContent value="mrs-purchase-order" className="space-y-6 mt-6">
+  <MRSPurchaseOrder />
+</TabsContent>
 
       </Tabs>
 

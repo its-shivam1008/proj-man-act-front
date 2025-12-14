@@ -39,7 +39,7 @@ import { createNotification } from "@/redux/slices/notificationSlice";
 // import { Textarea } from "../../../components/ui/textarea";
 import {toast} from 'sonner';
 // Icons
-import { Plus, Edit2, Trash2, Truck, ShoppingCart, Check, ChevronsUpDown, ShoppingCartIcon, ShieldAlert, RefreshCcw } from "lucide-react";
+import { Plus, Trash2, Truck, ShoppingCart, Check, ChevronsUpDown, ShoppingCartIcon, ShieldAlert } from "lucide-react";
 
 // Redux Actions
 import {
@@ -65,6 +65,7 @@ import { Project } from "@/types/project";
 import { useDebounce } from "@/hooks/useDebounce";
 import { usePermission } from "@/hooks/userPermission";
 import api from "@/utils/axiosApi";
+import { BASE_URL } from "@/utils/constants";
 
 // Import Types
 import { MRSItem, PurchaseRequest, PurchaseOrder, InventoryItem } from "@/types/procurement";
@@ -106,9 +107,6 @@ export default function ProcurementPage() {
     } | null>(null);
 
     const canView = usePermission('procurementMaterialTracking', 'view');
-    const canCreate = usePermission('procurementMaterialTracking', 'create');
-    const canEdit = usePermission('procurementMaterialTracking', 'edit');
-    const canDelete = usePermission('procurementMaterialTracking', 'delete');
 
 
     const handleOpenRemarkDialog = (item: ExtendedMRSItem, type: "INVENTORY" | "PURCHASE") => {
@@ -336,18 +334,29 @@ export default function ProcurementPage() {
 
     // --- DATA TRANSFORMATION: Filter by Project ---
     const displayedMrsList = useMemo(() => {
+        console.log("🔍 Filtering MRS items:", {
+            selectedProjectId,
+            totalMrsItems: mrsListRaw.length,
+            mrsItems: mrsListRaw.map(item => ({ id: item.id || item._id, item: item.item, projectId: item.projectId }))
+        });
+        
         // If NO project is selected, show only MRS items that don't have a projectId
         if (!selectedProjectId) {
-            return mrsListRaw.filter(item => !item.projectId || item.projectId === null || item.projectId === undefined);
+            const filtered = mrsListRaw.filter(item => !item.projectId || item.projectId === null || item.projectId === undefined);
+            console.log("🔍 No project selected, showing items without projectId:", filtered.length);
+            return filtered;
         }
 
         // If Project IS selected, show all MRS items for this project
         // Backend creates MRS entries when materials are linked to WBS
-        return mrsListRaw.filter(item => {
+        const filtered = mrsListRaw.filter(item => {
             const itemProjectId = String(item.projectId || '');
             const selectedId = String(selectedProjectId || '');
             return itemProjectId === selectedId;
         });
+        
+        console.log("🔍 Project selected, showing items for project:", selectedProjectId, "Count:", filtered.length);
+        return filtered;
 
     }, [selectedProjectId, mrsListRaw]);
 
@@ -401,20 +410,20 @@ export default function ProcurementPage() {
         toast.success(`${multipleItems.length + 1} item(s) ready to save. Fill in the next item.`);
     };
 
-    const openEdit = (m: ExtendedMRSItem) => {
-        if (m.isWbsLinked) {
-            alert(`This item is linked to WBS Task: "${m.task}". Please edit it in the WBS module.`);
-            return;
-        }
-        setEditing(m);
-        setForm(m);
+    // const openEdit = (m: ExtendedMRSItem) => {
+    //     if (m.isWbsLinked) {
+    //         alert(`This item is linked to WBS Task: "${m.task}". Please edit it in the WBS module.`);
+    //         return;
+    //     }
+    //     setEditing(m);
+    //     setForm(m);
         
-        // Check if the item is a custom item (not in raw materials list)
-        const isInRawMaterials = rawMaterials.some(material => material.name === m.item);
-        setIsCustomItem(!isInRawMaterials);
+    //     // Check if the item is a custom item (not in raw materials list)
+    //     const isInRawMaterials = rawMaterials.some(material => material.name === m.item);
+    //     setIsCustomItem(!isInRawMaterials);
         
-        setIsDialogOpen(true);
-    };
+    //     setIsDialogOpen(true);
+    // };
 
     const handleSave = async () => {
         // If editing, use single form
@@ -539,11 +548,147 @@ export default function ProcurementPage() {
     };
 
     const handleDelete = async (id: string, isWbsLinked?: boolean) => {
-        if (isWbsLinked) {
-            alert("Cannot delete WBS linked items here. Remove the link in the WBS module.");
+        console.log("🗑️ handleDelete called with:", { id, isWbsLinked });
+        console.log("🔍 Current BASE_URL:", BASE_URL);
+        console.log("🔍 Token exists:", !!localStorage.getItem("token"));
+        console.log("🔍 Organisation ID:", localStorage.getItem("organisationId"));
+        
+        // Find the MRS item to get its details before deletion
+        const mrsItem = displayedMrsList.find(item => (item.id || item._id) === id);
+        if (!mrsItem) {
+            toast.error("MRS item not found");
             return;
         }
-        await dispatch(deleteMRS(id));
+        
+        console.log("📋 MRS item to delete:", mrsItem);
+        
+        // 🚀 NEW: Check delivery status - only allow deletion if not received
+        const deliveryStatus = mrsItem.deliveryStatus || 'pending';
+        console.log("📦 Delivery status:", deliveryStatus);
+        
+        if (deliveryStatus === 'received') {
+            toast.error("Cannot delete received items. Material has already been delivered and may be in use.");
+            return;
+        }
+        
+        // Show different confirmation based on status
+        const statusMessage = deliveryStatus === 'pending' 
+            ? "This item is still pending delivery." 
+            : deliveryStatus === 'sent' 
+            ? "This item has been sent but not yet received."
+            : deliveryStatus === 'in-transit'
+            ? "This item is currently in transit."
+            : "This item has not been received yet.";
+        
+        // Enhanced confirmation message based on WBS link status
+        const wbsMessage = mrsItem.task 
+            ? `\nWBS Task: ${mrsItem.task}\n\n⚠️ Note: Since material is not received, WBS task will NOT be affected. Only stock will be restored.`
+            : '';
+        
+        if (!confirm(`Are you sure you want to delete this MRS item?\n\nItem: ${mrsItem.item}\nQuantity: ${mrsItem.quantity}\nStatus: ${deliveryStatus}${wbsMessage}\n\n${statusMessage}\n\n📦 This will restore ${mrsItem.quantity} units back to raw material stock.`)) {
+            console.log("❌ User cancelled deletion");
+            return;
+        }
+        
+        console.log("✅ User confirmed deletion, proceeding...");
+        
+        // 🎯 IMPORTANT: Since item is not received, WBS is not affected
+        // Only stock restoration is needed - no WBS material removal required
+        console.log("📝 Note: Item not received, so WBS will not be affected. Only restoring stock.");
+        
+        try {
+            // 🚀 STEP 1: Restore stock to raw materials using FIFO
+            const materialName = mrsItem.item?.trim();
+            const quantityToRestore = Number(mrsItem.quantity);
+            
+            if (materialName && quantityToRestore > 0) {
+                // Find the raw material
+                const rawMaterial = rawMaterials.find(rm => rm.name === materialName);
+                
+                if (rawMaterial) {
+                    console.log(`📦 Restoring ${quantityToRestore} units of ${materialName} to stock...`);
+                    
+                    try {
+                        const organisationId = localStorage.getItem("organisationId");
+                        
+                        // Add stock back using FIFO (reverse operation)
+                        const restoreResponse = await api.post('/fifo/restore-stock', {
+                            materialId: rawMaterial._id,
+                            quantity: quantityToRestore,
+                            reason: `MRS Deletion - Restoring stock for ${mrsItem.task || 'Material Requirement'}`,
+                            referenceId: `MRS-DELETE-${id}`,
+                            // Use average cost or last purchase cost for restoration
+                            unitCost: rawMaterial.averageCost || rawMaterial.unitCost || 0
+                        }, {
+                            headers: { 
+                                organisationId,
+                                'Authorization': `Bearer ${localStorage.getItem('token')}`
+                            }
+                        });
+                        
+                        if (restoreResponse.data.success) {
+                            console.log(`✅ Stock restored successfully:`, restoreResponse.data.data);
+                            console.log(`📊 Restored ${quantityToRestore} units to ${materialName}`);
+                            console.log(`📋 Movement record created:`, restoreResponse.data.data.movementRecord?.referenceNumber);
+                            
+                            // Store movement record info for success message
+                            window.lastMovementRecord = restoreResponse.data.data.movementRecord;
+                        } else {
+                            console.warn('Stock restoration response not successful:', restoreResponse.data);
+                        }
+                    } catch (stockError: any) {
+                        console.error('Failed to restore stock:', stockError);
+                        // Continue with deletion even if stock restoration fails
+                        toast.warning(`Stock restoration failed: ${stockError.response?.data?.message || stockError.message}. MRS will still be deleted.`);
+                    }
+                } else {
+                    console.log(`⚠️ Raw material "${materialName}" not found in master list. Skipping stock restoration.`);
+                }
+            }
+            
+            // 🚀 STEP 2: Delete the MRS item
+            console.log("🚀 Dispatching deleteMRS action with ID:", id);
+            console.log("🌐 Making API call to:", `${BASE_URL}/delete/mrs/${id}`);
+            
+            const result = await dispatch(deleteMRS(id)).unwrap();
+            console.log("✅ Delete successful, result:", result);
+            
+            // 🚀 STEP 3: Refresh both MRS and raw materials data
+            console.log("🔄 Refreshing MRS list and raw materials...");
+            await Promise.all([
+                dispatch(fetchMRS()),
+                dispatch(fetchMaterials({ page: 1, limit: 1000 }))
+            ]);
+            console.log("✅ Data refreshed");
+            
+            // Show user where to find movement records
+            if ((window as any).lastMovementRecord) {
+                console.log("📋 To view movement records, check:");
+                console.log("   - Inventory → Reporting → Moves Analysis");
+                console.log("   - Or check Material Movements API endpoint");
+            }
+            
+            // Enhanced success message with WBS clarification and movement record
+            const wbsNote = mrsItem.task ? " WBS task not affected (material was not received)." : "";
+            const movementNote = (window as any).lastMovementRecord 
+                ? ` Movement record: ${(window as any).lastMovementRecord.referenceNumber}` 
+                : "";
+            
+            toast.success(`MRS item deleted successfully. ${quantityToRestore} units restored to ${materialName} stock.${wbsNote}${movementNote}`, {
+                duration: 6000 // Show longer to read the movement record
+            });
+            
+            // Clear the stored movement record
+            delete (window as any).lastMovementRecord;
+        } catch (error: any) {
+            console.error("❌ Delete MRS error:", error);
+            console.error("❌ Error details:", {
+                message: error.message,
+                status: error.status,
+                response: error.response?.data
+            });
+            toast.error(error.message || "Failed to delete MRS item");
+        }
     };
 
     // --- Purchase Logic ---
@@ -1188,12 +1333,28 @@ export default function ProcurementPage() {
                                     <TableCell>{m.requiredDate ? new Date(m.requiredDate).toLocaleDateString() : "—"}</TableCell>
                                     <TableCell>
                                         <div className="flex gap-2">
-                                            {canEdit && <Button size="icon" variant="ghost" onClick={() => openEdit(m)} disabled={mrsLoading || !!m.task}>
+                                            {/* {canEdit && <Button size="icon" variant="ghost" onClick={() => openEdit(m)} disabled={mrsLoading || !!m.task}>
                                                 <Edit2 className="h-4 w-4" />
-                                            </Button>}
-                                            {canDelete && <Button size="icon" variant="ghost" onClick={() => handleDelete(m.id || m._id!, !!m.task)} disabled={mrsLoading || !!m.task}>
-                                                <Trash2 className="h-4 w-4 text-red-600" />
-                                            </Button>}
+                                            </Button>} */}
+                                            <Button 
+                                                size="icon" 
+                                                variant="ghost" 
+                                                onClick={() => {
+                                                    console.log("🖱️ Delete button clicked for item:", m.id || m._id, m);
+                                                    handleDelete(m.id || m._id!, !!m.task);
+                                                }} 
+                                                disabled={mrsLoading || (m.deliveryStatus === 'received')}
+                                                className={m.deliveryStatus === 'received' ? 'opacity-50 cursor-not-allowed' : ''}
+                                                title={
+                                                    m.deliveryStatus === 'received' 
+                                                        ? "Cannot delete received items - material already delivered" 
+                                                        : m.task 
+                                                        ? `Delete WBS-linked item: ${m.task}` 
+                                                        : "Delete MRS item"
+                                                }
+                                            >
+                                                <Trash2 className={`h-4 w-4 ${m.deliveryStatus === 'received' ? 'text-gray-400' : 'text-red-600'}`} />
+                                            </Button>
                                             <Button 
                                                 variant="ghost" 
                                                 onClick={() => handleSendClick(m, "PURCHASE")}

@@ -435,6 +435,12 @@ export default function RawMaterialMaster() {
         return;
       }
 
+      // Validate warehouse before accepting
+      if (response === 'accepted' && notification?.materialData && !notification.materialData.warehouse) {
+        toast.error('Cannot accept: Warehouse information is missing from purchase order. Please ensure warehouse was selected when creating the purchase order.');
+        return;
+      }
+
       const res = await fetch(`${BASE_URL}/purchase/orders/material-response`, {
         method: 'POST',
         headers: {
@@ -445,11 +451,16 @@ export default function RawMaterialMaster() {
       });
 
       if (res.ok) {
+        toast.success('Material purchase accepted successfully');
         fetchNotifications();
         dispatch(fetchMaterials({ page, limit }));
+      } else {
+        const errorData = await res.json();
+        toast.error(errorData.message || 'Failed to accept material purchase');
       }
     } catch (error) {
       console.error('Error responding to material purchase:', error);
+      toast.error('Failed to process material purchase response');
     }
   };
 
@@ -689,6 +700,11 @@ export default function RawMaterialMaster() {
                     )}
                     {notification.materialData?.unitOfMeasure && (
                       <span>UoM: <strong>{notification.materialData.unitOfMeasure}</strong></span>
+                    )}
+                    {notification.materialData?.warehouse ? (
+                      <span className="text-green-600">Warehouse: <strong>{getWarehouseName(notification.materialData.warehouse)}</strong></span>
+                    ) : (
+                      <span className="text-red-600">⚠️ <strong>No Warehouse Selected</strong></span>
                     )}
                   </div>
                 </div>

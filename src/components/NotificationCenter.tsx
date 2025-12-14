@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
-import { fetchNotifications, respondToInvite, markAsRead } from "@/redux/slices/notificationSlice";
+import { fetchNotifications, respondToInvite, respondToMaterialPurchase, markAsRead } from "@/redux/slices/notificationSlice";
 
 import {
   Bell,
@@ -96,6 +96,10 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
     dispatch(respondToInvite({ notificationId, response }));
   };
 
+  const handleMaterialPurchaseResponse = (notificationId: string, response: "accepted" | "rejected") => {
+    dispatch(respondToMaterialPurchase({ notificationId, response }));
+  };
+
   const handleMarkAsRead = async (notificationId: string) => {
     try {
       await dispatch(markAsRead(notificationId)).unwrap();
@@ -166,6 +170,8 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
               {list.map((notification: any) => {
                 const isInvite = notification.type === 'invite';
                 const isPendingInvite = isInvite && notification.inviteResponse === 'pending';
+                const isMaterialPurchase = notification.type === 'rawMaterialPurchase';
+                const isPendingMaterialPurchase = isMaterialPurchase && notification.inviteResponse === 'pending';
 
                 return (
                   <div
@@ -207,6 +213,92 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                             (notification.remark || "No additional remarks provided.")}
                         </p>
                         
+                        {/* Material Information for RFQ/Procurement notifications */}
+                        {notification.materialData && notification.destination === "rfq.purchase" && (
+                          <div className="mt-2 p-2 bg-orange-50 rounded-lg border border-orange-200">
+                            <div className="text-xs text-orange-800 space-y-1">
+                              <div className="flex justify-between items-center">
+                                <span><strong>Quantity Required:</strong> {notification.materialData.quantity} {notification.materialData.unit}</span>
+                                {notification.materialData.procurementContext?.urgency === 'High' && (
+                                  <Badge variant="destructive" className="text-[10px] h-4 px-1">
+                                    Urgent
+                                  </Badge>
+                                )}
+                              </div>
+                              {notification.materialData.sourceTask && notification.materialData.sourceTask !== 'N/A' && (
+                                <div><strong>Source Task:</strong> {notification.materialData.sourceTask}</div>
+                              )}
+                              {notification.materialData.projectName && notification.materialData.projectName !== 'N/A' && (
+                                <div><strong>Project:</strong> {notification.materialData.projectName}</div>
+                              )}
+                              {notification.materialData.requiredDate && (
+                                <div><strong>Required By:</strong> {new Date(notification.materialData.requiredDate).toLocaleDateString()}</div>
+                              )}
+                              {notification.materialData.financialInfo?.estimatedCost && notification.materialData.financialInfo.estimatedCost > 0 && (
+                                <div><strong>Estimated Cost:</strong> ₹{notification.materialData.financialInfo.estimatedCost.toLocaleString()}</div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Material Information for Delivery notifications */}
+                        {notification.materialData && notification.destination === "delivery.inventory" && (
+                          <div className="mt-2 p-2 bg-green-50 rounded-lg border border-green-200">
+                            <div className="text-xs text-green-800 space-y-1">
+                              <div><strong>Quantity to Deliver:</strong> {notification.materialData.quantity} {notification.materialData.unit}</div>
+                              {notification.materialData.sourceTask && notification.materialData.sourceTask !== 'N/A' && (
+                                <div><strong>Destination Task:</strong> {notification.materialData.sourceTask}</div>
+                              )}
+                              {notification.materialData.projectName && notification.materialData.projectName !== 'N/A' && (
+                                <div><strong>Project:</strong> {notification.materialData.projectName}</div>
+                              )}
+                              {notification.materialData.requiredDate && (
+                                <div><strong>Required By:</strong> {new Date(notification.materialData.requiredDate).toLocaleDateString()}</div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* RFQ Sent Information */}
+                        {notification.materialData && notification.source === "purchase.rfq" && notification.materialData.materials && (
+                          <div className="mt-2 p-2 bg-blue-50 rounded-lg border border-blue-200">
+                            <div className="text-xs text-blue-800 space-y-1">
+                              <div><strong>Items in RFQ:</strong> {notification.materialData.totalItems}</div>
+                              <div><strong>Vendors Contacted:</strong> {notification.materialData.vendorsSent}/{notification.materialData.totalVendors}</div>
+                              <div><strong>Total Estimated Value:</strong> ₹{notification.materialData.totalEstimatedValue?.toLocaleString()}</div>
+                              {notification.materialData.deliveryDate && (
+                                <div><strong>Required Delivery:</strong> {new Date(notification.materialData.deliveryDate).toLocaleDateString()}</div>
+                              )}
+                              {notification.materialData.materials && notification.materialData.materials.length > 0 && (
+                                <div className="mt-2">
+                                  <strong>Materials:</strong>
+                                  <ul className="mt-1 space-y-1">
+                                    {notification.materialData.materials.slice(0, 3).map((material: any, index: number) => (
+                                      <li key={index} className="flex justify-between">
+                                        <span>{material.name}</span>
+                                        <span>{material.quantity} {material.unit}</span>
+                                      </li>
+                                    ))}
+                                    {notification.materialData.materials.length > 3 && (
+                                      <li className="text-gray-600">...and {notification.materialData.materials.length - 3} more items</li>
+                                    )}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Stock Information for materials with low stock */}
+                        {notification.materialData?.stockInfo?.isLowStock && (
+                          <div className="mt-2 p-2 bg-red-50 rounded-lg border border-red-200">
+                            <div className="text-xs text-red-800 flex items-center gap-2">
+                              <AlertCircle className="h-3 w-3" />
+                              <span><strong>Low Stock Alert:</strong> Only {notification.materialData.stockInfo.currentStock} units available</span>
+                            </div>
+                          </div>
+                        )}
+                        
                         {/* Deadline Reminder Info */}
                         {notification.type === "deadline_reminder" && notification.metadata && (
                           <div className="mt-2 p-2 bg-red-50 rounded-lg border border-red-200">
@@ -239,7 +331,36 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                           </div>
                         )}
 
+                        {/* Material Purchase Actions */}
+                        {isPendingMaterialPurchase && (
+                          <div className="flex gap-2 mt-3">
+                            <Button 
+                              size="sm" 
+                              className="h-7 px-3 bg-green-600 hover:bg-green-700 text-white"
+                              onClick={() => handleMaterialPurchaseResponse(notification._id, "accepted")}
+                            >
+                              <Check className="h-3 w-3 mr-1" /> Accept
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              variant="outline" 
+                              className="h-7 px-3 text-red-600 border-red-200 hover:bg-red-50"
+                              onClick={() => handleMaterialPurchaseResponse(notification._id, "rejected")}
+                            >
+                              <X className="h-3 w-3 mr-1" /> Reject
+                            </Button>
+                          </div>
+                        )}
+
                         {isInvite && !isPendingInvite && (
+                           <div className="mt-2">
+                             <Badge variant={notification.inviteResponse === 'accepted' ? 'default' : 'destructive'} className="text-[10px]">
+                               {notification.inviteResponse === 'accepted' ? 'Accepted' : 'Rejected'}
+                             </Badge>
+                           </div>
+                        )}
+
+                        {isMaterialPurchase && !isPendingMaterialPurchase && (
                            <div className="mt-2">
                              <Badge variant={notification.inviteResponse === 'accepted' ? 'default' : 'destructive'} className="text-[10px]">
                                {notification.inviteResponse === 'accepted' ? 'Accepted' : 'Rejected'}
