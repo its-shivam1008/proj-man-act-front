@@ -1086,7 +1086,9 @@ const budgetVsActualData = useMemo(() => {
           {/* <TabsTrigger value="budget-vs-actual">Budget vs Actual Cost</TabsTrigger> */}
           <TabsTrigger value="activity-cost">Activity-wise Cost Sheet</TabsTrigger>
           <TabsTrigger value="project-create-close">Project Creation and Completion</TabsTrigger>
-          <TabsTrigger value="mrs-sheet-creation">MRS Sheet Creation</TabsTrigger>
+          <TabsTrigger value="wbs-create-close">
+WBS Creation & Completion
+</TabsTrigger>          <TabsTrigger value="mrs-sheet-creation">MRS Sheet Creation</TabsTrigger>
           <TabsTrigger value="mrs-purchase-order">MRS Purchase Order</TabsTrigger>
         </TabsList>
         </div>
@@ -2052,8 +2054,6 @@ const budgetVsActualData = useMemo(() => {
     </Table>
   </CardContent>
 </Card>
-
-
         </TabsContent>
         {/* All Projects Profitability Tab */}
         <TabsContent value="all-profitability" className="space-y-6 mt-6">
@@ -2168,6 +2168,131 @@ const budgetVsActualData = useMemo(() => {
             </CardContent>
           </Card>
         </TabsContent>
+        <TabsContent value="wbs-create-close">
+  <Card className="shadow-xl border border-muted">
+    <CardHeader className="flex flex-row items-center justify-between">
+      <div>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <Calendar className="h-5 w-5 text-primary" />
+          WBS Lifecycle Report
+        </CardTitle>
+        <CardDescription>
+          Creation, completion & duration of WBS tasks
+        </CardDescription>
+      </div>
+
+      <Badge variant="outline" className="text-xs px-3 py-1">
+        {wbs.length} WBS Items
+      </Badge>
+    </CardHeader>
+
+    <CardContent className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-muted/50">
+            <TableHead>WBS Name</TableHead>
+            <TableHead>Type</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Created</TableHead>
+            <TableHead>Completed</TableHead>
+            <TableHead className="text-right">Duration</TableHead>
+          </TableRow>
+        </TableHeader>
+
+        <TableBody>
+          {wbs.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
+                No WBS lifecycle data available
+              </TableCell>
+            </TableRow>
+          ) : (
+            wbs.map((item) => {
+              const duration =
+                item.wbsDurationInDays ??
+                (item.wbsCompletedAt && item.wbsCreatedAt
+                  ? Math.ceil(
+                      (new Date(item.wbsCompletedAt).getTime() -
+                        new Date(item.wbsCreatedAt).getTime()) /
+                        (1000 * 60 * 60 * 24)
+                    )
+                  : null);
+
+              return (
+                <TableRow key={item._id} className="hover:bg-muted/40">
+                  <TableCell className="font-semibold">
+                    {item.name}
+                  </TableCell>
+
+                  <TableCell className="capitalize text-muted-foreground">
+                    {item.type}
+                  </TableCell>
+
+                  <TableCell>
+                    <Badge
+                      className={
+                        item.status === "completed"
+                          ? "bg-green-100 text-green-800"
+                          : item.status === "active"
+                          ? "bg-blue-100 text-blue-800"
+                          : "bg-gray-100 text-gray-700"
+                      }
+                    >
+                      {item.status.toUpperCase()}
+                    </Badge>
+                  </TableCell>
+
+                  <TableCell>
+                    {item.wbsCreatedAt ? (
+                      <>
+                        <div className="font-medium">
+                          {new Date(item.wbsCreatedAt).toLocaleDateString()}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {new Date(item.wbsCreatedAt).toLocaleTimeString()}
+                        </div>
+                      </>
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
+
+                  <TableCell>
+                    {item.wbsCompletedAt ? (
+                      <>
+                        <div className="font-medium text-green-700">
+                          {new Date(item.wbsCompletedAt).toLocaleDateString()}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {new Date(item.wbsCompletedAt).toLocaleTimeString()}
+                        </div>
+                      </>
+                    ) : (
+                      <Badge variant="outline" className="text-xs">
+                        In Progress
+                      </Badge>
+                    )}
+                  </TableCell>
+
+                  <TableCell className="text-right">
+                    {duration ? (
+                      <Badge className="bg-purple-100 text-purple-800 px-3 py-1">
+                        ⏱ {duration} days
+                      </Badge>
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })
+          )}
+        </TableBody>
+      </Table>
+    </CardContent>
+  </Card>
+</TabsContent>
+
         <TabsContent value="resource-utilisation" className="space-y-8 mt-6">
 
   {/* HEADER */}

@@ -163,6 +163,17 @@ export default function Projects() {
     dispatch(fetchMasterData("project-type"));
     dispatch(fetchMasterData("location"));
   }, [dispatch]);
+useEffect(() => {
+  if (managerPopoverOpen) {
+    document.body.style.overflow = "hidden";
+  } else {
+    document.body.style.overflow = "";
+  }
+
+  return () => {
+    document.body.style.overflow = "";
+  };
+}, [managerPopoverOpen]);
 
   const [formData, setFormData] = useState<{
     code?: string;
@@ -850,162 +861,160 @@ export default function Projects() {
             </div>
 
             {/* Manager + Status */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label>Project Manager</Label>
+         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  {/* ---------------- Project Manager ---------------- */}
+  <div>
+    <Label>Project Manager</Label>
 
-                <Popover
-                  open={managerPopoverOpen}
-                  onOpenChange={setManagerPopoverOpen}
-                >
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      role="combobox"
-                      aria-expanded={managerPopoverOpen}
-                      className="w-full justify-between font-normal"
+    <Popover
+      open={managerPopoverOpen}
+      onOpenChange={setManagerPopoverOpen}
+      modal
+    >
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={managerPopoverOpen}
+          className="w-full justify-between font-normal"
+        >
+          {formData.manager
+            ? (() => {
+                const emp = employeeList.find(
+                  (e: any) => e.id === formData.manager
+                );
+                return emp
+                  ? `${emp.personalInfo?.firstName} ${emp.personalInfo?.lastName}`
+                  : "Select Project Manager";
+              })()
+            : "Select Project Manager"}
+
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+
+      <PopoverContent
+        className="w-[--radix-popover-trigger-width] p-0"
+        sideOffset={5}
+        align="start"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        style={{ zIndex: 9999 }}
+      >
+        <Command shouldFilter={false}>
+          {/* Search */}
+          <CommandInput
+            placeholder="Search employee..."
+            value={employeeSearch}
+            onValueChange={setEmployeeSearch}
+          />
+
+          {/* SCROLL CONTAINER */}
+          <div className="max-h-80 overflow-y-auto overscroll-contain touch-pan-y">
+            <CommandList>
+              {employeeLoading ? (
+                <CommandEmpty>
+                  <div className="py-6 text-center text-sm">
+                    Loading employees...
+                  </div>
+                </CommandEmpty>
+              ) : employeeList.length === 0 ? (
+                <CommandEmpty>No employees found.</CommandEmpty>
+              ) : (
+                <CommandGroup>
+                  {employeeList.map((emp: any) => (
+                    <CommandItem
+                      key={emp.id}
+                      value={`${emp.personalInfo?.firstName || ""} ${
+                        emp.personalInfo?.lastName || ""
+                      } ${emp.id}`}
+                      onSelect={() => {
+                        setFormData((prev) => ({
+                          ...prev,
+                          manager: emp.id,
+                        }));
+                        setManagerPopoverOpen(false);
+                      }}
                     >
-                      {formData.manager
-                        ? employeeList.find(
-                          (e: any) => e.id === formData.manager
-                        )
-                          ? `${employeeList.find(
-                            (e: any) => e.id === formData.manager
-                          )?.personalInfo?.firstName
-                          } ${employeeList.find(
-                            (e: any) => e.id === formData.manager
-                          )?.personalInfo?.lastName
-                          }`
-                          : "Select Project Manager"
-                        : "Select Project Manager"}
-                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-
-                  <PopoverContent
-                    className="w-[--radix-popover-trigger-width] p-0"
-                    sideOffset={5}
-                    align="start"
-                    onOpenAutoFocus={(e) => e.preventDefault()}
-                    onInteractOutside={(e) => e.preventDefault()}
-                    style={{ zIndex: 9999 }}
-                  >
-                    <Command shouldFilter={false}>
-                      <CommandInput
-                        placeholder="Search employee..."
-                        value={employeeSearch}
-                        onValueChange={setEmployeeSearch}
+                      <Check
+                        className={cn(
+                          "mr-2 h-4 w-4",
+                          formData.manager === emp.id
+                            ? "opacity-100"
+                            : "opacity-0"
+                        )}
                       />
-
-                      <div className="max-h-80 overflow-y-auto">
-                        <CommandList>
-                          {employeeLoading ? (
-                            <CommandEmpty>
-                              <div className="py-6 text-center text-sm">
-                                Loading employees...
-                              </div>
-                            </CommandEmpty>
-                          ) : employeeList.length === 0 ? (
-                            <CommandEmpty>No employees found.</CommandEmpty>
-                          ) : (
-                            <CommandGroup>
-                              {employeeList.map((emp: any) => (
-                                <CommandItem
-                                  key={emp.id}
-                                  value={`${emp.personalInfo?.firstName || ""
-                                    } ${emp.personalInfo?.lastName || ""} ${emp.id
-                                    }`}
-                                  onSelect={() => {
-                                    setFormData((prev) => ({
-                                      ...prev,
-                                      manager: emp.id,
-                                    }));
-                                    setManagerPopoverOpen(false);
-                                  }}
-                                >
-                                  <Check
-                                    className={cn(
-                                      "mr-2 h-4 w-4",
-                                      formData.manager === emp.id
-                                        ? "opacity-100"
-                                        : "opacity-0"
-                                    )}
-                                  />
-                                  <div className="flex flex-col">
-                                    <span>
-                                      {emp.personalInfo?.firstName}{" "}
-                                      {emp.personalInfo?.lastName}
-                                    </span>
-                                    {emp.personalInfo?.email && (
-                                      <span className="text-xs text-muted-foreground">
-                                        {emp.personalInfo.email}
-                                      </span>
-                                    )}
-                                  </div>
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
-                          )}
-                        </CommandList>
-                      </div>
-
-                      {/* Next / Previous Buttons */}
-                      <div className="flex items-center justify-between border-t p-2 bg-gray-50 dark:bg-gray-900">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() =>
-                            setEmployeePage((p) => Math.max(1, p - 1))
-                          }
-                          disabled={employeePage === 1 || employeeLoading}
-                        >
-                          <ChevronLeft className="h-4 w-4" />
-                          Previous
-                        </Button>
-
-                        <span className="text-xs text-muted-foreground">
-                          Page {employeePage}
+                      <div className="flex flex-col">
+                        <span>
+                          {emp.personalInfo?.firstName}{" "}
+                          {emp.personalInfo?.lastName}
                         </span>
-
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setEmployeePage((p) => p + 1)}
-                          disabled={
-                            employeeList.length < employeePageSize ||
-                            employeeLoading
-                          }
-                        >
-                          Next
-                          <ChevronRight className="h-4 w-4" />
-                        </Button>
+                        {emp.personalInfo?.email && (
+                          <span className="text-xs text-muted-foreground">
+                            {emp.personalInfo.email}
+                          </span>
+                        )}
                       </div>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
-              </div>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
+            </CommandList>
+          </div>
 
-              <div>
-                <Label>Status</Label>
-                <Select
-                  value={formData.status}
-                  onValueChange={(val: ProjectStatus) =>
-                    setFormData({ ...formData, status: val })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PROJECT_STATUSES.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+          {/* Pagination Footer */}
+          <div className="flex items-center justify-between border-t p-2 bg-gray-50 dark:bg-gray-900">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setEmployeePage((p) => Math.max(1, p - 1))}
+              disabled={employeePage === 1 || employeeLoading}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </Button>
+
+            <span className="text-xs text-muted-foreground">
+              Page {employeePage}
+            </span>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setEmployeePage((p) => p + 1)}
+              disabled={employeeList.length < employeePageSize || employeeLoading}
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  </div>
+
+  {/* ---------------- Status ---------------- */}
+  <div>
+    <Label>Status</Label>
+    <Select
+      value={formData.status}
+      onValueChange={(val: ProjectStatus) =>
+        setFormData({ ...formData, status: val })
+      }
+    >
+      <SelectTrigger>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {PROJECT_STATUSES.map((s) => (
+          <SelectItem key={s} value={s}>
+            {s}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  </div>
+</div>
+
           </div>
 
           <DialogFooter>

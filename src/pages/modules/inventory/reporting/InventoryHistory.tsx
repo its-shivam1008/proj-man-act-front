@@ -39,27 +39,53 @@ export default function InventoryHistoryAdvancedUI() {
     dispatch(fetchMaterials(orgId as any));
   }, [dispatch, orgId]);
 
-  const combined = useMemo(() => {
-    const p = products.map((it: any) => ({
-      id: it._id || it.id,
+ const combined = useMemo(() => {
+  const p = products.map((it: any) => {
+    const totalQty = (it.stocks || []).reduce(
+      (sum: number, s: any) => sum + (s.quantity || 0),
+      0
+    );
+
+    const avgRate =
+      (it.stocks || []).length > 0
+        ? (it.stocks.reduce((sum: number, s: any) => sum + (s.unitCost || 0), 0) /
+           it.stocks.length)
+        : 0;
+
+    return {
+      id: it._id,
       type: "Product",
-      name: it.name || it.productName || "Untitled product",
-      qty: Number(it.quantity || 0),
-      unit: it.unit || it.unitOfMeasure || "",
-      value: Number((it.unitCost || 0) * (it.quantity || 0)),
-    }));
+      name: it.name,
+      qty: totalQty,
+      unit: it.unitOfMeasure || "PCS",
+      value: totalQty * avgRate,
+    };
+  });
 
-    const m = materials.map((it: any) => ({
-      id: it._id || it.id,
+  const m = materials.map((it: any) => {
+    const totalQty = (it.stocks || []).reduce(
+      (sum: number, s: any) => sum + (s.remainingQuantity ?? s.quantity ?? 0),
+      0
+    );
+
+    const avgRate =
+      (it.stocks || []).length > 0
+        ? (it.stocks.reduce((sum: number, s: any) => sum + (s.unitCost || 0), 0) /
+           it.stocks.length)
+        : 0;
+
+    return {
+      id: it._id,
       type: "Raw Material",
-      name: it.name || it.materialName || "Untitled material",
-      qty: Number(it.quantity || 0),
-      unit: it.unitOfMeasure || it.unit || "",
-      value: Number((it.unitCost || 0) * (it.quantity || 0)),
-    }));
+      name: it.name,
+      qty: totalQty,
+      unit: it.unitOfMeasure,
+      value: totalQty * avgRate,
+    };
+  });
 
-    return [...p, ...m];
-  }, [products, materials]);
+  return [...p, ...m];
+}, [products, materials]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

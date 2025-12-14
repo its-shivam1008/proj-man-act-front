@@ -33,6 +33,9 @@ export interface WBSItem {
   dependencies?: string[];
   status?: WBSItemStatus;
   progress?: number;
+  wbsCreatedAt?: string;
+  wbsCompletedAt?: string;
+  wbsDurationInDays?: number;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -95,13 +98,13 @@ export const createWbsItem = createAsyncThunk<WBSItem, Partial<WBSItem>>(
 
 export const assignPersonToWbs = createAsyncThunk(
   "wbs/assignPerson",
-  async (data: { 
-      wbsId: string; 
-      resourceId: string; 
-      type: string; 
-      personalInfo: any; 
-      employment: any; 
-      financial: any; 
+  async (data: {
+    wbsId: string;
+    resourceId: string;
+    type: string;
+    personalInfo: any;
+    employment: any;
+    financial: any;
   }, { rejectWithValue }) => {
     try {
       // Make sure the endpoint matches the route file
