@@ -402,10 +402,14 @@ const processExtractedText = (text: string, masters: MasterPair[]): ScanResultIt
     // Update the actual item value
     updateResultItem(itemId, 'value', value);
     
-    // Filter materials based on input
-    const filtered = materials.filter((material: any) => 
-      material.name.toLowerCase().includes(value.toLowerCase())
-    ).slice(0, 10); // Limit to 10 results
+    // Filter materials based on input (search in name and itemCode)
+    const filtered = materials.filter((material: any) => {
+      const searchTerm = value.toLowerCase();
+      return (
+        material.name.toLowerCase().includes(searchTerm) ||
+        (material.itemCode && material.itemCode.toLowerCase().includes(searchTerm))
+      );
+    }).slice(0, 15); // Increased to 15 results for better selection
     
     updateAutocompleteState(itemId, {
       searchTerm: value,
@@ -414,13 +418,36 @@ const processExtractedText = (text: string, masters: MasterPair[]): ScanResultIt
     });
   };
 
-  const selectMaterial = (itemId: string, materialName: string) => {
+  const selectMaterial = (itemId: string, materialName: string, material?: any) => {
+    console.log(`🔄 Selecting material for item ${itemId}: ${materialName}`);
+    
+    // Update the item value with selected material name
     updateResultItem(itemId, 'value', materialName);
+    
+    // If we have full material data, we could also update other fields
+    if (material) {
+      console.log(`✅ Selected existing material: ${materialName}`);
+      console.log(`📋 Material details:`, {
+        name: material.name,
+        code: material.itemCode || 'N/A',
+        unit: material.unitOfMeasure || 'N/A',
+        stock: material.quantity || 'N/A'
+      });
+      // You can add more fields here if needed, like:
+      // updateResultItem(itemId, 'itemCode', material.itemCode);
+      // updateResultItem(itemId, 'unit', material.unitOfMeasure);
+    } else {
+      console.log(`✅ Selected custom material: ${materialName}`);
+    }
+    
+    // Close the autocomplete dropdown
     updateAutocompleteState(itemId, {
       searchTerm: materialName,
       filteredMaterials: [],
       isOpen: false
     });
+    
+    console.log(`✅ Material selection completed for item ${itemId}`);
   };
 
   const closeAutocomplete = (itemId: string) => {
@@ -599,7 +626,7 @@ const processExtractedText = (text: string, masters: MasterPair[]): ScanResultIt
                               <div className="relative w-full">
                                 <input 
                                   type="text" 
-                                  placeholder="Required for save..." 
+                                  placeholder="Type to search materials..." 
                                   value={item.value} 
                                   onChange={(e) => {
                                     initAutocompleteState(item.id);
@@ -608,9 +635,13 @@ const processExtractedText = (text: string, masters: MasterPair[]): ScanResultIt
                                   onFocus={() => {
                                     initAutocompleteState(item.id);
                                     if (item.value.length > 0) {
-                                      const filtered = materials.filter((material: any) => 
-                                        material.name.toLowerCase().includes(item.value.toLowerCase())
-                                      ).slice(0, 10);
+                                      const filtered = materials.filter((material: any) => {
+                                        const searchTerm = item.value.toLowerCase();
+                                        return (
+                                          material.name.toLowerCase().includes(searchTerm) ||
+                                          (material.itemCode && material.itemCode.toLowerCase().includes(searchTerm))
+                                        );
+                                      }).slice(0, 15);
                                       updateAutocompleteState(item.id, {
                                         filteredMaterials: filtered,
                                         isOpen: filtered.length > 0
@@ -619,32 +650,85 @@ const processExtractedText = (text: string, masters: MasterPair[]): ScanResultIt
                                   }}
                                   onBlur={() => {
                                     // Delay closing to allow clicking on dropdown items
-                                    setTimeout(() => closeAutocomplete(item.id), 150);
+                                    setTimeout(() => {
+                                      console.log(`🔄 Closing autocomplete for item ${item.id} after blur`);
+                                      closeAutocomplete(item.id);
+                                    }, 300);
                                   }}
-                                  className={`w-full border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 ${!item.value ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} 
+                                  onKeyDown={(e) => {
+                                    // Add keyboard navigation support
+                                    if (e.key === 'Escape') {
+                                      closeAutocomplete(item.id);
+                                    }
+                                  }}
+                                  className={`w-full border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all ${!item.value ? 'border-red-300 bg-red-50 focus:bg-white' : 'border-gray-300'}`} 
                                 />
                                 
                                 {/* Autocomplete Dropdown */}
                                 {autocompleteStates[item.id]?.isOpen && (
                                   <div className="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded-md shadow-lg z-50 max-h-48 overflow-y-auto">
-                                    {autocompleteStates[item.id].filteredMaterials.map((material: any) => (
-                                      <div
-                                        key={material._id}
-                                        onClick={() => selectMaterial(item.id, material.name)}
-                                        className="px-3 py-2 hover:bg-indigo-50 cursor-pointer text-sm border-b border-gray-100 last:border-b-0"
-                                      >
-                                        <div className="font-medium text-gray-900">{material.name}</div>
-                                        {material.itemCode && (
-                                          <div className="text-xs text-gray-500">Code: {material.itemCode}</div>
-                                        )}
+                                    {autocompleteStates[item.id].filteredMaterials.length > 0 ? (
+                                      autocompleteStates[item.id].filteredMaterials.map((material: any) => (
+                                        <div
+                                          key={material._id}
+                                          onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            console.log(`🖱️ Clicked on material: ${material.name}`);
+                                            
+                                            // Add visual feedback
+                                            const element = e.currentTarget;
+                                            element.style.backgroundColor = '#10b981';
+                                            element.style.color = 'white';
+                                            
+                                            setTimeout(() => {
+                                              selectMaterial(item.id, material.name, material);
+                                            }, 100);
+                                          }}
+                                          className="px-3 py-2 hover:bg-indigo-50 cursor-pointer text-sm border-b border-gray-100 last:border-b-0 transition-all duration-200"
+                                        >
+                                          <div className="font-medium text-gray-900">{material.name}</div>
+                                          <div className="flex justify-between items-center mt-1">
+                                            {material.itemCode && (
+                                              <div className="text-xs text-gray-500">Code: {material.itemCode}</div>
+                                            )}
+                                            {material.unitOfMeasure && (
+                                              <div className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+                                                {material.unitOfMeasure}
+                                              </div>
+                                            )}
+                                          </div>
+                                          {material.quantity !== undefined && (
+                                            <div className="text-xs text-green-600 mt-1">
+                                              Stock: {material.quantity} {material.unitOfMeasure || 'units'}
+                                            </div>
+                                          )}
+                                        </div>
+                                      ))
+                                    ) : (
+                                      <div className="px-3 py-2 text-sm text-gray-500 text-center">
+                                        No materials found matching "{autocompleteStates[item.id].searchTerm}"
                                       </div>
-                                    ))}
+                                    )}
                                     
                                     {/* Show "Add as custom" option if no exact match */}
                                     {item.value && !materials.some((m: any) => m.name.toLowerCase() === item.value.toLowerCase()) && (
                                       <div
-                                        onClick={() => selectMaterial(item.id, item.value)}
-                                        className="px-3 py-2 hover:bg-green-50 cursor-pointer text-sm border-t border-gray-200 bg-green-25"
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          console.log(`🖱️ Clicked on custom material: ${item.value}`);
+                                          
+                                          // Add visual feedback
+                                          const element = e.currentTarget;
+                                          element.style.backgroundColor = '#059669';
+                                          element.style.color = 'white';
+                                          
+                                          setTimeout(() => {
+                                            selectMaterial(item.id, item.value);
+                                          }, 100);
+                                        }}
+                                        className="px-3 py-2 hover:bg-green-50 cursor-pointer text-sm border-t border-gray-200 bg-green-25 transition-all duration-200"
                                       >
                                         <div className="font-medium text-green-700 flex items-center gap-2">
                                           <Plus className="w-3 h-3" />

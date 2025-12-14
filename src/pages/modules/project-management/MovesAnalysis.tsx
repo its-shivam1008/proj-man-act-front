@@ -148,6 +148,27 @@ export default function MovesAnalysis() {
     }
   }, [organisationId, dispatch]);
 
+  // Listen for material return events to refresh data
+  useEffect(() => {
+    const handleMaterialReturn = (event: any) => {
+      console.log('🔄 Material return event received in MovesAnalysis:', event.detail);
+      toast.success(`Material return detected: ${event.detail.materialName} (${event.detail.quantity} units)`);
+      
+      // Refresh movements data
+      if (organisationId) {
+        console.log('🔄 Refreshing MovesAnalysis data after material return...');
+        dispatch(fetchMovements({ organisationId }));
+        dispatch(fetchMovementSummary({ organisationId }));
+      }
+    };
+
+    window.addEventListener('materialReturned', handleMaterialReturn);
+    
+    return () => {
+      window.removeEventListener('materialReturned', handleMaterialReturn);
+    };
+  }, [organisationId, dispatch]);
+
   // Debug: Log raw materials, products, and movements
   useEffect(() => {
     console.log("Raw Materials:", rawMaterials);
@@ -181,18 +202,29 @@ export default function MovesAnalysis() {
     }
   }, [selectedProjectId, dispatch]);
 
-  // Filter movements by search term
+  // Filter and sort movements by search term (latest first)
   const filteredMovements = useMemo(() => {
-    if (!searchTerm.trim()) return movements;
-    const query = searchTerm.toLowerCase();
-    return movements.filter(
-      (m) =>
-        m.materialName.toLowerCase().includes(query) ||
-        m.source?.toLowerCase().includes(query) ||
-        m.destination?.toLowerCase().includes(query) ||
-        m.wbsTaskName?.toLowerCase().includes(query) ||
-        m.referenceNumber?.toLowerCase().includes(query)
-    );
+    let filtered = [...movements]; // Create a copy to avoid mutating Redux state
+    
+    // Apply search filter
+    if (searchTerm.trim()) {
+      const query = searchTerm.toLowerCase();
+      filtered = filtered.filter(
+        (m) =>
+          m.materialName.toLowerCase().includes(query) ||
+          m.source?.toLowerCase().includes(query) ||
+          m.destination?.toLowerCase().includes(query) ||
+          m.wbsTaskName?.toLowerCase().includes(query) ||
+          m.referenceNumber?.toLowerCase().includes(query)
+      );
+    }
+    
+    // Sort by movement date (latest first) - now safe to sort since we have a copy
+    return filtered.sort((a, b) => {
+      const dateA = new Date(a.movementDate || a.createdAt || 0);
+      const dateB = new Date(b.movementDate || b.createdAt || 0);
+      return dateB.getTime() - dateA.getTime(); // Latest first
+    });
   }, [movements, searchTerm]);
   
   // Paginate filtered movements
@@ -923,10 +955,28 @@ export default function MovesAnalysis() {
       {/* Filters */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Filter className="h-5 w-5" />
-            Filters
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Filter className="h-5 w-5" />
+              Filters
+            </CardTitle>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => {
+                console.log('🔄 Manual refresh triggered');
+                if (organisationId) {
+                  dispatch(fetchMovements({ organisationId }));
+                  dispatch(fetchMovementSummary({ organisationId }));
+                  toast.success('MovesAnalysis data refreshed!');
+                }
+              }}
+              className="flex items-center gap-2"
+            >
+              <RotateCcw className="h-4 w-4" />
+              Refresh
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -1064,8 +1114,21 @@ export default function MovesAnalysis() {
               )}
 
               {!loading &&
-                paginatedMovements.map((movement) => (
-                  <TableRow key={movement._id}>
+                paginatedMovements.map((movement) => {
+                  // Debug log for return movements
+                  if (movement.movementType === 'return') {
+                    console.log('🔍 Return movement found:', {
+                      id: movement._id,
+                      type: movement.movementType,
+                      material: movement.materialName,
+                      quantity: movement.quantity,
+                      date: movement.movementDate,
+                      source: movement.source,
+                      destination: movement.destination
+                    });
+                  }
+                  return (
+                  <TableRow key={movement._id} className={movement.movementType === 'return' ? 'bg-blue-50' : ''}>
                     <TableCell>
                       {movement.movementDate ? format(new Date(movement.movementDate), "dd MMM yyyy") : "N/A"}
                     </TableCell>
@@ -1074,6 +1137,9 @@ export default function MovesAnalysis() {
                         <span className="flex items-center gap-1">
                           {getMovementTypeIcon(movement.movementType)}
                           {movement.movementType}
+                          {movement.movementType === 'return' && (
+                            <span className="text-xs font-bold text-blue-600 ml-1">RETURN</span>
+                          )}
                         </span>
                       </Badge>
                     </TableCell>
@@ -1122,7 +1188,8 @@ export default function MovesAnalysis() {
                       </TableCell>
                     )}
                   </TableRow>
-                ))}
+                  );
+                })}
             </TableBody>
           </Table>
           

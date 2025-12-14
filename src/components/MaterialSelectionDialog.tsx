@@ -11,6 +11,7 @@ import { RootState, AppDispatch } from "@/redux/store";
 import { fetchMaterials } from "@/redux/slices/rawmaterialSlice";
 import { fetchWbsByProject } from "@/redux/slices/wbsSlice";
 import { fetchMRS } from "@/redux/slices/mrsSlice";
+import { fetchMovements, fetchMovementSummary } from "@/redux/slices/materialMovementSlice";
 import api from "@/utils/axiosApi";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -184,7 +185,7 @@ export default function MaterialSelectionDialog({
       // Check database delivery status - look for 'received' status in deliveryStatus or status
       const isReceived = mrs.deliveryStatus === 'received' || mrs.status === 'received';
       
-      console.log(`📋 MRS ${mrs.item} (${mrs.id || mrs._id}):`, {
+      console.log(`📋 MRS ${mrs.item} (${mrs._id}):`, {
         task: mrs.task,
         isForThisTask,
         deliveryStatus: mrs.deliveryStatus,
@@ -208,7 +209,7 @@ export default function MaterialSelectionDialog({
       const returnedQuantity = mrs.deliveryDetails?.returnedQuantity || 0;
       const availableQuantity = receivedQuantity - returnedQuantity;
       
-      console.log(`🧮 Material ${mrs.item} (${mrs.id || mrs._id}):`, {
+      console.log(`🧮 Material ${mrs.item} (${mrs._id}):`, {
         original: originalQuantity,
         received: receivedQuantity,
         returned: returnedQuantity,
@@ -217,7 +218,7 @@ export default function MaterialSelectionDialog({
       const usedQuantity = mrs.usedQuantity || 0;
       
       return {
-        materialId: mrs.id || mrs._id,
+        materialId: mrs._id,
         name: mrs.item,
         quantity: availableQuantity,
         unit: materialDetails?.unitOfMeasure || mrs.unit || 'units',
@@ -449,7 +450,7 @@ export default function MaterialSelectionDialog({
   const openReturnModal = (m: SelectedMaterial) => {
     // For MRS materials, we need to get the original quantity from the MRS entry
     const isMRSMaterial = mrsList?.some((mrs: any) => 
-      (mrs.id === m.materialId || mrs._id === m.materialId) && mrs.task === wbsItem?.name
+      mrs._id === m.materialId && mrs.task === wbsItem?.name
     );
     
     let originalQuantity = Number(m.quantity);
@@ -457,7 +458,7 @@ export default function MaterialSelectionDialog({
     if (isMRSMaterial) {
       // Find the original MRS entry to get the original quantity
       const mrsEntry = mrsList?.find((mrs: any) => 
-        (mrs.id === m.materialId || mrs._id === m.materialId)
+        mrs._id === m.materialId
       );
       if (mrsEntry) {
         originalQuantity = mrsEntry.quantity || 1;
@@ -484,57 +485,31 @@ export default function MaterialSelectionDialog({
       // 🔍 DETECT ITEM TYPE
       // Check if this ID belongs to an MRS entry
       const mrsEntry = mrsList?.find((m: any) => 
-        (m.id === it.materialId || m._id === it.materialId)
+        m._id === it.materialId
       );
 
-      if (mrsEntry) {
-        // ============================================================
-        // CASE 1: MRS ITEM RETURN
-        // We must update the MRS record AND manually restore stock
-        // ============================================================
-        console.log(`📦 Identified as MRS Item. Updating MRS status...`);
-        
-        // 1. Update MRS Record (Marks it as returned in Procurement)
-        await api.patch(`/mrs/${it.materialId}/return-material`, {
-          returnedQuantity: returnQty,
-          returnReason: "Returned from WBS Task",
-          returnedBy: "User"
-        });
-
-        // 2. Restore Physical Stock (Manual Update)
-        // Since MRS return API doesn't auto-update inventory, we do it here
-        const rawMaterial = materials.find(rm => rm.name === it.name);
-        if (rawMaterial) {
-          console.log(`🔄 Restoring raw material stock...`);
-          // Update the first stock's remaining quantity
-          if (rawMaterial.stocks && rawMaterial.stocks.length > 0) {
-            const updatedStocks = [...rawMaterial.stocks];
-            updatedStocks[0] = {
-              ...updatedStocks[0],
-              remainingQuantity: (updatedStocks[0].remainingQuantity || 0) + returnQty
-            };
-            
-            const organisationId = localStorage.getItem("organisationId");
-            await api.put(`/raw/update/${rawMaterial._id}`, {
-              ...rawMaterial,
-              stocks: updatedStocks
-            }, {
-              headers: { organisationId }
-            });
-          }
-        }
-      } else {
-        // ============================================================
-        // CASE 2: WBS LINKED MATERIAL RETURN
-        // The WBS API handles both link removal and stock restoration
-        // ============================================================
-        console.log(`🔗 Identified as Linked Material. Calling WBS return...`);
-        await api.post("/wbs/return-material", {
-          wbsId,
-          materialId: it.materialId,
-          returnQty,
-        });
-      }
+      // ============================================================
+      // UNIFIED RETURN HANDLING - SINGLE API CALL ONLY
+      // Use WBS return API for all materials - it handles everything properly:
+      // - Updates stock correctly
+      // - Creates proper "return" movement record
+      // - Updates WBS linked quantities
+      // - No duplicate movements created
+      // ============================================================
+      console.log(`🔄 Processing material return using WBS API (unified approach)...`);
+      
+      await api.post("/wbs/return-material", {
+        wbsId,
+        materialId: it.materialId,
+        returnQty,
+        isMRSMaterial: !!mrsEntry, // Flag to help backend identify MRS materials
+        mrsId: mrsEntry ? mrsEntry._id : null // Pass MRS ID for tracking
+      });
+      
+      console.log(`✅ WBS return API completed - stock updated and return movement created`);
+      
+      // ❌ REMOVED: No longer calling MRS API separately to avoid duplicate movements
+      // The WBS API now handles MRS record updates internally
 
       // ============================================================
       // COMMON SUCCESS HANDLING
@@ -554,17 +529,36 @@ export default function MaterialSelectionDialog({
         }).filter(material => Number(material.quantity) > 0)
       );
       
-      toast.success(`✅ Returned ${returnQty} ${it.unit} of ${it.name}. Stock updated!`);
+      toast.success(`✅ Returned ${returnQty} ${it.unit} of ${it.name}. Stock updated! Check MovesAnalysis for return record.`);
       
       // Close modal
       setReturnModal({ open: false, item: null, submitting: false });
       
-      // Refresh all data
+      // Refresh all data including material movements
       setTimeout(() => {
         dispatch(fetchMaterials({ page: 1, limit: 100 }));
         dispatch(fetchMRS()); // Crucial: Refetches MRS to see the new "Returned" status
         if (wbsItem?.projectId) {
           dispatch(fetchWbsByProject(wbsItem.projectId));
+        }
+        
+        // 🔥 Refresh material movements for MovesAnalysis page
+        const organisationId = localStorage.getItem("organisationId");
+        if (organisationId) {
+          console.log(`🔄 Refreshing material movements after return...`);
+          dispatch(fetchMovements({ organisationId }));
+          dispatch(fetchMovementSummary({ organisationId }));
+          console.log(`✅ Material movements refreshed - check MovesAnalysis page`);
+          
+          // 📡 Dispatch custom event to notify MovesAnalysis page
+          window.dispatchEvent(new CustomEvent('materialReturned', {
+            detail: {
+              materialName: it.name,
+              quantity: returnQty,
+              wbsTask: wbsItem?.name,
+              timestamp: new Date().toISOString()
+            }
+          }));
         }
       }, 500);
 
@@ -729,7 +723,7 @@ export default function MaterialSelectionDialog({
                   return filteredMaterials.map((m) => {
                     // Check if this is from MRS or linkedMaterials
                     const isMRSMaterial = mrsList?.some((mrs: any) => 
-                      (mrs.id === m.materialId || mrs._id === m.materialId) && mrs.task === wbsItem?.name
+                      mrs._id === m.materialId && mrs.task === wbsItem?.name
                     );
                     
                     // Get material status from localStorage
