@@ -8,6 +8,7 @@ import { PurchaseAgreement } from '@/types/purchase';
 import { Plus, Eye, Trash2, CheckCircle, X, Loader2, Search, ShieldAlert, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 import { fetchMasterData } from "@/redux/slices/masterDataSlice";
+// import UserProfileDebug from "@/components/UserProfileDebug";
 
 const PurchaseAgreementComponent: React.FC = () => {
   const canView = usePermission("agreements", "view");
@@ -17,6 +18,18 @@ const PurchaseAgreementComponent: React.FC = () => {
   const { userProfile } = useSelector((state: any) => state.auth); // [!code ++]
   const { locations } = useSelector((state: any) => state.masterData); // [!code ++]
   const isLocationRestricted = userProfile?.role !== 'admin' && !!userProfile?.location;
+  
+  // Debug logging
+  console.log('🔍 Purchase Agreement Debug:', {
+    userProfile: userProfile ? {
+      id: userProfile._id,
+      role: userProfile.role,
+      location: userProfile.location,
+      locationDetails: userProfile.locationDetails
+    } : null,
+    isLocationRestricted,
+    locationsCount: locations?.length || 0
+  });
   const [locationFilter, setLocationFilter] = useState(isLocationRestricted ? userProfile.location : "all");
   if (!canView) {
     return (
@@ -486,6 +499,7 @@ const PurchaseAgreementComponent: React.FC = () => {
 
       {showCreateAgreement && <CreateAgreementForm />}
       {showViewAgreement && <ViewAgreementModal />}
+      {/* <UserProfileDebug /> */}
     </div>
   );
 };

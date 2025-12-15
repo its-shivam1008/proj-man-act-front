@@ -112,15 +112,12 @@ const authSlice = createSlice({
     },
     updateUserProfile: (state, action) => {
       if (action.payload.updatedUser) {
-        console.log('🔄 Updating user profile in Redux:', action.payload.updatedUser);
         state.userProfile = action.payload.updatedUser;
         state.organisationId = action.payload.updatedUser.organisationId;
         
         // Update localStorage as well
         localStorage.setItem("userProfile", JSON.stringify(action.payload.updatedUser));
         localStorage.setItem("organisationId", action.payload.updatedUser.organisationId);
-        
-        console.log('✅ User profile updated successfully');
       }
     },
   },

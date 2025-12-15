@@ -98,6 +98,8 @@ import OperationsModule from "./pages/modules/Operations";
 import ReportingModule, { InventoryHistoryPage, MovesAnalysisPage, StockPage, ValuationPage } from "./pages/modules/ReportingModule";
 import Drawing from "./pages/modules/Drawing";
 import InventoryMasterData from "./pages/modules/inventory/InventoryMasterData";
+import UserProfileMiddleware from "./middleware/UserProfileMiddleware";
+
 function App() {
   useEffect(() => {
     ensureInitialized();
@@ -116,7 +118,9 @@ function App() {
             <Route
               element={
                 <ProtectedRoute>
-                  <Layout />
+                  <UserProfileMiddleware>
+                    <Layout />
+                  </UserProfileMiddleware>
                 </ProtectedRoute>
               }
             >
