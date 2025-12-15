@@ -110,6 +110,19 @@ const authSlice = createSlice({
     clearError: (state) => {
       state.error = null;
     },
+    updateUserProfile: (state, action) => {
+      if (action.payload.updatedUser) {
+        console.log('🔄 Updating user profile in Redux:', action.payload.updatedUser);
+        state.userProfile = action.payload.updatedUser;
+        state.organisationId = action.payload.updatedUser.organisationId;
+        
+        // Update localStorage as well
+        localStorage.setItem("userProfile", JSON.stringify(action.payload.updatedUser));
+        localStorage.setItem("organisationId", action.payload.updatedUser.organisationId);
+        
+        console.log('✅ User profile updated successfully');
+      }
+    },
   },
 
   extraReducers: (builder) => {
@@ -181,5 +194,5 @@ const authSlice = createSlice({
   },
 });
 
-export const { logout, clearError } = authSlice.actions;
+export const { logout, clearError, updateUserProfile } = authSlice.actions;
 export default authSlice.reducer;

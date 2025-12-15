@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
 import { fetchNotifications, respondToInvite, respondToMaterialPurchase, markAsRead } from "@/redux/slices/notificationSlice";
+import { updateUserProfile } from "@/redux/slices/authSlice";
 
 import {
   Bell,
@@ -92,8 +93,20 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
     setCooldown(30);
   };
 
-  const handleInviteResponse = (notificationId: string, response: "accepted" | "rejected") => {
-    dispatch(respondToInvite({ notificationId, response }));
+  const handleInviteResponse = async (notificationId: string, response: "accepted" | "rejected") => {
+    try {
+      const result = await dispatch(respondToInvite({ notificationId, response })).unwrap();
+      
+      // If invite was accepted and we got updated user data, update the auth state
+      if (response === "accepted" && result.updatedUser) {
+        dispatch(updateUserProfile({ updatedUser: result.updatedUser }));
+      }
+      
+      // Refresh notifications to update the UI
+      fetchNotificationHelper();
+    } catch (error) {
+      console.error('Failed to respond to invite:', error);
+    }
   };
 
   const handleMaterialPurchaseResponse = (notificationId: string, response: "accepted" | "rejected") => {

@@ -4,6 +4,7 @@ import { useLocation } from "react-router-dom";
 import { AppDispatch, RootState } from "@/redux/store";
 import { fetchNotifications, respondToInvite } from "@/redux/slices/notificationSlice";
 import { fetchReminders } from "@/redux/slices/reminderSlice";
+import { updateUserProfile } from "@/redux/slices/authSlice";
 import {
   Bell,
   RefreshCcw,
@@ -167,8 +168,20 @@ export default function NotificationHeader() {
     setCooldown(30);
   };
 
-  const handleInviteResponse = (notificationId: string, response: "accepted" | "rejected") => {
-    dispatch(respondToInvite({ notificationId, response }));
+  const handleInviteResponse = async (notificationId: string, response: "accepted" | "rejected") => {
+    try {
+      const result = await dispatch(respondToInvite({ notificationId, response })).unwrap();
+      
+      // If invite was accepted and we got updated user data, update the auth state
+      if (response === "accepted" && result.updatedUser) {
+        dispatch(updateUserProfile({ updatedUser: result.updatedUser }));
+      }
+      
+      // Refresh notifications to update the UI
+      fetchNotificationHelper();
+    } catch (error) {
+      console.error('Failed to respond to invite:', error);
+    }
   };
 
   const handleMarkAsRead = async (notificationId: string) => {
