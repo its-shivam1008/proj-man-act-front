@@ -305,14 +305,21 @@ useEffect(() => {
     setIsDialogOpen(false);
   };
 
-  const handleDelete = async (id: string) => {
-    const res = await dispatch(deleteProject(id));
-    if (deleteProject.fulfilled.match(res)) {
-      toast.success("Project deleted");
-    } else {
-      toast.error(res.payload || "Delete failed");
-    }
-  };
+ const handleDelete = async (id: string) => {
+  const confirmed = window.confirm(
+    "Are you sure you want to delete this project? This action cannot be undone."
+  );
+
+  if (!confirmed) return;
+
+  try {
+    await dispatch(deleteProject(id)).unwrap();
+    toast.success("Project deleted successfully");
+  } catch (error: any) {
+    toast.error(error?.message || "Failed to delete project");
+  }
+};
+
 
   const resetForm = () => {
     setEditingProject(null);

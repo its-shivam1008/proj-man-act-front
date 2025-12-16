@@ -430,8 +430,8 @@ export default function WBS() {
         });
     }
   };
-
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
+    // 1️⃣ Check child dependency
     const hasChildren = wbs.some((item) => item.parentId === id);
     if (hasChildren) {
       toast({
@@ -442,15 +442,28 @@ export default function WBS() {
       return;
     }
 
-    dispatch(deleteWbsItem(id))
-      .unwrap()
-      .then(() => {
-        toast({
-          title: "Success",
-          description: "WBS item deleted successfully",
-        });
+    // 2️⃣ Confirm delete
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this WBS item? This action cannot be undone."
+    );
+    if (!confirmed) return;
+
+    // 3️⃣ Delete with error handling
+    try {
+      await dispatch(deleteWbsItem(id)).unwrap();
+      toast({
+        title: "Success",
+        description: "WBS item deleted successfully",
       });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to delete WBS item",
+        variant: "destructive",
+      });
+    }
   };
+
 
   const openEditDialog = (item: WBSItem) => {
     setEditingItem(item);
@@ -490,7 +503,7 @@ export default function WBS() {
   // Get MRS materials for a specific WBS task
   const getMRSMaterialsForTask = (taskName: string) => {
     if (!selectedProjectId || !mrsList) return [];
-    
+
     return mrsList.filter((mrs: any) => {
       const mrsProjectId = String(mrs.projectId || '');
       const selectedId = String(selectedProjectId || '');
@@ -503,7 +516,7 @@ export default function WBS() {
     // Get materials from both sources
     const linkedMaterials = (wbsItem as any).linkedMaterials || [];
     const mrsMaterials = getMRSMaterialsForTask(wbsItem.name);
-    
+
     // Combine both sources
     const allMaterials = [
       ...linkedMaterials.map((lm: any) => ({ id: lm.materialId, source: 'linked' })),
@@ -511,7 +524,7 @@ export default function WBS() {
     ];
 
     // Remove duplicates (in case material is both linked and in MRS)
-    const uniqueMaterials = allMaterials.filter((material, index, self) => 
+    const uniqueMaterials = allMaterials.filter((material, index, self) =>
       index === self.findIndex(m => m.id === material.id)
     );
 
@@ -526,12 +539,12 @@ export default function WBS() {
     }
 
     // For display purposes, we only show received count
-    const summary = { 
-      total: receivedMaterials.length, 
-      received: receivedMaterials.length, 
-      inTransit: 0, 
-      sent: 0, 
-      pending: 0 
+    const summary = {
+      total: receivedMaterials.length,
+      received: receivedMaterials.length,
+      inTransit: 0,
+      sent: 0,
+      pending: 0
     };
 
     return summary;
@@ -756,20 +769,18 @@ export default function WBS() {
                       projects.map((project) => (
                         <CommandItem
                           key={project._id}
-                          value={`${project.code} ${project.name} ${
-                            project.clientOrDepartment || ""
-                          }`}
+                          value={`${project.code} ${project.name} ${project.clientOrDepartment || ""
+                            }`}
                           onSelect={() => {
                             setSelectedProjectId(project._id);
                             setPopoverOpen(false);
                           }}
                         >
                           <Check
-                            className={`mr-2 h-4 w-4 ${
-                              selectedProjectId === project._id
+                            className={`mr-2 h-4 w-4 ${selectedProjectId === project._id
                                 ? "opacity-100"
                                 : "opacity-0"
-                            }`}
+                              }`}
                           />
                           <div className="flex flex-col">
                             <span className="font-medium">
@@ -1091,7 +1102,7 @@ export default function WBS() {
             <div className="w-20 text-center">Progress</div>
             <div className="w-32 text-center">Materials</div>
             <div className="w-48 text-right pr-4">Actions</div>
-          </div>        
+          </div>
         </CardHeader>
         <CardContent>
           {!selectedProjectId ? (

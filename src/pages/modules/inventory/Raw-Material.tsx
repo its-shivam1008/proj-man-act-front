@@ -67,16 +67,16 @@ export default function RawMaterialMaster() {
     // 🚀 FIFO: Calculate weighted average cost based on remaining quantities
     if (Array.isArray(material.stocks) && material.stocks.length > 0) {
       const stocksWithQuantity = material.stocks.filter((s: any) => s.remainingQuantity > 0);
-      
+
       if (stocksWithQuantity.length === 0) return 0;
-      
-      const totalValue = stocksWithQuantity.reduce((sum: number, stock: any) => 
+
+      const totalValue = stocksWithQuantity.reduce((sum: number, stock: any) =>
         sum + ((stock.remainingQuantity || 0) * (stock.unitCost || 0)), 0
       );
-      const totalQuantity = stocksWithQuantity.reduce((sum: number, stock: any) => 
+      const totalQuantity = stocksWithQuantity.reduce((sum: number, stock: any) =>
         sum + (stock.remainingQuantity || 0), 0
       );
-      
+
       return totalQuantity > 0 ? (totalValue / totalQuantity).toFixed(2) : 0;
     }
     return material.unitCost || 0;
@@ -86,12 +86,12 @@ export default function RawMaterialMaster() {
   const [page, setPage] = useState(1);
   const limit = 10;
   const hasPrev = page > 1;
-  
+
   // Purchase History State
   const [expandedMaterial, setExpandedMaterial] = useState<string | null>(null);
-  const [purchaseHistory, setPurchaseHistory] = useState<{[key: string]: any[]}>({});
-  const [loadingHistory, setLoadingHistory] = useState<{[key: string]: boolean}>({});
-  
+  const [purchaseHistory, setPurchaseHistory] = useState<{ [key: string]: any[] }>({});
+  const [loadingHistory, setLoadingHistory] = useState<{ [key: string]: boolean }>({});
+
   // Warehouse Dialog State
   const [warehouseDialogOpen, setWarehouseDialogOpen] = useState(false);
   const [selectedMaterialForWarehouses, setSelectedMaterialForWarehouses] = useState<any>(null);
@@ -121,11 +121,11 @@ export default function RawMaterialMaster() {
   // Fetch purchase history for a material
   const fetchPurchaseHistory = async (materialId: string, forceRefresh = false) => {
     setLoadingHistory(prev => ({ ...prev, [materialId]: true }));
-    
+
     try {
       console.log(`🔍 Fetching FIFO stock summary for material: ${materialId}`);
       const organisationId = localStorage.getItem('organisationId');
-      
+
       // First try to get FIFO stock summary which includes actual consumption data
       const fifoResponse = await fetch(`${BASE_URL}/fifo/stock-summary/${materialId}`, {
         headers: {
@@ -133,14 +133,14 @@ export default function RawMaterialMaster() {
           'Content-Type': 'application/json'
         }
       });
-      
+
       if (fifoResponse.ok) {
         const fifoData = await fifoResponse.json();
-        
+
         if (fifoData.success && fifoData.data.batches) {
           const batches = fifoData.data.batches;
           console.log(`📦 Found ${batches.length} FIFO batches for material ${materialId}`, batches);
-          
+
           // Convert FIFO batches to purchase history format with actual progress data
           const purchaseHistoryWithProgress = batches.map((batch: any) => ({
             _id: batch.batchId,
@@ -157,17 +157,17 @@ export default function RawMaterialMaster() {
             remarks: `FIFO Batch - ${batch.warehouseName || 'Warehouse'}`,
             unit: batch.unit || 'units'
           }));
-          
+
           // Sort by purchase date (oldest first for FIFO order)
-          const sortedHistory = purchaseHistoryWithProgress.sort((a: any, b: any) => 
+          const sortedHistory = purchaseHistoryWithProgress.sort((a: any, b: any) =>
             new Date(a.movementDate).getTime() - new Date(b.movementDate).getTime()
           );
-          
+
           setPurchaseHistory(prev => ({
             ...prev,
             [materialId]: sortedHistory
           }));
-          
+
           if (forceRefresh) {
             toast.success(`FIFO stock summary refreshed! Found ${sortedHistory.length} batches.`);
           }
@@ -193,20 +193,20 @@ export default function RawMaterialMaster() {
     try {
       console.log(`📦 Fallback: Fetching material movements for ${materialId}`);
       const organisationId = localStorage.getItem('organisationId');
-      
+
       const response = await fetch(`${BASE_URL}/material-movements?organisationId=${organisationId}&materialId=${materialId}&movementType=inbound&source=Purchase Order`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
           'Content-Type': 'application/json'
         }
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         const movements = data.data || [];
-        
+
         console.log(`📦 Found ${movements.length} purchase movements for material ${materialId}`);
-        
+
         // Add default progress data for movements (no FIFO data available)
         const movementsWithProgress = movements.map((movement: any) => ({
           ...movement,
@@ -215,17 +215,17 @@ export default function RawMaterialMaster() {
           consumedQuantity: 0,
           progressPercentage: 0 // No consumption data available
         }));
-        
+
         // Sort by date (oldest first for FIFO order)
-        const sortedMovements = movementsWithProgress.sort((a: any, b: any) => 
+        const sortedMovements = movementsWithProgress.sort((a: any, b: any) =>
           new Date(a.movementDate).getTime() - new Date(b.movementDate).getTime()
         );
-        
+
         setPurchaseHistory(prev => ({
           ...prev,
           [materialId]: sortedMovements
         }));
-        
+
         if (forceRefresh) {
           toast.success(`Purchase history refreshed! Found ${sortedMovements.length} purchases.`);
         }
@@ -261,23 +261,23 @@ export default function RawMaterialMaster() {
 
   const getWarehouseNames = (material: any) => {
     if (!material.stocks || material.stocks.length === 0) return "N/A";
-    
+
     // Get unique warehouse names
     const uniqueWarehouses = [...new Set(
       material.stocks
         .map((s: any) => getWarehouseName(s.warehouseId))
         .filter((name: string) => name !== "N/A")
     )];
-    
+
     return uniqueWarehouses.length > 0 ? uniqueWarehouses.join(", ") : "N/A";
   };
 
   // Get detailed warehouse info for a material
   const getWarehouseDetails = (material: any) => {
     if (!material.stocks || material.stocks.length === 0) return [];
-    
+
     const warehouseMap = new Map();
-    
+
     material.stocks.forEach((stock: any) => {
       const warehouseName = getWarehouseName(stock.warehouseId);
       if (warehouseName !== "N/A") {
@@ -292,7 +292,7 @@ export default function RawMaterialMaster() {
         }
       }
     });
-    
+
     return Array.from(warehouseMap.values());
   };
 
@@ -561,57 +561,69 @@ export default function RawMaterialMaster() {
 
   const isSearching = search.trim() !== "";
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return materials;
-    return materials.filter(
-      (i) =>
-        i.name.toLowerCase().includes(q) ||
-        (i.itemCode || "").toLowerCase().includes(q)
-    );
-  }, [materials, search]);
+    return materials.filter((m) => {
+      // Search filter
+      const matchesSearch =
+        !search.trim() ||
+        m.name.toLowerCase().includes(search.toLowerCase()) ||
+        (m.itemCode || "").toLowerCase().includes(search.toLowerCase());
+
+      // Warehouse filter
+      const matchesWarehouse =
+        warehouseFilter === "all"
+          ? true
+          : Array.isArray(m.stocks) &&
+          m.stocks.some(
+            (s: any) => String(s.warehouseId) === warehouseFilter
+          );
+
+      return matchesSearch && matchesWarehouse;
+    });
+  }, [materials, search, warehouseFilter]);
+
 
   const onSubmit = async (data: RawMaterial) => {
-  try {
-    const payload: any = {
-      ...data,
-      organisationId: localStorage.getItem("organisationId"),
-    };
+    try {
+      const payload: any = {
+        ...data,
+        organisationId: localStorage.getItem("organisationId"),
+      };
 
-    // 🔥 Convert quantity → stocks
-    if (data.trackInventory && data.quantity > 0) {
-      payload.stocks = [
-        {
-          warehouseId: data.warehouse,
-          quantity: Number(data.quantity),
-          unitCost: Number(data.unitCost || 0),
-        },
-      ];
-    } else {
-      payload.stocks = [];
+      // 🔥 Convert quantity → stocks
+      if (data.trackInventory && data.quantity > 0) {
+        payload.stocks = [
+          {
+            warehouseId: data.warehouse,
+            quantity: Number(data.quantity),
+            unitCost: Number(data.unitCost || 0),
+          },
+        ];
+      } else {
+        payload.stocks = [];
+      }
+
+      // ❌ Remove legacy fields
+      delete payload.quantity;
+      delete payload.unitCost;
+      delete payload.warehouse;
+
+      if (editing) {
+        await dispatch(updateMaterial({ id: editing._id!, data: payload })).unwrap();
+        toast.success("Material updated successfully");
+      } else {
+        await dispatch(addMaterial(payload)).unwrap();
+        toast.success("Material created successfully");
+      }
+
+      dispatch(fetchMaterials({ page, limit }));
+      reset();
+      setEditing(null);
+      setOpen(false);
+    } catch (error: any) {
+      console.error(error);
+      toast.error("Operation failed");
     }
-
-    // ❌ Remove legacy fields
-    delete payload.quantity;
-    delete payload.unitCost;
-    delete payload.warehouse;
-
-    if (editing) {
-      await dispatch(updateMaterial({ id: editing._id!, data: payload })).unwrap();
-      toast.success("Material updated successfully");
-    } else {
-      await dispatch(addMaterial(payload)).unwrap();
-      toast.success("Material created successfully");
-    }
-
-    dispatch(fetchMaterials({ page, limit, warehouse: warehouseFilter }));
-    reset();
-    setEditing(null);
-    setOpen(false);
-  } catch (error: any) {
-    console.error(error);
-    toast.error("Operation failed");
-  }
-};
+  };
 
   const startEdit = (it: RawMaterial) => {
     setEditing(it);
@@ -1004,22 +1016,31 @@ export default function RawMaterialMaster() {
                       <button disabled={!canDelete} title="Delete">
                         <Trash2
                           className="h-4 w-4 cursor-pointer text-red-500"
-                          onClick={() =>
+                          onClick={() => {
+                            const confirmed = window.confirm(
+                              `Are you sure you want to delete "${m.name}"?\nThis action cannot be undone.`
+                            );
+
+                            if (!confirmed) return;
+
                             dispatch(deleteMaterial(m._id!)).then(() => {
-                              dispatch(fetchMaterials({ page, limit, warehouse: warehouseFilter })).then((res: any) => {
-                                const items = res.payload?.materials || [];
-                                if (items.length === 0 && page > 1) {
-                                  setPage((p) => p - 1);
+                              dispatch(fetchMaterials({ page, limit, warehouse: warehouseFilter })).then(
+                                (res: any) => {
+                                  const items = res.payload?.materials || [];
+                                  if (items.length === 0 && page > 1) {
+                                    setPage((p) => p - 1);
+                                  }
                                 }
-                              });
-                            })
-                          }
+                              );
+                            });
+                          }}
+
 
                         />
                       </button>
                     </TableCell>
                   </TableRow>
-                  
+
                   {/* Purchase History Dropdown */}
                   {expandedMaterial === m._id && (
                     <TableRow>
@@ -1033,7 +1054,7 @@ export default function RawMaterialMaster() {
                               </div>
                             </div>
                           </div>
-                          
+
                           {purchaseHistory[m._id!] ? (
                             purchaseHistory[m._id!].length > 0 ? (
                               <div className="bg-white rounded-lg border">
@@ -1054,62 +1075,61 @@ export default function RawMaterialMaster() {
                                     {purchaseHistory[m._id!].map((purchase: any, index: number) => {
                                       const progress = (((purchase.originalQuantity || purchase.quantity) - (purchase.remainingQuantity || 0)) / (purchase.originalQuantity || purchase.quantity || 0)) * 100
                                       return (
-                                      <TableRow key={purchase._id || index} className="text-sm">
-                                        <TableCell className="text-xs">
-                                          {purchase.movementDate ? 
-                                            new Date(purchase.movementDate).toLocaleDateString('en-IN', {
-                                              day: '2-digit',
-                                              month: 'short',
-                                              year: 'numeric'
-                                            }) : 'N/A'
-                                          }
-                                        </TableCell>
-                                        <TableCell className="text-xs font-medium">
-                                          {purchase.quantity} {purchase.unit}
-                                        </TableCell>
-                                        <TableCell className="text-xs">
-                                          ₹{purchase.unitCost || 0}
-                                        </TableCell>
-                                        <TableCell className="text-xs font-medium">
-                                          ₹{purchase.totalCost || 0}
-                                        </TableCell>
-                                        <TableCell className="text-xs">
-                                          <div className="space-y-1">
-                                            <div className="flex justify-between text-xs">
-                                              <span>Used: {(purchase.originalQuantity || purchase.quantity) - (purchase.remainingQuantity || 0)}</span>
-                                              <span>Left: {purchase.remainingQuantity || 0}</span>
+                                        <TableRow key={purchase._id || index} className="text-sm">
+                                          <TableCell className="text-xs">
+                                            {purchase.movementDate ?
+                                              new Date(purchase.movementDate).toLocaleDateString('en-IN', {
+                                                day: '2-digit',
+                                                month: 'short',
+                                                year: 'numeric'
+                                              }) : 'N/A'
+                                            }
+                                          </TableCell>
+                                          <TableCell className="text-xs font-medium">
+                                            {purchase.quantity} {purchase.unit}
+                                          </TableCell>
+                                          <TableCell className="text-xs">
+                                            ₹{purchase.unitCost || 0}
+                                          </TableCell>
+                                          <TableCell className="text-xs font-medium">
+                                            ₹{purchase.totalCost || 0}
+                                          </TableCell>
+                                          <TableCell className="text-xs">
+                                            <div className="space-y-1">
+                                              <div className="flex justify-between text-xs">
+                                                <span>Used: {(purchase.originalQuantity || purchase.quantity) - (purchase.remainingQuantity || 0)}</span>
+                                                <span>Left: {purchase.remainingQuantity || 0}</span>
+                                              </div>
+                                              <div className="w-full bg-gray-200 rounded-full h-2">
+                                                <div
+                                                  className={`h-2 rounded-full ${progress >= 100 ? 'bg-red-500' :
+                                                    progress >= 75 ? 'bg-orange-500' :
+                                                      progress >= 25 ? 'bg-yellow-500' : 'bg-green-500'
+                                                    }`}
+                                                  style={{
+                                                    width: `${Math.min(progress || 0, 100)}%`
+                                                  }}
+                                                ></div>
+                                              </div>
+                                              <div className="text-xs text-gray-500">
+                                                {(progress || 0).toFixed(1)}% consumed
+                                              </div>
                                             </div>
-                                            <div className="w-full bg-gray-200 rounded-full h-2">
-                                              <div 
-                                                className={`h-2 rounded-full ${
-                                                  progress >= 100 ? 'bg-red-500' : 
-                                                  progress >= 75 ? 'bg-orange-500' : 
-                                                  progress >= 25 ? 'bg-yellow-500' : 'bg-green-500'
-                                                }`}
-                                                style={{ 
-                                                  width: `${Math.min(progress || 0, 100)}%` 
-                                                }}
-                                              ></div>
-                                            </div>
-                                            <div className="text-xs text-gray-500">
-                                              {(progress || 0).toFixed(1)}% consumed
-                                            </div>
-                                          </div>
-                                        </TableCell>
-                                        <TableCell className="text-xs">
-                                          {purchase.source || 'Purchase Order'}
-                                        </TableCell>
-                                        <TableCell className="text-xs">
-                                          {purchase.referenceNumber || 'N/A'}
-                                        </TableCell>
-                                        <TableCell className="text-xs">
-                                          {purchase.remarks || 'Material purchase'}
-                                        </TableCell>
-                                      </TableRow>)
+                                          </TableCell>
+                                          <TableCell className="text-xs">
+                                            {purchase.source || 'Purchase Order'}
+                                          </TableCell>
+                                          <TableCell className="text-xs">
+                                            {purchase.referenceNumber || 'N/A'}
+                                          </TableCell>
+                                          <TableCell className="text-xs">
+                                            {purchase.remarks || 'Material purchase'}
+                                          </TableCell>
+                                        </TableRow>)
                                     })}
                                   </TableBody>
                                 </Table>
-                                
+
                                 {/* Summary */}
                                 <div className="p-3 bg-blue-50 border-t">
                                   <div className="grid grid-cols-2 gap-6 text-sm">
@@ -1267,7 +1287,7 @@ export default function RawMaterialMaster() {
                     </div>
                   ))}
                 </div>
-                
+
                 {getWarehouseDetails(selectedMaterialForWarehouses).length === 0 && (
                   <div className="text-center py-4 text-gray-500">
                     <Warehouse className="h-8 w-8 mx-auto mb-2 text-gray-400" />

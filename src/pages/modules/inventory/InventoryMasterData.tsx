@@ -138,13 +138,23 @@ export default function InventoryMasterData() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this record?")) return;
+    const confirmed = window.confirm("Are you sure you want to delete this record? This action cannot be undone.");
 
-    await dispatch(deleteInventoryMaster({ type: activeTab, id }));
-    toast.success("Deleted");
+    if (!confirmed) return;
 
-    handlePageChange(1);
+    try {
+      await dispatch(deleteInventoryMaster({
+        type: activeTab,
+        id,
+        organisationId: localStorage.getItem("organisationId"),
+      })).unwrap();
+      toast.success("Record deleted successfully");
+      handlePageChange(1);
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to delete record");
+    }
   };
+
 
   const pageInfo = pagination[activeTab];
 
