@@ -73,12 +73,22 @@ import {
 } from "recharts";
 
 export default function MovesAnalysis() {
+  
   const dispatch = useDispatch<AppDispatch>();
   const organisationId = localStorage.getItem("organisationId") || "";
-
   const canView = usePermission("movesAnalysis", "view");
   const canCreate = usePermission("movesAnalysis", "create");
   const canDelete = usePermission("movesAnalysis", "delete");
+
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
+        <p className="text-gray-600">You do not have the necessary permissions to view this page.</p>
+      </div>
+    );
+  }
 
   // Redux State
   const { movements, loading, summary } = useSelector((state: RootState) => state.materialMovement);
@@ -512,15 +522,7 @@ export default function MovesAnalysis() {
       .slice(-7); // Show last 7 days
   }, [movements]);
 
-  if (!canView) {
-    return (
-      <div className="text-center py-12 px-4">
-        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
-        <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
-        <p className="text-gray-600">You do not have the necessary permissions to view this page.</p>
-      </div>
-    );
-  }
+  
 
   return (
     <div className="space-y-6 p-4 md:p-6">

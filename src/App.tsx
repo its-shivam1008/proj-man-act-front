@@ -307,7 +307,7 @@ function App() {
               />
               <Route
                 path="/plant-machinery/costing"
-                element={<EquipmentCostingPage />}
+                element={<EquipmentCostingPage />}  
               />
               <Route
                 path="/plant-machinery/reports"

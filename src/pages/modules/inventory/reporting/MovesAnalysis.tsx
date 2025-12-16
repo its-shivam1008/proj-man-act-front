@@ -54,10 +54,10 @@ interface FormData {
 }
 
 const MovesAnalysis: React.FC = () => {
-  const canView = usePermission("inventoryReporting", "view");
-  const canCreate = usePermission("inventoryReporting", "create");
-  const canEdit = usePermission("inventoryReporting", "edit");
-  const canDelete = usePermission("inventoryReporting", "delete");
+  const canView = usePermission("moveanalysis", "view");
+  const canCreate = usePermission("moveanalysis", "create");
+  const canEdit = usePermission("moveanalysis", "edit");
+  const canDelete = usePermission("moveanalysis", "delete");
 
   if (!canView) {
     return (

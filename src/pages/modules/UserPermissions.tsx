@@ -7,7 +7,8 @@ import {
   Network, TrendingUp, AlertTriangle, HandCoins, FileText, 
   ReceiptIndianRupee, CircuitBoard, PlaneTakeoff, CassetteTape, PenTool, 
   FolderClosed, BarChart3, Warehouse, MapPin, Mail, CheckCircle, Clock, Trash2, Search, UserCog, Loader2,
-  ShieldAlert
+  ShieldAlert,
+  History
 } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchMasterData } from "@/redux/slices/masterDataSlice";
@@ -39,9 +40,15 @@ const inventoryLinks = [
     { name: "Raw Materials", icon: Warehouse, key: "rawMaterials" },
     { name: "Warehouses", icon: MapPin, key: "warehouses" },
     { name: "Stores", icon: Package, key: "stores" },
-    { name: "Operations", icon: Warehouse, key: "inventoryOperations" },
-    { name: "Reporting", icon: TrendingUp, key: "inventoryReporting" },
+    { name: "Forcasting", icon: Clock, key: "forecasting" }, // forcasting
+    { name: "Delivery", icon: Mail, key: "deliveries" },
+    { name: "Scrap Orders", icon: Trash2, key: "scrap"},
+    { name: "Moveanalysis", icon: BarChart3, key: "movesAnalysis" },
+    { name: "Inventoryhist", icon: History, key: "inventoryHistory"},
+    // { name: "Operations", icon: Warehouse, key: "inventoryOperations" },
+    { name: "Valuation", icon: TrendingUp, key: "valuation" },
     { name: "Settings", icon: Settings, key: "inventorySettings" },
+    { name: "MasterData", icon: FileText, key: "masterdatainv"},
 ];
 
 const purchaseLinks = [

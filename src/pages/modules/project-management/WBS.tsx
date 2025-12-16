@@ -9,6 +9,8 @@ import {
   createWbsItem,
   updateWbsItem,
   deleteWbsItem,
+  pauseWbsTask,
+  resumeWbsTask,
   WBSItem as ImportedWBSItem,
 } from "@/redux/slices/wbsSlice";
 
@@ -46,6 +48,10 @@ import {
   Clock,
   Truck,
   AlertCircle,
+  Pause,
+  Play,
+  UserCheck,
+  ArrowLeft,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
@@ -78,6 +84,14 @@ import TeamSelectionDialog from "@/components/TeamSelectionDialog";
 import MaterialSelectionDialog from "@/components/MaterialSelectionDialog";
 import { usePermission } from "@/hooks/userPermission";
 import { Progress } from "@/components/ui/progress";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
 
 // --- TYPES ---
 type WBSItemType = "phase" | "activity" | "task" | "subtask";
@@ -94,6 +108,15 @@ interface LinkedMaterial {
 // Extend the imported WBSItem type
 interface WBSItem extends Omit<ImportedWBSItem, 'linkedMaterials'> {
   linkedMaterials?: LinkedMaterial[];
+  assignedPersons?: Array<{
+    resourceId: string;
+    type: string;
+    assignedAt?: string;
+    personalInfo?: any;
+    progress?: number;
+    employment?: any;
+    financial?: any;
+  }>;
 }
 
 const WBS_ITEM_TYPES: WBSItemType[] = ["phase", "activity", "task", "subtask"];
@@ -112,7 +135,11 @@ interface WBSNodeProps {
   onEdit: (item: WBSItem) => void;
   onDelete: (id: string) => void;
   onLinkTeam: (item: WBSItem) => void; // Prop to trigger modal
+  onLinkMaterial: (item: any) => void; // Prop to trigger material modal
+  onTeamView: (item: WBSItem) => void; // Prop to view team members (UI only)
   onShowToast: (message: string) => void;
+  onPause: (item: WBSItem) => void;
+  onResume: (item: WBSItem) => void;
   getMaterialStatusSummary: (wbsItem: WBSItem) => {
     total: number;
     received: number;
@@ -129,7 +156,11 @@ const WBSNode: React.FC<WBSNodeProps> = ({
   onEdit,
   onDelete,
   onLinkTeam,
+  onLinkMaterial,
+  onTeamView,
   onShowToast,
+  onPause,
+  onResume,
   getMaterialStatusSummary,
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
@@ -142,19 +173,18 @@ const WBSNode: React.FC<WBSNodeProps> = ({
     [allwbs, item.id]
   );
 
-  const [linkingMaterialItem, setLinkingMaterialItem] = useState(null);
 
-  // Get the latest version of the linking material item from allwbs
-  const currentLinkingMaterialItem = useMemo(() => {
-    if (!linkingMaterialItem) return null;
-    // Find the updated item from allwbs array
-    const updatedItem = allwbs.find((i) => i.id === (linkingMaterialItem as any).id);
-    return updatedItem || linkingMaterialItem;
-  }, [linkingMaterialItem, allwbs]);
+
+
 
 
 
   const getStatusColor = (status?: wbstatus) => {
+    // Check if item is paused first
+    if (item.isPaused) {
+      return "bg-orange-100 text-orange-800 border-orange-200";
+    }
+    
     if (!status) return "bg-gray-100 text-gray-800 border-gray-200";
     const colors: Record<wbstatus, string> = {
       "not-started": "bg-gray-100 text-gray-800 border-gray-200",
@@ -165,9 +195,7 @@ const WBSNode: React.FC<WBSNodeProps> = ({
     return colors[status];
   };
 
-  const handleLinkMaterial = (item: any) => {
-    setLinkingMaterialItem(item);
-  };
+
 
   return (
     <div className="flex flex-col">
@@ -200,7 +228,7 @@ const WBSNode: React.FC<WBSNodeProps> = ({
         </div>
         <div className="w-24 text-center">
           <Badge className={getStatusColor(item.status)} variant="outline">
-            {item.status?.replace("-", " ") || "not-started"}
+            {item.isPaused ? "paused" : (item.status?.replace("-", " ") || "not-started")}
           </Badge>
         </div>
         <div className="w-20 text-center text-sm text-muted-foreground">
@@ -263,32 +291,84 @@ const WBSNode: React.FC<WBSNodeProps> = ({
           })()}
         </div>
 
-        <div className="w-48 flex justify-around text-center items-center space-x-2 pr-4">
+        <div className="w-60 flex justify-around text-center items-center space-x-2 pr-4">
           {canEdit && (
-            <div className="space-x-3">
+            <div className="space-x-2">
               <Button
                 variant="ghost"
                 size="icon"
                 title="Link Materials"
-                onClick={() => handleLinkMaterial(item)}
+                onClick={() => onLinkMaterial(item)}
               >
                 <Package className="h-4 w-4 text-blue-600" />
               </Button>
 
-              <MaterialSelectionDialog
-                isOpen={!!linkingMaterialItem}
-                onClose={() => setLinkingMaterialItem(null)}
-                wbsItem={currentLinkingMaterialItem}
-              />
 
-              <Button
-                variant="ghost"
-                size="icon"
-                title="Link Team"
-                onClick={() => onLinkTeam(item)} // Trigger Link Team
-              >
-                <Users className="h-4 w-4 text-green-600" />
-              </Button>
+
+              {/* Team Button - Different behavior when paused */}
+              {item.isPaused ? (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  title="View Team Members"
+                  onClick={() => onTeamView(item)}
+                >
+                  <UserCheck className="h-4 w-4 text-orange-600" />
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  title="Link Team"
+                  onClick={() => onLinkTeam(item)}
+                >
+                  <Users className="h-4 w-4 text-green-600" />
+                </Button>
+              )}
+
+              {/* Pause/Resume Button */}
+              {item.isPaused ? (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="Resume Task"
+                        onClick={() => onResume(item)}
+                        className="text-green-600 hover:text-green-700"
+                      >
+                        <Play className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <div className="text-sm">
+                        <p className="font-semibold">Task is Paused</p>
+                        <p>Paused since: {item.pausedAt ? new Date(item.pausedAt).toLocaleDateString() : 'N/A'}</p>
+                        <p>Total paused days: {item.totalPausedDays || 0}</p>
+                        {item.pauseHistory && item.pauseHistory.length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-gray-200">
+                            <p className="text-xs text-gray-500">Latest pause reason:</p>
+                            <p className="text-xs">{item.pauseHistory[item.pauseHistory.length - 1]?.reason || 'No reason provided'}</p>
+                          </div>
+                        )}
+                        <p className="text-xs text-gray-400 mt-1">Click to resume</p>
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  title="Pause Task"
+                  onClick={() => onPause(item)}
+                  className="text-orange-600 hover:text-orange-700"
+                >
+                  <Pause className="h-4 w-4" />
+                </Button>
+              )}
+
               <Button
                 variant="ghost"
                 size="icon"
@@ -322,7 +402,11 @@ const WBSNode: React.FC<WBSNodeProps> = ({
             onEdit={onEdit}
             onDelete={onDelete}
             onLinkTeam={onLinkTeam} // Pass down prop
+            onLinkMaterial={onLinkMaterial} // Pass down prop
+            onTeamView={onTeamView} // Pass down prop
             onShowToast={onShowToast}
+            onPause={onPause}
+            onResume={onResume}
             getMaterialStatusSummary={getMaterialStatusSummary}
           />
         ))}
@@ -355,6 +439,19 @@ export default function WBS() {
 
   // --- TEAM LINKING STATE ---
   const [linkingItem, setLinkingItem] = useState<WBSItem | null>(null);
+
+  // --- MATERIAL LINKING STATE ---
+  const [linkingMaterialItem, setLinkingMaterialItem] = useState<any>(null);
+
+  // --- RESUME DIALOG STATE ---
+  const [resumeDialogOpen, setResumeDialogOpen] = useState(false);
+  const [resumingItem, setResumingItem] = useState<WBSItem | null>(null);
+  const [resumeReason, setResumeReason] = useState("");
+
+  // --- TEAM REASSIGNMENT STATE (UI ONLY) ---
+  const [teamViewDialogOpen, setTeamViewDialogOpen] = useState(false);
+  const [teamViewItem, setTeamViewItem] = useState<WBSItem | null>(null);
+  const [availableTasks, setAvailableTasks] = useState<WBSItem[]>([]);
 
   // --- MATERIAL STATUS TRACKING ---
   const [, setMaterialStatusSync] = useState<Record<string, string>>({});
@@ -552,6 +649,91 @@ export default function WBS() {
 
   const handleLinkTeam = (item: WBSItem) => {
     setLinkingItem(item);
+  };
+
+  const handleLinkMaterial = (item: any) => {
+    // Refresh MRS data when opening material dialog to get latest status
+    dispatch(fetchMRS());
+    setLinkingMaterialItem(item);
+  };
+
+  const handleTeamView = (item: WBSItem) => {
+    setTeamViewItem(item);
+    // Get all non-paused tasks in the same project for display
+    const nonPausedTasks = wbs.filter(task => 
+      task.projectId === item.projectId && 
+      !task.isPaused && 
+      task.id !== item.id
+    );
+    setAvailableTasks(nonPausedTasks);
+    setTeamViewDialogOpen(true);
+  };
+
+  const handleTaskSelection = (member: any, targetTask: WBSItem) => {
+    // Just show a toast for UI demonstration - no actual reassignment
+    const memberName = member.personalInfo?.name || 
+                      member.personalInfo?.firstName || 
+                      member.personalInfo?.fullName || 
+                      member.name || 
+                      `Team Member`; // `Member ${member.resourceId}`;
+    
+    toast({
+      title: "Task Selected",
+      description: `Selected to move ${memberName} to "${targetTask.name}"`,
+    });
+  };
+
+  const handlePauseTask = async (item: WBSItem) => {
+    const reason = prompt("Enter reason for pausing this task (optional):");
+    
+    try {
+      await dispatch(pauseWbsTask({ id: item.id, reason: reason || "" })).unwrap();
+      toast({
+        title: "Task Paused",
+        description: `${item.name} has been paused successfully.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error || "Failed to pause task",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleResumeTask = (item: WBSItem) => {
+    setResumingItem(item);
+    setResumeReason("");
+    setResumeDialogOpen(true);
+  };
+
+  const confirmResumeTask = async () => {
+    if (!resumingItem) return;
+
+    try {
+      const result = await dispatch(resumeWbsTask({ 
+        id: resumingItem.id, 
+        resumeReason: resumeReason 
+      })).unwrap();
+      
+      const pausedDays = result.pauseHistory?.[result.pauseHistory.length - 1]?.pausedDays || 0;
+      
+      toast({
+        title: "Task Resumed",
+        description: `${resumingItem.name} has been resumed. End date extended by ${pausedDays} days.`,
+      });
+
+      // Close dialog and reset state
+      setResumeDialogOpen(false);
+      setResumingItem(null);
+      setResumeReason("");
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error || "Failed to resume task",
+        variant: "destructive",
+      });
+    }
   };
 
   const validParents = useMemo(() => {
@@ -1101,7 +1283,7 @@ export default function WBS() {
             <div className="w-20 text-center">End Date</div>
             <div className="w-20 text-center">Progress</div>
             <div className="w-32 text-center">Materials</div>
-            <div className="w-48 text-right pr-4">Actions</div>
+            <div className="w-60 text-right pr-4">Actions</div>
           </div>
         </CardHeader>
         <CardContent>
@@ -1134,7 +1316,11 @@ export default function WBS() {
                 onEdit={openEditDialog}
                 onDelete={handleDelete}
                 onLinkTeam={handleLinkTeam} // Pass link handler
+                onLinkMaterial={handleLinkMaterial} // Pass material link handler
+                onTeamView={handleTeamView} // Pass team view handler
                 onShowToast={showToast}
+                onPause={handlePauseTask}
+                onResume={handleResumeTask}
                 getMaterialStatusSummary={getMaterialStatusSummary}
               />
             ))
@@ -1149,6 +1335,151 @@ export default function WBS() {
         wbsItem={linkingItem}
         organisationId={"81b48a8b-f574-4562-be38-f480e99359c9"}
       />
+
+      {/* --- MATERIAL LINKING MODAL --- */}
+      <MaterialSelectionDialog
+        isOpen={!!linkingMaterialItem}
+        onClose={() => setLinkingMaterialItem(null)}
+        wbsItem={linkingMaterialItem}
+      />
+
+      {/* --- RESUME TASK DIALOG --- */}
+      <Dialog open={resumeDialogOpen} onOpenChange={setResumeDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Resume Task</DialogTitle>
+            <DialogDescription>
+              Resume task "{resumingItem?.name}"? The end date will be automatically extended based on the paused duration.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="resumeReason">Reason for resuming (optional)</Label>
+              <Textarea
+                id="resumeReason"
+                value={resumeReason}
+                onChange={(e) => setResumeReason(e.target.value)}
+                placeholder="Enter reason for resuming this task..."
+                className="min-h-[80px]"
+              />
+            </div>
+            {resumingItem?.isPaused && (
+              <div className="text-sm text-muted-foreground">
+                <p>Paused since: {resumingItem.pausedAt ? new Date(resumingItem.pausedAt).toLocaleDateString() : 'N/A'}</p>
+                <p>Total paused days so far: {resumingItem.totalPausedDays || 0}</p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setResumeDialogOpen(false);
+                setResumingItem(null);
+                setResumeReason("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={confirmResumeTask}>
+              Resume Task
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- TEAM VIEW DIALOG (UI ONLY) --- */}
+      <Dialog open={teamViewDialogOpen} onOpenChange={setTeamViewDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Team Members - {teamViewItem?.name}</DialogTitle>
+            <DialogDescription>
+              Task is paused. View assigned team members and available tasks for reference.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {teamViewItem?.assignedPersons && teamViewItem.assignedPersons.length > 0 ? (
+              <div className="space-y-3">
+                <Label>Assigned Team Members:</Label>
+                {teamViewItem.assignedPersons.map((member: any, index: number) => (
+                  <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
+                    <div className="flex-1">
+                      <p className="font-medium">
+                        {member.personalInfo?.name || 
+                         member.personalInfo?.firstName || 
+                         member.personalInfo?.fullName || 
+                         member.name || 
+                         `Team Member`}
+                      </p>
+                      <p className="text-sm text-muted-foreground capitalize">
+                        {member.type} • Progress: {member.progress || 0}%
+                      </p>
+                      {/* <p className="text-xs text-gray-500">
+                        ID: {member.resourceId}
+                      </p> */}
+                      {member.personalInfo?.designation && (
+                        <p className="text-xs text-muted-foreground">
+                          {member.personalInfo.designation}
+                        </p>
+                      )}
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm">
+                          <ArrowLeft className="h-4 w-4 mr-2" />
+                          View Tasks
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-64">
+                        <DropdownMenuLabel>Available Active Tasks</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        {availableTasks.length > 0 ? (
+                          availableTasks.map((task) => (
+                            <DropdownMenuItem
+                              key={task.id}
+                              onClick={() => handleTaskSelection(member, task)}
+                              className="cursor-pointer hover:bg-gray-50"
+                            >
+                              <div className="flex flex-col w-full">
+                                <span className="font-medium text-sm">{task.name}</span>
+                                <span className="text-xs text-muted-foreground capitalize">
+                                  {task.type} • {task.status?.replace("-", " ") || "not-started"}
+                                </span>
+                                {task.startDate && task.endDate && (
+                                  <span className="text-xs text-blue-600">
+                                    {task.startDate} to {task.endDate}
+                                  </span>
+                                )}
+                              </div>
+                            </DropdownMenuItem>
+                          ))
+                        ) : (
+                          <DropdownMenuItem disabled className="text-center">
+                            <span className="text-muted-foreground">No available active tasks</span>
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-muted-foreground">No team members assigned to this task.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setTeamViewDialogOpen(false);
+                setTeamViewItem(null);
+              }}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

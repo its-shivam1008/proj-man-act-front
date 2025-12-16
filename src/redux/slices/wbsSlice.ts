@@ -38,6 +38,22 @@ export interface WBSItem {
   wbsDurationInDays?: number;
   createdAt?: string;
   updatedAt?: string;
+  // Pause/Resume fields
+  isPaused?: boolean;
+  pausedAt?: string;
+  resumedAt?: string;
+  totalPausedDays?: number;
+  pauseHistory?: Array<{
+    pausedAt: string;
+    resumedAt?: string;
+    pausedDays?: number;
+    pausedSeconds?: number;
+    pausedMilliseconds?: number;
+    reason?: string;
+    resumeReason?: string;
+  }>;
+  totalPausedSeconds?: number;
+  totalPausedMilliseconds?: number;
 }
 
 interface WbsState {
@@ -161,6 +177,38 @@ export const deleteWbsItem = createAsyncThunk<
 });
 
 /* ----------------------------------------------------
+   PAUSE WBS TASK
+---------------------------------------------------- */
+export const pauseWbsTask = createAsyncThunk<
+  WBSItem,
+  { id: string; reason?: string },
+  { rejectValue: string }
+>("wbs/pause", async ({ id, reason }, { rejectWithValue }) => {
+  try {
+    const res = await api.post(`/wbs/pause/${id}`, { reason });
+    return { ...res.data.data, id: res.data.data._id || id };
+  } catch (err: any) {
+    return rejectWithValue(err?.response?.data?.message || "Pause failed");
+  }
+});
+
+/* ----------------------------------------------------
+   RESUME WBS TASK
+---------------------------------------------------- */
+export const resumeWbsTask = createAsyncThunk<
+  WBSItem,
+  { id: string; resumeReason?: string },
+  { rejectValue: string }
+>("wbs/resume", async ({ id, resumeReason }, { rejectWithValue }) => {
+  try {
+    const res = await api.post(`/wbs/resume/${id}`, { resumeReason });
+    return { ...res.data.data, id: res.data.data._id || id };
+  } catch (err: any) {
+    return rejectWithValue(err?.response?.data?.message || "Resume failed");
+  }
+});
+
+/* ----------------------------------------------------
    SLICE
 ---------------------------------------------------- */
 const wbsSlice = createSlice({
@@ -203,6 +251,18 @@ const wbsSlice = createSlice({
     /* DELETE */
     builder.addCase(deleteWbsItem.fulfilled, (state, action) => {
       state.wbs = state.wbs.filter((i) => i.id !== action.payload); // FIXED
+    });
+
+    /* PAUSE */
+    builder.addCase(pauseWbsTask.fulfilled, (state, action) => {
+      const idx = state.wbs.findIndex((i) => i.id === action.payload.id);
+      if (idx >= 0) state.wbs[idx] = action.payload;
+    });
+
+    /* RESUME */
+    builder.addCase(resumeWbsTask.fulfilled, (state, action) => {
+      const idx = state.wbs.findIndex((i) => i.id === action.payload.id);
+      if (idx >= 0) state.wbs[idx] = action.payload;
     });
   },
 });

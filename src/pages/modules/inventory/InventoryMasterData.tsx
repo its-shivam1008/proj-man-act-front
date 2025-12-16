@@ -1,5 +1,5 @@
 "use client";
-
+import { usePermission } from "@/hooks/userPermission";
 import { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
@@ -33,12 +33,30 @@ import {
 } from "@/components/ui/dialog";
 
 import { Label } from "@/components/ui/label";
-import { Pencil, Trash2, Plus } from "lucide-react";
+import { Pencil, Trash2, Plus, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 
 type InventoryMasterType = "category" | "hsn";
 
 export default function InventoryMasterData() {
+  const canView = usePermission("masterdatainv", "view");
+    const canCreate = usePermission("masterdatainv", "create");
+    const canEdit = usePermission("masterdatainv", "edit");
+    const canDelete = usePermission("masterdatainv", "delete");
+  
+    if (!canView) {
+      return (
+        <div className="text-center py-12 px-4">
+          <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-gray-900 mb-2">
+            Access Denied
+          </h3>
+          <p className="text-gray-600">
+            You do not have the necessary permissions to view this page.
+          </p>
+        </div>
+      );
+    }
   const dispatch = useDispatch<AppDispatch>();
 
   const { category, hsn, pagination, loading } = useSelector(
@@ -164,9 +182,9 @@ export default function InventoryMasterData() {
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">Inventory Master Data</h1>
 
-        <Button onClick={() => openDialog()}>
+       {canCreate && <Button onClick={() => openDialog()}>
           <Plus className="h-4 w-4 mr-2" /> Add New
-        </Button>
+        </Button>}
       </div>
 
       {/* Tabs */}
@@ -226,12 +244,12 @@ export default function InventoryMasterData() {
                         </>
                       )}
                       <TableCell className="text-right space-x-2">
-                        <Button variant="ghost" size="icon" onClick={() => openDialog(item)}>
+                        {canEdit && <Button variant="ghost" size="icon" onClick={() => openDialog(item)}>
                           <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(item._id)}>
+                        </Button>}
+                        {canDelete && <Button variant="ghost" size="icon" onClick={() => handleDelete(item._id)}>
                           <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
+                        </Button>}
                       </TableCell>
                     </TableRow>
                   ))

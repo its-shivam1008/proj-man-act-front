@@ -171,6 +171,38 @@ export const fetchDeliveryStatistics = createAsyncThunk<any>(
     }
   }
 );
+
+// 🚀 NEW: Purchase Request Status Management Actions
+
+export const markAsSentToPurchase = createAsyncThunk<
+  MRSItem,
+  { id: string; sentBy?: string; remarks?: string }
+>("mrs/markAsSentToPurchase", async ({ id, sentBy, remarks }, { rejectWithValue }) => {
+  try {
+    const res = await api.patch(`/mrs/${id}/mark-sent-to-purchase`, {
+      sentBy,
+      remarks
+    });
+    return res.data.data as MRSItem;
+  } catch (err: any) {
+    return rejectWithValue(err.response?.data || err.message);
+  }
+});
+
+export const markPurchaseRequestProcessed = createAsyncThunk<
+  MRSItem,
+  { id: string; processedBy?: string; remarks?: string }
+>("mrs/markPurchaseRequestProcessed", async ({ id, processedBy, remarks }, { rejectWithValue }) => {
+  try {
+    const res = await api.patch(`/mrs/${id}/mark-purchase-processed`, {
+      processedBy,
+      remarks
+    });
+    return res.data.data as MRSItem;
+  } catch (err: any) {
+    return rejectWithValue(err.response?.data || err.message);
+  }
+});
 interface MRSState {
   list: MRSItem[];
   loading: boolean;
@@ -263,6 +295,17 @@ const mrsSlice = createSlice({
       })
       .addCase(fetchDeliveryStatistics.fulfilled, (state, action) => {
         state.deliveryStatistics = action.payload;
+      })
+      // 🚀 NEW: Purchase Request Status Actions
+      .addCase(markAsSentToPurchase.fulfilled, (state, action: PayloadAction<MRSItem>) => {
+        const updated = action.payload;
+        const idx = state.list.findIndex((i) => i._id === updated._id);
+        if (idx !== -1) state.list[idx] = updated;
+      })
+      .addCase(markPurchaseRequestProcessed.fulfilled, (state, action: PayloadAction<MRSItem>) => {
+        const updated = action.payload;
+        const idx = state.list.findIndex((i) => i._id === updated._id);
+        if (idx !== -1) state.list[idx] = updated;
       });
   },
 });

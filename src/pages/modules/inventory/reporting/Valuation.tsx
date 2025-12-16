@@ -37,10 +37,10 @@ interface FormData {
 }
 
 const Valuation: React.FC = () => {
-  const canView = usePermission("inventoryReporting", "view");
-  const canCreate = usePermission("inventoryReporting", "create");
-  const canEdit = usePermission("inventoryReporting", "edit");
-  const canDelete = usePermission("inventoryReporting", "delete");
+  const canView = usePermission("valuation", "view");
+  const canCreate = usePermission("valuation", "create");
+  const canEdit = usePermission("valuation", "edit");
+  const canDelete = usePermission("valuation", "delete");
 
   if (!canView) {
     return (

@@ -1,9 +1,10 @@
+import { usePermission } from "@/hooks/userPermission";
 import React, { useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "../../../../redux/store";
 import { fetchProducts } from "../../../../redux/slices/productSlice";
 import { fetchMaterials } from "../../../../redux/slices/rawmaterialSlice";
-import { Search, Download, BarChart2, PieChart as PieIcon } from "lucide-react";
+import { Search, Download, BarChart2, PieChart as PieIcon, ShieldAlert } from "lucide-react";
 import {
   ResponsiveContainer,
   PieChart,
@@ -23,6 +24,24 @@ const PIE_COLORS = ["#7C3AED", "#06B6D4", "#F59E0B", "#EF4444", "#10B981"];
 const BAR_COLOR = "#2563EB";
 
 export default function InventoryHistoryAdvancedUI() {
+  const canView = usePermission("inventoryHistory", "view");
+  const canCreate = usePermission("inventoryHistory", "create");
+  const canEdit = usePermission("inventoryHistory", "edit");
+  const canDelete = usePermission("inventoryHistory", "delete");
+
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
   const dispatch = useDispatch<AppDispatch>();
   const orgId = typeof window !== "undefined" ? localStorage.getItem("organisationId") : null;
 

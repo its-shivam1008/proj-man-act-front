@@ -182,8 +182,8 @@ export default function MaterialSelectionDialog({
     const taskMRSMaterials = (mrsList || []).filter((mrs: any) => {
       const isForThisTask = mrs.task === wbsItem.name && !mrs.isDeleted;
       
-      // Check database delivery status - look for 'received' status in deliveryStatus or status
-      const isReceived = mrs.deliveryStatus === 'received' || mrs.status === 'received';
+      // Check database delivery status - look for 'received' status in deliveryStatus
+      const isReceived = mrs.deliveryStatus === 'received';
       
       console.log(`📋 MRS ${mrs.item} (${mrs._id}):`, {
         task: mrs.task,
@@ -726,8 +726,19 @@ export default function MaterialSelectionDialog({
                       mrs._id === m.materialId && mrs.task === wbsItem?.name
                     );
                     
-                    // Get material status from localStorage
+                    // Get material status from database (MRS deliveryStatus)
                     const materialStatus = (() => {
+                      // Check if this is an MRS material and get its actual database status
+                      const mrsEntry = mrsList?.find((mrs: any) => 
+                        mrs._id === m.materialId && mrs.task === wbsItem?.name
+                      );
+                      
+                      if (mrsEntry) {
+                        // Use the actual deliveryStatus from database
+                        return mrsEntry.deliveryStatus || 'pending';
+                      }
+                      
+                      // For non-MRS materials, check localStorage as fallback
                       const syncData = JSON.parse(localStorage.getItem('MRS_STATUS_SYNC') || '{}');
                       return syncData[m.materialId] || 'pending';
                     })();

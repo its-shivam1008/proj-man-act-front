@@ -1771,6 +1771,8 @@ import {
     markAsReceived,
     returnMaterial,
     fetchDeliveryStatistics,
+    markAsSentToPurchase,
+    markPurchaseRequestProcessed,
 } from "@/redux/slices/mrsSlice";
 import { createMaterialRequest, fetchMaterialRequests, updateMaterialRequestStatus } from "@/redux/slices/materialRequestSlice";
 import { convertToPR } from "@/redux/slices/prSlice";
@@ -1835,29 +1837,13 @@ export default function ProcurementPage() {
     };
 
     const handleSendClick = (item: ExtendedMRSItem, type: "INVENTORY" | "PURCHASE") => {
-        // Only increment count for PURCHASE type (Send button)
-        if (type === "PURCHASE") {
-            const itemId = item.id || item._id || item.item;
-            const key = `${itemId}_${type}`;
-            
-            const newCounts = {
-                ...sendClickCounts,
-                [key]: (sendClickCounts[key] || 0) + 1
-            };
-            
-            setSendClickCounts(newCounts);
-            localStorage.setItem('SEND_CLICK_COUNTS', JSON.stringify(newCounts));
-        }
-        
         // Open the remark dialog for both INVENTORY and PURCHASE
         handleOpenRemarkDialog(item, type);
     };
 
-    const resetSendCounts = () => {
-        setSendClickCounts({});
-        localStorage.removeItem('SEND_CLICK_COUNTS');
-        toast.success("Send counts reset successfully");
-    };
+
+
+
 
     // --- NEW FUNCTION: Submit Notification ---
     const handleSubmitNotification = async () => {
@@ -1876,23 +1862,35 @@ export default function ProcurementPage() {
             : "rfq.purchase";        // Clicked "Send" button
 
         try {
-            // 🚀 For INVENTORY type, update MRS delivery status first
+            const itemId = item.id || item._id;
+            if (!itemId) {
+                toast.error("Invalid item ID");
+                return;
+            }
+
+            // 🚀 For INVENTORY type, update MRS delivery status in database
             if (type === "INVENTORY") {
-                const itemId = item.id || item._id;
-                if (itemId) {
-                    // Mark as sent for delivery in database
-                    await dispatch(markAsSent({
-                        id: itemId,
-                        transportDetails: {
-                            method: 'Standard Delivery',
-                            estimatedDelivery: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-                            deliveryNotes: remarkText
-                        }
-                    }));
-                    console.log('✅ MRS marked as sent in database');
-                    
-                    // Material request will be created only when delivery team accepts the notification
-                }
+                // Mark as sent for delivery in database
+                await dispatch(markAsSent({
+                    id: itemId,
+                    transportDetails: {
+                        method: 'Standard Delivery',
+                        estimatedDelivery: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+                        deliveryNotes: remarkText
+                    }
+                }));
+                console.log('✅ MRS marked as sent to delivery in database');
+            }
+
+            // 🚀 For PURCHASE type, update MRS purchase request status in database
+            if (type === "PURCHASE") {
+                // Mark as sent to purchase in database
+                await dispatch(markAsSentToPurchase({
+                    id: itemId,
+                    sentBy: 'Current User', // You can get this from auth context
+                    remarks: remarkText
+                }));
+                console.log('✅ MRS marked as sent to purchase in database');
             }
 
             // Create notification with complete item details
@@ -1900,7 +1898,7 @@ export default function ProcurementPage() {
                 source,
                 destination,
                 remark: remarkText,
-                itemId: item.id || item._id,
+                itemId: itemId,
                 itemName: item.item,
                 materialData: {
                     item: item.item,
@@ -1915,12 +1913,10 @@ export default function ProcurementPage() {
                 }
             })).unwrap();
 
-            // 🚀 Refresh MRS data to show updated delivery status
-            if (type === "INVENTORY") {
-                dispatch(fetchMRS());
-            }
+            // 🚀 Refresh MRS data to show updated status
+            dispatch(fetchMRS());
 
-            toast.success(`Notification sent to ${type === "INVENTORY" ? "Delivery Management" : "Purchase"}`);
+            toast.success(`Notification sent to ${type === "INVENTORY" ? "Delivery Management" : "Purchase"} and status updated in database`);
             setRemarkDialogOpen(false);
             setNotificationTarget(null);
             setRemarkText("");
@@ -1946,8 +1942,6 @@ export default function ProcurementPage() {
 
     // Local State
     const [inventory, setInventory] = useState<ExtendedInventoryItem[]>([]);
-    const [mrsStatusSync, setMrsStatusSync] = useState<Record<string, string>>({});
-    const [sendClickCounts, setSendClickCounts] = useState<Record<string, number>>({});
     
     // NEW: MRS Search State
     const [mrsSearch, setMrsSearch] = useState("");
@@ -1983,17 +1977,36 @@ export default function ProcurementPage() {
         dispatch(fetchDeliveryStatistics()); // 🚀 Fetch delivery statistics
         setInventory(getInventory());
         
-        // Load MRS status sync from localStorage
-        const syncData = localStorage.getItem('MRS_STATUS_SYNC');
-        if (syncData) {
-            setMrsStatusSync(JSON.parse(syncData));
-        }
-        
-        // Load send click counts from localStorage
-        const clickCountsData = localStorage.getItem('SEND_CLICK_COUNTS');
-        if (clickCountsData) {
-            setSendClickCounts(JSON.parse(clickCountsData));
-        }
+
+    }, [dispatch]);
+
+    // 🚀 Auto-refresh MRS data every 30 seconds to catch delivery updates
+    useEffect(() => {
+        const interval = setInterval(() => {
+            console.log('🔄 Auto-refreshing MRS data for delivery updates...');
+            dispatch(fetchMRS());
+        }, 30000); // 30 seconds
+
+        return () => clearInterval(interval);
+    }, [dispatch]);
+
+    // 🚀 Listen for delivery status changes from other modules
+    useEffect(() => {
+        const handleDeliveryStatusChange = (event: any) => {
+            console.log('📦 Delivery status changed event received:', event.detail);
+            // Refresh MRS data when delivery status changes
+            dispatch(fetchMRS());
+            toast.info(`Delivery status updated for ${event.detail.itemName || 'item'}`);
+        };
+
+        // Listen for custom events from delivery module
+        window.addEventListener('deliveryStatusChanged', handleDeliveryStatusChange);
+        window.addEventListener('materialRequestStatusChanged', handleDeliveryStatusChange);
+
+        return () => {
+            window.removeEventListener('deliveryStatusChanged', handleDeliveryStatusChange);
+            window.removeEventListener('materialRequestStatusChanged', handleDeliveryStatusChange);
+        };
     }, [dispatch]);
     
     // 🔥 Auto-refresh MRS when project changes
@@ -2003,19 +2016,7 @@ export default function ProcurementPage() {
         }
     }, [selectedProjectId, dispatch]);
     
-    // Refresh MRS status sync periodically
-    useEffect(() => {
-        const interval = setInterval(() => {
-            const syncData = localStorage.getItem('MRS_STATUS_SYNC');
-            if (syncData) {
-                const parsed = JSON.parse(syncData);
-                console.log('MRS Status Sync Updated:', parsed);
-                setMrsStatusSync(parsed);
-            }
-        }, 2000); // Check every 2 seconds
-        
-        return () => clearInterval(interval);
-    }, []);
+
 
     // Fetch Projects when search changes
     useEffect(() => {
@@ -2547,11 +2548,7 @@ export default function ProcurementPage() {
                 deliveryNotes: `Item received on ${new Date().toLocaleDateString()}`
             }));
 
-            // Update localStorage sync for backward compatibility with WBS
-            const syncData = JSON.parse(localStorage.getItem('MRS_STATUS_SYNC') || '{}');
-            syncData[itemId] = 'received';
-            localStorage.setItem('MRS_STATUS_SYNC', JSON.stringify(syncData));
-            setMrsStatusSync(syncData);
+            // Status is now managed in database only
             
             // Dispatch custom event to notify other components
             window.dispatchEvent(new CustomEvent('mrsStatusChanged', { 
@@ -2922,6 +2919,7 @@ export default function ProcurementPage() {
                     <Button onClick={openCreate} disabled={mrsLoading}>
                         <Plus className="mr-2 h-4 w-4" /> Create MRS Item
                     </Button>
+                    
                     {/* <Button 
                         variant="outline" 
                         onClick={() => dispatch(fetchMRS())} 
@@ -3032,36 +3030,70 @@ export default function ProcurementPage() {
                                     <TableCell>{m.quantity}</TableCell>
                                     <TableCell>
                                         {(() => {
-                                            const itemId = m.id || m._id;
-                                            const status = itemId ? mrsStatusSync[itemId] : undefined;
-                                            console.log(`Item: ${m.item}, ID: ${itemId}, Status: ${status}`);
-                                            return status === 'in-transit' ? (
-                                                <Button 
-                                                    size="sm" 
-                                                    variant="default"
-                                                    className="bg-green-600 hover:bg-green-700"
-                                                    onClick={() => handleItemReceived(m)}
-                                                >
-                                                    Item Received
-                                                </Button>
-                                            ) : status === 'received' ? (
-                                                <Button 
-                                                    size="sm" 
-                                                    variant="outline"
-                                                    disabled
-                                                    className="bg-gray-100"
-                                                >
-                                                    Received ✓
-                                                </Button>
-                                            ) : (
-                                                <Button 
-                                                    size="sm" 
-                                                    variant="outline"
-                                                    onClick={() => handleSendClick(m, "INVENTORY")}
-                                                >
-                                                    Sent
-                                                </Button>
-                                            );
+                                            const deliveryStatus = m.deliveryStatus || 'pending';
+                                            
+                                            // Debug logs
+                                            console.log(`🔍 Item: ${m.item}, deliveryStatus: "${deliveryStatus}"`);
+                                            
+                                            // Check for different variations of in-transit
+                                            const isInTransit = deliveryStatus === 'in-transit' || 
+                                                              deliveryStatus === 'intransit' || 
+                                                              deliveryStatus === 'in_transit' ||
+                                                              deliveryStatus?.toLowerCase().includes('transit');
+                                            
+                                            const isReceived = deliveryStatus === 'received' || 
+                                                             deliveryStatus === 'delivered';
+                                            
+                                            const isSent = deliveryStatus === 'sent' && !isInTransit && !isReceived;
+                                            
+                                            if (isReceived) {
+                                                console.log(`   ✅ SHOWING "Received ✓" button for ${m.item}`);
+                                                return (
+                                                    <Button 
+                                                        size="sm" 
+                                                        variant="outline"
+                                                        disabled
+                                                        className="bg-green-50 text-green-700 border-green-200"
+                                                    >
+                                                        Received ✓
+                                                    </Button>
+                                                );
+                                            } else if (isInTransit) {
+                                                console.log(`   🚛 SHOWING "Item Received" button for ${m.item}`);
+                                                return (
+                                                    <Button 
+                                                        size="sm" 
+                                                        variant="default"
+                                                        className="bg-green-600 hover:bg-green-700"
+                                                        onClick={() => handleItemReceived(m)}
+                                                    >
+                                                        Item Received
+                                                    </Button>
+                                                );
+                                            } else if (isSent) {
+                                                console.log(`   📦 SHOWING "Sent ✓" button for ${m.item}`);
+                                                return (
+                                                    <Button 
+                                                        size="sm" 
+                                                        variant="outline"
+                                                        disabled
+                                                        className="bg-blue-50 text-blue-700 border-blue-200"
+                                                    >
+                                                        Sent ✓
+                                                    </Button>
+                                                );
+                                            } else {
+                                                console.log(`   🔄 SHOWING "Sent" button for ${m.item}`);
+                                                return (
+                                                    <Button 
+                                                        size="sm" 
+                                                        variant="outline"
+                                                        onClick={() => handleSendClick(m, "INVENTORY")}
+                                                    >
+                                                        Sent
+                                                    </Button>
+                                                );
+                                            }
                                         })()}
                                     </TableCell>
                                     <TableCell>
@@ -3110,22 +3142,45 @@ export default function ProcurementPage() {
                                             >
                                                 <Trash2 className={`h-4 w-4 ${m.deliveryStatus === 'received' ? 'text-gray-400' : 'text-red-600'}`} />
                                             </Button>
-                                            <Button 
-                                                variant="ghost" 
-                                                onClick={() => handleSendClick(m, "PURCHASE")}
-                                            >
-                                                <ShoppingCartIcon className="mr-2 h-4 w-4"/> 
-                                                Send {(() => {
-                                                    const itemId = m.id || m._id || m.item;
-                                                    const key = `${itemId}_PURCHASE`;
-                                                    const count = sendClickCounts[key];
-                                                    return count ? (
-                                                        <span className="ml-1 px-1.5 py-0.5 bg-green-100 text-green-800 text-xs rounded-full font-semibold">
-                                                            {count}
-                                                        </span>
-                                                    ) : '';
-                                                })()}
-                                            </Button>
+                                            {(() => {
+                                                const purchaseStatus = m.purchaseRequestStatus || 'not-sent';
+                                                
+                                                if (purchaseStatus === 'sent') {
+                                                    return (
+                                                        <Button 
+                                                            variant="outline" 
+                                                            size="sm"
+                                                            disabled
+                                                            className="bg-green-50 text-green-700 border-green-200"
+                                                        >
+                                                            <ShoppingCartIcon className="mr-2 h-4 w-4"/> 
+                                                            Sent ✓
+                                                        </Button>
+                                                    );
+                                                } else if (purchaseStatus === 'processed') {
+                                                    return (
+                                                        <Button 
+                                                            variant="outline" 
+                                                            size="sm"
+                                                            disabled
+                                                            className="bg-blue-50 text-blue-700 border-blue-200"
+                                                        >
+                                                            <ShoppingCartIcon className="mr-2 h-4 w-4"/> 
+                                                            Processed ✓
+                                                        </Button>
+                                                    );
+                                                } else {
+                                                    return (
+                                                        <Button 
+                                                            variant="ghost" 
+                                                            onClick={() => handleSendClick(m, "PURCHASE")}
+                                                        >
+                                                            <ShoppingCartIcon className="mr-2 h-4 w-4"/> 
+                                                            Send
+                                                        </Button>
+                                                    );
+                                                }
+                                            })()}
                                             <Button size="sm" onClick={() => handleCheckStatus(m)}>
                                                 <Truck className="h-4 w-4" /> Check Status
                                             </Button>

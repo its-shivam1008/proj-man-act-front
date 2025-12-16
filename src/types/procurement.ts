@@ -32,9 +32,21 @@ export interface MRSItem {
     deliveryNotes?: string;
     deliveryImages?: string[];
   };
+  
+  // 🚀 NEW: Purchase Request Status Tracking Fields
+  purchaseRequestStatus?: "not-sent" | "sent" | "processed";
+  purchaseRequestDetails?: {
+    sentDate?: string;
+    sentBy?: string;
+    processedDate?: string;
+    processedBy?: string;
+    remarks?: string;
+  };
+  
   statusHistory?: Array<{
     status?: string;
     deliveryStatus?: string;
+    purchaseRequestStatus?: string;
     changedBy?: string;
     changedAt?: string;
     remarks?: string;
