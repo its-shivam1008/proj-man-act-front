@@ -1,4 +1,6 @@
 import { usePermission } from "@/hooks/userPermission";
+import { fetchProducts } from "@/redux/slices/productSlice";
+import { fetchMaterials } from "@/redux/slices/rawmaterialSlice";
 import React, { useState, useEffect, useMemo } from "react";
 import { Plus, Edit, Trash2, Search, Package, RefreshCcw, ShieldAlert } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -10,14 +12,20 @@ import { Label } from "../../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { storage, STORAGE_KEYS } from "../../../lib/storage";
 import { toast } from "sonner";
+import { useDispatch, useSelector } from "react-redux";
+import { AppDispatch, RootState } from "@/redux/store";
+import { createBOM, deleteBOM, fetchBOMs, updateBOM } from "@/redux/slices/production/bomSlice";
 
 // --- Types ---
 interface Material {
-  id: string;
+  _id: string;
   name: string;
-  unit: string;
-  costPerUnit?: number;
+  unitOfMeasure: string;
+  stocks?: { unitCost: number, quantity: number, }[];
+
+
 }
+
 
 interface Product {
   id: string;
@@ -34,7 +42,7 @@ interface BOMItem {
 }
 
 interface BOM {
-  id: string;
+  _id: string;
   productId: string;
   productName: string;
   version: string;
@@ -46,13 +54,19 @@ interface BOM {
 
 // --- Main Component ---
 export default function AdvancedBOMPage() {
+  const { products } = useSelector((state: RootState) => state.products);
   const canView = usePermission("bomManagement", "view");
   const canCreate = usePermission("bomManagement", "create");
   const canEdit = usePermission("bomManagement", "edit");
   const canDelete = usePermission("bomManagement", "delete");
-  const [boms, setBoms] = useState<BOM[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [materials, setMaterials] = useState<Material[]>([]);
+  const { list: boms, loading, pagination } = useSelector(
+    (state: RootState) => state.bom
+  );
+
+  const { materials, loading: materialLoading } = useSelector(
+    (state: RootState) => state.rawMaterials
+  );
+
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingBOM, setEditingBOM] = useState<BOM | null>(null);
@@ -63,6 +77,59 @@ export default function AdvancedBOMPage() {
     status: "draft",
     items: [],
   });
+  const [page, setPage] = useState(1);
+  const limit = 10; // you can change later
+
+  const organisationId = localStorage.getItem("organisationId");
+  const dispatch = useDispatch<AppDispatch>();
+  // const { list: boms, loading } = useSelector(
+  //   (state: RootState) => state.bom
+  // );
+  const getPrice = (mat: Material) => {
+    // Pull the unitCost from the first stock entry if it exists
+    return mat.stocks?.[0]?.unitCost || 0;
+  };
+  useEffect(() => {
+    const orgId = localStorage.getItem("organisationId");
+    if (orgId) {
+      dispatch(fetchMaterials(orgId));
+    }
+  }, [dispatch]);
+
+  useEffect(() => {
+    dispatch(fetchProducts(localStorage.getItem("organisationId")!));
+  }, []);
+
+  useEffect(() => {
+    if (organisationId) {
+      dispatch(
+        fetchBOMs({
+          page,
+          limit,
+          search: searchTerm,
+        })
+      );
+    }
+  }, [page, searchTerm, organisationId, dispatch]);
+
+  const handleReset = () => {
+    setSearchTerm("");
+    setPage(1); // ✅ reset page
+    setEditingBOM(null);
+    resetForm();
+
+    dispatch(
+      fetchBOMs({
+        page: 1,
+        limit,
+        search: "",
+      })
+    );
+
+    toast.success("Filters reset");
+  };
+
+
 
   if (!canView) {
     return (
@@ -77,55 +144,55 @@ export default function AdvancedBOMPage() {
       </div>
     );
   }
-  useEffect(() => {
-    const savedBOMs = storage.get<BOM[]>(STORAGE_KEYS.BOMS, []);
-    const savedProducts = storage.get<Product[]>(STORAGE_KEYS.PRODUCTS, []);
-    const savedMaterials = storage.get<Material[]>(STORAGE_KEYS.MATERIALS, []);
+  // useEffect(() => {
+  //   const savedBOMs = storage.get<BOM[]>(STORAGE_KEYS.BOMS, []);
+  //   const savedProducts = storage.get<Product[]>(STORAGE_KEYS.PRODUCTS, []);
+  //   const savedMaterials = storage.get<Material[]>(STORAGE_KEYS.MATERIALS, []);
 
-    // ✅ Add fallback demo data if none exist
-    const demoProducts = savedProducts.length
-      ? savedProducts
-      : [
-        { id: "PRD-001", name: "Smartphone X" },
-        { id: "PRD-002", name: "Laptop Pro" },
-        { id: "PRD-003", name: "Bluetooth Speaker" },
-      ];
+  //   // ✅ Add fallback demo data if none exist
+  //   const demoProducts = savedProducts.length
+  //     ? savedProducts
+  //     : [
+  //       { id: "PRD-001", name: "Smartphone X" },
+  //       { id: "PRD-002", name: "Laptop Pro" },
+  //       { id: "PRD-003", name: "Bluetooth Speaker" },
+  //     ];
 
-    const demoMaterials = savedMaterials.length
-      ? savedMaterials
-      : [
-        { id: "MAT-001", name: "Aluminium Body", unit: "pcs", costPerUnit: 120 },
-        { id: "MAT-002", name: "Battery Pack", unit: "pcs", costPerUnit: 500 },
-        { id: "MAT-003", name: "Display Panel", unit: "pcs", costPerUnit: 800 },
-      ];
+  //   const demoMaterials = savedMaterials.length
+  //     ? savedMaterials
+  //     : [
+  //       { id: "MAT-001", name: "Aluminium Body", unit: "pcs", costPerUnit: 120 },
+  //       { id: "MAT-002", name: "Battery Pack", unit: "pcs", costPerUnit: 500 },
+  //       { id: "MAT-003", name: "Display Panel", unit: "pcs", costPerUnit: 800 },
+  //     ];
 
-    setBoms(savedBOMs);
-    setProducts(demoProducts);
-    setMaterials(demoMaterials);
+  //   setBoms(savedBOMs);
+  //   setProducts(demoProducts);
+  //   setMaterials(demoMaterials);
 
-    // persist demo data if missing
-    if (!savedProducts.length) storage.set(STORAGE_KEYS.PRODUCTS, demoProducts);
-    if (!savedMaterials.length) storage.set(STORAGE_KEYS.MATERIALS, demoMaterials);
-  }, []);
+  //   // persist demo data if missing
+  //   if (!savedProducts.length) storage.set(STORAGE_KEYS.PRODUCTS, demoProducts);
+  //   if (!savedMaterials.length) storage.set(STORAGE_KEYS.MATERIALS, demoMaterials);
+  // }, []);
   // Load from LocalStorage
-  useEffect(() => {
-    const savedBOMs = storage.get<BOM[]>(STORAGE_KEYS.BOMS, []);
-    const savedProducts = storage.get<Product[]>(STORAGE_KEYS.PRODUCTS, []);
-    const savedMaterials = storage.get<Material[]>(STORAGE_KEYS.MATERIALS, []);
-    setBoms(savedBOMs);
-    setProducts(savedProducts);
-    setMaterials(savedMaterials);
-  }, []);
+  // useEffect(() => {
+  //   const savedBOMs = storage.get<BOM[]>(STORAGE_KEYS.BOMS, []);
+  //   const savedProducts = storage.get<Product[]>(STORAGE_KEYS.PRODUCTS, []);
+  //   const savedMaterials = storage.get<Material[]>(STORAGE_KEYS.MATERIALS, []);
+  //   setBoms(savedBOMs);
+  //   setProducts(savedProducts);
+  //   setMaterials(savedMaterials);
+  // }, []);
 
   // Auto-save detection
-  useEffect(() => {
-    if (autoSaved) return;
-    const handler = setInterval(() => {
-      storage.set(STORAGE_KEYS.BOMS, boms);
-      setAutoSaved(true);
-    }, 2000);
-    return () => clearInterval(handler);
-  }, [boms]);
+  // useEffect(() => {
+  //   if (autoSaved) return;
+  //   const handler = setInterval(() => {
+  //     storage.set(STORAGE_KEYS.BOMS, boms);
+  //     setAutoSaved(true);
+  //   }, 2000);
+  //   return () => clearInterval(handler);
+  // }, [boms]);
 
   // --- Derived Analytics ---
   const totalBOMs = boms.length;
@@ -133,38 +200,48 @@ export default function AdvancedBOMPage() {
   const draftCount = boms.filter(b => b.status === "draft").length;
 
   // --- CRUD ---
-  const handleSave = () => {
-    if (!formData.productId || formData.items.length === 0) {
-      toast.error("Please select a product and add at least one material");
+  const handleSave = async () => {
+    const organisationId = localStorage.getItem("organisationId");
+
+    if (!organisationId) {
+      toast.error("Organisation not found. Please login again.");
       return;
     }
 
-    const product = products.find(p => p.id === formData.productId);
-    if (!product) return;
+    if (!formData.productId || formData.items.length === 0) {
+      toast.error("Product & materials required");
+      return;
+    }
 
-    const bomData: BOM = {
-      id: editingBOM?.id || `BOM-${Date.now()}`,
-      productId: formData.productId,
-      productName: product.name,
-      version: formData.version,
-      status: formData.status,
-      items: formData.items.map(it => ({
-        ...it,
-        cost: (materials.find(m => m.id === it.materialId)?.costPerUnit || 0) * it.quantity,
-      })),
-      createdAt: editingBOM?.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    try {
+      if (editingBOM) {
+        // ✅ If editingBOM exists, call updateBOM
+        await dispatch(
+          updateBOM({
+            id: editingBOM._id, // Ensure you use _id from MongoDB
+            data: {
+              ...formData,
+              organisationId
+            },
+          })
+        ).unwrap();
+        toast.success("BOM updated successfully");
+      } else {
+        // ✅ If no editingBOM, call createBOM
+        await dispatch(
+          createBOM({
+            organisationId,
+            ...formData,
+          })
+        ).unwrap();
+        toast.success("BOM created successfully");
+      }
 
-    const updated = editingBOM
-      ? boms.map(b => (b.id === editingBOM.id ? bomData : b))
-      : [...boms, bomData];
-
-    storage.set(STORAGE_KEYS.BOMS, updated);
-    setBoms(updated);
-    resetForm();
-    setIsDialogOpen(false);
-    toast.success(editingBOM ? "BOM updated successfully" : "BOM created successfully");
+      setIsDialogOpen(false);
+      resetForm();
+    } catch (error: any) {
+      toast.error(error || "Operation failed");
+    }
   };
 
   const handleEdit = (bom: BOM) => {
@@ -178,53 +255,56 @@ export default function AdvancedBOMPage() {
     setIsDialogOpen(true);
   };
 
-  const handleDelete = (id: string) => {
-    const updated = boms.filter(b => b.id !== id);
-    storage.set(STORAGE_KEYS.BOMS, updated);
-    setBoms(updated);
-    toast.success("BOM deleted successfully");
+  const handleDelete = async (id: string) => {
+    try {
+      await dispatch(deleteBOM(id)).unwrap();
+      toast.success("BOM deleted");
+    } catch {
+      toast.error("Delete failed");
+    }
   };
 
+
   const addItem = () => {
-    if (materials.length === 0) {
-      toast.error("Please add materials first");
-      return;
-    }
-    const first = materials[0];
-    const newItem: BOMItem = {
-      materialId: first.id,
-      materialName: first.name,
-      quantity: 1,
-      unit: first.unit,
-      cost: first.costPerUnit || 0,
-    };
-    setFormData({ ...formData, items: [...formData.items, newItem] });
+    if (!materials || materials.length === 0) return;
+    const mat = materials[0];
+    const price = getPrice(mat);
+
+    setFormData({
+      ...formData,
+      items: [
+        ...formData.items,
+        {
+          materialId: mat._id,
+          materialName: mat.name,
+          quantity: 1,
+          unit: mat.stocks[0]?.unitOfMeasure || "",
+          cost: price, // Now uses correct data
+        },
+      ],
+    });
   };
+
 
   const updateItem = (index: number, field: keyof BOMItem, value: any) => {
     const items = [...formData.items];
+    const mat = materials.find(m => m._id === (field === "materialId" ? value : items[index].materialId));
+    const price = mat ? getPrice(mat) : 0;
+
     if (field === "materialId") {
-      const mat = materials.find(m => m.id === value);
-      if (mat) {
-        items[index] = {
-          ...items[index],
-          materialId: mat.id,
-          materialName: mat.name,
-          unit: mat.unit,
-          cost: (mat.costPerUnit || 0) * items[index].quantity,
-        };
-      }
+      items[index] = {
+        ...items[index],
+        materialId: mat!._id,
+        materialName: mat!.name,
+        unit: mat!.unitOfMeasure,
+        cost: price * items[index].quantity,
+      };
     } else if (field === "quantity") {
-      const qty = parseFloat(value) || 0;
-      const mat = materials.find(m => m.id === items[index].materialId);
-      items[index].quantity = qty;
-      items[index].cost = (mat?.costPerUnit || 0) * qty;
-    } else {
-      items[index] = { ...items[index], [field]: value };
+      const qty = Number(value) || 0;
+      items[index] = { ...items[index], quantity: qty, cost: price * qty };
     }
     setFormData({ ...formData, items });
   };
-
   const removeItem = (i: number) =>
     setFormData({ ...formData, items: formData.items.filter((_, idx) => idx !== i) });
 
@@ -234,8 +314,8 @@ export default function AdvancedBOMPage() {
   };
 
   const filtered = boms.filter(b =>
-    b.productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    b.id.toLowerCase().includes(searchTerm.toLowerCase())
+    b.productName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    b._id.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   // --- Totals ---
@@ -269,12 +349,25 @@ export default function AdvancedBOMPage() {
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
                   <Label>Product</Label>
-                  <Select value={formData.productId} onValueChange={(v) => setFormData({ ...formData, productId: v })}>
-                    <SelectTrigger><SelectValue placeholder="Select product" /></SelectTrigger>
+                  <Select
+                    value={formData.productId}
+                    onValueChange={(v) =>
+                      setFormData({ ...formData, productId: v })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select product" />
+                    </SelectTrigger>
+
                     <SelectContent>
-                      {products.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                      {products.map((p) => (
+                        <SelectItem key={p._id} value={p._id}>
+                          {p.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
+
                 </div>
                 <div>
                   <Label>Version</Label>
@@ -321,7 +414,7 @@ export default function AdvancedBOMPage() {
                       <Select value={it.materialId} onValueChange={(v) => updateItem(i, "materialId", v)}>
                         <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          {materials.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
+                          {materials.map(m => <SelectItem key={m._id} value={m._id}>{m.name}</SelectItem>)}
                         </SelectContent>
                       </Select>
                       <Input
@@ -377,11 +470,20 @@ export default function AdvancedBOMPage() {
       <div className="flex gap-3 items-center">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
-          <Input placeholder="Search BOMs..." className="pl-10" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+          <Input placeholder="Search BOMs..." className="pl-10" value={searchTerm} onChange={(e) => {
+            setSearchTerm(e.target.value);
+            setPage(1);
+          }}
+          />
         </div>
-        <Button onClick={() => { storage.set(STORAGE_KEYS.BOMS, []); setBoms([]); toast("All BOMs cleared!"); }}>
-          <RefreshCcw className="w-4 h-4 mr-2" /> Reset
+        <Button
+          variant="outline"
+          onClick={handleReset}
+        >
+          <RefreshCcw className="w-4 h-4 mr-2" />
+          Reset
         </Button>
+
       </div>
 
       {/* Analytics */}
@@ -396,14 +498,14 @@ export default function AdvancedBOMPage() {
         {filtered.length === 0 ? (
           <Card><CardContent className="py-12 text-center text-muted-foreground">No BOMs found. Create one to begin.</CardContent></Card>
         ) : (
-          filtered.map((b) => (
-            <motion.div key={b.id} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+          boms.map((b) => (
+            <motion.div key={b._id} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
               <Card className="shadow-md hover:shadow-lg transition-all">
                 <CardHeader>
                   <div className="flex justify-between">
                     <div>
                       <CardTitle>{b.productName}</CardTitle>
-                      <p className="text-sm text-muted-foreground">Version {b.version} • {b.id}</p>
+                      <p className="text-sm text-muted-foreground">Version {b.version} • {b._id}</p>
                     </div>
                     <div className="flex gap-2 items-center">
                       <span className={`px-3 py-1 rounded-full text-xs font-medium ${b.status === "active" ? "bg-green-100 text-green-700" :
@@ -421,7 +523,7 @@ export default function AdvancedBOMPage() {
                         size="icon"
                         variant="destructive"
                         disabled={!canDelete}
-                        onClick={() => canDelete && handleDelete(b.id)}
+                        onClick={() => canDelete && handleDelete(b._id)}
                         className={canDelete ? "" : "opacity-50 cursor-not-allowed"}
                       >
                         <Trash2 className="w-4 h-4" /></Button>
@@ -445,6 +547,35 @@ export default function AdvancedBOMPage() {
             </motion.div>
           ))
         )}
+        {/* Pagination */}
+        {pagination && pagination.totalPages > 1 && (
+          <div className="flex justify-between items-center mt-6">
+            <p className="text-sm text-muted-foreground">
+              Page {pagination.page} of {pagination.totalPages}
+            </p>
+
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page === 1}
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+              >
+                Previous
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page === pagination.totalPages}
+                onClick={() => setPage(p => p + 1)}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
+
       </AnimatePresence>
 
       {autoSaved && (

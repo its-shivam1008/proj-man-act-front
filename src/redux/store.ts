@@ -38,6 +38,7 @@ import materialRequestReducer from "./slices/materialRequestSlice";
 import rackReducer from './slices/rackSlice'
 import shelfReducer from './slices/shelfSlice'
 import reminderReducer from "./slices/reminderSlice";
+import bomReducer from "./slices/production/bomSlice";
 export const store = configureStore({
   reducer: {
     auth: authReducer,
@@ -79,6 +80,7 @@ export const store = configureStore({
     rack: rackReducer,
     shelf: shelfReducer,
     reminders: reminderReducer,
+    bom: bomReducer,
   },
 });
 
@@ -86,3 +88,4 @@ export type RootState = ReturnType<typeof store.getState>;
 export type AppDispatch = typeof store.dispatch;
 
 export default store;
+
