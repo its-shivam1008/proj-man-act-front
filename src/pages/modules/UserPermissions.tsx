@@ -14,6 +14,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import { AppDispatch, RootState } from "@/redux/store";
 import { usePermission } from '@/hooks/userPermission';
+import { updateUserProfile } from '@/redux/slices/authSlice';
 
 // --- 1. Navigation Structure with KEYS ---
 
@@ -125,6 +126,7 @@ interface User {
   role: UserRole;
   permissions?: Record<string, any>;
   location?: string; // [!code ++] Add location field
+  hrmsOrganisationId?: string;
   createdAt?: string;
 }
 
@@ -141,10 +143,44 @@ export const UserPermissionsPage: React.FC = () => {
   const [localPermissions, setLocalPermissions] = useState<Record<string, any>>({}); 
   const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
 
+  const [hrmsIdInput, setHrmsIdInput] = useState('');
+  const [activatingHrms, setActivatingHrms] = useState(false);
+
   const canView = usePermission('permissions', 'view');
   const canCreate = usePermission('permissions', 'create');
   const canEdit = usePermission('permissions', 'edit');
   const canDelete = usePermission('permissions', 'delete');
+
+useEffect(() => {
+    if (currentUser) {
+      setHrmsIdInput(currentUser.hrmsOrganisationId || '');
+    }
+  }, [currentUser]);
+
+  // [!code ++] UPDATE Handler: Saves to Current User (Admin)
+  const handleActivateHrmsId = async () => {
+    if (!currentUser) return;
+
+    setActivatingHrms(true);
+    try {
+        // We use currentUser._id to save it to your own profile (Organization Admin)
+        const res = await api.put('/auth/users/update-permissions', {
+            userId: currentUser._id, 
+            hrmsOrganisationId: hrmsIdInput
+        });
+
+        // Update Redux state so the "Activate" button turns to "Active" immediately
+        dispatch(updateUserProfile({ updatedUser: res.data.user }));
+
+        setStatusMessage({ type: 'success', text: 'HRMS ID Activated Successfully' });
+    } catch (err: any) {
+        console.error(err);
+        setStatusMessage({ type: 'error', text: err.response?.data?.message || "Failed to update HRMS ID" });
+    } finally {
+        setActivatingHrms(false);
+        setTimeout(() => setStatusMessage(null), 3000);
+    }
+  };
   
 
   const generateFullPermissions = (nodes: ModuleNode[]) => {
@@ -349,6 +385,34 @@ export const UserPermissionsPage: React.FC = () => {
         </div>
         <div className="flex gap-3">
             {/* Invite Modal */}
+            {/* Inside the return JSX, around line 320 */}
+            <div className="flex items-center gap-2 pt-2 ">
+                <span className="text-sm font-medium text-gray-700 whitespace-nowrap">HRMS Org ID:</span>
+                <div className="flex w-full max-w-sm items-center gap-2">
+                    {currentUser.role === 'admin' ? <div className='flex gap-2'>
+                      <Input 
+                        placeholder="Enter HRMS ID" 
+                        value={hrmsIdInput}
+                        onChange={(e) => setHrmsIdInput(e.target.value)}
+                        className="h-8 text-sm"
+                    />
+                    <Button 
+                        size="sm" 
+                        onClick={handleActivateHrmsId}
+                        disabled={activatingHrms}
+                        // [!code ++] Check against currentUser, not selectedUser
+                        className={currentUser?.hrmsOrganisationId === hrmsIdInput && hrmsIdInput !== '' ? "bg-green-600 hover:bg-green-700" : ""}
+                    >
+                        {activatingHrms ? (
+                            <Loader2 className="w-3 h-3 animate-spin"/> 
+                        ) : (
+                            // [!code ++] Check against currentUser
+                            currentUser?.hrmsOrganisationId === hrmsIdInput && hrmsIdInput !== '' ? "Active" : "Activate"
+                        )}
+                    </Button>
+                  </div> : currentUser.hrmsOrganisationId?? 'No id found. Contact your Admin'}
+                </div>
+            </div>
             <Dialog open={isInviteModalOpen} onOpenChange={setIsInviteModalOpen}>
               {canCreate && <DialogTrigger asChild>
                 <Button className="bg-blue-600 hover:bg-blue-700">
@@ -534,7 +598,8 @@ export const UserPermissionsPage: React.FC = () => {
                                 ))}
                             </select>
                         </div>
-                </div>
+                        
+                    </div>
             ) : (
                 <div className="text-center text-gray-500">Select a user to configure permissions</div>
             )}

@@ -92,6 +92,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
+import { hrmsOrganisationIdFromDB } from "@/utils/constants";
 
 // --- TYPES ---
 type WBSItemType = "phase" | "activity" | "task" | "subtask";
@@ -164,7 +165,7 @@ const WBSNode: React.FC<WBSNodeProps> = ({
   getMaterialStatusSummary,
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
-
+  const { userProfile } = useSelector((state: RootState) => state.auth);
   const canEdit = usePermission("wbsManagement", "edit");
   const canDelete = usePermission("wbsManagement", "delete");
 
@@ -419,7 +420,7 @@ export default function WBS() {
   const dispatch = useDispatch<AppDispatch>();
   const { wbs } = useSelector((state: RootState) => state.wbs);
   const { list: mrsList } = useSelector((state: RootState) => state.mrs);
-
+const { userProfile } = useSelector((state: RootState) => state.auth);
   const canView = usePermission("wbsManagement", "view");
   const canCreate = usePermission("wbsManagement", "create");
 
@@ -1333,7 +1334,7 @@ export default function WBS() {
         isOpen={!!linkingItem}
         onClose={() => setLinkingItem(null)}
         wbsItem={linkingItem}
-        organisationId={"81b48a8b-f574-4562-be38-f480e99359c9"}
+        organisationId={userProfile.hrmsOrganisationId}
       />
 
       {/* --- MATERIAL LINKING MODAL --- */}

@@ -59,6 +59,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { useDebounce } from "@/hooks/useDebounce";
 import { usePermission } from "@/hooks/userPermission";
+import { hrmsOrganisationIdFromDB } from "@/utils/constants";
 
 // ---------------- Types ----------------
 type ProjectStatus =
@@ -139,7 +140,7 @@ export default function Projects() {
   const [limit, setLimit] = useState(10);
   const { userProfile } = useSelector((state: RootState) => state.auth);
   const debouncedSearch = useDebounce(searchTerm, 500);
-  const uuid = "81b48a8b-f574-4562-be38-f480e99359c9";
+  const uuid = userProfile.hrmsOrganisationId;
   const organisationId = localStorage.getItem('organisationId')
   // [!code --] const { clients, departments, projectTypes } = useSelector(
   const { clients, departments, projectTypes, locations } = useSelector( // [!code ++]

@@ -1225,14 +1225,14 @@ const Deliveries: React.FC = () => {
                 </span>
               </button>
               
-              <button
+              {/* <button
                 onClick={() => handleUpdateStatus('delivered')}
                 className="w-full px-4 py-3 text-left border rounded-lg hover:bg-green-50 hover:border-green-500"
               >
                 <span className="px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
                   Delivered
                 </span>
-              </button>
+              </button> */}
             </div>
             
             <div className="flex justify-end gap-3 mt-6">

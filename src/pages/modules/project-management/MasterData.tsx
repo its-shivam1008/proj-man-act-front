@@ -40,6 +40,7 @@ import { toast } from "sonner";
 import { usePermission } from "@/hooks/userPermission";
 // [!code ++] Import the HRMS integration function
 import { getPublicLocations } from "@/lib/hrmsIntegration"; 
+import { hrmsOrganisationIdFromDB } from "@/utils/constants";
 
 // [!code ++] Update Type to include location
 type MasterType = "client" | "department" | "project-type" | "location"; 
@@ -63,6 +64,8 @@ export default function MasterDataPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<MasterItem | null>(null);
   const [formData, setFormData] = useState({ name: "", description: "" });
+
+  const { userProfile } = useSelector((state: RootState) => state.auth);
 
   // [!code ++] State for sync loading
   const [isSyncing, setIsSyncing] = useState(false); 
@@ -103,13 +106,13 @@ export default function MasterDataPage() {
 
   // [!code ++] New Function to Handle Sync
   const handleSyncFromHRMS = async () => {
-    const organisationId = "81b48a8b-f574-4562-be38-f480e99359c9"
-    if (!organisationId) return toast.error("Organisation ID not found");
+    const hrmsOrganisationId = userProfile.hrmsOrganisationId;
+    if (!hrmsOrganisationId) return toast.error("Organisation ID not found");
 
     setIsSyncing(true);
     try {
       // 1. Fetch from HRMS
-      const { data: hrmsLocations, error } = await getPublicLocations(organisationId);
+      const { data: hrmsLocations, error } = await getPublicLocations(hrmsOrganisationId);
       
       if (error || !hrmsLocations) {
         throw new Error(error || "Failed to fetch from HRMS");
