@@ -12,8 +12,9 @@ import {
   pauseWbsTask,
   resumeWbsTask,
   WBSItem as ImportedWBSItem,
+  assignPersonToWbs,
 } from "@/redux/slices/wbsSlice";
-
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Dialog,
   DialogContent,
@@ -78,7 +79,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-
+// import { toast } from 'sonner';
 // --- IMPORT THE SEPARATE MODAL COMPONENT ---
 import TeamSelectionDialog from "@/components/TeamSelectionDialog";
 import MaterialSelectionDialog from "@/components/MaterialSelectionDialog";
@@ -438,6 +439,11 @@ const { userProfile } = useSelector((state: RootState) => state.auth);
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearchTerm = useDebounce(searchTerm, 500);
 
+  const [resumeConflicts, setResumeConflicts] = useState<any[]>([]);
+  const [resolutionMap, setResolutionMap] = useState<Record<string, "both" | "resumed_only">>({});
+
+  
+
   // --- TEAM LINKING STATE ---
   const [linkingItem, setLinkingItem] = useState<WBSItem | null>(null);
 
@@ -670,18 +676,36 @@ const { userProfile } = useSelector((state: RootState) => state.auth);
     setTeamViewDialogOpen(true);
   };
 
-  const handleTaskSelection = (member: any, targetTask: WBSItem) => {
-    // Just show a toast for UI demonstration - no actual reassignment
-    const memberName = member.personalInfo?.name || 
-                      member.personalInfo?.firstName || 
-                      member.personalInfo?.fullName || 
-                      member.name || 
-                      `Team Member`; // `Member ${member.resourceId}`;
-    
-    toast({
-      title: "Task Selected",
-      description: `Selected to move ${memberName} to "${targetTask.name}"`,
-    });
+  const handleTaskSelection = async (member: any, targetTask: WBSItem) => {
+    try {
+      // We essentially just assign this person to the new task
+      // The backend 'assignPersonToWbs' handles the "add" logic
+      const payload = {
+        wbsId: targetTask.id,
+        resourceId: member.resourceId,
+        type: member.type,
+        personalInfo: member.personalInfo,
+        employment: member.employment || {},
+        financial: member.financial || {},
+      };
+
+      await dispatch(assignPersonToWbs(payload)).unwrap();
+      console.log("1")
+      toast({
+        title:'Success',
+        description: `Successfully assigned ${member.personalInfo?.name || "Member"} to "${targetTask.name}".`,
+        className: "bg-green-50 border-green-200",
+      });
+      console.log("2")
+      
+      // Close the dropdown or dialog if needed, or keep open for more moves
+    } catch (error: any) {
+      toast({
+        title: "Reassignment Failed",
+        description: error || "Could not assign person to task",
+        variant: "destructive",
+      });
+    }
   };
 
   const handlePauseTask = async (item: WBSItem) => {
@@ -705,29 +729,81 @@ const { userProfile } = useSelector((state: RootState) => state.auth);
   const handleResumeTask = (item: WBSItem) => {
     setResumingItem(item);
     setResumeReason("");
+    setResumeConflicts([]); // Reset conflicts
+    setResolutionMap({});
+
+    // --- CHECK FOR CONFLICTS ---
+    // Look at the snapshot of who was here when we paused
+    const snapshot = item.pausedAssignmentsSnapshot || [];
+    if (snapshot.length === 0) {
+      setResumeDialogOpen(true);
+      return;
+    }
+
+    // Identify which of these people are currently assigned to OTHER active tasks in this project
+    const conflicts: any[] = [];
+    
+    // Helper: Get all active tasks for this project (excluding the one being resumed)
+    const activeProjectTasks = wbs.filter(
+      t => t.projectId === item.projectId && t.id !== item.id && !t.isDeleted
+    );
+
+    snapshot.forEach(person => {
+      // Find if this person is assigned to any active task
+      // We check 'assignedPersons' of other tasks
+      const activeAssignments = activeProjectTasks.filter(t => 
+        t.assignedPersons?.some(p => p.resourceId === person.resourceId)
+      );
+
+      if (activeAssignments.length > 0) {
+        // Just take the first one found for simplicity, or list them all
+        const currentTask = activeAssignments[0]; 
+        conflicts.push({
+          person,
+          currentTask,
+          conflictType: 'reassigned'
+        });
+        
+        // Default resolution
+        setResolutionMap(prev => ({...prev, [person.resourceId]: "both"}));
+      }
+    });
+
+    if (conflicts.length > 0) {
+      setResumeConflicts(conflicts);
+    }
+    
     setResumeDialogOpen(true);
   };
 
   const confirmResumeTask = async () => {
     if (!resumingItem) return;
 
+    // Build resolution payload
+    const resolutions = resumeConflicts.map(conflict => ({
+      resourceId: conflict.person.resourceId,
+      tempTaskId: conflict.currentTask.id,
+      action: resolutionMap[conflict.person.resourceId] || "both"
+    }));
+
     try {
       const result = await dispatch(resumeWbsTask({ 
         id: resumingItem.id, 
-        resumeReason: resumeReason 
+        resumeReason: resumeReason,
+        resolutions 
       })).unwrap();
       
       const pausedDays = result.pauseHistory?.[result.pauseHistory.length - 1]?.pausedDays || 0;
       
       toast({
         title: "Task Resumed",
-        description: `${resumingItem.name} has been resumed. End date extended by ${pausedDays} days.`,
+        description: `Task active. End date extended by ${Math.round(pausedDays)} days.`,
       });
 
-      // Close dialog and reset state
       setResumeDialogOpen(false);
       setResumingItem(null);
       setResumeReason("");
+      setResumeConflicts([]);
     } catch (error: any) {
       toast({
         title: "Error",

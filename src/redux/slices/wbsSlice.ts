@@ -52,6 +52,7 @@ export interface WBSItem {
     reason?: string;
     resumeReason?: string;
   }>;
+  pausedAssignmentsSnapshot?: any;
   totalPausedSeconds?: number;
   totalPausedMilliseconds?: number;
 }
@@ -197,11 +198,11 @@ export const pauseWbsTask = createAsyncThunk<
 ---------------------------------------------------- */
 export const resumeWbsTask = createAsyncThunk<
   WBSItem,
-  { id: string; resumeReason?: string },
+  { id: string; resumeReason?: string; resolutions?: any[] }, // Added resolutions
   { rejectValue: string }
->("wbs/resume", async ({ id, resumeReason }, { rejectWithValue }) => {
+>("wbs/resume", async ({ id, resumeReason, resolutions }, { rejectWithValue }) => {
   try {
-    const res = await api.post(`/wbs/resume/${id}`, { resumeReason });
+    const res = await api.post(`/wbs/resume/${id}`, { resumeReason, resolutions });
     return { ...res.data.data, id: res.data.data._id || id };
   } catch (err: any) {
     return rejectWithValue(err?.response?.data?.message || "Resume failed");
