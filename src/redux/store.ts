@@ -39,6 +39,8 @@ import rackReducer from './slices/rackSlice'
 import shelfReducer from './slices/shelfSlice'
 import reminderReducer from "./slices/reminderSlice";
 import bomReducer from "./slices/production/bomSlice";
+import workOrderReducer from "./slices/production/workOrderSlice";
+import sparePartsReducer from "./slices/plantandmachinary/sparePartsSlice";
 export const store = configureStore({
   reducer: {
     auth: authReducer,
@@ -81,6 +83,8 @@ export const store = configureStore({
     shelf: shelfReducer,
     reminders: reminderReducer,
     bom: bomReducer,
+    workOrders: workOrderReducer,
+    spareParts: sparePartsReducer,
   },
 });
 

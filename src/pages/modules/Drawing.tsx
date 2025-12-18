@@ -169,19 +169,201 @@ const Drawing: React.FC = () => {
     });
   };
 
+  // --- PDF EXTRACTION FUNCTION ---
+  const runPDFExtraction = async (file: File) => {
+    setIsProcessing(true);
+    setStatus('Uploading PDF...');
+
+    try {
+      console.log('Starting PDF extraction for file:', file.name, 'Size:', file.size, 'Type:', file.type);
+      
+      const formData = new FormData();
+      formData.append('pdf', file);
+
+      setStatus('Extracting data from PDF...');
+      
+      console.log('Sending request to API...');
+      const response = await fetch('http://localhost:4000/api/extract-drawing', {
+        method: 'POST',
+        body: formData
+      });
+
+      console.log('Response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('API Error Response:', errorText);
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to extract data from PDF');
+      }
+
+      setStatus('Processing extracted data...');
+
+      // Convert PDF extraction result to our format
+      const extractedText = formatPDFDataToText(result.data);
+      setRawText(extractedText);
+
+      // Process the extracted text
+      const results = processPDFExtractedData(result.data, masterData);
+      setScanResults(results);
+
+      // Save to History
+      const newScan: OCRScan = {
+        id: Date.now(),
+        originalText: extractedText,
+        results: results,
+        preview: selectedImage,
+        timestamp: new Date().toLocaleString()
+      };
+      setHistory(prev => [newScan, ...prev]);
+
+      setStatus('Complete');
+
+    } catch (err: any) {
+      console.error("PDF Extraction Error:", err);
+      
+      // Show user-friendly error messages
+      let errorMessage = 'Failed to process PDF';
+      if (err.message.includes('Failed to fetch')) {
+        errorMessage = 'Cannot connect to server. Make sure the backend is running on http://localhost:4000';
+      } else if (err.message.includes('HTTP error')) {
+        errorMessage = `Server error: ${err.message}`;
+      } else {
+        errorMessage = err.message || 'Unknown error occurred';
+      }
+      
+      setStatus(`Error: ${errorMessage}`);
+      toast.error(errorMessage);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // --- FORMAT PDF DATA TO TEXT ---
+  const formatPDFDataToText = (data: any): string => {
+    let text = '';
+    
+    // Add drawing metadata
+    if (data.drawing_metadata) {
+      text += 'DRAWING METADATA:\n';
+      Object.entries(data.drawing_metadata).forEach(([key, value]) => {
+        if (value) {
+          text += `${key.toUpperCase()}: ${value}\n`;
+        }
+      });
+      text += '\n';
+    }
+
+    // Add BOM items
+    if (data.bill_of_materials && data.bill_of_materials.length > 0) {
+      text += 'BILL OF MATERIALS:\n';
+      data.bill_of_materials.forEach((item: any) => {
+        if (item.mark_no) text += `${item.mark_no} `;
+        if (item.part_no) text += `${item.part_no} `;
+        if (item.description) text += `${item.description} `;
+        if (item.material) text += `${item.material} `;
+        if (item.quantity) text += `QTY:${item.quantity} `;
+        if (item.length_or_area && item.uom) text += `${item.length_or_area} ${item.uom} `;
+        if (item.weight_per_unit_kg) text += `${item.weight_per_unit_kg}KG `;
+        text += '\n';
+      });
+    }
+
+    return text;
+  };
+
+  // --- PROCESS PDF EXTRACTED DATA ---
+  const processPDFExtractedData = (data: any, masters: MasterPair[]): ScanResultItem[] => {
+    const results: ScanResultItem[] = [];
+
+    // Process BOM items
+    if (data.bill_of_materials && data.bill_of_materials.length > 0) {
+      data.bill_of_materials.forEach((item: any) => {
+        if (item.mark_no) {
+          const key = item.mark_no.toUpperCase();
+          const masterMatch = masters.find(m => m.active && m.key.toUpperCase() === key);
+          
+          results.push({
+            id: crypto.randomUUID(),
+            key: key,
+            value: masterMatch ? masterMatch.value : (item.description || ''),
+            count: item.quantity || 1,
+            isMasterMatch: !!masterMatch
+          });
+        }
+      });
+    }
+
+    // If no BOM items found, try to extract from raw text patterns
+    if (results.length === 0 && data.drawing_metadata) {
+      // Look for part numbers in metadata
+      Object.values(data.drawing_metadata).forEach((value: any) => {
+        if (typeof value === 'string') {
+          const matches = value.match(/[A-Z]\d+/g);
+          if (matches) {
+            matches.forEach(match => {
+              const key = match.toUpperCase();
+              const masterMatch = masters.find(m => m.active && m.key.toUpperCase() === key);
+              
+              results.push({
+                id: crypto.randomUUID(),
+                key: key,
+                value: masterMatch ? masterMatch.value : '',
+                count: 1,
+                isMasterMatch: !!masterMatch
+              });
+            });
+          }
+        }
+      });
+    }
+
+    return results.sort((a, b) => {
+      if (a.isMasterMatch && !b.isMasterMatch) return -1;
+      if (!a.isMasterMatch && b.isMasterMatch) return 1;
+      return b.count - a.count;
+    });
+  };
+
   // --- GEMINI ACTIONS ---
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [fileType, setFileType] = useState<'image' | 'pdf' | null>(null);
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) {
-      const url = URL.createObjectURL(e.target.files[0]);
-      setSelectedImage(url);
+      const file = e.target.files[0];
+      setSelectedFile(file);
       setRawText('');
       setScanResults([]);
-      setStatus('Image loaded. Ready to scan.');
+      
+      if (file.type === 'application/pdf') {
+        setFileType('pdf');
+        setSelectedImage(null); // Don't set image URL for PDFs
+        setStatus('PDF loaded. Ready to extract data.');
+      } else {
+        setFileType('image');
+        const url = URL.createObjectURL(file);
+        setSelectedImage(url);
+        setStatus('Image loaded. Ready to scan.');
+      }
     }
   };
 
   const runOCR = async () => {
+    if (!selectedFile) return;
+    
+    // Check if it's a PDF file
+    if (selectedFile.type === 'application/pdf') {
+      return await runPDFExtraction(selectedFile);
+    }
+    
     if (!selectedImage) return;
+    
     if (!apiKey) {
       alert("Please enter a valid API Key.");
       setShowKeyInput(true);
@@ -204,41 +386,46 @@ const Drawing: React.FC = () => {
         },
       };
 const prompt = `
-You are performing OCR on an engineering blueprint.
+You are analyzing an engineering drawing/blueprint to extract structured data.
 
-YOUR GOAL:
-Extract EVERY text element that begins with the letter "P" (uppercase or lowercase), including:
-P7, P10, P65, P5, P2, PS, P6, Pxx, etc.
+EXTRACT THE FOLLOWING DATA:
+Extract ALL p-series items also like P-1, P-2, P-3, and like these 
 
-FOLLOW THESE RULES STRICTLY:
+1. DRAWING METADATA (look for title blocks, headers):
+   - Drawing number/ID
+   - Drawing title/name
+   - Job number
+   - Project name
+   - Owner/client
+   - Contractor
+   - Revision number
+   - Drawing date
+   - Scale
+   - Sheet size
 
-1. ALWAYS keep key + measurement together as one unit.
-   Examples:
-   "P7 5 INCH"
-   "P7 25 INCH"
-   "P10 5 INCH"
-   "P65 25 INCH"
+2. BILL OF MATERIALS (look for BOM tables):
+   For each item in the BOM table, extract:
+   - Mark number (like A1, B2, P7, etc.)
+   - Part number
+   - Description
+   - Material type
+   - Quantity
+   - Length/area/dimensions
+   - Unit of measure (mm, inch, kg, etc.)
+   - Weight per unit
+   - Total weight
 
-2. If the measurement is in multiple tokens, COMBINE them:
-   Examples:
-   "P65" + "25" + "INCH"   → "P65 25 INCH"
+RULES:
+- Extract ALL visible text from tables and title blocks
+- Keep numbers with their units (e.g., "25 INCH", "6 MM", "10 KG")
+- Include part numbers exactly as shown
+- Capture material descriptions completely
+- Don't skip any table rows
+- Include duplicate entries if they appear multiple times
+- Return raw extracted text, one item per line
+- Focus on tabular data and title block information
 
-3. If no measurement is present, return the key alone:
-   Examples:
-   "P2"
-   "P5"
-   "P6"
-   "PS"
-
-4. Include duplicates. Do NOT remove repeated items.
-
-5. Return ONLY the extracted P-series items.
-   No other data.
-   No formatting.
-   No explanation.
-   One item per line.
-
-Extract ALL items starting with P from the image.
+Extract everything visible in the drawing.
 `;
 
 
@@ -301,7 +488,12 @@ const processExtractedText = (text: string, masters: MasterPair[]): ScanResultIt
   const merged: string[] = [];
   let i = 0;
 
-  const UNIT_WORDS = ["INCH", "IN", "MM", "FT", "\""];
+  const UNIT_WORDS = ["INCH", "IN", "MM", "CM", "FT", "M", "KG", "G", "L", "ML", "\"", "'"];
+  const PART_PATTERNS = [
+    /^[A-Z]\d+$/i,     // P7, A1, B2, etc.
+    /^[A-Z]{2,}\d+$/i, // UB305, UC203, etc.
+    /^\d{4}-\d{3}-\d{3}$/i, // Drawing numbers like 3847-534-015
+  ];
   
   while (i < rawTokens.length) {
     const token = rawTokens[i].toUpperCase();
@@ -322,20 +514,40 @@ const processExtractedText = (text: string, masters: MasterPair[]): ScanResultIt
       continue;
     }
 
-    // CASE 3: key (P65) + measurement that Gemini split → P65 + 25 + INCH
-    if (/^P\d+$/i.test(token) && !isNaN(Number(next)) && UNIT_WORDS.includes(next2)) {
+    // CASE 3: part pattern + measurement
+    const isPartPattern = PART_PATTERNS.some(pattern => pattern.test(token));
+    if (isPartPattern && !isNaN(Number(next)) && UNIT_WORDS.includes(next2)) {
       merged.push(`${token} ${next} ${next2}`);
       i += 3;
       continue;
     }
 
-    // CASE 4: key + number as separate line → P7 + 5 + INCH
-    if (/^P\d+$/i.test(token) && !isNaN(Number(next))) {
+    // CASE 4: part pattern + number (without unit)
+    if (isPartPattern && !isNaN(Number(next))) {
       if (UNIT_WORDS.includes(next2)) {
         merged.push(`${token} ${next} ${next2}`);
         i += 3;
         continue;
+      } else {
+        merged.push(`${token} ${next}`);
+        i += 2;
+        continue;
       }
+    }
+
+    // CASE 5: Material descriptions (keep multi-word materials together)
+    if (token.includes("STEEL") || token.includes("CONCRETE") || token.includes("ALUMINUM")) {
+      let materialDesc = token;
+      let j = i + 1;
+      while (j < rawTokens.length && j < i + 4) { // Look ahead max 4 words
+        const nextToken = rawTokens[j].toUpperCase();
+        if (UNIT_WORDS.includes(nextToken) || !isNaN(Number(nextToken))) break;
+        materialDesc += ` ${nextToken}`;
+        j++;
+      }
+      merged.push(materialDesc);
+      i = j;
+      continue;
     }
 
     // DEFAULT: push token alone
@@ -350,6 +562,10 @@ const processExtractedText = (text: string, masters: MasterPair[]): ScanResultIt
   const results: ScanResultItem[] = [];
 
   tokenMap.forEach((count, key) => {
+    // Skip common words that aren't useful
+    const skipWords = ["THE", "AND", "OR", "OF", "TO", "FOR", "WITH", "BY", "FROM", "AS", "IS", "ARE", "WAS", "WERE"];
+    if (skipWords.includes(key) || key.length < 2) return;
+
     const masterMatch = masters.find(m => m.active && m.key.toUpperCase() === key);
     results.push({
       id: crypto.randomUUID(),
@@ -569,27 +785,52 @@ const processExtractedText = (text: string, masters: MasterPair[]): ScanResultIt
           <div className="lg:col-span-7 space-y-4">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative">
               <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
-                <h3 className="font-semibold text-gray-700">Image Source</h3>
+                <h3 className="font-semibold text-gray-700">File Source</h3>
               </div>
               <div className="relative min-h-[400px] flex flex-col items-center justify-center bg-slate-100">
-                {!selectedImage ? (
+                {!selectedFile ? (
                   <div onClick={() => fileInputRef.current?.click()} className="cursor-pointer text-center p-8 hover:bg-slate-200 transition-colors rounded-full w-full h-full flex flex-col items-center justify-center">
                     <Upload className="w-8 h-8 text-indigo-500 mb-4" />
                     <p className="text-gray-600 font-medium">Click to Upload Blueprint</p>
+                    <p className="text-gray-400 text-sm mt-2">Supports images (JPG, PNG) and PDF files</p>
                   </div>
                 ) : (
                   <div className="relative w-full h-full bg-black/5 p-4 flex items-center justify-center">
-                    <img src={selectedImage} alt="Source" className="max-h-[500px] object-contain shadow-lg bg-white" />
-                    <button onClick={() => { setSelectedImage(null); setScanResults([]); setRawText(''); }} className="absolute top-4 right-4 bg-white p-2 rounded-full shadow-md hover:text-red-600"><X className="w-5 h-5" /></button>
+                    {fileType === 'pdf' ? (
+                      <div className="flex flex-col items-center justify-center p-8 bg-white rounded-lg shadow-lg">
+                        <div className="w-16 h-16 bg-red-100 rounded-lg flex items-center justify-center mb-4">
+                          <svg className="w-8 h-8 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                        <p className="text-lg font-semibold text-gray-800">{selectedFile.name}</p>
+                        <p className="text-sm text-gray-500 mt-1">PDF Document</p>
+                        <p className="text-xs text-gray-400 mt-2">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                      </div>
+                    ) : (
+                      <img src={selectedImage} alt="Source" className="max-h-[500px] object-contain shadow-lg bg-white" />
+                    )}
+                    <button 
+                      onClick={() => { 
+                        setSelectedImage(null); 
+                        setSelectedFile(null); 
+                        setFileType(null); 
+                        setScanResults([]); 
+                        setRawText(''); 
+                      }} 
+                      className="absolute top-4 right-4 bg-white p-2 rounded-full shadow-md hover:text-red-600"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
                   </div>
                 )}
                 {isProcessing && <div className="absolute inset-0 bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center z-10"><Loader2 className="w-10 h-10 text-indigo-600 animate-spin mb-4" /><p className="font-medium text-gray-800">{status}</p></div>}
               </div>
-              <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
+              <input type="file" ref={fileInputRef} className="hidden" accept="image/*,application/pdf" onChange={handleImageUpload} />
             </div>
 
-            <button onClick={runOCR} disabled={!selectedImage || isProcessing} className={`w-full py-4 rounded-xl font-bold text-lg shadow-sm flex items-center justify-center gap-2 transition-all ${!selectedImage || isProcessing ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200'}`}>
-              <Scan className="w-6 h-6" /> {isProcessing ? 'Processing...' : 'Start Analyzing'}
+            <button onClick={runOCR} disabled={!selectedFile || isProcessing} className={`w-full py-4 rounded-xl font-bold text-lg shadow-sm flex items-center justify-center gap-2 transition-all ${!selectedFile || isProcessing ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200'}`}>
+              <Scan className="w-6 h-6" /> {isProcessing ? 'Processing...' : 'Extract Data'}
             </button>
           </div>
 

@@ -46,6 +46,10 @@ type WorkOrder = {
   plannedHours?: number;
   plannedCost?: number;
   actualHours?: number;
+  // New fields
+  notes?: string;
+  imageFile?: File | null;
+  imageUrl?: string;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -121,6 +125,9 @@ export default function WorkOrdersAdvanced() {
     status: "planned",
     operators: [],
     attachments: [],
+    notes: "",
+    imageFile: null,
+    imageUrl: "",
   });
 
   /* -----------------------------------
@@ -163,6 +170,9 @@ export default function WorkOrdersAdvanced() {
       status: "planned",
       operators: [],
       attachments: [],
+      notes: "",
+      imageFile: null,
+      imageUrl: "",
     });
     setDialogOpen(true);
   };
@@ -197,6 +207,8 @@ export default function WorkOrdersAdvanced() {
       plannedHours: form.plannedHours || 0,
       plannedCost: form.plannedCost || 0,
       actualHours: form.actualHours || 0,
+      notes: form.notes || "",
+      imageUrl: form.imageUrl || "",
       createdAt: editing ? editing.createdAt : now,
       updatedAt: now,
     };
@@ -306,9 +318,11 @@ export default function WorkOrdersAdvanced() {
                 <TableHead>Order</TableHead>
                 <TableHead>Product</TableHead>
                 <TableHead>Qty</TableHead>
-                <TableHead>Work Center</TableHead>
+               {/* <TableHead>Work Center</TableHead> */}
                 <TableHead>Status</TableHead>
                 <TableHead>Planned Hrs</TableHead>
+                <TableHead>Image</TableHead>
+                <TableHead>Notes</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -318,9 +332,41 @@ export default function WorkOrdersAdvanced() {
                   <TableCell>{wo.orderNo}</TableCell>
                   <TableCell>{wo.productName}</TableCell>
                   <TableCell>{wo.quantity}</TableCell>
-                  <TableCell>{wo.workCenterId || "—"}</TableCell>
+                  {/* <TableCell>{wo.workCenterId || "—"}</TableCell> */}
                   <TableCell><Badge>{wo.status}</Badge></TableCell>
                   <TableCell>{wo.plannedHours ?? "—"}</TableCell>
+                  
+                  {/* Image Column */}
+                  <TableCell>
+                    {wo.imageUrl ? (
+                      <img 
+                        src={wo.imageUrl} 
+                        alt="Work Order" 
+                        className="w-12 h-12 object-cover rounded border cursor-pointer hover:scale-110 transition-transform"
+                        onClick={() => {
+                          // Open image in modal or new tab
+                          window.open(wo.imageUrl, '_blank');
+                        }}
+                      />
+                    ) : (
+                      <span className="text-gray-400 text-sm">No image</span>
+                    )}
+                  </TableCell>
+                  
+                  {/* Notes Column */}
+                  <TableCell>
+                    {wo.notes ? (
+                      <div 
+                        className="max-w-32 truncate cursor-pointer hover:text-blue-600" 
+                        title={wo.notes}
+                      >
+                        {wo.notes}
+                      </div>
+                    ) : (
+                      <span className="text-gray-400 text-sm">No notes</span>
+                    )}
+                  </TableCell>
+                  
                   <TableCell>
                     <div className="flex gap-2">
                       <Button
@@ -377,10 +423,10 @@ export default function WorkOrdersAdvanced() {
               <Label>Quantity</Label>
               <Input type="number" value={form.quantity ?? 0} onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })} />
             </div>
-            <div>
+            {/* <div>
               <Label>Work Center</Label>
               <Input value={form.workCenterId || ""} onChange={(e) => setForm({ ...form, workCenterId: e.target.value })} />
-            </div>
+            </div> */}
             <div>
               <Label>Status</Label>
               <Input value={form.status || "planned"} onChange={(e) => setForm({ ...form, status: e.target.value as any })} />
@@ -388,6 +434,48 @@ export default function WorkOrdersAdvanced() {
             <div>
               <Label>Due Date</Label>
               <Input type="date" value={form.dueDate || todayISO()} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} />
+            </div>
+            
+            {/* New Fields */}
+            <div className="col-span-2">
+              <Label>Notes</Label>
+              <Input 
+                value={form.notes || ""} 
+                onChange={(e) => setForm({ ...form, notes: e.target.value })} 
+                placeholder="Enter any additional notes..."
+              />
+            </div>
+            
+            <div className="col-span-2">
+              <Label>Upload Image</Label>
+              <Input 
+                type="file" 
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    // Create a preview URL
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                      setForm({ 
+                        ...form, 
+                        imageFile: file,
+                        imageUrl: reader.result as string 
+                      });
+                    };
+                    reader.readAsDataURL(file);
+                  }
+                }}
+              />
+              {form.imageUrl && (
+                <div className="mt-2">
+                  <img 
+                    src={form.imageUrl} 
+                    alt="Preview" 
+                    className="max-w-xs max-h-40 rounded border"
+                  />
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>

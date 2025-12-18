@@ -41,15 +41,7 @@ const slice = createSlice({
   },
   reducers: {},
   extraReducers: (b) => {
-    b.addMatcher(
-      (a) => a.type.startsWith("workOrders/") && a.type.endsWith("/pending"),
-      (s) => { s.loading = true; }
-    );
-    b.addMatcher(
-      (a) => a.type.startsWith("workOrders/") && a.type.endsWith("/fulfilled"),
-      (s) => { s.loading = false; }
-    );
-
+    // All addCase calls must come before addMatcher calls
     b.addCase(fetchWorkOrders.fulfilled, (s, a) => {
       s.list = a.payload;
     });
@@ -66,6 +58,16 @@ const slice = createSlice({
     b.addCase(deleteWorkOrder.fulfilled, (s, a) => {
       s.list = s.list.filter((w: any) => w._id !== a.payload);
     });
+
+    // addMatcher calls must come after all addCase calls
+    b.addMatcher(
+      (a) => a.type.startsWith("workOrders/") && a.type.endsWith("/pending"),
+      (s) => { s.loading = true; }
+    );
+    b.addMatcher(
+      (a) => a.type.startsWith("workOrders/") && a.type.endsWith("/fulfilled"),
+      (s) => { s.loading = false; }
+    );
   },
 });
 
