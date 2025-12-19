@@ -31,6 +31,7 @@ import { fetchWbsByProject } from "@/redux/slices/wbsSlice";
 import { createBulkMRS } from "@/redux/slices/mrsSlice";
 import { fetchMaterials } from "@/redux/slices/rawmaterialSlice";
 import { toast } from 'sonner'; // Assuming you use sonner or similar for toasts
+import { BASE_URL } from '@/utils/constants';
 
 // --- TYPES ---
 interface MasterPair {
@@ -183,7 +184,7 @@ const Drawing: React.FC = () => {
       setStatus('Extracting data from PDF...');
       
       console.log('Sending request to API...');
-      const response = await fetch('http://localhost:4000/api/extract-drawing', {
+      const response = await fetch(`${BASE_URL}/api/extract-drawing`, {
         method: 'POST',
         body: formData
       });
