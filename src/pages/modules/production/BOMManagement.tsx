@@ -259,6 +259,20 @@ export default function AdvancedBOMPage() {
     try {
       await dispatch(deleteBOM(id)).unwrap();
       toast.success("BOM deleted");
+
+      const shouldReset = boms.length === 1 && page > 1;
+
+      const nextPage = shouldReset ? page - 1 : page;
+
+      setPage(nextPage);
+
+      dispatch(
+        fetchBOMs({
+          page: nextPage,
+          limit,
+          search: searchTerm,
+        })
+      );
     } catch {
       toast.error("Delete failed");
     }
@@ -313,10 +327,6 @@ export default function AdvancedBOMPage() {
     setFormData({ productId: "", version: "1.0", status: "draft", items: [] });
   };
 
-  const filtered = boms.filter(b =>
-    b.productName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    b._id.toLowerCase().includes(searchTerm.toLowerCase())
-  );
 
   // --- Totals ---
   const totalCost = (items: BOMItem[]) =>
@@ -495,49 +505,77 @@ export default function AdvancedBOMPage() {
 
       {/* BOM Cards */}
       <AnimatePresence>
-        {filtered.length === 0 ? (
-          <Card><CardContent className="py-12 text-center text-muted-foreground">No BOMs found. Create one to begin.</CardContent></Card>
+        {boms.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              No BOMs found. Create one to begin.
+            </CardContent>
+          </Card>
         ) : (
           boms.map((b) => (
-            <motion.div key={b._id} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+            <motion.div
+              key={b._id}
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+            >
               <Card className="shadow-md hover:shadow-lg transition-all">
                 <CardHeader>
                   <div className="flex justify-between">
                     <div>
                       <CardTitle>{b.productName}</CardTitle>
-                      <p className="text-sm text-muted-foreground">Version {b.version} • {b._id}</p>
+                      <p className="text-sm text-muted-foreground">
+                        Version {b.version} • {b._id}
+                      </p>
                     </div>
+
                     <div className="flex gap-2 items-center">
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${b.status === "active" ? "bg-green-100 text-green-700" :
-                        b.status === "draft" ? "bg-yellow-100 text-yellow-700" : "bg-gray-100 text-gray-600"
-                        }`}>{b.status}</span>
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-medium ${b.status === "active"
+                            ? "bg-green-100 text-green-700"
+                            : b.status === "draft"
+                              ? "bg-yellow-100 text-yellow-700"
+                              : "bg-gray-100 text-gray-600"
+                          }`}
+                      >
+                        {b.status}
+                      </span>
+
                       <Button
                         size="icon"
                         variant="outline"
                         disabled={!canEdit}
                         onClick={() => canEdit && handleEdit(b)}
-                        className={canEdit ? "" : "opacity-50 cursor-not-allowed"}
                       >
-                        <Edit className="w-4 h-4" /></Button>
+                        <Edit className="w-4 h-4" />
+                      </Button>
+
                       <Button
                         size="icon"
                         variant="destructive"
                         disabled={!canDelete}
                         onClick={() => canDelete && handleDelete(b._id)}
-                        className={canDelete ? "" : "opacity-50 cursor-not-allowed"}
                       >
-                        <Trash2 className="w-4 h-4" /></Button>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                     </div>
                   </div>
                 </CardHeader>
+
                 <CardContent>
                   <div className="space-y-1">
                     {b.items.map((it, idx) => (
-                      <div key={idx} className="flex justify-between items-center p-2 bg-muted rounded">
+                      <div
+                        key={idx}
+                        className="flex justify-between items-center p-2 bg-muted rounded"
+                      >
                         <span>{it.materialName}</span>
-                        <span className="text-sm text-muted-foreground">{it.quantity} {it.unit} • ₹{(it.cost || 0).toFixed(2)}</span>
+                        <span className="text-sm text-muted-foreground">
+                          {it.quantity} {it.unit} • ₹{(it.cost || 0).toFixed(2)}
+                        </span>
                       </div>
                     ))}
+
                     <div className="text-right font-semibold pt-2 border-t mt-2">
                       Total Cost: ₹{totalCost(b.items)}
                     </div>
@@ -547,8 +585,9 @@ export default function AdvancedBOMPage() {
             </motion.div>
           ))
         )}
+
         {/* Pagination */}
-        {pagination && pagination.totalPages > 1 && (
+        {pagination?.totalPages > 1 && (
           <div className="flex justify-between items-center mt-6">
             <p className="text-sm text-muted-foreground">
               Page {pagination.page} of {pagination.totalPages}
@@ -575,8 +614,8 @@ export default function AdvancedBOMPage() {
             </div>
           </div>
         )}
-
       </AnimatePresence>
+
 
       {autoSaved && (
         <div className="fixed bottom-4 right-4 bg-green-600 text-white px-4 py-2 rounded-md shadow">

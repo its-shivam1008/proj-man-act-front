@@ -62,6 +62,8 @@ const PurchaseOrderComponent: React.FC = () => {
   const { vendors } = useSelector((state: RootState) => state.vendors);
 
   const { category: categories, hsn: hsnCodes } = useSelector((state: RootState) => state.inventoryMaster);
+  const [fromDate, setFromDate] = useState<string>("");
+  const [toDate, setToDate] = useState<string>("");
 
   const [showCreatePo, setShowCreatePo] = useState(false);
   const [showViewPo, setShowViewPo] = useState(false);
@@ -72,6 +74,8 @@ const PurchaseOrderComponent: React.FC = () => {
   const [page, setPage] = useState<number>(1);
   const [limit, setLimit] = useState<number>(10);
   const [search, setSearch] = useState<string>("");
+  // const [fromDate, setFromDate] = useState<string>("");
+  // const [toDate, setToDate] = useState<string>("");
 
 
   // const uniqueMaterials = Array.from(
@@ -83,26 +87,47 @@ const PurchaseOrderComponent: React.FC = () => {
   //   ).values()
   // );
 
+  const organisationId = localStorage.getItem("organisationId");
 
-
-
-  useEffect(() => {
-    const organisationId = localStorage.getItem("organisationId");
+  const fetchPOs = () => {
     dispatch(
       fetchPurchaseOrders({
         page,
         limit,
         q: search,
         organisationId,
+
+        ...(fromDate && {
+          fromDate: new Date(fromDate).toISOString(), // ✅ start of day
+        }),
+
+        ...(toDate && {
+          toDate: new Date(
+            new Date(toDate).setHours(23, 59, 59, 999)
+          ).toISOString(), // ✅ end of day
+        }),
       })
     );
+  };
 
-      dispatch(fetchVendors());
-      dispatch(fetchWarehouses(localStorage.getItem("organisationId")));
-      dispatch(fetchMaterials());
-      dispatch(fetchInventoryMaster({ type: "category", page: 1, limit: 100 }));
-      dispatch(fetchInventoryMaster({ type: "hsn", page: 1, limit: 100 }));
-  }, [dispatch, page, limit, search]);
+  useEffect(() => {
+    setPage(1);
+  }, [fromDate, toDate]);
+
+  useEffect(() => {
+    const timer = setTimeout(fetchPOs, 300);
+    return () => clearTimeout(timer);
+  }, [fromDate, toDate, page, limit, search]);
+
+
+
+  useEffect(() => {
+    dispatch(fetchVendors());
+    dispatch(fetchWarehouses(localStorage.getItem("organisationId")));
+    dispatch(fetchMaterials());
+    dispatch(fetchInventoryMaster({ type: "category", page: 1, limit: 100 }));
+    dispatch(fetchInventoryMaster({ type: "hsn", page: 1, limit: 100 }));
+  }, [dispatch, page, limit, search, fromDate, toDate]);
 
 
   useEffect(() => {
@@ -165,7 +190,7 @@ const PurchaseOrderComponent: React.FC = () => {
     const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
       setSubmitting(true);
-      
+
       // Validation for raw materials
       if (itemType === "rawMaterial") {
         if (!formData.warehouse) {
@@ -173,7 +198,7 @@ const PurchaseOrderComponent: React.FC = () => {
           setSubmitting(false);
           return;
         }
-        
+
         // Check if any product line is missing warehouse
         const linesWithoutWarehouse = formData.productLines.filter(line => !line.warehouse);
         if (linesWithoutWarehouse.length > 0) {
@@ -182,7 +207,7 @@ const PurchaseOrderComponent: React.FC = () => {
           return;
         }
       }
-      
+
       try {
         // Ensure warehouse is assigned to all product lines for raw materials
         const updatedFormData = { ...formData };
@@ -248,19 +273,19 @@ const PurchaseOrderComponent: React.FC = () => {
     useEffect(() => {
       const handleRfqToPoAutofill = (event: CustomEvent) => {
         console.log('🎯 Received rfq_to_po_autofill event:', event.detail);
-        
+
         const materialData = event.detail;
         if (materialData && materialData.materials) {
           // Set item type to Raw Material
           setItemType('rawMaterial');
-          
+
           // Map RFQ materials to PO material lines - SIMPLIFIED VERSION
           const materialLines = materialData.materials.map((material: any) => ({
             // Basic required fields for PO
             product: material.name || '', // RFQ product name → PO material name
             quantity: material.quantity || 0, // RFQ quantity → PO quantity
             unitPrice: material.unitPrice || 0, // RFQ unitPrice → PO unit price
-            
+
             // Default values for other required fields
             materialId: '',
             isNew: true, // Always treat as new material for simplicity
@@ -277,7 +302,7 @@ const PurchaseOrderComponent: React.FC = () => {
             organisationId: localStorage.getItem("organisationId") || "",
             warehouse: "" // Will be set when warehouse is selected
           }));
-          
+
           // Update form data with RFQ information
           setFormData({
             ...formData,
@@ -287,7 +312,7 @@ const PurchaseOrderComponent: React.FC = () => {
             // Auto-generate PO number with RFQ reference
             poNo: `PO-RFQ-${materialData.rfqNumber || Date.now()}`,
           });
-          
+
           console.log('✅ RFQ data auto-filled into Purchase Order form');
           console.log('📋 Mapped fields:', {
             materialsCount: materialLines.length,
@@ -297,7 +322,7 @@ const PurchaseOrderComponent: React.FC = () => {
               unitPrice: materialLines[0].unitPrice
             } : null
           });
-          
+
           toast.success(`RFQ ${materialData.rfqNumber || ''} materials auto-filled! ${materialLines.length} items added. Please select vendor and warehouse.`);
         }
       };
@@ -606,8 +631,8 @@ const PurchaseOrderComponent: React.FC = () => {
                                   value={formData.warehouse}
                                   onChange={(e) => {
                                     const warehouseId = e.target.value;
-                                    setFormData({ 
-                                      ...formData, 
+                                    setFormData({
+                                      ...formData,
                                       warehouse: warehouseId,
                                       // Also update all product lines with the selected warehouse
                                       productLines: formData.productLines.map(line => ({
@@ -1762,10 +1787,12 @@ const PurchaseOrderComponent: React.FC = () => {
             Manage purchase orders and track deliveries
           </p>
         </div>
-        <div className="flex items-center gap-3">
+
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Search */}
           {/* Add NotificationCenter for Purchase Order notifications */}
           <NotificationCenter destination="purchase.orders" title="Purchase Order Notifications" />
-          
+
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
             <input
@@ -1776,21 +1803,57 @@ const PurchaseOrderComponent: React.FC = () => {
                 setPage(1);
               }}
               placeholder="Search purchase orders..."
-              className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
+              className="pl-9 pr-4 py-2 border rounded-lg w-full sm:w-64"
             />
           </div>
-          <button
-            disabled={!canCreate}
-            onClick={() => canCreate && setShowCreatePo(true)}
-            className={`px-4 py-2 rounded-lg flex items-center justify-center whitespace-nowrap ${canCreate ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-gray-400 text-white cursor-not-allowed"
-              }`}
-          >
 
-            <Plus className="h-4 w-4 mr-2" />
-            New Purchase Order
+          {/* From Date */}
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(e) => {
+              setFromDate(e.target.value);
+              // setPage(1);
+            }}
+            className="px-3 py-2 border rounded-lg text-sm"
+          />
+
+          {/* To Date */}
+          <input
+            type="date"
+            value={toDate}
+            onChange={(e) => {
+              setToDate(e.target.value);
+              // setPage(1);
+            }}
+            className="px-3 py-2 border rounded-lg text-sm"
+          />
+
+          {/* Clear */}
+          {(fromDate || toDate) && (
+            <button
+              onClick={() => {
+                setFromDate("");
+                setToDate("");
+                setPage(1);
+              }}
+              className="text-sm text-red-600 hover:underline"
+            >
+              Clear
+            </button>
+          )}
+
+          {/* Create */}
+          <button
+            onClick={() => setShowCreatePo(true)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg"
+          >
+            + New Purchase Order
           </button>
         </div>
       </div>
+
+
 
       <div className="bg-white shadow rounded-lg overflow-hidden">
         <div className="overflow-x-auto">

@@ -1,3 +1,4 @@
+import { RootState } from "@/redux/store";
 import { usePermission } from "@/hooks/userPermission";
 import React, { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
@@ -22,7 +23,7 @@ import {
   SelectItem,
   SelectValue,
 } from "@/components/ui/select";
-
+import { fetchProjects } from "@/redux/slices/projectSlice";
 import { fetchProducts } from "@/redux/slices/productSlice";
 import { fetchWarehouses } from "@/redux/slices/warehouseSlice";
 import NotificationCenter from "@/components/NotificationCenter";
@@ -45,15 +46,27 @@ import {
   Trash2,
   X,
   ShieldAlert,
+  FolderKanban,
+  Badge,
 } from "lucide-react";
 import { BASE_URL } from "@/utils/constants";
 import MaterialRequestMigration from "@/components/MaterialRequestMigration";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@radix-ui/react-select";
+import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from "@/components/ui/popover";
+
 
 interface DeliveryItem {
   _id: string;
   deliverTo: string;
   operationType: string;
   productId: string;
+  projectId: string;
   quantity: number;
   shippingMethod: string;
   priority: "low" | "medium" | "high";
@@ -69,31 +82,31 @@ const Deliveries: React.FC = () => {
   const canEdit = usePermission("deliveries", "edit");
   const canDelete = usePermission("deliveries", "delete");
   const dispatch = useDispatch();
-  
+
   // Notification state
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
-  
+
   // Material Requests state
   const [editingRequest, setEditingRequest] = useState<any>(null);
   const [showEditStatusDialog, setShowEditStatusDialog] = useState(false);
   const [migrationCompleted, setMigrationCompleted] = useState(false);
-  
+
   // Stock Transfers state (lifted from child component for stats)
   const [stockTransfers, setStockTransfers] = useState<any[]>([]);
-      if (!canView) {
-      return (
-        <div className="text-center py-12 px-4">
-          <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h3 className="text-xl font-semibold text-gray-900 mb-2">
-            Access Denied
-          </h3>
-          <p className="text-gray-600">
-            You do not have the necessary permissions to view this page.
-          </p>
-        </div>
-      );
-    }
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
   const { deliveries, loading: deliveryLoading } = useSelector(
     (state: any) => state.delivery
   );
@@ -106,7 +119,9 @@ const Deliveries: React.FC = () => {
   const { requests: materialRequestsFromDB, loading: materialRequestsLoading, statistics } = useSelector(
     (state: any) => state.materialRequests
   );
-
+  const [fromDate, setFromDate] = useState<string>("");
+  const [toDate, setToDate] = useState<string>("");
+  const [projectFilter, setProjectFilter] = useState<string>("all");;
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
@@ -116,6 +131,8 @@ const Deliveries: React.FC = () => {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showUpdateForm, setShowUpdateForm] = useState(false);
   const [showViewForm, setShowViewForm] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
+
   const [editingDelivery, setEditingDelivery] = useState<DeliveryItem | null>(
     null
   );
@@ -123,35 +140,35 @@ const Deliveries: React.FC = () => {
     null
   );
   const orgId = localStorage.getItem('organisationId');
-  
+
   // Fetch notifications
   const fetchNotifications = async () => {
     setLoadingNotifications(true);
     try {
       const apiUrl = BASE_URL || 'http://localhost:4000';
       const url = `${apiUrl}/notifications/list?destination=delivery.inventory&status=unread`;
-      
+
       const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
           'Content-Type': 'application/json'
         }
       });
-      
+
       if (!response.ok) {
         setNotifications([]);
         return;
       }
-      
+
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
         setNotifications([]);
         return;
       }
-      
+
       const data = await response.json();
       console.log('Fetched notifications:', data); // Debug log
-      
+
       if (Array.isArray(data)) {
         const filtered = data.filter((n: any) => n.inviteResponse === 'pending');
         console.log('Filtered notifications:', filtered); // Debug log
@@ -166,12 +183,12 @@ const Deliveries: React.FC = () => {
       setLoadingNotifications(false);
     }
   };
-  
+
   // Handle accept/reject
   const handleDeliveryResponse = async (notificationId: string, response: 'accepted' | 'rejected', notification?: any) => {
     try {
       const apiUrl = BASE_URL || 'http://localhost:4000';
-      
+
       // If accepted, add to material requests database
       if (response === 'accepted' && notification?.materialData) {
         const newRequest = {
@@ -188,14 +205,14 @@ const Deliveries: React.FC = () => {
           status: 'ready' as const,
           acceptedAt: new Date().toISOString()
         };
-        
+
         console.log('🚀 Creating material request with status:', newRequest.status);
         console.log('📦 Full request data:', newRequest);
-        
+
         await dispatch(createMaterialRequest(newRequest) as any);
         console.log('✅ Material request created successfully');
       }
-      
+
       const res = await fetch(`${apiUrl}/notifications/${notificationId}/respond`, {
         method: 'POST',
         headers: {
@@ -204,7 +221,7 @@ const Deliveries: React.FC = () => {
         },
         body: JSON.stringify({ response })
       });
-      
+
       if (res.ok) {
         fetchNotifications();
         toast.success(`Material request ${response === 'accepted' ? 'accepted and added to table' : 'rejected'}`);
@@ -214,24 +231,24 @@ const Deliveries: React.FC = () => {
       toast.error('Failed to process response');
     }
   };
-  
+
   // Handle status update
   const handleUpdateStatus = async (newStatus: string) => {
     if (!editingRequest) return;
-    
+
     try {
       await dispatch(updateMaterialRequestStatus({
         id: editingRequest._id,
         status: newStatus
       }));
-      
+
       // Update MRS status sync using unique ID instead of item name
       if (newStatus === 'in-transit') {
         const mrsStatusSync = JSON.parse(localStorage.getItem('MRS_STATUS_SYNC') || '{}');
         mrsStatusSync[editingRequest.itemId] = 'in-transit'; // Use itemId (original MRS ID)
         localStorage.setItem('MRS_STATUS_SYNC', JSON.stringify(mrsStatusSync));
       }
-      
+
       setShowEditStatusDialog(false);
       setEditingRequest(null);
       toast.success(`Status updated to ${newStatus}`);
@@ -239,11 +256,11 @@ const Deliveries: React.FC = () => {
       toast.error('Failed to update status');
     }
   };
-  
+
   // Handle delete request
   const handleDeleteRequest = async (id: string) => {
     if (!confirm('Delete this material request?')) return;
-    
+
     try {
       await dispatch(deleteMaterialRequest(id));
       toast.success('Material request deleted');
@@ -251,7 +268,7 @@ const Deliveries: React.FC = () => {
       toast.error('Failed to delete material request');
     }
   };
-  
+
   // Migration function to move localStorage data to database
   const performMigration = async () => {
     try {
@@ -267,39 +284,73 @@ const Deliveries: React.FC = () => {
       toast.error('Failed to migrate material requests');
     }
   };
-  
+  const { projects = [], page, limit } = useSelector(
+    (state: RootState) => state.projects
+  );
+
+  useEffect(() => {
+    if (orgId) {
+      dispatch(fetchProjects({ orgId, page: 1, limit: 200 }));
+    }
+  }, [dispatch, orgId]);
+
   useEffect(() => {
     dispatch(getAllDeliveries());
     dispatch(fetchProducts(orgId));
     dispatch(fetchWarehouses({ page: 1, limit: 200 }));
     fetchNotifications();
-    
+
     // Fetch material requests from database
     dispatch(fetchMaterialRequests({}));
     dispatch(fetchMaterialRequestStatistics());
-    
+
     // Perform migration if needed
     performMigration();
   }, [dispatch]);
-  
+
   // Auto-refresh material requests to sync with MRS updates
   useEffect(() => {
     const interval = setInterval(() => {
       dispatch(fetchMaterialRequests({}));
     }, 5000); // Refresh every 5 seconds
-    
+
     return () => clearInterval(interval);
   }, [dispatch]);
 
   const filteredDeliveries = deliveries.filter((d: DeliveryItem) => {
     const matchesSearch =
-      d._id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      d.deliverTo.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === "all" || d.status === statusFilter;
+      d.deliverTo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      d._id.toLowerCase().includes(searchTerm.toLowerCase());
+
+    const matchesStatus =
+      statusFilter === "all" || d.status === statusFilter;
+
     const matchesPriority =
       priorityFilter === "all" || d.priority === priorityFilter;
-    return matchesSearch && matchesStatus && matchesPriority;
+
+    const matchesProject =
+      projectFilter === "all" || d.projectId === projectFilter;
+
+    const deliveryDate = d.scheduledDate
+      ? new Date(d.scheduledDate)
+      : null;
+
+    const matchesFromDate =
+      !fromDate || (deliveryDate && deliveryDate >= new Date(fromDate));
+
+    const matchesToDate =
+      !toDate || (deliveryDate && deliveryDate <= new Date(toDate));
+
+    return (
+      matchesSearch &&
+      matchesStatus &&
+      matchesPriority &&
+      matchesProject &&
+      matchesFromDate &&
+      matchesToDate
+    );
   });
+
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -402,9 +453,9 @@ const Deliveries: React.FC = () => {
 
     const handleChange =
       (field: string) =>
-      (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        setFormData((prev) => ({ ...prev, [field]: e.target.value }));
-      };
+        (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+          setFormData((prev) => ({ ...prev, [field]: e.target.value }));
+        };
 
     const onSubmit = (e: React.FormEvent) => {
       e.preventDefault();
@@ -578,15 +629,14 @@ const Deliveries: React.FC = () => {
                 type="submit"
                 disabled={initialData ? !canEdit : !canCreate}
                 className={`px-6 py-3 rounded-lg text-white
-    ${
-      initialData
-        ? canEdit
-          ? "bg-blue-600 hover:bg-blue-700"
-          : "bg-gray-400 cursor-not-allowed"
-        : canCreate
-        ? "bg-blue-600 hover:bg-blue-700"
-        : "bg-gray-400 cursor-not-allowed"
-    }`}
+    ${initialData
+                    ? canEdit
+                      ? "bg-blue-600 hover:bg-blue-700"
+                      : "bg-gray-400 cursor-not-allowed"
+                    : canCreate
+                      ? "bg-blue-600 hover:bg-blue-700"
+                      : "bg-gray-400 cursor-not-allowed"
+                  }`}
               >
                 {initialData ? "Update Delivery" : "Create Delivery"}
               </button>
@@ -667,20 +717,46 @@ const Deliveries: React.FC = () => {
   };
 
   // Filter material requests and stock transfers
-  const filteredMaterialRequests = (materialRequestsFromDB || []).filter((request) => {
-    const matchesSearch = request.item?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         request.sourceTask?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         request.projectName?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === "all" || request.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  const filteredMaterialRequests = (materialRequestsFromDB || []).filter(
+    (request: any) => {
+      const matchesSearch =
+        request.item?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        request.sourceTask?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        request.projectName?.toLowerCase().includes(searchTerm.toLowerCase());
+
+      const matchesStatus =
+        statusFilter === "all" || request.status === statusFilter;
+
+      const matchesProject =
+        projectFilter === "all" || request.projectId === projectFilter;
+
+      const requestDate = request.requiredDate
+        ? new Date(request.requiredDate)
+        : null;
+
+      const matchesFromDate =
+        !fromDate || (requestDate && requestDate >= new Date(fromDate));
+
+      const matchesToDate =
+        !toDate || (requestDate && requestDate <= new Date(toDate));
+
+      return (
+        matchesSearch &&
+        matchesStatus &&
+        matchesProject &&
+        matchesFromDate &&
+        matchesToDate
+      );
+    }
+  );
+
 
   const filteredStockTransfers = stockTransfers.filter((transfer: any) => {
     const matchesSearch = transfer.productName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         transfer.fromWarehouse?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         transfer.toWarehouse?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         transfer.fromWarehouseName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         transfer.toWarehouseName?.toLowerCase().includes(searchTerm.toLowerCase());
+      transfer.fromWarehouse?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      transfer.toWarehouse?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      transfer.fromWarehouseName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      transfer.toWarehouseName?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === "all" || transfer.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -703,7 +779,7 @@ const Deliveries: React.FC = () => {
     <div className="space-y-6">
       {/* Migration Component */}
       <MaterialRequestMigration />
-      
+
       {/* Material Request Notifications */}
       {notifications.length > 0 && (
         <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-lg shadow-sm">
@@ -768,7 +844,7 @@ const Deliveries: React.FC = () => {
           </div>
         </div>
       )}
-      
+
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -790,11 +866,10 @@ const Deliveries: React.FC = () => {
             disabled={!canCreate}
             onClick={() => canCreate && setShowCreateForm(true)}
             className={`flex items-center gap-2 px-5 py-3 rounded-lg
-    ${
-      canCreate
-        ? "bg-blue-600 text-white hover:bg-blue-700"
-        : "bg-gray-400 text-white cursor-not-allowed"
-    }`}
+    ${canCreate
+                ? "bg-blue-600 text-white hover:bg-blue-700"
+                : "bg-gray-400 text-white cursor-not-allowed"
+              }`}
           >
             <Plus className="h-5 w-5" /> New Delivery
           </button>}
@@ -817,8 +892,8 @@ const Deliveries: React.FC = () => {
           <div>
             <p className="text-sm text-gray-500">In Transit</p>
             <p className="text-2xl font-bold">
-              {filteredMaterialRequests.filter((r: any) => r.status === "in-transit").length + 
-               filteredStockTransfers.filter((t: any) => t.status === "in-transit").length}
+              {filteredMaterialRequests.filter((r: any) => r.status === "in-transit").length +
+                filteredStockTransfers.filter((t: any) => t.status === "in-transit").length}
             </p>
           </div>
         </div>
@@ -827,8 +902,8 @@ const Deliveries: React.FC = () => {
           <div>
             <p className="text-sm text-gray-500">Delivered</p>
             <p className="text-2xl font-bold">
-              {filteredMaterialRequests.filter((r: any) => r.status === "delivered").length + 
-               filteredStockTransfers.filter((t: any) => t.status === "delivered").length}
+              {filteredMaterialRequests.filter((r: any) => r.status === "delivered").length +
+                filteredStockTransfers.filter((t: any) => t.status === "delivered").length}
             </p>
           </div>
         </div>
@@ -837,52 +912,131 @@ const Deliveries: React.FC = () => {
           <div>
             <p className="text-sm text-gray-500">High Priority</p>
             <p className="text-2xl font-bold">
-              {(materialRequestsFromDB || []).filter((r: any) => r.priority === "high").length + 
-               stockTransfers.filter((t: any) => t.priority === "high").length}
+              {(materialRequestsFromDB || []).filter((r: any) => r.priority === "high").length +
+                stockTransfers.filter((t: any) => t.priority === "high").length}
             </p>
           </div>
         </div>
       </div>
 
       {/* Filters */}
-      <div className="bg-white shadow rounded-lg p-6">
-        <div className="flex flex-col lg:flex-row gap-4">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search deliveries..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 border rounded-lg"
+      <div className="bg-white rounded-xl border shadow-sm p-4">
+  <div className="flex items-center gap-3">
+
+    {/* Search */}
+    <div className="relative flex-1 min-w-[220px]">
+      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+      <Input
+        placeholder="Search deliveries, project, task…"
+        value={searchTerm}
+        onChange={(e) => setSearchTerm(e.target.value)}
+        className="pl-9"
+      />
+    </div>
+
+    {/* Filters Button */}
+    <Popover open={filterOpen} onOpenChange={setFilterOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" className="gap-2">
+          <Filter className="h-4 w-4" />
+          Filters
+        </Button>
+      </PopoverTrigger>
+
+      <PopoverContent
+        align="end"
+        className="w-[360px] bg-white border p-4 space-y-4 z-50"
+      >
+        {/* Date Range */}
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Date Range</p>
+          <div className="grid grid-cols-2 gap-2">
+            <Input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+            />
+            <Input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
             />
           </div>
-          <div className="flex gap-3 mt-4 lg:mt-0">
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-4 py-3 border rounded-lg"
-            >
-              <option value="all">All Status</option>
-              <option value="draft">Draft</option>
-              <option value="ready">Ready</option>
-              <option value="in-transit">In Transit</option>
-              <option value="delivered">Delivered</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-            {/* <select
-              value={priorityFilter}
-              onChange={(e) => setPriorityFilter(e.target.value)}
-              className="px-4 py-3 border rounded-lg"
-            >
-              <option value="all">All Priority</option>
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-            </select> */}
-          </div>
         </div>
-      </div>
+
+        {/* Project */}
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Project</p>
+          <Select
+            value={projectFilter}
+            onValueChange={(val) => {
+              setProjectFilter(val);
+              setFilterOpen(false);
+            }}
+          >
+            <SelectTrigger>
+              <FolderKanban className="mr-2 h-4 w-4 text-muted-foreground" />
+              <SelectValue placeholder="All Projects" />
+            </SelectTrigger>
+            <SelectContent className="z-[9999]">
+              <SelectItem value="all">All Projects</SelectItem>
+              {projects.map((p: any) => (
+                <SelectItem key={p._id} value={p._id}>
+                  {p.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Status */}
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Status</p>
+          <Select
+            value={statusFilter}
+            onValueChange={(val) => {
+              setStatusFilter(val);
+              setFilterOpen(false);
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="All Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="draft">Draft</SelectItem>
+              <SelectItem value="ready">Ready</SelectItem>
+              <SelectItem value="in-transit">In Transit</SelectItem>
+              <SelectItem value="delivered">Delivered</SelectItem>
+              <SelectItem value="cancelled">Cancelled</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Clear */}
+        <Button
+          variant="ghost"
+          className="w-full text-red-600"
+          onClick={() => {
+            setFromDate("");
+            setToDate("");
+            setProjectFilter("all");
+            setStatusFilter("all");
+            setSearchTerm("");
+            setFilterOpen(false);
+          }}
+        >
+          Clear Filters
+        </Button>
+      </PopoverContent>
+    </Popover>
+  </div>
+</div>
+
+
+
+
+
 
       {false && <div className="bg-white shadow rounded-lg overflow-hidden">
         <div className="max-h-[450px] overflow-y-auto overflow-x-auto">
@@ -965,12 +1119,12 @@ const Deliveries: React.FC = () => {
                         defaultValue={d.status}
                         onValueChange={(value) =>
                           dispatch(updateDelivery({
-                              id: d._id,
-                              data: {
-                                status: value,
-                                warehouseId: d.warehouseId,
-                              },
-                            }))
+                            id: d._id,
+                            data: {
+                              status: value,
+                              warehouseId: d.warehouseId,
+                            },
+                          }))
                         }
                       >
                         <SelectTrigger className="w-[150px] text-xs">
@@ -1048,11 +1202,10 @@ const Deliveries: React.FC = () => {
                             canEdit &&
                             (setEditingDelivery(d), setShowUpdateForm(true))
                           }
-                          className={`${
-                            canEdit
-                              ? "text-blue-600"
-                              : "text-gray-400 cursor-not-allowed"
-                          }`}
+                          className={`${canEdit
+                            ? "text-blue-600"
+                            : "text-gray-400 cursor-not-allowed"
+                            }`}
                         >
                           <Edit className="h-5 w-5" />
                         </button>
@@ -1061,11 +1214,10 @@ const Deliveries: React.FC = () => {
                           onClick={() =>
                             canDelete && dispatch(deleteDelivery(d._id))
                           }
-                          className={`${
-                            canDelete
-                              ? "text-red-600"
-                              : "text-gray-400 cursor-not-allowed"
-                          }`}
+                          className={`${canDelete
+                            ? "text-red-600"
+                            : "text-gray-400 cursor-not-allowed"
+                            }`}
                         >
                           <Trash2 className="h-5 w-5" />
                         </button>
@@ -1087,112 +1239,111 @@ const Deliveries: React.FC = () => {
       {showViewForm && viewingDelivery && (
         <ViewDeliveryForm item={viewingDelivery} />
       )}
-      
+
       {/* Material Requests Table */}
       <div className="bg-white shadow rounded-lg overflow-hidden mt-6">
-          <div className="p-6 border-b">
-            <h2 className="text-xl font-bold text-gray-900">Accepted Material Requests</h2>
-            <p className="text-sm text-gray-600 mt-1">Material requests accepted from MRS</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+        <div className="p-6 border-b">
+          <h2 className="text-xl font-bold text-gray-900">Accepted Material Requests</h2>
+          <p className="text-sm text-gray-600 mt-1">Material requests accepted from MRS</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Source Task</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Project</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Required Date</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sent Date</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {paginatedRequests.length === 0 ? (
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Source Task</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Project</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Required Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sent Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                    No material requests found. Accepted requests from MRS will appear here.
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {paginatedRequests.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
-                      No material requests found. Accepted requests from MRS will appear here.
-                    </td>
-                  </tr>
-                ) : paginatedRequests.map((request) => (
-                  <tr key={request._id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 text-sm font-medium text-gray-900">{request.item}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{request.sourceTask}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{request.quantity} {request.unit}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{request.projectName}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">
-                      {request.requiredDate ? new Date(request.requiredDate).toLocaleDateString() : 'N/A'}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">
-                      {request.sentDate ? new Date(request.sentDate).toLocaleDateString() : 'N/A'}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`px-3 py-1 text-xs font-semibold rounded-full ${
-                        request.status === 'ready' ? 'bg-blue-100 text-blue-800' :
-                        request.status === 'in-transit' ? 'bg-yellow-100 text-yellow-800' :
+              ) : paginatedRequests.map((request) => (
+                <tr key={request._id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 text-sm font-medium text-gray-900">{request.item}</td>
+                  <td className="px-6 py-4 text-sm text-gray-600">{request.sourceTask}</td>
+                  <td className="px-6 py-4 text-sm text-gray-900">{request.quantity} {request.unit}</td>
+                  <td className="px-6 py-4 text-sm text-gray-600">{request.projectName}</td>
+                  <td className="px-6 py-4 text-sm text-gray-600">
+                    {request.requiredDate ? new Date(request.requiredDate).toLocaleDateString() : 'N/A'}
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-600">
+                    {request.sentDate ? new Date(request.sentDate).toLocaleDateString() : 'N/A'}
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={`px-3 py-1 text-xs font-semibold rounded-full ${request.status === 'ready' ? 'bg-blue-100 text-blue-800' :
+                      request.status === 'in-transit' ? 'bg-yellow-100 text-yellow-800' :
                         'bg-green-100 text-green-800'
                       }`}>
-                        {request.status.replace('-', ' ')}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <button
-                          onClick={() => {
-                            setEditingRequest(request);
-                            setShowEditStatusDialog(true);
-                          }}
-                          className="text-yellow-600 hover:text-yellow-800"
-                          title="Edit Status"
-                        >
-                          <Edit className="h-5 w-5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteRequest(request._id)}
-                          className="text-red-600 hover:text-red-800"
-                          title="Delete Request"
-                        >
-                          <Trash2 className="h-5 w-5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-                }
-              </tbody>
-            </table>
-          </div>
-          
-          {/* Pagination for Material Requests */}
-          {requestsTotalPages > 1 && (
-            <div className="px-6 py-4 border-t flex items-center justify-between">
-              <p className="text-sm text-gray-600">
-                Showing {((requestsPage - 1) * itemsPerPage) + 1} to {Math.min(requestsPage * itemsPerPage, filteredMaterialRequests.length)} of {filteredMaterialRequests.length} requests
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setRequestsPage(p => Math.max(1, p - 1))}
-                  disabled={requestsPage === 1}
-                  className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Previous
-                </button>
-                <span className="px-3 py-1 text-sm text-gray-600">
-                  Page {requestsPage} of {requestsTotalPages}
-                </span>
-                <button
-                  onClick={() => setRequestsPage(p => Math.min(requestsTotalPages, p + 1))}
-                  disabled={requestsPage === requestsTotalPages}
-                  className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          )}
+                      {request.status.replace('-', ' ')}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => {
+                          setEditingRequest(request);
+                          setShowEditStatusDialog(true);
+                        }}
+                        className="text-yellow-600 hover:text-yellow-800"
+                        title="Edit Status"
+                      >
+                        <Edit className="h-5 w-5" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteRequest(request._id)}
+                        className="text-red-600 hover:text-red-800"
+                        title="Delete Request"
+                      >
+                        <Trash2 className="h-5 w-5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+              }
+            </tbody>
+          </table>
         </div>
-      
+
+        {/* Pagination for Material Requests */}
+        {requestsTotalPages > 1 && (
+          <div className="px-6 py-4 border-t flex items-center justify-between">
+            <p className="text-sm text-gray-600">
+              Showing {((requestsPage - 1) * itemsPerPage) + 1} to {Math.min(requestsPage * itemsPerPage, filteredMaterialRequests.length)} of {filteredMaterialRequests.length} requests
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setRequestsPage(p => Math.max(1, p - 1))}
+                disabled={requestsPage === 1}
+                className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              <span className="px-3 py-1 text-sm text-gray-600">
+                Page {requestsPage} of {requestsTotalPages}
+              </span>
+              <button
+                onClick={() => setRequestsPage(p => Math.min(requestsTotalPages, p + 1))}
+                disabled={requestsPage === requestsTotalPages}
+                className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Edit Status Dialog */}
       {showEditStatusDialog && editingRequest && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -1203,10 +1354,10 @@ const Deliveries: React.FC = () => {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            
+
             <div className="space-y-3">
               <p className="text-sm text-gray-600 mb-4">Select new status for: <strong>{editingRequest.item}</strong></p>
-              
+
               <button
                 onClick={() => handleUpdateStatus('ready')}
                 className="w-full px-4 py-3 text-left border rounded-lg hover:bg-blue-50 hover:border-blue-500"
@@ -1215,7 +1366,7 @@ const Deliveries: React.FC = () => {
                   Ready
                 </span>
               </button>
-              
+
               <button
                 onClick={() => handleUpdateStatus('in-transit')}
                 className="w-full px-4 py-3 text-left border rounded-lg hover:bg-yellow-50 hover:border-yellow-500"
@@ -1224,7 +1375,7 @@ const Deliveries: React.FC = () => {
                   In Transit
                 </span>
               </button>
-              
+
               {/* <button
                 onClick={() => handleUpdateStatus('delivered')}
                 className="w-full px-4 py-3 text-left border rounded-lg hover:bg-green-50 hover:border-green-500"
@@ -1234,7 +1385,7 @@ const Deliveries: React.FC = () => {
                 </span>
               </button> */}
             </div>
-            
+
             <div className="flex justify-end gap-3 mt-6">
               <button
                 onClick={() => setShowEditStatusDialog(false)}
@@ -1246,10 +1397,10 @@ const Deliveries: React.FC = () => {
           </div>
         </div>
       )}
-      
+
       {/* Stock Transfer History */}
-      <StockTransferHistory 
-        onTransfersUpdate={setStockTransfers} 
+      <StockTransferHistory
+        onTransfersUpdate={setStockTransfers}
         filteredTransfers={paginatedTransfers}
         currentPage={transfersPage}
         totalPages={transfersTotalPages}
@@ -1265,15 +1416,15 @@ export default Deliveries;
 
 
 // Stock Transfer History Section Component
-const StockTransferHistory = ({ 
-  onTransfersUpdate, 
+const StockTransferHistory = ({
+  onTransfersUpdate,
   filteredTransfers,
   currentPage,
   totalPages,
   totalItems,
   onPageChange,
   itemsPerPage
-}: { 
+}: {
   onTransfersUpdate: (transfers: any[]) => void;
   filteredTransfers: any[];
   currentPage: number;
@@ -1286,7 +1437,7 @@ const StockTransferHistory = ({
   const [loading, setLoading] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
   const [editingTransfer, setEditingTransfer] = useState<any>(null);
-  
+
   // Add permission hooks
   const canEdit = usePermission("deliveries", "edit");
   const canDelete = usePermission("deliveries", "delete");
@@ -1362,7 +1513,7 @@ const StockTransferHistory = ({
     const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
       setLoading(true);
-      
+
       try {
         const response = await fetch(`${BASE_URL || 'http://localhost:4000'}/stock-transfers/${transfer._id}`, {
           method: 'PATCH',
@@ -1372,7 +1523,7 @@ const StockTransferHistory = ({
           },
           body: JSON.stringify(formData)
         });
-        
+
         if (response.ok) {
           onSuccess();
           onClose();
@@ -1393,7 +1544,7 @@ const StockTransferHistory = ({
               <X className="h-5 w-5" />
             </button>
           </div>
-          
+
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -1417,7 +1568,7 @@ const StockTransferHistory = ({
                 />
               </div>
             </div>
-            
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">From Warehouse *</label>
@@ -1440,7 +1591,7 @@ const StockTransferHistory = ({
                 />
               </div>
             </div>
-            
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Transport Type</label>
@@ -1466,7 +1617,7 @@ const StockTransferHistory = ({
                 />
               </div>
             </div>
-            
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Driver Name</label>
@@ -1488,7 +1639,7 @@ const StockTransferHistory = ({
                 />
               </div>
             </div>
-            
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Status *</label>
               <select
@@ -1502,7 +1653,7 @@ const StockTransferHistory = ({
                 <option value="delivered">Delivered</option>
               </select>
             </div>
-            
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
               <textarea
@@ -1512,7 +1663,7 @@ const StockTransferHistory = ({
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            
+
             <div className="flex justify-end gap-3 pt-4">
               <button
                 type="button"
@@ -1539,7 +1690,7 @@ const StockTransferHistory = ({
     <div className="bg-white rounded-xl shadow-md p-6 mt-6">
       <h2 className="text-xl font-bold text-gray-900 mb-4">Stock Transfer History</h2>
       <p className="text-sm text-gray-600 mb-4">Recent stock movements between warehouses</p>
-      
+
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -1585,15 +1736,15 @@ const StockTransferHistory = ({
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <button 
+                      <button
                         onClick={() => handleEdit(transfer)}
                         className="text-yellow-600 hover:text-yellow-800"
                         title="Edit Transfer"
                       >
                         <Edit className="h-4 w-4" />
                       </button>
-                      <button 
-                        onClick={() => handleDelete(transfer._id)} 
+                      <button
+                        onClick={() => handleDelete(transfer._id)}
                         className="text-red-600 hover:text-red-800"
                         title="Delete Transfer"
                       >
@@ -1607,7 +1758,7 @@ const StockTransferHistory = ({
           </tbody>
         </table>
       </div>
-      
+
       {/* Pagination for Stock Transfer History */}
       {totalPages > 1 && (
         <div className="px-6 py-4 border-t flex items-center justify-between">
@@ -1635,7 +1786,7 @@ const StockTransferHistory = ({
           </div>
         </div>
       )}
-      
+
       {/* Edit Transfer Form Modal */}
       {showEditForm && editingTransfer && (
         <EditTransferForm

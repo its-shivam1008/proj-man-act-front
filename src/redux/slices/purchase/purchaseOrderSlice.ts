@@ -9,11 +9,15 @@ export const fetchPurchaseOrders = createAsyncThunk(
     { rejectWithValue }
   ) => {
     try {
-      const { page = 1, limit = 10, sort, q, location } = params; // [!code ++]
+      const { page = 1, limit = 10, sort,q, fromDate, toDate, location } = params; // [!code ++]
       const query = new URLSearchParams();
 
       query.set("page", String(page));
       query.set("limit", String(limit));
+      if (sort) query.set("sort", sort);
+      if (q) query.set("q", q);
+      if (fromDate) query.set("fromDate", fromDate); // Add this
+      if (toDate) query.set("toDate", toDate);       // Add this
 
       if (sort) query.set("sort", sort);
       if (q) query.set("q", q);

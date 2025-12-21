@@ -1848,10 +1848,8 @@ export default function ProcurementPage() {
     // --- NEW FUNCTION: Submit Notification ---
     const handleSubmitNotification = async () => {
         if (!notificationTarget) return;
-        if (!remarkText.trim()) {
-            toast.error("Please enter a remark.");
-            return;
-        }
+       const finalRemark = remarkText?.trim() || "";
+
 
         const { item, type } = notificationTarget;
 
@@ -1902,7 +1900,7 @@ export default function ProcurementPage() {
             await dispatch(createNotification({
                 source,
                 destination,
-                remark: remarkText,
+                remark: finalRemark,
                 itemId: itemId,
                 itemName: item.item,
                 type: notificationType, // Use the new notification type
