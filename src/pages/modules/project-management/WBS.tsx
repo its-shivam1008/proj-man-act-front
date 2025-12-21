@@ -79,7 +79,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-// import { toast } from 'sonner';
+import { toast as toastSonner} from 'sonner';
 // --- IMPORT THE SEPARATE MODAL COMPONENT ---
 import TeamSelectionDialog from "@/components/TeamSelectionDialog";
 import MaterialSelectionDialog from "@/components/MaterialSelectionDialog";
@@ -110,6 +110,7 @@ interface LinkedMaterial {
 // Extend the imported WBSItem type
 interface WBSItem extends Omit<ImportedWBSItem, 'linkedMaterials'> {
   linkedMaterials?: LinkedMaterial[];
+  delayReason?: string;
   assignedPersons?: Array<{
     resourceId: string;
     type: string;
@@ -483,51 +484,158 @@ const { userProfile } = useSelector((state: RootState) => state.auth);
     return diffDays > 0 ? diffDays : 0;
   };
 
-  const handleSave = () => {
+  // remain it commented.
+  const handleSave = async () => {
+    // 1. Basic Validation
     if (!formData.name || !formData.projectId || !formData.type) {
-      toast({
-        title: "Validation Error",
+      toastSonner.error("Validation Error", {
         description: "Name, Project, and Type are required.",
-        variant: "destructive",
       });
       return;
     }
 
+    // 2. Date Validation
+    if (formData.startDate && formData.endDate) {
+      const start = new Date(formData.startDate);
+      const end = new Date(formData.endDate);
+
+      if (end < start) {
+        toastSonner.error("Date Error", {
+          description: "End Date cannot be earlier than Start Date.",
+        });
+        return;
+      }
+    }
+
+    // 3. Delay Reason Validation
+    if (formData.status === "delayed" && !formData.delayReason?.trim()) {
+      toastSonner.error("Validation Error", {
+        description: "Please provide a reason for the delay.",
+      });
+      return;
+    }
+
+    // 4. Parent Validation
     if (formData.type === "phase") {
       formData.parentId = null;
     } else if (!formData.parentId) {
-      toast({
-        title: "Validation Error",
+      toastSonner.error("Validation Error", {
         description: `${formData.type} must have a Parent Item.`,
-        variant: "destructive",
       });
       return;
     }
 
-    if (editingItem) {
-      dispatch(updateWbsItem({ id: editingItem.id, data: formData }))
-        .unwrap()
-        .then(() => {
-          toast({
-            title: "Updated",
+    try {
+      if (editingItem) {
+        // A. Update the Item First
+        await dispatch(updateWbsItem({ id: editingItem.id, data: formData })).unwrap();
+
+        // B. Check if Status is Delayed and Item is NOT already paused
+        // We trigger the pause action automatically here
+        if (formData.status === "delayed" && !editingItem.isPaused) {
+          const pauseReason = `DELAYED: ${formData.delayReason}`;
+          
+          await dispatch(pauseWbsTask({ 
+            id: editingItem.id, 
+            reason: pauseReason 
+          })).unwrap();
+
+          toastSonner.warning("Task Delayed & Paused", {
+            description: "The task has been paused automatically due to delay status.",
+          });
+        } else {
+          toastSonner.success("Updated", {
             description: "WBS item updated successfully",
           });
-          setIsDialogOpen(false);
-          resetForm();
+        }
+      } else {
+        // Create New Item
+        const newItem = await dispatch(createWbsItem(formData)).unwrap();
+        
+        // Handle case where a new item is created immediately as delayed (rare but possible)
+        if (formData.status === "delayed") {
+           const pauseReason = `DELAYED: ${formData.delayReason}`;
+           await dispatch(pauseWbsTask({ 
+            id: newItem.id, 
+            reason: pauseReason 
+          })).unwrap();
+        }
+
+        toastSonner.success("Success", {
+          description: "WBS item created successfully",
         });
-    } else {
-      dispatch(createWbsItem(formData))
-        .unwrap()
-        .then(() => {
-          toast({
-            title: "Success",
-            description: "WBS item created successfully",
-          });
-          setIsDialogOpen(false);
-          resetForm();
-        });
+      }
+
+      // Close Dialog and Reset
+      setIsDialogOpen(false);
+      resetForm();
+
+    } catch (error: any) {
+      toastSonner.error("Error", {
+        description: error.message || "Failed to save WBS item",
+      });
     }
   };
+
+  // const handleSave = () => {
+  //   if (!formData.name || !formData.projectId || !formData.type) {
+  //     toastSonner.error("Validation Error",{
+  //       description: "Name, Project, and Type are required.",
+  //     });
+  //     return;
+  //   }
+
+  //   if (formData.startDate && formData.endDate) {
+  //     const start = new Date(formData.startDate);
+  //     const end = new Date(formData.endDate);
+      
+  //     if (end < start) {
+  //       toastSonner.error("Date Error",{
+  //         description: "End Date cannot be earlier than Start Date.",
+  //       });
+  //       return;
+  //     }
+  //   }
+
+  //   // 3. [NEW] Delay Reason Validation
+  //   if (formData.status === "delayed" && !formData.delayReason?.trim()) {
+  //     toastSonner.error( "Validation Error",{
+  //       description: "Please provide a reason for the delay.",
+  //     });
+  //     return;
+  //   }
+
+  //   if (formData.type === "phase") {
+  //     formData.parentId = null;
+  //   } else if (!formData.parentId) {
+  //     toastSonner.error("Validation Error",{
+  //       description: `${formData.type} must have a Parent Item.`,
+  //     });
+  //     return;
+  //   }
+
+  //   if (editingItem) {
+  //     dispatch(updateWbsItem({ id: editingItem.id, data: formData }))
+  //       .unwrap()
+  //       .then(() => {
+  //         toastSonner.success("Updated",{
+  //           description: "WBS item updated successfully",
+  //         });
+  //         setIsDialogOpen(false);
+  //         resetForm();
+  //       });
+  //   } else {
+  //     dispatch(createWbsItem(formData))
+  //       .unwrap()
+  //       .then(() => {
+  //         toastSonner.success( "Success",{
+  //           description: "WBS item created successfully",
+  //         });
+  //         setIsDialogOpen(false);
+  //         resetForm();
+  //       });
+  //   }
+  // };
   const handleDelete = async (id: string) => {
     // 1️⃣ Check child dependency
     const hasChildren = wbs.some((item) => item.parentId === id);
@@ -1277,6 +1385,23 @@ const { userProfile } = useSelector((state: RootState) => state.auth);
                     </Select>
                   </div>
                 </div>
+
+                {formData.status === "delayed" && (
+                  <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
+                    <Label htmlFor="delayReason" className="text-red-600 font-medium">
+                      Reason for Delay *
+                    </Label>
+                    <Textarea
+                      id="delayReason"
+                      value={formData.delayReason || ""}
+                      onChange={(e) =>
+                        setFormData({ ...formData, delayReason: e.target.value })
+                      }
+                      placeholder="Provide a reason for your delay..."
+                      className="border-red-200 focus:border-red-500"
+                    />
+                  </div>
+                )}
 
                 <div className="space-y-2">
                   <Label>Dependencies</Label>

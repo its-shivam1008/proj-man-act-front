@@ -22,7 +22,8 @@ import {
   ListFilter,
   Calendar,
   Briefcase,
-  Layers
+  Layers,
+  ShieldAlert
 } from 'lucide-react';
 
 // --- REDUX ACTIONS ---
@@ -32,6 +33,7 @@ import { createBulkMRS } from "@/redux/slices/mrsSlice";
 import { fetchMaterials } from "@/redux/slices/rawmaterialSlice";
 import { toast } from 'sonner'; // Assuming you use sonner or similar for toasts
 import { BASE_URL } from '@/utils/constants';
+import { usePermission } from '@/hooks/userPermission';
 
 // --- TYPES ---
 interface MasterPair {
@@ -85,6 +87,11 @@ const Drawing: React.FC = () => {
   const [selectedWbsId, setSelectedWbsId] = useState<string>("");
   const [requiredDate, setRequiredDate] = useState<string>("");
   const [isSaving, setIsSaving] = useState(false);
+
+  const canView = usePermission('drawing', 'view');
+  const canCreate = usePermission('drawing', 'create');
+  const canEdit = usePermission('drawing', 'edit');
+  const canDelete = usePermission('drawing', 'delete');
 
   // --- AUTOCOMPLETE STATE ---
   const [autocompleteStates, setAutocompleteStates] = useState<{[key: string]: {
@@ -734,6 +741,16 @@ const processExtractedText = (text: string, masters: MasterPair[]): ScanResultIt
 
   // --- COMPUTED ---
   const allMeaningsFilled = scanResults.length > 0 && scanResults.every(r => r.value && r.value.trim() !== '');
+
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
+        <p className="text-gray-600">You do not have the necessary permissions to view this page.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto p-6 font-sans text-gray-800 space-y-6 relative">

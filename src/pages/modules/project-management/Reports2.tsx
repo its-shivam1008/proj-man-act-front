@@ -167,7 +167,7 @@ export default function ReportsAnalytics() {
     }
   }, [selectedProjectId, dispatch]);
 
-  const canView = usePermission('projectReports', 'view');
+  const canView = usePermission('projectsReports', 'view');
 
   // Fetch reports when organisationId and projects are loaded
   useEffect(() => {

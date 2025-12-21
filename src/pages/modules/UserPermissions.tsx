@@ -44,9 +44,9 @@ const inventoryLinks = [
     { name: "Forcasting", icon: Clock, key: "forecasting" }, // forcasting
     { name: "Delivery", icon: Mail, key: "deliveries" },
     { name: "Scrap Orders", icon: Trash2, key: "scrap"},
+    { name: "Stocks", icon: Warehouse, key: "stocks" },
     { name: "Moveanalysis", icon: BarChart3, key: "movesAnalysis" },
     { name: "Inventoryhist", icon: History, key: "inventoryHistory"},
-    // { name: "Operations", icon: Warehouse, key: "inventoryOperations" },
     { name: "Valuation", icon: TrendingUp, key: "valuation" },
     { name: "Settings", icon: Settings, key: "inventorySettings" },
     { name: "MasterData", icon: FileText, key: "masterdatainv"},
@@ -113,6 +113,7 @@ const APP_STRUCTURE: ModuleNode[] = [
     { name: "Repair", icon: Wrench, key: "repair" },
     { name: "Barcode", icon: ScanLine, key: "barcode" },
     { name: "Permissions", icon: UserRound, key: "permissions" },
+    { name: "Drawing", icon: UserRound, key: "drawing" },
 ];
 
 // --- 2. Types ---
@@ -150,6 +151,42 @@ export const UserPermissionsPage: React.FC = () => {
   const canCreate = usePermission('permissions', 'create');
   const canEdit = usePermission('permissions', 'edit');
   const canDelete = usePermission('permissions', 'delete');
+
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const confirmDeleteUser = (e: React.MouseEvent, user: User) => {
+    e.stopPropagation(); // Prevent selecting the user when clicking delete
+    setUserToDelete(user);
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleDeleteUser = async () => {
+    if (!userToDelete) return;
+
+    setDeleteLoading(true);
+    try {
+      await api.delete(`/auth/users/${userToDelete._id}`);
+      
+      // Remove from local state
+      setUsers(prev => prev.filter(u => u._id !== userToDelete._id));
+      
+      // If the deleted user was currently selected, select the first available user or null
+      if (selectedUserId === userToDelete._id) {
+        setSelectedUserId(null); 
+      }
+
+      setStatusMessage({ type: 'success', text: 'User deleted successfully' });
+      setIsDeleteModalOpen(false);
+    } catch (err: any) {
+      console.error(err);
+      setStatusMessage({ type: 'error', text: err.response?.data?.message || "Failed to delete user" });
+    } finally {
+      setDeleteLoading(false);
+      setTimeout(() => setStatusMessage(null), 3000);
+    }
+  };
 
 useEffect(() => {
     if (currentUser) {
@@ -413,6 +450,32 @@ useEffect(() => {
                   </div> : currentUser.hrmsOrganisationId?? 'No id found. Contact your Admin'}
                 </div>
             </div>
+            <Dialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+                <AlertTriangle className="w-5 h-5" />
+                Confirm Deletion
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4 text-sm text-gray-600">
+            Are you sure you want to delete <strong>{userToDelete?.fullname || userToDelete?.email}</strong>? 
+            <br/><br/>
+            This action cannot be undone. The user will be logged out immediately and lose access to the system.
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteModalOpen(false)}>Cancel</Button>
+            <Button 
+                onClick={handleDeleteUser} 
+                disabled={deleteLoading}
+                className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {deleteLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : <Trash2 className="w-4 h-4 mr-2"/>}
+              Delete User
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
             <Dialog open={isInviteModalOpen} onOpenChange={setIsInviteModalOpen}>
               {canCreate && <DialogTrigger asChild>
                 <Button className="bg-blue-600 hover:bg-blue-700">
@@ -503,12 +566,10 @@ useEffect(() => {
                 return (
                     <div 
                         key={user._id}
-                        // CHANGE 1: Prevent click if it's "Me"
                         onClick={() => !isMe && setSelectedUserId(user._id)}
                         className={`
-                            group flex items-start gap-3 p-3 rounded-lg transition-all border
+                            group flex items-start gap-3 p-3 rounded-lg transition-all border relative
                             ${isMe 
-                                // CHANGE 2: Grayed out styles for "Me"
                                 ? 'opacity-50 cursor-not-allowed bg-gray-50 border-gray-100' 
                                 : isSelected 
                                     ? 'bg-blue-50 border-blue-200 shadow-sm cursor-pointer' 
@@ -546,6 +607,15 @@ useEffect(() => {
                                 <Badge variant="secondary" className="text-[10px] uppercase tracking-wider">{user.role}</Badge>
                             </div>
                         </div>
+                        {!isMe && currentUser.role=== 'admin' && (
+                            <button
+                                onClick={(e) => confirmDeleteUser(e, user)}
+                                className="absolute right-2 top-2 p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
+                                title="Delete User"
+                            >
+                                <Trash2 className="w-4 h-4" />
+                            </button>
+                        )}
                     </div>
                 );
             })}

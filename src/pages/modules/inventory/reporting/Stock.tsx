@@ -29,10 +29,10 @@ import {
 } from "lucide-react";
 
 const Stock: React.FC = () => {
-  const canView = usePermission("inventoryOverview", "view");
-  const canCreate = usePermission("inventoryOverview", "create");
-  const canEdit = usePermission("inventoryOverview", "edit");
-  const canDelete = usePermission("inventoryOverview", "delete");
+  const canView = usePermission("stocks", "view");
+  const canCreate = usePermission("stocks", "create");
+  const canEdit = usePermission("stocks", "edit");
+  const canDelete = usePermission("stocks", "delete");
   const dispatch = useDispatch<AppDispatch>();
   const { stockReports, loading } = useSelector(
     (state: RootState) => state.stockReports

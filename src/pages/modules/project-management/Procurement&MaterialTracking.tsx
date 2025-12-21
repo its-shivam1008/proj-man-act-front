@@ -1848,8 +1848,10 @@ export default function ProcurementPage() {
     // --- NEW FUNCTION: Submit Notification ---
     const handleSubmitNotification = async () => {
         if (!notificationTarget) return;
-       const finalRemark = remarkText?.trim() || "";
-
+        // if (!remarkText.trim()) {
+        //     toast.error("Please enter a remark.");
+        //     return;
+        // }
 
         const { item, type } = notificationTarget;
 
@@ -1900,7 +1902,7 @@ export default function ProcurementPage() {
             await dispatch(createNotification({
                 source,
                 destination,
-                remark: finalRemark,
+                remark: remarkText,
                 itemId: itemId,
                 itemName: item.item,
                 type: notificationType, // Use the new notification type
@@ -3034,73 +3036,88 @@ export default function ProcurementPage() {
                                     </TableCell>
                                     <TableCell>{m.quantity}</TableCell>
                                     <TableCell>
-                                        {(() => {
-                                            const deliveryStatus = m.deliveryStatus || 'pending';
-                                            
-                                            // Debug logs
-                                            console.log(`🔍 Item: ${m.item}, deliveryStatus: "${deliveryStatus}"`);
-                                            
-                                            // Check for different variations of in-transit
-                                            const isInTransit = deliveryStatus === 'in-transit' || 
-                                                              deliveryStatus === 'intransit' || 
-                                                              deliveryStatus === 'in_transit' ||
-                                                              deliveryStatus?.toLowerCase().includes('transit');
-                                            
-                                            const isReceived = deliveryStatus === 'received' || 
-                                                             deliveryStatus === 'delivered';
-                                            
-                                            const isSent = deliveryStatus === 'sent' && !isInTransit && !isReceived;
-                                            
-                                            if (isReceived) {
-                                                console.log(`   ✅ SHOWING "Received ✓" button for ${m.item}`);
-                                                return (
-                                                    <Button 
-                                                        size="sm" 
-                                                        variant="outline"
-                                                        disabled
-                                                        className="bg-green-50 text-green-700 border-green-200"
-                                                    >
-                                                        Received ✓
-                                                    </Button>
-                                                );
-                                            } else if (isInTransit) {
-                                                console.log(`   🚛 SHOWING "Item Received" button for ${m.item}`);
-                                                return (
-                                                    <Button 
-                                                        size="sm" 
-                                                        variant="default"
-                                                        className="bg-green-600 hover:bg-green-700"
-                                                        onClick={() => handleItemReceived(m)}
-                                                    >
-                                                        Item Received
-                                                    </Button>
-                                                );
-                                            } else if (isSent) {
-                                                console.log(`   📦 SHOWING "Sent ✓" button for ${m.item}`);
-                                                return (
-                                                    <Button 
-                                                        size="sm" 
-                                                        variant="outline"
-                                                        disabled
-                                                        className="bg-blue-50 text-blue-700 border-blue-200"
-                                                    >
-                                                        Sent ✓
-                                                    </Button>
-                                                );
-                                            } else {
-                                                console.log(`   🔄 SHOWING "Sent" button for ${m.item}`);
-                                                return (
-                                                    <Button 
-                                                        size="sm" 
-                                                        variant="outline"
-                                                        onClick={() => handleSendClick(m, "INVENTORY")}
-                                                    >
-                                                        Sent
-                                                    </Button>
-                                                );
-                                            }
-                                        })()}
-                                    </TableCell>
+                                    {(() => {
+                                        const deliveryStatus = m.deliveryStatus || 'pending';
+                                        const purchaseStatus = m.purchaseRequestStatus || 'not-sent';
+
+                                        // Check if Purchase is already active
+                                        const isPurchaseActive = purchaseStatus === 'sent' || purchaseStatus === 'processed';
+
+                                        // Check for different variations of in-transit
+                                        const isInTransit = deliveryStatus === 'in-transit' || 
+                                                        deliveryStatus === 'intransit' || 
+                                                        deliveryStatus === 'in_transit' ||
+                                                        deliveryStatus?.toLowerCase().includes('transit');
+                                        
+                                        const isReceived = deliveryStatus === 'received' || 
+                                                        deliveryStatus === 'delivered';
+                                        
+                                        const isSent = deliveryStatus === 'sent' && !isInTransit && !isReceived;
+                                        
+                                        if (isReceived) {
+                                            return (
+                                                <Button 
+                                                    size="sm" 
+                                                    variant="outline"
+                                                    disabled
+                                                    className="bg-green-50 text-green-700 border-green-200"
+                                                >
+                                                    Received ✓
+                                                </Button>
+                                            );
+                                        } else if (isInTransit) {
+                                            return (
+                                                <Button 
+                                                    size="sm" 
+                                                    variant="default"
+                                                    className="bg-green-600 hover:bg-green-700"
+                                                    onClick={() => handleItemReceived(m)}
+                                                >
+                                                    Item Received
+                                                </Button>
+                                            );
+                                        } else if (isSent) {
+                                            return (
+                                                <Button 
+                                                    size="sm" 
+                                                    variant="outline"
+                                                    disabled
+                                                    className="bg-blue-50 text-blue-700 border-blue-200"
+                                                >
+                                                    Sent ✓
+                                                </Button>
+                                            );
+                                        } else if (isPurchaseActive) {
+                                            // 🔒 NEW: Disable if sent to Purchase
+                                            return (
+                                                <TooltipProvider>
+                                                    <Tooltip>
+                                                        <Popover>
+                                                            <PopoverTrigger asChild>
+                                                                <Button size="sm" variant="ghost" disabled className="text-gray-400 bg-gray-100">
+                                                                    Sent
+                                                                </Button>
+                                                            </PopoverTrigger>
+                                                            <PopoverContent className="w-auto p-2 text-xs">
+                                                                Item sent to Purchase
+                                                            </PopoverContent>
+                                                        </Popover>
+                                                    </Tooltip>
+                                                </TooltipProvider>
+                                            );
+                                        } else {
+                                            return (
+                                                <Button 
+                                                    size="sm" 
+                                                    variant="outline"
+                                                    onClick={() => handleSendClick(m, "INVENTORY")}
+                                                >
+                                                    Sent
+                                                </Button>
+                                            );
+                                        }
+                                    })()}
+                                </TableCell>
                                     <TableCell>
                                         {(() => {
                                             const deliveryStatus = m.deliveryStatus || 'pending';
@@ -3125,31 +3142,28 @@ export default function ProcurementPage() {
                                     <TableCell>{m.requiredDate ? new Date(m.requiredDate).toLocaleDateString() : "—"}</TableCell>
                                     <TableCell>
                                         <div className="flex gap-2">
-                                            {/* {canEdit && <Button size="icon" variant="ghost" onClick={() => openEdit(m)} disabled={mrsLoading || !!m.task}>
-                                                <Edit2 className="h-4 w-4" />
-                                            </Button>} */}
+                                            {/* Delete Button (Keep existing logic) */}
                                             <Button 
                                                 size="icon" 
                                                 variant="ghost" 
                                                 onClick={() => {
-                                                    console.log("🖱️ Delete button clicked for item:", m.id || m._id, m);
                                                     handleDelete(m.id || m._id!, !!m.task);
                                                 }} 
                                                 disabled={mrsLoading || (m.deliveryStatus === 'received')}
                                                 className={m.deliveryStatus === 'received' ? 'opacity-50 cursor-not-allowed' : ''}
-                                                title={
-                                                    m.deliveryStatus === 'received' 
-                                                        ? "Cannot delete received items - material already delivered" 
-                                                        : m.task 
-                                                        ? `Delete WBS-linked item: ${m.task}` 
-                                                        : "Delete MRS item"
-                                                }
                                             >
                                                 <Trash2 className={`h-4 w-4 ${m.deliveryStatus === 'received' ? 'text-gray-400' : 'text-red-600'}`} />
                                             </Button>
+
+                                            {/* Purchase Button Logic */}
                                             {(() => {
                                                 const purchaseStatus = m.purchaseRequestStatus || 'not-sent';
+                                                const deliveryStatus = m.deliveryStatus || 'pending';
                                                 
+                                                // Check if Inventory/Delivery is already active
+                                                const isInventoryActive = ['sent', 'in-transit', 'received', 'delivered', 'intransit', 'in_transit']
+                                                    .includes(deliveryStatus);
+
                                                 if (purchaseStatus === 'sent') {
                                                     return (
                                                         <Button 
@@ -3174,6 +3188,20 @@ export default function ProcurementPage() {
                                                             Processed ✓
                                                         </Button>
                                                     );
+                                                } else if (isInventoryActive) {
+                                                    // 🔒 NEW: Disable if sent to Inventory
+                                                    return (
+                                                        <Button 
+                                                            variant="ghost" 
+                                                            size="sm"
+                                                            disabled
+                                                            className="text-gray-400 opacity-50"
+                                                            title="Item is already being processed by Delivery/Inventory"
+                                                        >
+                                                            <ShoppingCartIcon className="mr-2 h-4 w-4"/> 
+                                                            Send
+                                                        </Button>
+                                                    );
                                                 } else {
                                                     return (
                                                         <Button 
@@ -3186,6 +3214,8 @@ export default function ProcurementPage() {
                                                     );
                                                 }
                                             })()}
+
+                                            {/* Check Status Button (Keep existing logic) */}
                                             <Button size="sm" onClick={() => handleCheckStatus(m)}>
                                                 <Truck className="h-4 w-4" /> Check Status
                                             </Button>
