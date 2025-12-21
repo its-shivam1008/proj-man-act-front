@@ -193,7 +193,7 @@ const Layout: React.FC = () => {
           else if (item.name === "Inventory") subLinks = inventoryLinks;
 
           if (subLinks) {
-            // [FIXED] Even if parent is restricted, check if children are allowed
+            // Check children only
             const firstChild = subLinks.find((sub) => hasViewAccess(sub.key));
             if (firstChild) return firstChild.href;
           } 
@@ -239,13 +239,11 @@ const Layout: React.FC = () => {
                 // --- MODULES RENDER LOGIC ---
                 if (subLinks) {
                   const visibleSubLinks = subLinks.filter(sub => hasViewAccess(sub.key));
-                  const parentHasAccess = hasViewAccess(item.key);
 
-                  // [CRITICAL FIX] 
-                  // Show Parent IF: 
-                  // 1. Parent is explicitly allowed (parentHasAccess is true)
-                  // 2. OR Parent is disallowed, but there are visible children (Implied Access)
-                  if (!parentHasAccess && visibleSubLinks.length === 0) {
+                  // [LOGIC UPDATED]: 
+                  // If there are NO visible children, hide the entire parent Accordion.
+                  // This applies even if the parent permission is TRUE.
+                  if (visibleSubLinks.length === 0) {
                     return null;
                   }
 
