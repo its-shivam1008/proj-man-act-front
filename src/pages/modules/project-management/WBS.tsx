@@ -175,12 +175,6 @@ const WBSNode: React.FC<WBSNodeProps> = ({
     [allwbs, item.id]
   );
 
-
-
-
-
-
-
   const getStatusColor = (status?: wbstatus) => {
     // Check if item is paused first
     if (item.isPaused) {

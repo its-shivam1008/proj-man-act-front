@@ -46,6 +46,7 @@ import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import {
   fetchRacks,
   createRack,
+  getWarehouseCapacity,
 } from "@/redux/slices/rackSlice";
 import {
   fetchShelves,
@@ -285,7 +286,7 @@ const WarehouseManagement: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <Layers className="w-4 h-4 text-gray-500" />
                         <span className="font-medium">Capacity:</span>
-                        <span>{w.capacity}%</span>
+                        <span>{w.capacity} sq units</span>
                       </div>
                     </div>
 
@@ -465,15 +466,18 @@ const WarehouseManagement: React.FC = () => {
                           return <p className="text-sm text-gray-500 italic p-4 text-center">No rack & shelf assigned to products.</p>;
                         }
 
-                        const racksMap: Record<string, { rackName: string; shelves: any[] }> = {};
+                        const racksMap: Record<string, { rackName: string; area?: number; shelves: any[] }> = {};
 
                         allLocations.forEach((loc) => {
                           const rackId = String(loc.rackId);
                           if (!rackId || rackId === "undefined") return;
 
                           if (!racksMap[rackId]) {
+                            // Find the actual rack data to get area information
+                            const rackData = racks.find((r: any) => r._id === rackId);
                             racksMap[rackId] = {
                               rackName: loc.rackName || "Unnamed Rack",
+                              area: rackData?.area || 0,
                               shelves: [],
                             };
                           }
@@ -494,7 +498,12 @@ const WarehouseManagement: React.FC = () => {
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {Object.entries(racksMap).map(([rackId, rackData]) => (
                               <div key={rackId} className="bg-gray-100 p-4 rounded-lg border border-gray-200 shadow-sm">
-                                <div className="font-extrabold text-lg text-gray-800 mb-2">{rackData.rackName}</div>
+                                <div className="font-extrabold text-lg text-gray-800 mb-1">{rackData.rackName}</div>
+                                {rackData.area > 0 && (
+                                  <div className="text-sm text-gray-600 mb-2">
+                                    Area: {rackData.area} sq units
+                                  </div>
+                                )}
                                 <div className="mt-2 flex flex-wrap gap-2">
                                   {rackData.shelves.map((shelf) => (
                                     <span
@@ -662,15 +671,18 @@ const WarehouseManagement: React.FC = () => {
                           return <p className="text-sm text-gray-500 italic p-4 text-center">No rack & shelf assigned to raw materials.</p>;
                         }
 
-                        const racksMap: Record<string, { rackName: string; shelves: any[] }> = {};
+                        const racksMap: Record<string, { rackName: string; area?: number; shelves: any[] }> = {};
 
                         allMaterialLocations.forEach((loc) => {
                           const rackId = String(loc.rackId);
                           if (!rackId || rackId === "undefined") return;
 
                           if (!racksMap[rackId]) {
+                            // Find the actual rack data to get area information
+                            const rackData = racks.find((r: any) => r._id === rackId);
                             racksMap[rackId] = {
                               rackName: loc.rackName || "Unnamed Rack",
+                              area: rackData?.area || 0,
                               shelves: [],
                             };
                           }
@@ -690,7 +702,12 @@ const WarehouseManagement: React.FC = () => {
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {Object.entries(racksMap).map(([rackId, rackData]) => (
                               <div key={rackId} className="bg-orange-100 p-4 rounded-lg border border-orange-200 shadow-sm">
-                                <div className="font-extrabold text-lg text-gray-800 mb-2">{rackData.rackName}</div>
+                                <div className="font-extrabold text-lg text-gray-800 mb-1">{rackData.rackName}</div>
+                                {rackData.area > 0 && (
+                                  <div className="text-sm text-gray-600 mb-2">
+                                    Area: {rackData.area} sq units
+                                  </div>
+                                )}
                                 <div className="mt-2 flex flex-wrap gap-2">
                                   {rackData.shelves.map((shelf) => (
                                     <span
@@ -756,6 +773,7 @@ const WarehouseForm: React.FC<{
   const dispatch = useDispatch();
   const racks = useSelector((state: any) => state.rack?.racks || []);
   const shelves = useSelector((state: any) => state.shelf?.shelves || []);
+  const warehouseCapacity = useSelector((state: any) => state.rack?.warehouseCapacity || null);
   const { userProfile } = useSelector((state: any) => state.auth);
   const { locations } = useSelector((state: any) => state.masterData);
 
@@ -898,6 +916,7 @@ const WarehouseForm: React.FC<{
   useEffect(() => {
     if (warehouse?._id) {
       dispatch(fetchRacks(warehouse._id));
+      dispatch(getWarehouseCapacity(warehouse._id));
     }
   }, [warehouse?._id, dispatch]);
 
@@ -1064,7 +1083,7 @@ const WarehouseForm: React.FC<{
                   </SelectContent>
                 </Select>
               </div>
-              <div><Label className="font-medium text-gray-700">Capacity (%)</Label><Input type="number" value={formData.capacity} onChange={e => setFormData({ ...formData, capacity: e.target.value })} className="border-blue-300" min="0" max="100" /></div>
+              <div><Label className="font-medium text-gray-700">Capacity (sq units)</Label><Input type="number" value={formData.capacity} onChange={e => setFormData({ ...formData, capacity: e.target.value })} className="border-blue-300" min="0" placeholder="Enter capacity in square units" /></div>
             </div>
           </div>
 
@@ -1271,11 +1290,25 @@ const WarehouseForm: React.FC<{
 
                     {/* Create Rack & Shelf Section (Product) */}
                     <div className="p-4 bg-gray-100 rounded-lg border border-gray-300 space-y-3">
-                      <h5 className="font-semibold text-gray-700 flex items-center gap-2">
-                        <Plus className="w-4 h-4" />
-                        Quick Create New Rack & Shelves
-                      </h5>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="flex justify-between items-center">
+                        <h5 className="font-semibold text-gray-700 flex items-center gap-2">
+                          <Plus className="w-4 h-4" />
+                          Quick Create New Rack & Shelves
+                        </h5>
+                        {/* Capacity Display */}
+                        {warehouseCapacity && (
+                          <div className={`text-sm font-medium px-3 py-1 rounded-full ${
+                            warehouseCapacity.currentCapacity <= 0 
+                              ? 'bg-red-100 text-red-700' 
+                              : warehouseCapacity.currentCapacity < 50 
+                                ? 'bg-yellow-100 text-yellow-700' 
+                                : 'bg-green-100 text-green-700'
+                          }`}>
+                            Available: {warehouseCapacity.currentCapacity} sq units
+                          </div>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                         {/* New Rack Name */}
                         <div>
                           <Label>New Rack Name</Label>
@@ -1285,6 +1318,20 @@ const WarehouseForm: React.FC<{
                             onChange={(e) => {
                               const updated = [...formData.products];
                               updated[index].tempRackName = e.target.value;
+                              setFormData({ ...formData, products: updated });
+                            }}
+                          />
+                        </div>
+                        {/* Rack Area */}
+                        <div>
+                          <Label>Rack Area (sq units)</Label>
+                          <Input
+                            type="number"
+                            placeholder="Enter area"
+                            value={prod.tempRackArea || ""}
+                            onChange={(e) => {
+                              const updated = [...formData.products];
+                              updated[index].tempRackArea = e.target.value;
                               setFormData({ ...formData, products: updated });
                             }}
                           />
@@ -1309,15 +1356,40 @@ const WarehouseForm: React.FC<{
                             size="sm"
                             onClick={async () => {
                               if (!prod.tempRackName?.trim()) return toast.error("Enter rack name");
+                              
+                              const rackArea = parseFloat(prod.tempRackArea) || 0;
+                              const currentCapacity = warehouseCapacity?.currentCapacity || 0;
+                              
+                              // Check capacity before creating rack
+                              if (rackArea > currentCapacity) {
+                                return toast.error(`Insufficient warehouse capacity! Available: ${currentCapacity} sq units, Required: ${rackArea} sq units`);
+                              }
+                              
                               try {
-                                const res = await dispatch(createRack({ rackName: prod.tempRackName, warehouseId: warehouse?._id })).unwrap();
-                                toast.success(`Rack '${res.rackName}' created`);
+                                const res = await dispatch(createRack({ 
+                                  rackName: prod.tempRackName, 
+                                  warehouseId: warehouse?._id,
+                                  area: rackArea
+                                })).unwrap();
+                                
+                                toast.success(`Rack '${res.rackName}' created successfully!`);
+                                
+                                // Check remaining capacity and show warning
+                                const remainingCapacity = currentCapacity - rackArea;
+                                if (remainingCapacity <= 0) {
+                                  toast.warning("⚠️ Warehouse capacity is now full! No more racks can be added.");
+                                } else if (remainingCapacity < 50) { // Warning when less than 50 sq units left
+                                  toast.warning(`⚠️ Low warehouse capacity remaining: ${remainingCapacity} sq units`);
+                                }
+                                
                                 dispatch(fetchRacks(warehouse?._id));
+                                dispatch(getWarehouseCapacity(warehouse?._id)); // Refresh capacity
                                 const updated = [...formData.products];
                                 updated[index].tempRackName = "";
+                                updated[index].tempRackArea = "";
                                 setFormData({ ...formData, products: updated });
-                              } catch {
-                                toast.error("Failed to create rack");
+                              } catch (error: any) {
+                                toast.error(error.message || "Failed to create rack");
                               }
                             }}
                           >

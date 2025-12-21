@@ -161,18 +161,13 @@ export default function MaterialSelectionDialog({
   // Centralized function to calculate saved materials from database
   const calculateSavedMaterials = () => {
     if (!isOpen || !wbsItem?.name || materials.length === 0) return [];
-
-    console.log(`🔍 Calculating saved materials for task: ${wbsItem.name}`);
-    console.log('📊 Total MRS list:', mrsList?.length || 0);
     
     // First, let's see ALL MRS items for debugging
-    console.log('🔍 ALL MRS Items:');
     (mrsList || []).forEach((mrs: any, index: number) => {
       console.log(`  ${index + 1}. ${mrs.item} - Task: ${mrs.task} - DeliveryStatus: ${mrs.deliveryStatus} - Status: ${mrs.status} - Deleted: ${mrs.isDeleted}`);
     });
     
     // Now let's see items for this specific task
-    console.log(`🔍 MRS Items for task "${wbsItem.name}":`);
     const allTaskItems = (mrsList || []).filter((mrs: any) => mrs.task === wbsItem.name && !mrs.isDeleted);
     allTaskItems.forEach((mrs: any, index: number) => {
       console.log(`  ${index + 1}. ${mrs.item} - DeliveryStatus: ${mrs.deliveryStatus} - Status: ${mrs.status}`);
@@ -197,7 +192,6 @@ export default function MaterialSelectionDialog({
       return isForThisTask && isReceived;
     });
 
-    console.log(`📦 Found ${taskMRSMaterials.length} received MRS materials for task`);
 
     // Convert MRS materials to SelectedMaterial format
     const mrsAsSavedMaterials = taskMRSMaterials.map((mrs: any) => {
@@ -209,12 +203,12 @@ export default function MaterialSelectionDialog({
       const returnedQuantity = mrs.deliveryDetails?.returnedQuantity || 0;
       const availableQuantity = receivedQuantity - returnedQuantity;
       
-      console.log(`🧮 Material ${mrs.item} (${mrs._id}):`, {
-        original: originalQuantity,
-        received: receivedQuantity,
-        returned: returnedQuantity,
-        available: availableQuantity
-      });
+      // console.log(`🧮 Material ${mrs.item} (${mrs._id}):`, {
+      //   original: originalQuantity,
+      //   received: receivedQuantity,
+      //   returned: returnedQuantity,
+      //   available: availableQuantity
+      // });
       const usedQuantity = mrs.usedQuantity || 0;
       
       return {
@@ -257,18 +251,15 @@ export default function MaterialSelectionDialog({
       } else {
         // New material, add it
         allMaterials.push(mrsMaterial);
-        console.log(`➕ Added new material ${mrsMaterial.name}: ${mrsMaterial.quantity}`);
       }
     });
 
-    console.log(`✅ Final calculated materials (${allMaterials.length}):`, allMaterials);
     return allMaterials;
   };
 
   // Main useEffect to calculate and set saved materials from database
   useEffect(() => {
     if (isOpen && wbsItem?.name) {
-      console.log('🔄 Recalculating materials due to data change...');
       const calculatedMaterials = calculateSavedMaterials();
       setSavedMaterials(calculatedMaterials);
     }
@@ -277,13 +268,10 @@ export default function MaterialSelectionDialog({
   // Listen for database updates to refresh saved materials
   useEffect(() => {
     const handleDatabaseUpdate = () => {
-      console.log('🔄 Database update event received, refetching MRS data...');
       dispatch(fetchMRS());
     };
 
     const handleMRSStatusChange = (event: any) => {
-      console.log('🔄 MRS status change event received:', event.detail);
-      console.log('🔄 Refetching MRS data from database...');
       dispatch(fetchMRS());
     };
 
@@ -597,17 +585,6 @@ export default function MaterialSelectionDialog({
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
               <span>Materials for {wbsItem?.name}</span>
-              {/* Show toggle to switch to edit mode if there are saved materials */}
-              {/* {savedMaterials.length > 0 && (
-                <div className="ml-4">
-                  <Button
-                    variant="outline"
-                    onClick={() => setIsEditingMode((s) => !s)}
-                  >
-                    {isEditingMode ? "View" : "Edit"}
-                  </Button>
-                </div>
-              )} */}
             </DialogTitle>
           </DialogHeader>
 
@@ -671,22 +648,6 @@ export default function MaterialSelectionDialog({
                       ✕
                     </button>
                   )}
-                  {/* Debug button - commented out for production */}
-                  {/* <button
-                    onClick={() => {
-                      console.log('🔄 Manual refresh triggered');
-                      console.log('🔄 Current MRS List:', mrsList);
-                      dispatch(fetchMRS());
-                      setTimeout(() => {
-                        const calculatedMaterials = calculateSavedMaterials();
-                        setSavedMaterials(calculatedMaterials);
-                      }, 1000);
-                    }}
-                    className="text-blue-600 hover:text-blue-800 text-xs px-2 py-1 border border-blue-300 rounded"
-                    title="Refresh materials"
-                  >
-                    🔄 Debug
-                  </button> */}
                 </div>
               </div>
 
@@ -795,20 +756,8 @@ export default function MaterialSelectionDialog({
                                 Return
                               </Button>
                             )}
-                            {/* {isMRSMaterial && (
-                              <span className="text-xs text-gray-500">
-                                From MRS Entry
-                              </span>
-                            )} */}
                           </div>
                         </div>
-
-                        {/* Show status info */}
-                        {/* {materialStatus === 'received' && (
-                          <p className="text-xs text-green-600 mt-2 flex items-center">
-                            ✅ Material received and available
-                          </p>
-                        )} */}
                       </div>
                     );
                   });

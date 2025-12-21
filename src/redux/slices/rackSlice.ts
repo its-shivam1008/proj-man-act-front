@@ -25,9 +25,26 @@ export const fetchRacks = createAsyncThunk(
   }
 );
 
+export const getWarehouseCapacity = createAsyncThunk(
+  "rack/getWarehouseCapacity",
+  async (warehouseId, { rejectWithValue }) => {
+    try {
+      const res = await api.get(`/rack/capacity/${warehouseId}`);
+      return res.data;
+    } catch (err) {
+      return rejectWithValue(err.response?.data || err.message);
+    }
+  }
+);
+
 const rackSlice = createSlice({
   name: "rack",
-  initialState: { racks: [], loading: false, error: null },
+  initialState: { 
+    racks: [], 
+    loading: false, 
+    error: null,
+    warehouseCapacity: null 
+  },
   reducers: {},
   extraReducers: (builder) => {
     builder
@@ -51,6 +68,18 @@ const rackSlice = createSlice({
         state.racks = action.payload;
       })
       .addCase(fetchRacks.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload;
+      })
+
+      .addCase(getWarehouseCapacity.pending, (state) => {
+        state.loading = true;
+      })
+      .addCase(getWarehouseCapacity.fulfilled, (state, action) => {
+        state.loading = false;
+        state.warehouseCapacity = action.payload;
+      })
+      .addCase(getWarehouseCapacity.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
       });

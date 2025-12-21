@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
 import { ClipLoader } from "react-spinners";
+import NotificationCenter from "@/components/NotificationCenter";
 import {
   fetchPurchaseOrders,
   createPurchaseOrder,
@@ -96,11 +97,11 @@ const PurchaseOrderComponent: React.FC = () => {
       })
     );
 
-    dispatch(fetchVendors());
-    dispatch(fetchWarehouses(localStorage.getItem("organisationId")));
-    dispatch(fetchMaterials());
-    dispatch(fetchInventoryMaster({ type: "category", page: 1, limit: 100 }));
-    dispatch(fetchInventoryMaster({ type: "hsn", page: 1, limit: 100 }));
+      dispatch(fetchVendors());
+      dispatch(fetchWarehouses(localStorage.getItem("organisationId")));
+      dispatch(fetchMaterials());
+      dispatch(fetchInventoryMaster({ type: "category", page: 1, limit: 100 }));
+      dispatch(fetchInventoryMaster({ type: "hsn", page: 1, limit: 100 }));
   }, [dispatch, page, limit, search]);
 
 
@@ -242,6 +243,73 @@ const PurchaseOrderComponent: React.FC = () => {
         }));
       }
     }, [formData.warehouse, itemType]);
+
+    // Listen for RFQ to PO autofill events
+    useEffect(() => {
+      const handleRfqToPoAutofill = (event: CustomEvent) => {
+        console.log('🎯 Received rfq_to_po_autofill event:', event.detail);
+        
+        const materialData = event.detail;
+        if (materialData && materialData.materials) {
+          // Set item type to Raw Material
+          setItemType('rawMaterial');
+          
+          // Map RFQ materials to PO material lines - SIMPLIFIED VERSION
+          const materialLines = materialData.materials.map((material: any) => ({
+            // Basic required fields for PO
+            product: material.name || '', // RFQ product name → PO material name
+            quantity: material.quantity || 0, // RFQ quantity → PO quantity
+            unitPrice: material.unitPrice || 0, // RFQ unitPrice → PO unit price
+            
+            // Default values for other required fields
+            materialId: '',
+            isNew: true, // Always treat as new material for simplicity
+            newProductName: material.name || '',
+            taxes: 0,
+            subtotal: (material.quantity || 0) * (material.unitPrice || 0),
+            unitOfMeasure: 'kg', // Default unit
+            itemCode: '',
+            hsn: '',
+            gstPercent: 0,
+            valuationMethod: 'FIFO',
+            reorderLevel: 0,
+            technicalSpecs: '',
+            organisationId: localStorage.getItem("organisationId") || "",
+            warehouse: "" // Will be set when warehouse is selected
+          }));
+          
+          // Update form data with RFQ information
+          setFormData({
+            ...formData,
+            itemType: 'rawMaterial',
+            productLines: materialLines,
+            scheduledDeliveryDate: materialData.deliveryDate ? new Date(materialData.deliveryDate).toISOString().split('T')[0] : '',
+            // Auto-generate PO number with RFQ reference
+            poNo: `PO-RFQ-${materialData.rfqNumber || Date.now()}`,
+          });
+          
+          console.log('✅ RFQ data auto-filled into Purchase Order form');
+          console.log('📋 Mapped fields:', {
+            materialsCount: materialLines.length,
+            sampleMaterial: materialLines[0] ? {
+              name: materialLines[0].product,
+              quantity: materialLines[0].quantity,
+              unitPrice: materialLines[0].unitPrice
+            } : null
+          });
+          
+          toast.success(`RFQ ${materialData.rfqNumber || ''} materials auto-filled! ${materialLines.length} items added. Please select vendor and warehouse.`);
+        }
+      };
+
+      // Add event listener
+      window.addEventListener('rfq_to_po_autofill', handleRfqToPoAutofill as EventListener);
+
+      // Cleanup
+      return () => {
+        window.removeEventListener('rfq_to_po_autofill', handleRfqToPoAutofill as EventListener);
+      };
+    }, [formData]); // Include formData in dependencies to access current state
     if (!canCreate) {
       return (
         <p className="text-center text-red-600 py-6">
@@ -1695,6 +1763,9 @@ const PurchaseOrderComponent: React.FC = () => {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {/* Add NotificationCenter for Purchase Order notifications */}
+          <NotificationCenter destination="purchase.orders" title="Purchase Order Notifications" />
+          
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
             <input

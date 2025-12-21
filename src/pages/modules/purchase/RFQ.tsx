@@ -7,6 +7,8 @@ import { fetchVendors } from '@/redux/slices/purchase/vendorSlice';
 import { RFQ, RFQProduct } from '@/types/purchase';
 import NotificationCenter from '@/components/NotificationCenter';
 import { fetchMasterData } from "@/redux/slices/masterDataSlice";
+import { Button } from '@/components/ui/button';
+import { BASE_URL } from '@/utils/constants';
 import {
   Plus,
   Eye,
@@ -60,6 +62,10 @@ const RFQComponent: React.FC = () => {
   const [limit, setLimit] = useState<number>(10);
   const [search, setSearch] = useState<string>("");
 
+  // MRS Notifications state
+  const [mrsNotifications, setMrsNotifications] = useState<any[]>([]);
+  const [loadingMrsNotifications, setLoadingMrsNotifications] = useState(false);
+
   // [!code ++] Get Profile & Locations
   const { userProfile } = useSelector((state: any) => state.auth); 
   const { locations } = useSelector((state: any) => state.masterData);
@@ -72,7 +78,190 @@ const RFQComponent: React.FC = () => {
     dispatch(fetchMasterData("location")); // [!code ++]
     dispatch(fetchRFQs({ page, limit, q: search, location: locationFilter })); // [!code ++]
     dispatch(fetchVendors());
+    fetchMrsNotifications(); // Fetch MRS notifications
   }, [dispatch, page, limit, search, locationFilter]); // [!code ++]
+
+  // Fetch MRS notifications for RFQ page
+  const fetchMrsNotifications = async () => {
+    setLoadingMrsNotifications(true);
+    try {
+      const apiUrl = BASE_URL || 'http://localhost:4000';
+      const url = `${apiUrl}/notifications/list?destination=purchase.rfq&status=unread`;
+
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        setMrsNotifications([]);
+        return;
+      }
+
+      const data = await response.json();
+
+      if (Array.isArray(data)) {
+        const filtered = data.filter((n: any) => n.type === 'material_request_rfq' && n.inviteResponse === 'pending');
+        setMrsNotifications(filtered);
+      } else {
+        setMrsNotifications([]);
+      }
+    } catch (error) {
+      console.error('Error fetching MRS notifications:', error);
+      setMrsNotifications([]);
+    } finally {
+      setLoadingMrsNotifications(false);
+    }
+  };
+
+  // Handle MRS notification accept/reject
+  const handleMrsNotificationResponse = async (notificationId: string, response: 'accepted' | 'rejected', notification?: any) => {
+    try {
+      const res = await fetch(`${BASE_URL}/notifications/material-request/respond`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ notificationId, response })
+      });
+
+      if (res.ok) {
+        const result = await res.json();
+        
+        if (response === 'accepted') {
+          toast.success('MRS notification accepted. Auto-filling RFQ form...');
+          
+          // Auto-fill RFQ form with MRS data
+          const materialData = notification.materialData;
+          setFormData({
+            rfqNumber: generateRfqNumber(),
+            orderDate: materialData.requiredDate ? new Date(materialData.requiredDate).toISOString().split('T')[0] : '',
+            currency: 'INR',
+            vendors: [] as string[],
+            location: materialData.projectId || (isLocationRestricted ? userProfile.location : ""),
+            paymentTerms: 'Net 30',
+            deliveryDate: materialData.requiredDate ? new Date(materialData.requiredDate).toISOString().split('T')[0] : '',
+            products: [{
+              name: materialData.item,
+              quantity: materialData.quantity,
+              uom: materialData.unit || 'pieces',
+              unitPrice: 0,
+              taxes: 0
+            }],
+            notes: `Auto-generated from MRS: ${materialData.wbsName} - ${materialData.remarks || ''}`
+          });
+          
+          setShowCreateRfq(true);
+        } else {
+          toast.success('MRS notification rejected successfully');
+        }
+        
+        fetchMrsNotifications(); // Refresh notifications
+      } else {
+        const errorData = await res.json();
+        toast.error(errorData.message || 'Failed to process MRS notification response');
+      }
+    } catch (error) {
+      console.error('Error responding to MRS notification:', error);
+      toast.error('Failed to process MRS notification response');
+    }
+  };
+
+  useEffect(() => {
+    if (error) {
+      toast.error(error);
+    }
+  }, [error]);
+
+  const generateRfqNumber = () => {
+    const year = new Date().getFullYear();
+    const count = rfqs.length + 1;
+    return `RFQ-${year}-${String(count).padStart(4, '0')}`;
+  };
+
+  const [formData, setFormData] = useState({
+    rfqNumber: generateRfqNumber(),
+    orderDate: new Date().toISOString().split('T')[0],
+    currency: 'INR',
+    vendors: [] as string[],
+    location: isLocationRestricted ? userProfile.location : "",
+    paymentTerms: 'Net 30',
+    deliveryDate: '',
+    products: [{ name: '', quantity: 0, uom: 'pieces', unitPrice: 0, taxes: 0 }] as RFQProduct[],
+    notes: ''
+  });
+
+  // Function to handle auto-fill with data
+  const handleAutoFill = (data: any) => {
+    try {
+      console.log('🔄 Auto-filling RFQ form with data:', data);
+      
+      // Handle different data structures from different sources
+      const materialName = data.materialName || data.item || data.itemName || '';
+      const quantity = data.quantity || 0;
+      const unit = data.unit || 'pieces';
+      const requiredDate = data.requiredDate;
+      const projectName = data.projectName || 'Project';
+      const sourceTask = data.wbsName || data.sourceTask || 'Task';
+      const remarks = data.remarks || data.remark || '';
+      
+      console.log('📋 Extracted auto-fill values:', {
+        materialName,
+        quantity,
+        unit,
+        requiredDate,
+        projectName,
+        sourceTask,
+        remarks
+      });
+      
+      setFormData(prevData => {
+        const newFormData = {
+          ...prevData,
+          products: [{
+            name: materialName,
+            quantity: quantity,
+            uom: unit,
+            unitPrice: 0,
+            taxes: 0
+          }],
+          deliveryDate: requiredDate ? new Date(requiredDate).toISOString().split('T')[0] : '',
+          notes: `Material request from ${projectName} - ${sourceTask}: ${remarks}`
+        };
+        
+        console.log('📝 Setting new form data:', newFormData);
+        return newFormData;
+      });
+      
+      // Open the create RFQ form immediately
+      setShowCreateRfq(true);
+      
+      toast.success('RFQ form auto-filled with material request data');
+      console.log('✅ RFQ form auto-filled and opened immediately');
+    } catch (error) {
+      console.error('Error auto-filling RFQ form:', error);
+      toast.error('Failed to auto-fill RFQ form');
+    }
+  };
+
+  // Listen for immediate auto-fill events from NotificationCenter
+  useEffect(() => {
+    const handleRfqAutoFill = (event: CustomEvent) => {
+      console.log('🎯 Received rfqAutoFill event:', event.detail);
+      handleAutoFill(event.detail);
+    };
+
+    // Add event listener
+    window.addEventListener('rfqAutoFill', handleRfqAutoFill as EventListener);
+
+    // Cleanup
+    return () => {
+      window.removeEventListener('rfqAutoFill', handleRfqAutoFill as EventListener);
+    };
+  }, []);
 
   const getLocationName = (loc: string | { name: string } | undefined) => {
     if (!loc) return "N/A";
@@ -87,12 +276,6 @@ const RFQComponent: React.FC = () => {
       toast.error(error);
     }
   }, [error]);
-
-  const generateRfqNumber = () => {
-    const year = new Date().getFullYear();
-    const count = rfqs.length + 1;
-    return `RFQ-${year}-${String(count).padStart(4, '0')}`;
-  };
 
   const handlePrev = () => {
     if (!meta) return;
@@ -194,18 +377,6 @@ const RFQComponent: React.FC = () => {
 
   // Create RFQ Form Component
   const CreateRfqForm = () => {
-    const [formData, setFormData] = useState({
-      rfqNumber: generateRfqNumber(),
-      orderDate: new Date().toISOString().split('T')[0],
-      currency: 'INR',
-      vendors: [] as string[],
-      location: isLocationRestricted ? userProfile.location : "",
-      paymentTerms: 'Net 30',
-      deliveryDate: '',
-      products: [{ name: '', quantity: 0, uom: 'pieces', unitPrice: 0, taxes: 0 }] as RFQProduct[],
-      notes: ''
-    });
-
     const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
 
@@ -221,13 +392,75 @@ const RFQComponent: React.FC = () => {
 
       setSubmitting(true);
       try {
-        await dispatch(createRFQ({
+        const result = await dispatch(createRFQ({
           ...formData,
           status: 'draft'
         })).unwrap();
+        
         toast.success("RFQ created successfully");
+        
+        // Create notification to Purchase Order when RFQ is saved
+        try {
+          const notificationData = {
+            organisationId: localStorage.getItem('organisationId'),
+            type: "rfqToPurchaseOrder",
+            source: "purchase.rfq",
+            destination: "purchase.orders",
+            itemName: `RFQ ${formData.rfqNumber}`,
+            remark: `New RFQ created and ready for Purchase Order. Products: ${formData.products.map(p => p.name).join(', ')}`,
+            status: "unread",
+            inviteResponse: "pending",
+            materialData: {
+              rfqNumber: formData.rfqNumber,
+              products: formData.products,
+              vendors: formData.vendors,
+              location: formData.location,
+              paymentTerms: formData.paymentTerms,
+              deliveryDate: formData.deliveryDate,
+              notes: formData.notes,
+              currency: formData.currency,
+              rfqId: result._id
+            }
+          };
+
+          console.log('📤 Creating Purchase Order notification:', notificationData);
+
+          const notifResponse = await fetch(`${BASE_URL}/notifications/create`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify(notificationData)
+          });
+
+          if (notifResponse.ok) {
+            const notifResult = await notifResponse.json();
+            console.log('✅ Purchase Order notification created:', notifResult);
+            toast.success('Notification sent to Purchase Order team');
+          } else {
+            console.error('❌ Failed to create PO notification:', await notifResponse.text());
+          }
+        } catch (notifError) {
+          console.error('Failed to create PO notification:', notifError);
+          // Don't fail the main operation
+        }
+        
         dispatch(fetchRFQs({ page, limit, q: search }));
         setShowCreateRfq(false);
+        
+        // Reset form data
+        setFormData({
+          rfqNumber: generateRfqNumber(),
+          orderDate: new Date().toISOString().split('T')[0],
+          currency: 'INR',
+          vendors: [] as string[],
+          location: isLocationRestricted ? userProfile.location : "",
+          paymentTerms: 'Net 30',
+          deliveryDate: '',
+          products: [{ name: '', quantity: 0, uom: 'pieces', unitPrice: 0, taxes: 0 }],
+          notes: ''
+        });
       } catch (e) {
         // handled
       } finally {
@@ -991,6 +1224,50 @@ const RFQComponent: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* MRS Notifications */}
+      {mrsNotifications.length > 0 && (
+        <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-lg shadow-sm">
+          <h3 className="text-lg font-semibold text-blue-900 mb-3 flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            New Material Requests ({mrsNotifications.length})
+          </h3>
+          <div className="space-y-3">
+            {mrsNotifications.map((notification) => (
+              <div key={notification._id} className="bg-white p-4 rounded-lg border border-blue-200 flex items-center justify-between">
+                <div className="flex-1">
+                  <p className="font-medium text-gray-900">{notification.materialData?.materialName}</p>
+                  <div className="text-sm text-gray-600 mt-1 grid grid-cols-2 gap-2">
+                    <span>Quantity: <strong>{notification.materialData?.quantity} {notification.materialData?.unit}</strong></span>
+                    <span>Project: <strong>{notification.materialData?.projectName}</strong></span>
+                    <span>Task: <strong>{notification.materialData?.wbsName}</strong></span>
+                    <span>Requested by: <strong>{notification.materialData?.requestedBy}</strong></span>
+                  </div>
+                  {notification.materialData?.remarks && (
+                    <p className="text-sm text-gray-500 mt-1">Remarks: {notification.materialData.remarks}</p>
+                  )}
+                </div>
+                <div className="flex gap-2 ml-4">
+                  <Button
+                    size="sm"
+                    onClick={() => handleMrsNotificationResponse(notification._id, 'accepted', notification)}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    Accept & Create RFQ
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => handleMrsNotificationResponse(notification._id, 'rejected', notification)}
+                  >
+                    Reject
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -999,6 +1276,9 @@ const RFQComponent: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Add NotificationCenter for RFQ notifications */}
+          <NotificationCenter destination="rfq.purchase" title="RFQ Notifications" />
+          
           <input
             type="search"
             value={search}

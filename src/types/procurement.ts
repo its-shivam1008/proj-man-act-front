@@ -4,6 +4,7 @@ export interface MRSItem {
   projectId?: string;
   task?: string;
   item: string;
+  materialId?: string; // Add materialId field
   quantity: number;
   price?: number;
   requiredDate?: string;

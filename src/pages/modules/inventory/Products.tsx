@@ -1153,15 +1153,54 @@ const Products: React.FC = () => {
       }
 
       // 6️⃣ Find product in that warehouse
+      console.log('🔍 Looking for product in warehouse:', {
+        productId: product._id,
+        productName: product.name,
+        warehouseName: sourceWarehouse.name,
+        warehouseProducts: sourceWarehouse.products?.map(p => ({
+          productId: p.productId,
+          productName: p.productName,
+          quantity: p.quantity
+        }))
+      });
+
       const productEntry = sourceWarehouse.products?.find(
-        (p) => p.productId === product._id || p.productId === product.id
+        (p) => {
+          // Handle both populated and non-populated productId
+          const warehouseProductId = p.productId?._id || p.productId;
+          const match1 = warehouseProductId === product._id;
+          const match2 = warehouseProductId === product.id;
+          const match3 = warehouseProductId?.toString() === product._id?.toString();
+          const match4 = warehouseProductId?.toString() === product.id?.toString();
+          
+          console.log(`   Comparing product: ${p.productName}`, {
+            warehouseProductId: warehouseProductId,
+            searchingForId: product._id,
+            searchingForId2: product.id,
+            match1, match2, match3, match4
+          });
+          
+          return match1 || match2 || match3 || match4;
+        }
       );
+
+      console.log('🎯 Product entry found:', productEntry ? {
+        productId: productEntry.productId,
+        productName: productEntry.productName,
+        quantity: productEntry.quantity
+      } : 'NOT FOUND');
 
       // If product not found in warehouse
       if (!productEntry) {
         // Find which warehouses have this product
         const warehousesWithProduct = warehouses.filter((w) =>
-          w.products?.some((p) => p.productId === product._id || p.productId === product.id)
+          w.products?.some((p) => {
+            const warehouseProductId = p.productId?._id || p.productId;
+            return warehouseProductId === product._id || 
+                   warehouseProductId === product.id ||
+                   warehouseProductId?.toString() === product._id?.toString() ||
+                   warehouseProductId?.toString() === product.id?.toString();
+          })
         );
 
         if (warehousesWithProduct.length > 0) {

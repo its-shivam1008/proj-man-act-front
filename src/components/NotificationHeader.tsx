@@ -48,6 +48,12 @@ export default function NotificationHeader() {
     if (path === "/" || path.includes("/dashboard")) return "dashboard";
     if (path.includes("/wbs")) return "wbs";
     if (path.includes("/scheduling")) return "scheduling";
+    // Add MRS page destination mapping - check for various MRS related paths
+    if (path.includes("/procurement") || 
+        path.includes("/material-request") || 
+        path.includes("/mrs") ||
+        path.includes("/material") ||
+        path.toLowerCase().includes("procurement")) return "mrs.material-requests";
     return null;
   }, [location.pathname]);
 
@@ -65,6 +71,7 @@ export default function NotificationHeader() {
     }
     
     console.log('🔔 Fetching notifications for user:', userProfile._id, 'org:', organisationId, 'on page:', currentDestination);
+    console.log('🌐 Current path:', location.pathname);
     console.log('👤 Full user profile:', {
       id: userProfile._id,
       email: userProfile.email,
@@ -127,11 +134,21 @@ export default function NotificationHeader() {
     // Show only page-specific notifications
     if (currentDestination) {
       // On specific pages: show ONLY that page's notifications
-      return notifications.filter(n => n.destination === currentDestination);
+      const pageNotifications = notifications.filter(n => n.destination === currentDestination);
+      
+      // Also show material_available notifications on dashboard for visibility
+      if (currentDestination === "dashboard") {
+        const materialNotifications = notifications.filter(n => n.type === "material_available");
+        return [...pageNotifications, ...materialNotifications].filter((notification, index, self) => 
+          index === self.findIndex(n => n._id === notification._id)
+        );
+      }
+      
+      return pageNotifications;
     } else {
-      // On dashboard/general pages: show general notifications (no specific destination)
+      // On dashboard/general pages: show general notifications + material_available notifications
       return notifications.filter(n => 
-        !n.destination || n.destination === "dashboard"
+        !n.destination || n.destination === "dashboard" || n.type === "material_available"
       );
     }
   }, [notifications, currentDestination]);
@@ -210,14 +227,17 @@ export default function NotificationHeader() {
   const unreadCount = allNotifications.filter((n: any) => n.status === "unread").length;
   
   console.log('🔔 NotificationHeader Debug:', {
-    notifications: notifications,
+    currentPath: location.pathname,
+    currentDestination,
+    totalNotifications: notifications.length,
     filteredNotifications: filteredNotifications.length,
     allNotifications: allNotifications.length,
     unreadCount,
     userProfile: userProfile?._id,
     organisationId,
     loading,
-    currentDestination
+    notificationTypes: notifications.map(n => n.type),
+    materialAvailableCount: notifications.filter(n => n.type === 'material_available').length
   });
 
   return (
@@ -287,6 +307,7 @@ export default function NotificationHeader() {
                 const isPendingInvite = isInvite && notification.inviteResponse === 'pending';
                 // [!code focus:1] Check for material request type
                 const isMaterialRequest = notification.type === 'material_request';
+                const isMaterialAvailable = notification.type === 'material_available';
                 console.log("here we go=",notification)
                 return (
                   <div
@@ -304,6 +325,7 @@ export default function NotificationHeader() {
                           notification.type === "deadline_reminder" ? "bg-gradient-to-br from-red-100 to-red-200 text-red-700" :
                           // [!code focus:2] Add styling for Material Request
                           isMaterialRequest ? "bg-gradient-to-br from-indigo-100 to-indigo-200 text-indigo-700" :
+                          isMaterialAvailable ? "bg-gradient-to-br from-emerald-100 to-emerald-200 text-emerald-700" :
                           notification.source?.includes("procurement") ? "bg-gradient-to-br from-orange-100 to-orange-200 text-orange-700" :
                           notification.source?.includes("purchase") ? "bg-gradient-to-br from-blue-100 to-blue-200 text-blue-700" :
                           notification.source?.includes("delivery") ? "bg-gradient-to-br from-green-100 to-green-200 text-green-700" :
@@ -313,6 +335,7 @@ export default function NotificationHeader() {
                          notification.type === "deadline_reminder" ? <Bell className="h-4 w-4" /> :
                          // [!code focus:1] Add Package Icon
                          isMaterialRequest ? <Package className="h-4 w-4" /> :
+                         isMaterialAvailable ? <CheckCircle className="h-4 w-4" /> :
                          <AlertCircle className="h-4 w-4" />}
                       </div>
 
@@ -323,6 +346,7 @@ export default function NotificationHeader() {
                             <p className="text-sm font-bold text-gray-900 leading-tight">
                               {isInvite ? "Organization Invitation" : 
                                notification.type === "deadline_reminder" ? notification.title :
+                               isMaterialAvailable ? "Material Available in Inventory" :
                                // [!code focus:1] Use title (which contains "Material Request from X") or fallback
                                (notification.title || notification.itemName || "New Update")}
                             </p>
@@ -343,6 +367,23 @@ export default function NotificationHeader() {
                             (notification.remark || "No additional remarks provided.")}
                         </p>
                         
+                        {/* Material Available Information */}
+                        {isMaterialAvailable && notification.materialData && (
+                          <div className="mt-2 p-3 bg-emerald-50 rounded-lg border border-emerald-200">
+                            <div className="text-xs text-emerald-900 space-y-2">
+                              <div className="flex items-center gap-2">
+                                <CheckCircle className="h-3 w-3" />
+                                <span className="font-semibold text-emerald-800">✅ Material Available</span>
+                              </div>
+                              <div><strong>Quantity:</strong> {notification.materialData.quantity} {notification.materialData.unit}</div>
+                              <div><strong>Source:</strong> {notification.materialData.source}</div>
+                              {notification.materialData.addedDate && (
+                                <div><strong>Added:</strong> {new Date(notification.materialData.addedDate).toLocaleDateString()}</div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
                         {/* Enhanced Material Information for RFQ/Procurement notifications */}
                         {notification.materialData && notification.destination === "rfq.purchase" && (
                           <div className="mt-2 p-3 bg-orange-50 rounded-lg border border-orange-200">

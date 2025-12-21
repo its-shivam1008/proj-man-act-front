@@ -11,6 +11,10 @@ export interface NotificationItem {
   itemName?: string;
   status: "unread" | "read" | "archived";
   createdAt: string;
+  type?: string;
+  title?: string;
+  message?: string;
+  metadata?: any;
 }
 
 // Define the Filter arguments
@@ -43,6 +47,7 @@ export const fetchNotifications = createAsyncThunk(
       
       const response = await api.get(url);
       console.log('✅ Notifications API response:', response.data);
+      
       return response.data;
     } catch (error: any) {
       console.error('❌ Notifications API error:', error.response?.data || error.message);
@@ -84,6 +89,23 @@ export const respondToInvite = createAsyncThunk(
       return { ...apiResponse.data, notificationId, response };
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.message || "Failed to respond to invite");
+    }
+  }
+);
+
+export const respondToMaterialRequest = createAsyncThunk(
+  "notifications/respondToMaterialRequest",
+  async ({ notificationId, response }: { notificationId: string, response: "accepted" | "rejected" }, { rejectWithValue }) => {
+    try {
+      console.log("🚀 Sending material request response:", { notificationId, response });
+      const apiResponse = await api.post("/notifications/material-request/respond", { notificationId, response });
+      console.log("✅ Material request response success:", apiResponse.data);
+      return { ...apiResponse.data, notificationId, response };
+    } catch (error: any) {
+      console.error("❌ Material request response error:", error);
+      console.error("❌ Error response:", error.response?.data);
+      console.error("❌ Error status:", error.response?.status);
+      return rejectWithValue(error.response?.data?.message || "Failed to respond to material request");
     }
   }
 );
@@ -171,6 +193,14 @@ const notificationSlice = createSlice({
       if (index !== -1) {
         state.list[index].inviteResponse = action.payload.response;
         state.list[index].status = 'read'; // Usually responding marks it as read
+      }
+    });
+    builder.addCase(respondToMaterialRequest.fulfilled, (state, action) => {
+      // Update the specific material request notification in the list
+      const index = state.list.findIndex(n => n._id === action.payload.notificationId);
+      if (index !== -1) {
+        state.list[index].inviteResponse = action.payload.response;
+        state.list[index].status = 'read'; // Mark as read after responding
       }
     });
     builder.addCase(respondToMaterialPurchase.fulfilled, (state, action) => {

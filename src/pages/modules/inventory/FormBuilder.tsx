@@ -99,7 +99,7 @@ const FormBuilder: React.FC = () => {
       { id: 'w1', name: 'name', label: 'Name', type: 'text', required: true, visible: true, placeholder: 'e.g. Main Warehouse', order: 1 },
       { id: 'w2', name: 'type', label: 'Type', type: 'select', required: true, visible: true, options: ['General', 'Cold Storage', 'Bonded', 'Quarantine'], order: 2 },
       { id: 'w3', name: 'location', label: 'Location', type: 'text', required: true, visible: true, placeholder: 'Address/Plant', order: 3 },
-      { id: 'w4', name: 'capacity', label: 'Capacity (%)', type: 'number', required: false, visible: true, placeholder: '0-100', order: 4 },
+      { id: 'w4', name: 'capacity', label: 'Capacity (sq units)', type: 'number', required: false, visible: true, placeholder: 'Enter capacity in square units', order: 4 },
       { id: 'w5', name: 'raw', label: 'Raw Materials Stock', type: 'number', required: false, visible: true, placeholder: '0', order: 5 },
       { id: 'w6', name: 'finished', label: 'Finished Goods Stock', type: 'number', required: false, visible: true, placeholder: '0', order: 6 },
       { id: 'w7', name: 'consumables', label: 'Consumables Stock', type: 'number', required: false, visible: true, placeholder: '0', order: 7 },

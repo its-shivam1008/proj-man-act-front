@@ -1861,6 +1861,11 @@ export default function ProcurementPage() {
             ? "delivery.inventory"   // Clicked "Sent" button
             : "rfq.purchase";        // Clicked "Send" button
 
+        // Define notification type based on destination
+        const notificationType = type === "INVENTORY" 
+            ? "general"
+            : "material_request_rfq"; // New type for RFQ material requests
+
         try {
             const itemId = item.id || item._id;
             if (!itemId) {
@@ -1900,6 +1905,7 @@ export default function ProcurementPage() {
                 remark: remarkText,
                 itemId: itemId,
                 itemName: item.item,
+                type: notificationType, // Use the new notification type
                 materialData: {
                     item: item.item,
                     sourceTask: item.task || 'N/A',
@@ -2126,7 +2132,7 @@ export default function ProcurementPage() {
 
     const openCreate = () => {
         setEditing(null);
-        setForm({ item: "", quantity: 1, price: 0, requiredDate: "", projectId: selectedProjectId || undefined });
+        setForm({ item: "", quantity: 1, price: 0, requiredDate: "", projectId: selectedProjectId || undefined, materialId: undefined });
         setMultipleItems([]);
         setIsCustomItem(false);
         setIsDialogOpen(true);
@@ -2150,6 +2156,7 @@ export default function ProcurementPage() {
             requiredDate: "",
             projectId: form.projectId,
             task: form.task,
+            materialId: undefined
         });
         setIsCustomItem(false);
         
@@ -2289,7 +2296,7 @@ export default function ProcurementPage() {
         setIsDialogOpen(false);
         setEditing(null);
         setMultipleItems([]);
-        setForm({ item: "", quantity: 1, price: 0, requiredDate: "" });
+        setForm({ item: "", quantity: 1, price: 0, requiredDate: "", materialId: undefined });
         setIsCustomItem(false);
     };
 
@@ -3412,7 +3419,11 @@ export default function ProcurementPage() {
                                                                     key={material._id}
                                                                     value={material.name}
                                                                     onSelect={() => {
-                                                                        setForm({ ...form, item: material.name });
+                                                                        setForm({ 
+                                                                            ...form, 
+                                                                            item: material.name,
+                                                                            materialId: material._id // Add materialId
+                                                                        });
                                                                         setItemPopoverOpen(false);
                                                                     }}
                                                                 >
@@ -3440,7 +3451,7 @@ export default function ProcurementPage() {
                                                             value="other"
                                                             onSelect={() => {
                                                                 setIsCustomItem(true);
-                                                                setForm({ ...form, item: "" });
+                                                                setForm({ ...form, item: "", materialId: undefined });
                                                                 setItemPopoverOpen(false);
                                                             }}
                                                         >
@@ -3465,7 +3476,7 @@ export default function ProcurementPage() {
                                             size="sm"
                                             onClick={() => {
                                                 setIsCustomItem(false);
-                                                setForm({ ...form, item: "" });
+                                                setForm({ ...form, item: "", materialId: undefined });
                                             }}
                                         >
                                             ← Back to Material List
