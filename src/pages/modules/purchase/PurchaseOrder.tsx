@@ -1819,7 +1819,7 @@ const PurchaseOrderComponent: React.FC = () => {
           />
 
           {/* To Date */}
-          <input
+          {/* <input
             type="date"
             value={toDate}
             onChange={(e) => {
@@ -1827,7 +1827,7 @@ const PurchaseOrderComponent: React.FC = () => {
               // setPage(1);
             }}
             className="px-3 py-2 border rounded-lg text-sm"
-          />
+          /> */}
 
           {/* Clear */}
           {(fromDate || toDate) && (
