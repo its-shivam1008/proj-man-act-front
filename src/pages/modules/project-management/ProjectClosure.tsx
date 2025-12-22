@@ -43,6 +43,7 @@ import { RootState, AppDispatch } from "@/redux/store";
 import { fetchProjects, updateProject } from "@/redux/slices/projectSlice";
 import { fetchWbsByProject } from "@/redux/slices/wbsSlice";
 import { usePermission } from "@/hooks/userPermission";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 
 // --- TYPES (Re-defined here for safety, or import from your types file) ---
 type ProjectStatus = "planning" | "active" | "on-hold" | "completed" | "cancelled";
@@ -88,9 +89,12 @@ export default function ProjectClosure() {
   // Selectors
   const { projects, loading: projectsLoading } = useSelector((state: RootState) => state.projects);
   const { wbs, loading: wbsLoading } = useSelector((state: RootState) => state.wbs);
+  const { userProfile } = useSelector((state: RootState) => state.auth);
+  const { locations = [] } = useSelector((state: RootState) => state.masterData);
 
   // Local Component State
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [locationFilter, setLocationFilter] = useState("all");
   const [checklist, setChecklist] = useState<ChecklistState>({
     materialsReconciled: false,
     invoicesPaid: false,
@@ -98,11 +102,43 @@ export default function ProjectClosure() {
   });
   const [showReport, setShowReport] = useState(false);
 
+  const isLocationRestricted = 
+    userProfile?.role !== 'admin' && 
+    !!userProfile?.location;
+
   // --- 1. FETCH PROJECTS ON MOUNT ---
   useEffect(() => {
     // Fetching with a large limit to ensure we get all projects for the dropdown
     dispatch(fetchProjects({ page: 1, limit: 100, search: "", status: "all" }));
+    dispatch(fetchMasterData("location"));
   }, [dispatch]);
+
+  // Debug: Log locations data
+  useEffect(() => {
+    console.log("Project Closure - Locations data:", locations);
+  }, [locations]);
+
+  useEffect(() => {
+    if (isLocationRestricted && userProfile?.location) {
+      setLocationFilter(userProfile.location);
+    }
+  }, [isLocationRestricted, userProfile]);
+
+  const handleLocationFilterChange = (val: string) => {
+    setLocationFilter(val);
+  };
+
+  useEffect(() => {
+    dispatch(
+      fetchProjects({
+        page: 1,
+        limit: 100,
+        search: "",
+        status: "all",
+        location: locationFilter,
+      })
+    );
+  }, [locationFilter]);
 
   // --- 2. FETCH WBS WHEN PROJECT SELECTED ---
   useEffect(() => {
@@ -265,19 +301,34 @@ export default function ProjectClosure() {
           <h1 className="text-3xl font-bold tracking-tight">Project Closure</h1>
           <p className="text-muted-foreground">Reconcile, review, and formally close projects.</p>
         </div>
-        <div className="w-full md:w-[300px]">
-          <Select onValueChange={setSelectedProjectId} value={selectedProjectId}>
-            <SelectTrigger>
-              <SelectValue placeholder={projectsLoading ? "Loading..." : "Select a project to close"} />
+        <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
+          <Select disabled={isLocationRestricted} value={locationFilter} onValueChange={handleLocationFilterChange}>
+            <SelectTrigger className="w-full md:w-48">
+              <SelectValue placeholder="Filter Location" />
             </SelectTrigger>
             <SelectContent>
-              {projects.map((p: Project) => (
-                <SelectItem key={p._id} value={p._id}>
-                  {p.code} - {p.name}
+              <SelectItem value="all">All Locations</SelectItem>
+              {locations.map((loc: any) => (
+                <SelectItem key={loc._id} value={loc._id}>
+                  {loc.name}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
+          <div className="w-full md:w-[300px]">
+            <Select onValueChange={setSelectedProjectId} value={selectedProjectId}>
+              <SelectTrigger>
+                <SelectValue placeholder={projectsLoading ? "Loading..." : "Select a project to close"} />
+              </SelectTrigger>
+              <SelectContent>
+                {projects.map((p: Project) => (
+                  <SelectItem key={p._id} value={p._id}>
+                    {p.code} - {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
 

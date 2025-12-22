@@ -6,6 +6,7 @@ import { fetchProjects } from "@/redux/slices/projectSlice";
 import { fetchWbsByProject, updateWbsItem } from "@/redux/slices/wbsSlice";
 import { fetchResources, ResourceAllocation } from "@/redux/slices/resourceSlice";
 import { createReminder, fetchReminders } from "@/redux/slices/reminderSlice";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import {
   Card,
   CardContent,
@@ -161,6 +162,8 @@ export default function SchedulingPlanning() {
   const { reminders: dbReminders, loading: remindersLoading } = useSelector(
     (state: RootState) => state.reminders
   );
+  const { userProfile } = useSelector((state: RootState) => state.auth);
+  const { locations = [] } = useSelector((state: RootState) => state.masterData);
   const [customSequences, setCustomSequences] = useState<
     Record<string, number>
   >(() => loadCustomSequences(null));
@@ -172,6 +175,7 @@ export default function SchedulingPlanning() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     null
   );
+  const [locationFilter, setLocationFilter] = useState("all");
   const [searchText, setSearchText] = useState("");
   const [cprSearch, setCprSearch] = useState("");
   // CPM State
@@ -215,10 +219,37 @@ export default function SchedulingPlanning() {
   const sidebarRef = useRef<HTMLDivElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
 
-  // 1. Fetch Projects
+  const isLocationRestricted = 
+    userProfile?.role !== 'admin' && 
+    !!userProfile?.location;
+
+  // 1. Fetch Projects and Master Data
   useEffect(() => {
     dispatch(fetchProjects({ page: 1, limit: 100 }));
+    dispatch(fetchMasterData("location"));
   }, [dispatch]);
+
+  // Auto-set location filter for restricted users
+  useEffect(() => {
+    if (isLocationRestricted && userProfile?.location) {
+      setLocationFilter(userProfile.location);
+    }
+  }, [isLocationRestricted, userProfile]);
+
+  // Handle location filter change
+  const handleLocationFilterChange = (val: string) => {
+    setLocationFilter(val);
+    setSelectedProjectId(null); // Reset project selection when location changes
+  };
+
+  // Fetch projects when location filter changes
+  useEffect(() => {
+    dispatch(fetchProjects({ 
+      page: 1, 
+      limit: 100,
+      location: locationFilter === "all" ? undefined : locationFilter
+    }));
+  }, [locationFilter, dispatch]);
 
   // 2. Auto-select first project
   useEffect(() => {
@@ -1134,6 +1165,19 @@ export default function SchedulingPlanning() {
         </div>
 
         <div className="flex items-center gap-4">
+          <Select disabled={isLocationRestricted} value={locationFilter} onValueChange={handleLocationFilterChange}>
+            <SelectTrigger className="w-full md:w-48">
+              <SelectValue placeholder="Filter Location" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Locations</SelectItem>
+              {locations.map((loc: any) => (
+                <SelectItem key={loc._id} value={loc._id}>
+                  {loc.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select
             onValueChange={setSelectedProjectId}
             value={selectedProjectId || ""}

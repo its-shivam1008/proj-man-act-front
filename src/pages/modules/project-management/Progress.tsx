@@ -13,6 +13,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Upload, Trash2, Edit2, MapPin, Loader2, ShieldAlert, Check, ChevronsUpDown } from "lucide-react";
@@ -29,6 +36,7 @@ import {
 import { fetchProjects } from "@/redux/slices/projectSlice"; // Import fetchProjects
 import { fetchWbsByProject } from "@/redux/slices/wbsSlice"; // Import fetchWbsByProject
 import { usePermission } from "@/hooks/userPermission";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import {
   Popover,
   PopoverContent,
@@ -54,6 +62,8 @@ export default function DailyProgressPage() {
   const { items, loading: progressLoading } = useSelector((state: RootState) => state.dailyProgress);
   const { projects, loading: projectLoading } = useSelector((state: RootState) => state.projects);
   const { wbs, loading: wbsLoading } = useSelector((state: RootState) => state.wbs);
+  const { userProfile } = useSelector((state: RootState) => state.auth);
+  const { locations } = useSelector((state: RootState) => state.masterData);
 
   const canView = usePermission('progressUpdates', 'view');
 
@@ -71,11 +81,27 @@ export default function DailyProgressPage() {
   const [projectPopoverOpen, setProjectPopoverOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearchTerm = useDebounce(searchTerm, 500);
+  const [locationFilter, setLocationFilter] = useState("all");
+
+  const isLocationRestricted = 
+    userProfile?.role !== 'admin' && 
+    !!userProfile?.location;
 
   // -- Initial Fetch --
   useEffect(() => {
     dispatch(fetchDailyProgress());
+    dispatch(fetchMasterData("location"));
   }, [dispatch]);
+
+  useEffect(() => {
+    if (isLocationRestricted && userProfile?.location) {
+      setLocationFilter(userProfile.location);
+    }
+  }, [isLocationRestricted, userProfile]);
+
+  const handleLocationFilterChange = (val: string) => {
+    setLocationFilter(val);
+  };
 
   // Fetch Projects on search
   useEffect(() => {
@@ -83,10 +109,11 @@ export default function DailyProgressPage() {
       fetchProjects({
         search: debouncedSearchTerm,
         page: 1,
-        limit: 10,
+        limit: 100,
+        location: locationFilter,
       })
     );
-  }, [debouncedSearchTerm, dispatch]);
+  }, [debouncedSearchTerm, locationFilter, dispatch]);
 
   // Fetch WBS when project is selected
   useEffect(() => {
@@ -279,6 +306,21 @@ export default function DailyProgressPage() {
         </div>
         
         <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
+          {/* Location Filter */}
+          <Select disabled={isLocationRestricted} value={locationFilter} onValueChange={handleLocationFilterChange}>
+            <SelectTrigger className="w-full md:w-48">
+              <SelectValue placeholder="Filter Location" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Locations</SelectItem>
+              {locations.map((loc: any) => (
+                <SelectItem key={loc._id} value={loc._id}>
+                  {loc.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          
           {/* Project Selector Popover */}
           <Popover open={projectPopoverOpen} onOpenChange={setProjectPopoverOpen}>
             <PopoverTrigger asChild>

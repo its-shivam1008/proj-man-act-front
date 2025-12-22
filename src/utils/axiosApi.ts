@@ -5,6 +5,20 @@ const api = axios.create({
   baseURL: BASE_URL,
 });
 
+// Add request interceptor to ensure token is always included
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem("token");
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
 const token = localStorage.getItem("token");
 if (token) {
   api.defaults.headers.common["Authorization"] = `Bearer ${token}`;

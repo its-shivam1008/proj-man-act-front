@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
-import { fetchNotifications, respondToInvite, respondToMaterialPurchase, respondToMaterialRequest, markAsRead } from "@/redux/slices/notificationSlice";
+import { fetchNotifications, respondToInvite, respondToMaterialPurchase, respondToMaterialRequest, markAsRead, markAllAsRead } from "@/redux/slices/notificationSlice";
 import { updateUserProfile } from "@/redux/slices/authSlice";
 import {
   Bell,
@@ -239,6 +239,29 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
     }
   };
 
+  const handleMarkAllAsRead = async () => {
+    try {
+      console.log('🔔 Clear All button clicked in NotificationCenter');
+      console.log('📋 Current state:', {
+        destination,
+        unreadCount,
+        loading
+      });
+
+      // Use Redux action instead of direct API call
+      const result = await dispatch(markAllAsRead({ 
+        destination: destination || undefined
+      })).unwrap();
+
+      console.log('✅ All notifications marked as read via Redux:', result);
+      
+      // Don't call fetchNotificationHelper() here as Redux should handle the state update
+      // fetchNotificationHelper();
+    } catch (error) {
+      console.error('❌ Error marking all notifications as read:', error);
+    }
+  };
+
   const handleMarkAsRead = async (notificationId: string) => {
     try {
       await dispatch(markAsRead(notificationId)).unwrap();
@@ -302,6 +325,21 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
           </div>
           
           <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                handleMarkAllAsRead();
+              }}
+              disabled={loading || unreadCount === 0}
+              className="h-8 px-3 text-xs"
+              title="Clear All Notifications"
+            >
+              <CheckCheck className="h-4 w-4 mr-1" />
+              Clear All
+            </Button>
             <Button
               variant="ghost"
               size="sm"

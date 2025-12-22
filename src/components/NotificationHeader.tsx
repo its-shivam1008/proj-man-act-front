@@ -3,7 +3,6 @@ import { useDispatch, useSelector } from "react-redux";
 import { useLocation } from "react-router-dom";
 import { AppDispatch, RootState } from "@/redux/store";
 import { fetchNotifications, respondToInvite } from "@/redux/slices/notificationSlice";
-import { fetchReminders } from "@/redux/slices/reminderSlice";
 import { updateUserProfile } from "@/redux/slices/authSlice";
 import {
   Bell,
@@ -13,7 +12,8 @@ import {
   UserPlus,
   Check,
   X,
-  Package
+  Package,
+  CheckCheck
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,12 +30,12 @@ export default function NotificationHeader() {
   const dispatch = useDispatch<AppDispatch>();
   const location = useLocation();
   const { list: notifications, loading } = useSelector((state: RootState) => state.notification);
-  const { reminders, loading: remindersLoading } = useSelector((state: RootState) => state.reminders);
   const { userProfile } = useSelector((state: RootState) => state.auth);
   
   const [cooldown, setCooldown] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
   const [hasAutoOpened, setHasAutoOpened] = useState(false);
+  const [clearingAll, setClearingAll] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   
   const organisationId = localStorage.getItem("organisationId");
@@ -55,12 +55,6 @@ export default function NotificationHeader() {
         path.includes("/material") ||
         path.toLowerCase().includes("procurement")) return "mrs.material-requests";
     return null;
-  }, [location.pathname]);
-
-  // Check if we should show reminders on this page
-  const shouldShowReminders = useMemo(() => {
-    const path = location.pathname;
-    return path.includes("/scheduling") || path.includes("/dashboard") || path === "/";
   }, [location.pathname]);
 
   // Fetch notifications
@@ -101,6 +95,7 @@ export default function NotificationHeader() {
   // Refetch when dialog opens
   useEffect(() => {
     if (isOpen) {
+      console.log('🔔 Dialog opened - refetching notifications');
       fetchNotificationHelper();
     }
   }, [isOpen]);
@@ -201,6 +196,53 @@ export default function NotificationHeader() {
     }
   };
 
+  const handleMarkAllAsRead = async () => {
+    try {
+      setClearingAll(true);
+      console.log('� Clear A ll button clicked');
+      console.log('📋 Current state:', {
+        userProfile: userProfile?._id,
+        currentDestination,
+        unreadCount,
+        loading
+      });
+
+      // Get all notification IDs that are currently visible in the modal
+      const visibleNotificationIds = allNotifications.map(notification => notification._id);
+      
+      console.log('📋 Marking these notifications as read:', {
+        count: visibleNotificationIds.length,
+        ids: visibleNotificationIds
+      });
+
+      if (visibleNotificationIds.length === 0) {
+        console.log('⚠️ No notifications to clear');
+        return;
+      }
+
+      // Mark each notification as read individually
+      for (const notificationId of visibleNotificationIds) {
+        try {
+          await handleMarkAsRead(notificationId);
+        } catch (error: any) {
+          console.error('❌ Error marking notification as read:', notificationId, error);
+        }
+      }
+      
+      console.log('✅ Finished marking all notifications as read');
+      
+      // Refresh notifications to update the UI
+      setTimeout(() => {
+        fetchNotificationHelper();
+      }, 500);
+    } catch (error: any) {
+      console.error('❌ Error marking all notifications as read:', error);
+      alert('Error clearing notifications: ' + (error.message || 'Unknown error'));
+    } finally {
+      setClearingAll(false);
+    }
+  };
+
   const handleMarkAsRead = async (notificationId: string) => {
     try {
       const apiUrl = BASE_URL || 'http://localhost:4000';
@@ -270,6 +312,33 @@ export default function NotificationHeader() {
             </div>
             
             <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  console.log('🔔 Clear All button clicked - event triggered');
+                  console.log('🔔 Button state:', { loading, unreadCount, disabled: loading || unreadCount === 0 });
+                  console.log('🔔 About to call handleMarkAllAsRead...');
+                  handleMarkAllAsRead();
+                }}
+                disabled={loading || unreadCount === 0 || clearingAll}
+                className="h-9 px-3 hover:bg-red-100 rounded-lg text-xs bg-red-50 border border-red-200"
+                title="Clear All Notifications"
+              >
+                {clearingAll ? (
+                  <>
+                    <RefreshCcw className="h-4 w-4 mr-1 animate-spin" />
+                    Clearing...
+                  </>
+                ) : (
+                  <>
+                    <CheckCheck className="h-4 w-4 mr-1" />
+                    Clear All ({unreadCount})
+                  </>
+                )}
+              </Button>
               <Button
                 variant="ghost"
                 size="sm"

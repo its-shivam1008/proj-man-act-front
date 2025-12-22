@@ -15,6 +15,11 @@ export interface NotificationItem {
   title?: string;
   message?: string;
   metadata?: any;
+  receiverId?: string;
+  senderId?: string;
+  organisationId?: string;
+  inviteResponse?: string;
+  materialData?: any;
 }
 
 // Define the Filter arguments
@@ -139,6 +144,22 @@ export const markAsRead = createAsyncThunk(
   }
 );
 
+export const markAllAsRead = createAsyncThunk(
+  "notifications/markAllAsRead",
+  async ({ receiverId, destination }: { receiverId?: string, destination?: string }, { rejectWithValue }) => {
+    try {
+      console.log('🔔 Redux: markAllAsRead called with:', { receiverId, destination });
+      const response = await api.post("/notifications/mark-all-read", { receiverId, destination });
+      console.log('🔔 Redux: markAllAsRead API response:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('🔔 Redux: markAllAsRead API error:', error);
+      console.error('🔔 Redux: Error response:', error.response?.data);
+      return rejectWithValue(error.response?.data?.message || "Failed to mark all as read");
+    }
+  }
+);
+
 const notificationSlice = createSlice({
   name: "notifications",
   initialState: {
@@ -160,6 +181,7 @@ const notificationSlice = createSlice({
     });
     builder.addCase(fetchNotifications.fulfilled, (state, action) => {
       state.loading = false;
+      console.log('🔔 Redux: Received notifications from API:', action.payload);
       state.list = action.payload;
     });
     builder.addCase(fetchNotifications.rejected, (state, action) => {
@@ -214,6 +236,11 @@ const notificationSlice = createSlice({
     builder.addCase(markAsRead.fulfilled, (state, action) => {
       // Remove the notification from the list after marking as read
       state.list = state.list.filter(n => n._id !== action.payload.notificationId);
+    });
+    builder.addCase(markAllAsRead.fulfilled, (state, action) => {
+      // Clear all notifications immediately for instant UI feedback
+      console.log('🔔 Redux: markAllAsRead completed, clearing notifications from state');
+      state.list = [];
     });
   },
 });

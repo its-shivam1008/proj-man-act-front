@@ -935,6 +935,7 @@ import {
   Cell,
 } from "recharts";
 import { usePermission } from "@/hooks/userPermission";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 
 export default function BudgetPage() {
   const dispatch = useDispatch<AppDispatch>();
@@ -955,9 +956,16 @@ export default function BudgetPage() {
   const { list: mrsList, loading: mrsLoading } = useSelector(
     (state: RootState) => state.mrs
   );
+  const { userProfile } = useSelector((state: RootState) => state.auth);
+  const { locations } = useSelector((state: RootState) => state.masterData);
 
   // --- Local State ---
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [locationFilter, setLocationFilter] = useState("all");
+
+  const isLocationRestricted = 
+    userProfile?.role !== 'admin' && 
+    !!userProfile?.location;
 
   // --- Effects ---
 
@@ -966,8 +974,29 @@ export default function BudgetPage() {
       dispatch(fetchProjects({ page: 1, limit: 50 }));
       dispatch(fetchMaterials({ page: 1, limit: 1000 }));
       dispatch(fetchMRS());
+      dispatch(fetchMasterData("location"));
     }
   }, [organisationId, dispatch]);
+
+  useEffect(() => {
+    if (isLocationRestricted && userProfile?.location) {
+      setLocationFilter(userProfile.location);
+    }
+  }, [isLocationRestricted, userProfile]);
+
+  const handleLocationFilterChange = (val: string) => {
+    setLocationFilter(val);
+  };
+
+  useEffect(() => {
+    dispatch(
+      fetchProjects({
+        page: 1,
+        limit: 50,
+        location: locationFilter,
+      })
+    );
+  }, [locationFilter]);
 
   useEffect(() => {
     if (!selectedProjectId && projects.length > 0) {
@@ -1296,6 +1325,19 @@ export default function BudgetPage() {
         </div>
 
         <div className="flex gap-3 items-center">
+          <Select disabled={isLocationRestricted} value={locationFilter} onValueChange={handleLocationFilterChange}>
+            <SelectTrigger className="w-full md:w-48">
+              <SelectValue placeholder="Filter Location" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Locations</SelectItem>
+              {locations.map((loc: any) => (
+                <SelectItem key={loc._id} value={loc._id}>
+                  {loc.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <div className="w-full md:w-64">
             <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
               <SelectTrigger>

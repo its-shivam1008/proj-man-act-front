@@ -1738,6 +1738,13 @@ import {
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
 import { Textarea } from "../../../components/ui/textarea";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "../../../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
 import { Badge } from "../../../components/ui/badge";
 import { Tooltip, TooltipProvider } from "../../../components/ui/tooltip";
@@ -1787,6 +1794,7 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { usePermission } from "@/hooks/userPermission";
 import api from "@/utils/axiosApi";
 import { BASE_URL } from "@/utils/constants";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 
 // Import Types
 import { MRSItem, PurchaseRequest, PurchaseOrder, InventoryItem } from "@/types/procurement";
@@ -1938,6 +1946,8 @@ export default function ProcurementPage() {
     const projects = useSelector((state: RootState) => state.projects.projects) as Project[];
     const prs = useSelector((state: RootState) => state.pr.list) as PurchaseRequest[];
     const pos = useSelector((state: RootState) => state.po.list);
+    const { userProfile } = useSelector((state: RootState) => state.auth);
+    const { locations } = useSelector((state: RootState) => state.masterData);
     
     // Loading States
     const mrsLoading = useSelector((state: RootState) => state.mrs.loading);
@@ -1964,6 +1974,11 @@ export default function ProcurementPage() {
     const [popoverOpen, setPopoverOpen] = useState(false);
     const [projectSearch, setProjectSearch] = useState("");
     const debouncedProjectSearch = useDebounce(projectSearch, 500);
+    const [locationFilter, setLocationFilter] = useState("all");
+
+    const isLocationRestricted = 
+        userProfile?.role !== 'admin' && 
+        !!userProfile?.location;
 
     // Dialog / Form State
     const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -1982,9 +1997,18 @@ export default function ProcurementPage() {
         dispatch(fetchMaterials({ page: 1, limit: 1000 })); // Fetch Raw Materials to map names
         dispatch(fetchDeliveryStatistics()); // 🚀 Fetch delivery statistics
         setInventory(getInventory());
-        
-
+        dispatch(fetchMasterData("location"));
     }, [dispatch]);
+
+    useEffect(() => {
+        if (isLocationRestricted && userProfile?.location) {
+            setLocationFilter(userProfile.location);
+        }
+    }, [isLocationRestricted, userProfile]);
+
+    const handleLocationFilterChange = (val: string) => {
+        setLocationFilter(val);
+    };
 
     // 🚀 Auto-refresh MRS data every 30 seconds to catch delivery updates
     useEffect(() => {
@@ -2026,8 +2050,13 @@ export default function ProcurementPage() {
 
     // Fetch Projects when search changes
     useEffect(() => {
-        dispatch(fetchProjects({ search: debouncedProjectSearch, page: 1, limit: 10 }));
-    }, [debouncedProjectSearch, dispatch]);
+        dispatch(fetchProjects({ 
+            search: debouncedProjectSearch, 
+            page: 1, 
+            limit: 100,
+            location: locationFilter,
+        }));
+    }, [debouncedProjectSearch, locationFilter, dispatch]);
 
     // Fetch WBS when Project is Selected
     useEffect(() => {
@@ -2867,6 +2896,21 @@ export default function ProcurementPage() {
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
+                    {/* LOCATION FILTER */}
+                    <Select disabled={isLocationRestricted} value={locationFilter} onValueChange={handleLocationFilterChange}>
+                        <SelectTrigger className="w-full md:w-48">
+                            <SelectValue placeholder="Filter Location" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All Locations</SelectItem>
+                            {locations.map((loc: any) => (
+                                <SelectItem key={loc._id} value={loc._id}>
+                                    {loc.name}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                    
                     {/* PROJECT SELECTOR POPOVER */}
                     <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
                         <PopoverTrigger asChild>

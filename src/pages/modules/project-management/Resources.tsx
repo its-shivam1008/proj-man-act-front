@@ -44,6 +44,7 @@ import {
 import { fetchEquipments } from "@/redux/slices/equipmentSlice";
 import { fetchMachineries } from "@/redux/slices/plantandmachinary/machinerySlice";
 import { usePermission } from "@/hooks/userPermission";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 
 // --- Define Types ---
 
@@ -109,6 +110,8 @@ export default function Resources() {
   } = useSelector((state: RootState) => state.resources);
   const { equipments } = useSelector((state: RootState) => state.equipment);
   const { machineries } = useSelector((state: RootState) => state.machinery);
+  const { userProfile } = useSelector((state: RootState) => state.auth);
+  const { locations } = useSelector((state: RootState) => state.masterData);
 
   const canView = usePermission('resources', 'view');
   const canCreate = usePermission('resources', 'create');
@@ -123,7 +126,12 @@ export default function Resources() {
   const [submitting, setSubmitting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [search, setSearch] = useState("");
+  const [locationFilter, setLocationFilter] = useState("all");
   const PAGE_SIZE = 10;
+
+  const isLocationRestricted = 
+    userProfile?.role !== 'admin' && 
+    !!userProfile?.location;
   useEffect(() => {
     if (!projects.length) {
       dispatch(fetchProjects(DEFAULT_PROJECT_QUERY as any));
@@ -131,7 +139,27 @@ export default function Resources() {
     // Fetch equipments and machineries for dropdown
     dispatch(fetchEquipments({ page: 1, limit: 100 }));
     dispatch(fetchMachineries({ page: 1, limit: 100 }));
+    dispatch(fetchMasterData("location"));
   }, [dispatch, projects.length]);
+
+  useEffect(() => {
+    if (isLocationRestricted && userProfile?.location) {
+      setLocationFilter(userProfile.location);
+    }
+  }, [isLocationRestricted, userProfile]);
+
+  const handleLocationFilterChange = (val: string) => {
+    setLocationFilter(val);
+  };
+
+  useEffect(() => {
+    dispatch(
+      fetchProjects({
+        ...DEFAULT_PROJECT_QUERY,
+        location: locationFilter,
+      } as any)
+    );
+  }, [locationFilter]);
 
   useEffect(() => {
     if (!selectedProjectId && projects.length) {
@@ -513,6 +541,19 @@ export default function Resources() {
           </p>
         </div>
         <div className="flex w-full md:w-auto gap-4">
+          <Select disabled={isLocationRestricted} value={locationFilter} onValueChange={handleLocationFilterChange}>
+            <SelectTrigger className="w-full md:w-48">
+              <SelectValue placeholder="Filter Location" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Locations</SelectItem>
+              {locations.map((loc: any) => (
+                <SelectItem key={loc._id} value={loc._id}>
+                  {loc.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select
             value={selectedProjectId || undefined}
             onValueChange={handleProjectChange}

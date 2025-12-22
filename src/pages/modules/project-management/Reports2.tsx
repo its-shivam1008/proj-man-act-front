@@ -12,6 +12,7 @@ import { fetchMaterials } from "@/redux/slices/rawmaterialSlice";
 import { fetchMRS } from "@/redux/slices/mrsSlice";
 import { fetchDailyProgress } from "@/redux/slices/dailyProgressSlice";
 import { fetchMilestones, fetchInvoices } from "@/redux/slices/billingSlice";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
@@ -92,12 +93,13 @@ export default function ReportsAnalytics() {
   // Redux Selectors
  const { budgets, loading } = useSelector((state: RootState) => state.budget);
 
-
   const { projects } = useSelector((state: RootState) => state.projects);
   const { resources } = useSelector((state: RootState) => state.resources);
   const { wbs } = useSelector((state: RootState) => state.wbs);
   const { materials: rawMaterials } = useSelector((state: RootState) => state.rawMaterials);
   const { list: mrsList } = useSelector((state: RootState) => state.mrs);
+  const { userProfile } = useSelector((state: RootState) => state.auth);
+  const { locations = [] } = useSelector((state: RootState) => state.masterData);
   const { items: dailyProgressItems } = useSelector((state: RootState) => state.dailyProgress);
   const { milestones, invoices } = useSelector((state: RootState) => state.billing);
 
@@ -105,6 +107,7 @@ export default function ReportsAnalytics() {
   const [form, setForm] = useState<Partial<Report>>({});
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [locationFilter, setLocationFilter] = useState("all");
   const [healthReport, setHealthReport] = useState<any>(null);
   const [loadingHealthReport, setLoadingHealthReport] = useState(false);
   const [profitabilityReport, setProfitabilityReport] = useState<any>(null);
@@ -117,6 +120,10 @@ export default function ReportsAnalytics() {
   const [allProjectsProfitability, setAllProjectsProfitability] = useState<any>(null);
   const [loadingAllProjectsProfitability, setLoadingAllProjectsProfitability] = useState(false);
   const { activities, totals} = useSelector((s: RootState) => s.activityCost);
+  
+  const isLocationRestricted = 
+    userProfile?.role !== 'admin' && 
+    !!userProfile?.location;
   
   // Force refresh function
   const forceRefreshReports = () => {
@@ -137,10 +144,29 @@ export default function ReportsAnalytics() {
     }
   };
 
+  // Debug effect to log profitability data
+  useEffect(() => {
+    if (allProjectsProfitability) {
+      console.log("🔍 All Projects Profitability Data:", {
+        summary: allProjectsProfitability.summary,
+        projectsCount: allProjectsProfitability.projects?.length || 0,
+        sampleProjects: allProjectsProfitability.projects?.slice(0, 3).map((p: any) => ({
+          name: p.projectName,
+          location: p.location,
+          locationId: p.locationId,
+          totalRevenue: p.totalRevenue,
+          totalCost: p.totalCost,
+          profit: p.profit
+        }))
+      });
+    }
+  }, [allProjectsProfitability]);
+
   // Fetch projects on mount
   useEffect(() => {
     if (organisationId) {
       dispatch(fetchProjects({ page: 1, limit: 100 }));
+      dispatch(fetchMasterData("location"));
       dispatch(fetchMaterials());
       dispatch(fetchMRS());
       dispatch(fetchDailyProgress());
@@ -149,6 +175,64 @@ export default function ReportsAnalytics() {
       dispatch(fetchActivityCost(selectedProjectId));
     }
   }, [organisationId, dispatch]);
+
+  // Auto-set location filter for restricted users
+  useEffect(() => {
+    if (isLocationRestricted && userProfile?.location) {
+      setLocationFilter(userProfile.location);
+    }
+  }, [isLocationRestricted, userProfile]);
+
+  // Handle location filter change
+  const handleLocationFilterChange = (val: string) => {
+    console.log("🔍 Location filter changed from:", locationFilter, "to:", val);
+    setLocationFilter(val);
+    setSelectedProjectId(null); // Reset project selection when location changes
+    
+    // Reset all reports when location changes
+    setHealthReport(null);
+    setProfitabilityReport(null);
+    setComparisonReport(null);
+    setAllProjectsHealth(null);
+    setAllProjectsProfitability(null);
+    
+    console.log("🔍 Reports reset, triggering refresh...");
+    
+    // Trigger report refresh after location change
+    if (organisationId) {
+      setTimeout(() => {
+        console.log("🔍 Refreshing reports with new location filter:", val);
+        fetchHealthReport();
+        fetchProfitabilityReport();
+        fetchComparisonReport();
+        fetchAllProjectsHealth();
+        fetchAllProjectsProfitability();
+      }, 500);
+    }
+  };
+
+  // Fetch projects when location filter changes
+  useEffect(() => {
+    if (organisationId) {
+      dispatch(fetchProjects({ 
+        page: 1, 
+        limit: 100,
+        location: locationFilter === "all" ? undefined : locationFilter
+      }));
+    }
+  }, [locationFilter, organisationId, dispatch]);
+
+  // Fetch "All Projects" reports when location filter changes
+  useEffect(() => {
+    if (organisationId) {
+      // Add small delay to ensure projects are loaded first
+      setTimeout(() => {
+        fetchComparisonReport();
+        fetchAllProjectsHealth();
+        fetchAllProjectsProfitability();
+      }, 300);
+    }
+  }, [locationFilter, organisationId]);
 
   // Auto-select first project
   useEffect(() => {
@@ -168,6 +252,112 @@ export default function ReportsAnalytics() {
   }, [selectedProjectId, dispatch]);
 
   const canView = usePermission('projectsReports', 'view');
+
+  // Frontend filtering for reports (temporary solution until backend supports location filtering)
+  const filteredAllProjectsHealth = useMemo(() => {
+    if (!allProjectsHealth?.projects || locationFilter === "all") {
+      return allProjectsHealth;
+    }
+    
+    // Filter projects by location
+    const filteredProjects = allProjectsHealth.projects.filter((project: any) => {
+      return project.location === locationFilter || project.locationId === locationFilter;
+    });
+    
+    return {
+      ...allProjectsHealth,
+      projects: filteredProjects
+    };
+  }, [allProjectsHealth, locationFilter]);
+
+  const filteredAllProjectsProfitability = useMemo(() => {
+    console.log("🔍 Profitability Filter Debug:", {
+      hasData: !!allProjectsProfitability?.projects,
+      projectsCount: allProjectsProfitability?.projects?.length || 0,
+      locationFilter,
+      sampleProject: allProjectsProfitability?.projects?.[0]
+    });
+    
+    if (!allProjectsProfitability?.projects || locationFilter === "all") {
+      return allProjectsProfitability;
+    }
+    
+    // Filter projects by location
+    const filteredProjects = allProjectsProfitability.projects.filter((project: any) => {
+      const matches = project.location === locationFilter || project.locationId === locationFilter;
+      console.log("🔍 Project filter check:", {
+        projectName: project.projectName,
+        projectLocation: project.location,
+        projectLocationId: project.locationId,
+        filterValue: locationFilter,
+        matches
+      });
+      return matches;
+    });
+    
+    console.log("🔍 Filtered profitability projects:", {
+      originalCount: allProjectsProfitability.projects.length,
+      filteredCount: filteredProjects.length,
+      locationFilter,
+      allProjectLocations: allProjectsProfitability.projects.map((p: any) => ({
+        name: p.projectName,
+        location: p.location,
+        locationId: p.locationId
+      }))
+    });
+    
+    return {
+      ...allProjectsProfitability,
+      projects: filteredProjects
+    };
+  }, [allProjectsProfitability, locationFilter]);
+
+  // Debug effect for filtered profitability data
+  useEffect(() => {
+    if (filteredAllProjectsProfitability) {
+      console.log("🔍 Filtered Profitability Data Changed:", {
+        originalCount: allProjectsProfitability?.projects?.length || 0,
+        filteredCount: filteredAllProjectsProfitability?.projects?.length || 0,
+        locationFilter,
+        filteredProjects: filteredAllProjectsProfitability?.projects?.map((p: any) => ({
+          name: p.projectName,
+          location: p.location
+        }))
+      });
+    }
+  }, [filteredAllProjectsProfitability, locationFilter]);
+
+  const filteredComparisonReport = useMemo(() => {
+    if (!comparisonReport?.projects || locationFilter === "all") {
+      return comparisonReport;
+    }
+    
+    // Filter projects by location
+    const filteredProjects = comparisonReport.projects.filter((project: any) => {
+      return project.location === locationFilter || project.locationId === locationFilter;
+    });
+    
+    // Also filter the comparison data
+    const filteredComparison = comparisonReport.comparison ? {
+      ...comparisonReport.comparison,
+      budgetVsCost: comparisonReport.comparison.budgetVsCost?.filter((item: any) => {
+        // Match by project name or ID
+        return filteredProjects.some((p: any) => 
+          p.projectName === item.name || p.projectId === item.projectId
+        );
+      })
+    } : comparisonReport.comparison;
+    
+    return {
+      ...comparisonReport,
+      projects: filteredProjects,
+      comparison: filteredComparison,
+      summary: {
+        ...comparisonReport.summary,
+        totalProjects: filteredProjects.length
+      }
+    };
+  }, [comparisonReport, locationFilter]);
 
   // Fetch reports when organisationId and projects are loaded
   useEffect(() => {
@@ -191,8 +381,14 @@ export default function ReportsAnalytics() {
     
     setLoadingAllProjectsHealth(true);
     try {
-      const url = `${BASE_URL}/project-health-report?organisationId=${organisationId}`;
+      let url = `${BASE_URL}/project-health-report?organisationId=${organisationId}`;
+      if (locationFilter && locationFilter !== "all") {
+        url += `&location=${locationFilter}`;
+      }
+      console.log("🔍 Fetching All Projects Health Report from URL:", url);
+      console.log("🔍 Location Filter Value:", locationFilter);
       const response = await api.get(url);
+      console.log("🔍 All Projects Health Response:", response.data);
       if (response.data.success) {
         setAllProjectsHealth(response.data.data);
       }
@@ -209,8 +405,14 @@ export default function ReportsAnalytics() {
     
     setLoadingAllProjectsProfitability(true);
     try {
-      const url = `${BASE_URL}/project-profitability-report?organisationId=${organisationId}`;
+      let url = `${BASE_URL}/project-profitability-report?organisationId=${organisationId}`;
+      if (locationFilter && locationFilter !== "all") {
+        url += `&location=${locationFilter}`;
+      }
+      console.log("🔍 Fetching All Projects Profitability Report from URL:", url);
+      console.log("🔍 Location Filter Value:", locationFilter);
       const response = await api.get(url);
+      console.log("🔍 All Projects Profitability Response:", response.data);
       if (response.data.success) {
         setAllProjectsProfitability(response.data.data);
       }
@@ -839,9 +1041,14 @@ export default function ReportsAnalytics() {
     
     setLoadingHealthReport(true);
     try {
-      const url = selectedProjectId
+      let url = selectedProjectId
         ? `${BASE_URL}/project-health-report/${selectedProjectId}?organisationId=${organisationId}`
         : `${BASE_URL}/project-health-report?organisationId=${organisationId}`;
+      
+      // Add location filter for "all projects" case
+      if (!selectedProjectId && locationFilter && locationFilter !== "all") {
+        url += `&location=${locationFilter}`;
+      }
       
       console.log("Fetching health report from:", url);
       const response = await api.get(url);
@@ -879,9 +1086,14 @@ export default function ReportsAnalytics() {
     
     setLoadingProfitabilityReport(true);
     try {
-      const url = selectedProjectId
+      let url = selectedProjectId
         ? `${BASE_URL}/project-profitability-report/${selectedProjectId}?organisationId=${organisationId}`
         : `${BASE_URL}/project-profitability-report?organisationId=${organisationId}`;
+      
+      // Add location filter for "all projects" case
+      if (!selectedProjectId && locationFilter && locationFilter !== "all") {
+        url += `&location=${locationFilter}`;
+      }
       
       const response = await api.get(url);
       if (response.data.success) {
@@ -901,8 +1113,14 @@ export default function ReportsAnalytics() {
     
     setLoadingComparisonReport(true);
     try {
-      const url = `${BASE_URL}/project-comparison-report?organisationId=${organisationId}`;
+      let url = `${BASE_URL}/project-comparison-report?organisationId=${organisationId}`;
+      if (locationFilter && locationFilter !== "all") {
+        url += `&location=${locationFilter}`;
+      }
+      console.log("🔍 Fetching Project Comparison Report from URL:", url);
+      console.log("🔍 Location Filter Value:", locationFilter);
       const response = await api.get(url);
+      console.log("🔍 Project Comparison Response:", response.data);
       if (response.data.success && response.data.data) {
         setComparisonReport(response.data.data);
       } else {
@@ -949,21 +1167,21 @@ export default function ReportsAnalytics() {
     if (!healthReport) return [];
 
     // If showing all projects, use summary breakdown
-    if (!selectedProjectId && healthReport.summary) {
+    if (!selectedProjectId && healthReport?.summary) {
       return [
-        { name: "Healthy", value: healthReport.summary.healthyProjects || 0, color: "#22c55e" },
-        { name: "At Risk", value: healthReport.summary.atRiskProjects || 0, color: "#f59e0b" },
-        { name: "Critical", value: healthReport.summary.criticalProjects || 0, color: "#ef4444" },
+        { name: "Healthy", value: healthReport?.summary?.healthyProjects || 0, color: "#22c55e" },
+        { name: "At Risk", value: healthReport?.summary?.atRiskProjects || 0, color: "#f59e0b" },
+        { name: "Critical", value: healthReport?.summary?.criticalProjects || 0, color: "#ef4444" },
       ];
     }
 
     // Single project health data - healthReport is the project health object
-    if (selectedProjectId && healthReport.metrics) {
+    if (selectedProjectId && healthReport?.metrics) {
       return [
-        { name: "Budget", score: healthReport.metrics?.budget?.score || 0, color: "#8884d8" },
-        { name: "Schedule", score: healthReport.metrics?.schedule?.score || 0, color: "#82ca9d" },
-        { name: "Progress", score: healthReport.metrics?.progress?.score || 0, color: "#ffc658" },
-        { name: "Resource", score: healthReport.metrics?.resource?.score || 0, color: "#ff7f50" },
+        { name: "Budget", score: healthReport?.metrics?.budget?.score || 0, color: "#8884d8" },
+        { name: "Schedule", score: healthReport?.metrics?.schedule?.score || 0, color: "#82ca9d" },
+        { name: "Progress", score: healthReport?.metrics?.progress?.score || 0, color: "#ffc658" },
+        { name: "Resource", score: healthReport?.metrics?.resource?.score || 0, color: "#ff7f50" },
       ];
     }
 
@@ -1050,6 +1268,19 @@ const budgetVsActualData = useMemo(() => {
           </p>
         </div>
         <div className="flex gap-2">
+          <Select disabled={isLocationRestricted} value={locationFilter} onValueChange={handleLocationFilterChange}>
+            <SelectTrigger className="w-full md:w-48">
+              <SelectValue placeholder="Filter Location" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Locations</SelectItem>
+              {locations.map((loc: any) => (
+                <SelectItem key={loc._id} value={loc._id}>
+                  {loc.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select
             value={selectedProjectId || ""}
             onValueChange={(value) => setSelectedProjectId(value)}
@@ -1351,17 +1582,17 @@ WBS Creation & Completion
             </div>
             {healthReport && selectedProjectId && (
               <p className="text-sm text-muted-foreground mt-1">
-                Overall Score: <span className={`font-semibold ${getHealthStatusColor(healthReport.healthStatus)}`}>
-                  {healthReport.overallHealthScore?.toFixed(1) || 0}/100
+                Overall Score: <span className={`font-semibold ${getHealthStatusColor(healthReport?.healthStatus)}`}>
+                  {healthReport?.overallHealthScore?.toFixed(1) || 0}/100
                 </span>
               </p>
             )}
             {healthReport && !selectedProjectId && healthReport.summary && (
               <p className="text-sm text-muted-foreground mt-1">
-                Total Projects: {healthReport.summary.totalProjects} | 
-                Healthy: {healthReport.summary.healthyProjects} | 
-                At Risk: {healthReport.summary.atRiskProjects} | 
-                Critical: {healthReport.summary.criticalProjects}
+                Total Projects: {healthReport?.summary?.totalProjects} | 
+                Healthy: {healthReport?.summary?.healthyProjects} | 
+                At Risk: {healthReport?.summary?.atRiskProjects} | 
+                Critical: {healthReport?.summary?.criticalProjects}
               </p>
             )}
           </CardHeader>
@@ -1397,14 +1628,14 @@ WBS Creation & Completion
                           stroke="currentColor"
                           strokeWidth="8"
                           fill="transparent"
-                          strokeDasharray={`${(healthReport.overallHealthScore || 0) * 3.51} 351`}
-                          className={getHealthStatusColor(healthReport.healthStatus).replace("text-", "stroke-")}
+                          strokeDasharray={`${(healthReport?.overallHealthScore || 0) * 3.51} 351`}
+                          className={getHealthStatusColor(healthReport?.healthStatus).replace("text-", "stroke-")}
                         />
                       </svg>
                       <div className="absolute inset-0 flex items-center justify-center">
                         <div className="text-center">
-                          <div className={`text-2xl font-bold ${getHealthStatusColor(healthReport.healthStatus)}`}>
-                            {healthReport.overallHealthScore?.toFixed(0) || 0}
+                          <div className={`text-2xl font-bold ${getHealthStatusColor(healthReport?.healthStatus)}`}>
+                            {healthReport?.overallHealthScore?.toFixed(0) || 0}
                           </div>
                           <div className="text-xs text-muted-foreground">Score</div>
                         </div>
@@ -1455,14 +1686,14 @@ WBS Creation & Completion
                           stroke="currentColor"
                           strokeWidth="8"
                           fill="transparent"
-                          strokeDasharray={`${(healthReport.summary.overallHealthScore || 0) * 3.51} 351`}
+                          strokeDasharray={`${(healthReport?.summary?.overallHealthScore || 0) * 3.51} 351`}
                           className="stroke-blue-600"
                         />
                       </svg>
                       <div className="absolute inset-0 flex items-center justify-center">
                         <div className="text-center">
                           <div className="text-2xl font-bold text-blue-600">
-                            {healthReport.summary.overallHealthScore?.toFixed(0) || 0}
+                            {healthReport?.summary?.overallHealthScore?.toFixed(0) || 0}
                           </div>
                           <div className="text-xs text-muted-foreground">Avg Score</div>
                         </div>
@@ -1510,29 +1741,29 @@ WBS Creation & Completion
               </CardTitle>
               {profitabilityReport && selectedProjectId && (
                 <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                  profitabilityReport.isProfitable 
+                  profitabilityReport?.isProfitable 
                     ? "bg-green-100 text-green-800" 
                     : "bg-red-100 text-red-800"
                 }`}>
-                  {profitabilityReport.isProfitable ? "PROFITABLE" : "LOSS"}
+                  {profitabilityReport?.isProfitable ? "PROFITABLE" : "LOSS"}
                 </span>
               )}
             </div>
             {profitabilityReport && selectedProjectId && (
               <p className="text-sm text-muted-foreground mt-1">
-                Profit: <span className={`font-semibold ${profitabilityReport.isProfitable ? "text-green-600" : "text-red-600"}`}>
-                  ₹{profitabilityReport.profit?.toLocaleString() || 0}
+                Profit: <span className={`font-semibold ${profitabilityReport?.isProfitable ? "text-green-600" : "text-red-600"}`}>
+                  ₹{profitabilityReport?.profit?.toLocaleString() || 0}
                 </span> | 
-                Margin: <span className={`font-semibold ${profitabilityReport.isProfitable ? "text-green-600" : "text-red-600"}`}>
-                  {profitabilityReport.profitMargin?.toFixed(1) || 0}%
+                Margin: <span className={`font-semibold ${profitabilityReport?.isProfitable ? "text-green-600" : "text-red-600"}`}>
+                  {profitabilityReport?.profitMargin?.toFixed(1) || 0}%
                 </span>
               </p>
             )}
-            {profitabilityReport && !selectedProjectId && profitabilityReport.summary && (
+            {profitabilityReport && !selectedProjectId && profitabilityReport?.summary && (
               <p className="text-sm text-muted-foreground mt-1">
-                Total Profit: ₹{profitabilityReport.summary.totalProfit?.toLocaleString() || 0} | 
-                Avg Margin: {profitabilityReport.summary.averageProfitMargin?.toFixed(1) || 0}% | 
-                Profitable: {profitabilityReport.summary.profitableProjects || 0}/{profitabilityReport.summary.totalProjects || 0}
+                Total Profit: ₹{profitabilityReport?.summary?.totalProfit?.toLocaleString() || 0} | 
+                Avg Margin: {profitabilityReport?.summary?.averageProfitMargin?.toFixed(1) || 0}% | 
+                Profitable: {profitabilityReport?.summary?.profitableProjects || 0}/{profitabilityReport?.summary?.totalProjects || 0}
               </p>
             )}
           </CardHeader>
@@ -1550,17 +1781,17 @@ WBS Creation & Completion
                 <div className="space-y-4">
                   {/* Profit/Loss Display */}
                   <div className="flex items-center justify-center">
-                    <div className={`text-center ${profitabilityReport.isProfitable ? "text-green-600" : "text-red-600"}`}>
-                      {profitabilityReport.isProfitable ? (
+                    <div className={`text-center ${profitabilityReport?.isProfitable ? "text-green-600" : "text-red-600"}`}>
+                      {profitabilityReport?.isProfitable ? (
                         <TrendingUp className="h-12 w-12 mx-auto mb-2" />
                       ) : (
                         <TrendingDown className="h-12 w-12 mx-auto mb-2" />
                       )}
                       <div className="text-3xl font-bold">
-                        ₹{Math.abs(profitabilityReport.profit || 0).toLocaleString()}
+                        ₹{Math.abs(profitabilityReport?.profit || 0).toLocaleString()}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {profitabilityReport.isProfitable ? "Profit" : "Loss"}
+                        {profitabilityReport?.isProfitable ? "Profit" : "Loss"}
                       </div>
                     </div>
                   </div>
@@ -1570,25 +1801,25 @@ WBS Creation & Completion
                     <div className="space-y-1">
                       <div className="text-muted-foreground">Revenue</div>
                       <div className="font-semibold text-green-600">
-                        ₹{profitabilityReport.totalRevenue?.toLocaleString() || 0}
+                        ₹{profitabilityReport?.totalRevenue?.toLocaleString() || 0}
                       </div>
                     </div>
                     <div className="space-y-1">
                       <div className="text-muted-foreground">Cost</div>
                       <div className="font-semibold text-red-600">
-                        ₹{profitabilityReport.totalCost?.toLocaleString() || 0}
+                        ₹{profitabilityReport?.totalCost?.toLocaleString() || 0}
                       </div>
                     </div>
                     <div className="space-y-1">
                       <div className="text-muted-foreground">Profit Margin</div>
-                      <div className={`font-semibold ${profitabilityReport.isProfitable ? "text-green-600" : "text-red-600"}`}>
-                        {profitabilityReport.profitMargin?.toFixed(1) || 0}%
+                      <div className={`font-semibold ${profitabilityReport?.isProfitable ? "text-green-600" : "text-red-600"}`}>
+                        {profitabilityReport?.profitMargin?.toFixed(1) || 0}%
                       </div>
                     </div>
                     <div className="space-y-1">
                       <div className="text-muted-foreground">ROI</div>
-                      <div className={`font-semibold ${profitabilityReport.isProfitable ? "text-green-600" : "text-red-600"}`}>
-                        {profitabilityReport.roi?.toFixed(1) || 0}%
+                      <div className={`font-semibold ${profitabilityReport?.isProfitable ? "text-green-600" : "text-red-600"}`}>
+                        {profitabilityReport?.roi?.toFixed(1) || 0}%
                       </div>
                     </div>
                   </div>
@@ -1601,13 +1832,13 @@ WBS Creation & Completion
                     <div className="text-center p-3 bg-green-50 rounded-lg">
                       <div className="text-xs text-muted-foreground">Total Revenue</div>
                       <div className="text-lg font-bold text-green-600">
-                        ₹{profitabilityReport.summary.totalRevenue?.toLocaleString() || 0}
+                        ₹{profitabilityReport?.summary?.totalRevenue?.toLocaleString() || 0}
                       </div>
                     </div>
                     <div className="text-center p-3 bg-red-50 rounded-lg">
                       <div className="text-xs text-muted-foreground">Total Cost</div>
                       <div className="text-lg font-bold text-red-600">
-                        ₹{profitabilityReport.summary.totalCost?.toLocaleString() || 0}
+                        ₹{profitabilityReport?.summary?.totalCost?.toLocaleString() || 0}
                       </div>
                     </div>
                   </div>
@@ -1615,11 +1846,11 @@ WBS Creation & Completion
                   {/* Profit/Loss Summary */}
                   <div className="text-center p-3 bg-blue-50 rounded-lg">
                     <div className="text-xs text-muted-foreground mb-1">Net Profit</div>
-                    <div className={`text-2xl font-bold ${profitabilityReport.summary.totalProfit >= 0 ? "text-green-600" : "text-red-600"}`}>
-                      ₹{Math.abs(profitabilityReport.summary.totalProfit || 0).toLocaleString()}
+                    <div className={`text-2xl font-bold ${(profitabilityReport?.summary?.totalProfit || 0) >= 0 ? "text-green-600" : "text-red-600"}`}>
+                      ₹{Math.abs(profitabilityReport?.summary?.totalProfit || 0).toLocaleString()}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">
-                      Avg Margin: {profitabilityReport.summary.averageProfitMargin?.toFixed(1) || 0}%
+                      Avg Margin: {profitabilityReport?.summary?.averageProfitMargin?.toFixed(1) || 0}%
                     </div>
                   </div>
 
@@ -1627,13 +1858,13 @@ WBS Creation & Completion
                   <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t">
                     <div className="text-center">
                       <div className="text-green-600 font-bold text-lg">
-                        {profitabilityReport.summary.profitableProjects || 0}
+                        {profitabilityReport?.summary?.profitableProjects || 0}
                       </div>
                       <div className="text-muted-foreground">Profitable</div>
                     </div>
                     <div className="text-center">
                       <div className="text-red-600 font-bold text-lg">
-                        {profitabilityReport.summary.lossProjects || 0}
+                        {profitabilityReport?.summary?.lossProjects || 0}
                       </div>
                       <div className="text-muted-foreground">Loss</div>
                     </div>
@@ -1665,17 +1896,17 @@ WBS Creation & Completion
                     <GitCompare className="h-5 w-5" />
                     Project Comparison Report
                   </CardTitle>
-                  {comparisonReport && comparisonReport.summary && (
+                  {filteredComparisonReport && filteredComparisonReport?.summary && (
                     <span className="px-2 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
-                      {comparisonReport.summary.totalProjects} Projects
+                      {filteredComparisonReport?.summary?.totalProjects} Projects
                     </span>
                   )}
                 </div>
-                {comparisonReport && comparisonReport.summary && (
+                {filteredComparisonReport && filteredComparisonReport?.summary && (
                   <p className="text-sm text-muted-foreground mt-1">
-                    Avg Progress: {comparisonReport.summary.averageProgress?.toFixed(1) || 0}% | 
-                    Profitable: {comparisonReport.summary.profitableProjects || 0}/{comparisonReport.summary.totalProjects || 0} | 
-                    On Track: {comparisonReport.summary.onTrackProjects || 0}/{comparisonReport.summary.totalProjects || 0}
+                    Avg Progress: {filteredComparisonReport?.summary?.averageProgress?.toFixed(1) || 0}% | 
+                    Profitable: {filteredComparisonReport?.summary?.profitableProjects || 0}/{filteredComparisonReport?.summary?.totalProjects || 0} | 
+                    On Track: {filteredComparisonReport?.summary?.onTrackProjects || 0}/{filteredComparisonReport?.summary?.totalProjects || 0}
                   </p>
                 )}
               </CardHeader>
@@ -1687,23 +1918,23 @@ WBS Creation & Completion
                       <p className="text-sm text-muted-foreground">Loading comparison report...</p>
                     </div>
                   </div>
-                ) : comparisonReport && comparisonReport.projects && comparisonReport.projects.length > 0 ? (
+                ) : filteredComparisonReport && filteredComparisonReport?.projects && filteredComparisonReport?.projects?.length > 0 ? (
                   <div className="space-y-4 h-full flex flex-col">
                     {/* Comparison Chart - Budget vs Cost - Show ALL projects */}
-                    {comparisonReport.comparison?.budgetVsCost && comparisonReport.comparison.budgetVsCost.length > 0 && (
+                    {filteredComparisonReport?.comparison?.budgetVsCost && filteredComparisonReport?.comparison?.budgetVsCost?.length > 0 && (
                       <div className="flex-1 min-h-0">
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart 
-                            data={comparisonReport.comparison.budgetVsCost}
-                            margin={{ top: 5, right: 10, left: 0, bottom: comparisonReport.projects.length > 5 ? 80 : 50 }}
+                            data={filteredComparisonReport?.comparison?.budgetVsCost}
+                            margin={{ top: 5, right: 10, left: 0, bottom: (filteredComparisonReport?.projects?.length || 0) > 5 ? 80 : 50 }}
                           >
                             <CartesianGrid strokeDasharray="3 3" />
                             <XAxis 
                               dataKey="name" 
-                              angle={comparisonReport.projects.length > 5 ? -60 : -45}
+                              angle={(filteredComparisonReport?.projects?.length || 0) > 5 ? -60 : -45}
                               textAnchor="end"
-                              height={comparisonReport.projects.length > 5 ? 90 : 70}
-                              fontSize={comparisonReport.projects.length > 8 ? 8 : 9}
+                              height={(filteredComparisonReport?.projects?.length || 0) > 5 ? 90 : 70}
+                              fontSize={(filteredComparisonReport?.projects?.length || 0) > 8 ? 8 : 9}
                               interval={0}
                             />
                             <YAxis 
@@ -1728,7 +1959,7 @@ WBS Creation & Completion
                     )}
 
                     {/* All Projects Comparison Table - Show ALL projects */}
-                    {comparisonReport.projects && comparisonReport.projects.length > 0 ? (
+                    {filteredComparisonReport?.projects && filteredComparisonReport?.projects?.length > 0 ? (
                       <div className="pt-2 border-t max-h-[200px] overflow-y-auto">
                         <div className="space-y-1 text-xs">
                           <div className="grid grid-cols-5 gap-1 font-semibold text-muted-foreground pb-1 border-b sticky top-0 bg-white">
@@ -1738,7 +1969,7 @@ WBS Creation & Completion
                             <div className="text-right">Profit</div>
                             <div className="text-right">Progress</div>
                           </div>
-                          {comparisonReport.projects.map((project: any, index: number) => (
+                          {filteredComparisonReport?.projects?.map((project: any, index: number) => (
                             <div key={project.projectId || index} className="grid grid-cols-5 gap-1 p-1 hover:bg-gray-50 rounded text-xs">
                               <div className="truncate font-medium" title={project.projectName}>
                                 {project.projectCode || project.projectName || `Project ${index + 1}`}
@@ -1796,7 +2027,7 @@ WBS Creation & Completion
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 </div>
-              ) : allProjectsHealth && allProjectsHealth.projects && allProjectsHealth.projects.length > 0 ? (
+              ) : filteredAllProjectsHealth && filteredAllProjectsHealth?.projects && filteredAllProjectsHealth?.projects?.length > 0 ? (
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
@@ -1812,7 +2043,7 @@ WBS Creation & Completion
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {allProjectsHealth.projects.map((project: any) => (
+                      {filteredAllProjectsHealth?.projects?.map((project: any) => (
                         <TableRow key={project.projectId || project._id}>
                           <TableCell className="font-medium">
                             {project.projectName || project.name || "N/A"}
@@ -2072,7 +2303,7 @@ WBS Creation & Completion
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 </div>
-              ) : allProjectsProfitability && allProjectsProfitability.projects && allProjectsProfitability.projects.length > 0 ? (
+              ) : filteredAllProjectsProfitability && filteredAllProjectsProfitability?.projects && filteredAllProjectsProfitability?.projects?.length > 0 ? (
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
@@ -2088,7 +2319,7 @@ WBS Creation & Completion
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {allProjectsProfitability.projects.map((project: any) => (
+                      {filteredAllProjectsProfitability?.projects?.map((project: any) => (
                         <TableRow key={project.projectId || project._id}>
                           <TableCell className="font-medium">
                             {project.projectName || project.name || "N/A"}

@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '@/redux/store';
 import { fetchMRS } from '@/redux/slices/mrsSlice';
 import { fetchProjects } from '@/redux/slices/projectSlice';
+import { fetchMasterData } from '@/redux/slices/masterDataSlice';
 import { FileText, Download, Calendar, Package, Search } from 'lucide-react';
 
 interface MRSSheetData {
@@ -20,17 +21,46 @@ const MRSSheetCreationReport: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const { list: mrsList, loading } = useSelector((state: RootState) => state.mrs);
   const { projects } = useSelector((state: RootState) => state.projects);
+  const { userProfile } = useSelector((state: RootState) => state.auth);
+  const { locations = [] } = useSelector((state: RootState) => state.masterData);
   
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('all');
   const [selectedProject, setSelectedProject] = useState('');
+  const [locationFilter, setLocationFilter] = useState("all");
   const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  const isLocationRestricted = 
+    userProfile?.role !== 'admin' && 
+    !!userProfile?.location;
 
   useEffect(() => {
     dispatch(fetchMRS());
     dispatch(fetchProjects({ organisationId: localStorage.getItem('organisationId') }));
+    dispatch(fetchMasterData("location"));
   }, [dispatch]);
+
+  // Auto-set location filter for restricted users
+  useEffect(() => {
+    if (isLocationRestricted && userProfile?.location) {
+      setLocationFilter(userProfile.location);
+    }
+  }, [isLocationRestricted, userProfile]);
+
+  // Handle location filter change
+  const handleLocationFilterChange = (val: string) => {
+    setLocationFilter(val);
+    setSelectedProject(''); // Reset project selection when location changes
+  };
+
+  // Fetch projects when location filter changes
+  useEffect(() => {
+    dispatch(fetchProjects({ 
+      organisationId: localStorage.getItem('organisationId'),
+      location: locationFilter === "all" ? undefined : locationFilter
+    }));
+  }, [locationFilter, dispatch]);
 
   // Debug: Track selectedProject state changes
   useEffect(() => {
@@ -189,7 +219,7 @@ const MRSSheetCreationReport: React.FC = () => {
 
       {/* Filters */}
       <div className="bg-white rounded-lg shadow-sm p-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div className="relative">
             <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
             <input
@@ -200,6 +230,20 @@ const MRSSheetCreationReport: React.FC = () => {
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             />
           </div>
+
+          <select
+            disabled={isLocationRestricted}
+            value={locationFilter}
+            onChange={(e) => handleLocationFilterChange(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="all">All Locations</option>
+            {locations.map((loc: any) => (
+              <option key={loc._id} value={loc._id}>
+                {loc.name}
+              </option>
+            ))}
+          </select>
 
           <div className="relative">
             <button

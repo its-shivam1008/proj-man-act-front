@@ -94,6 +94,7 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { hrmsOrganisationIdFromDB } from "@/utils/constants";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 
 // --- TYPES ---
 type WBSItemType = "phase" | "activity" | "task" | "subtask";
@@ -416,7 +417,8 @@ export default function WBS() {
   const dispatch = useDispatch<AppDispatch>();
   const { wbs } = useSelector((state: RootState) => state.wbs);
   const { list: mrsList } = useSelector((state: RootState) => state.mrs);
-const { userProfile } = useSelector((state: RootState) => state.auth);
+  const { userProfile } = useSelector((state: RootState) => state.auth);
+  const { locations } = useSelector((state: RootState) => state.masterData);
   const canView = usePermission("wbsManagement", "view");
   const canCreate = usePermission("wbsManagement", "create");
 
@@ -433,6 +435,11 @@ const { userProfile } = useSelector((state: RootState) => state.auth);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearchTerm = useDebounce(searchTerm, 500);
+  const [locationFilter, setLocationFilter] = useState("all");
+
+  const isLocationRestricted = 
+    userProfile?.role !== 'admin' && 
+    !!userProfile?.location;
 
   const [resumeConflicts, setResumeConflicts] = useState<any[]>([]);
   const [resolutionMap, setResolutionMap] = useState<Record<string, "both" | "resumed_only">>({});
@@ -462,15 +469,31 @@ const { userProfile } = useSelector((state: RootState) => state.auth);
 
   const selectedProject = projects.find((p) => p._id === selectedProjectId);
 
+  // Fetch Master Data on mount
+  useEffect(() => {
+    dispatch(fetchMasterData("location"));
+  }, [dispatch]);
+
+  useEffect(() => {
+    if (isLocationRestricted && userProfile?.location) {
+      setLocationFilter(userProfile.location);
+    }
+  }, [isLocationRestricted, userProfile]);
+
+  const handleLocationFilterChange = (val: string) => {
+    setLocationFilter(val);
+  };
+
   useEffect(() => {
     dispatch(
       fetchProjects({
         search: debouncedSearchTerm,
         page: 1,
-        limit: 10,
+        limit: 100,
+        location: locationFilter,
       })
     );
-  }, [debouncedSearchTerm]);
+  }, [debouncedSearchTerm, locationFilter]);
 
   const calculateDuration = (start: string, end: string) => {
     if (!start || !end) return 0;
@@ -1093,6 +1116,19 @@ const { userProfile } = useSelector((state: RootState) => state.auth);
           )}
         </div>
         <div className="flex w-full md:w-auto gap-4">
+          <Select disabled={isLocationRestricted} value={locationFilter} onValueChange={handleLocationFilterChange}>
+            <SelectTrigger className="w-full md:w-48">
+              <SelectValue placeholder="Filter Location" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Locations</SelectItem>
+              {locations.map((loc: any) => (
+                <SelectItem key={loc._id} value={loc._id}>
+                  {loc.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
             <PopoverTrigger asChild>
               <Button
