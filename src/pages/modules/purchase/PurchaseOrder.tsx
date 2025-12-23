@@ -3,7 +3,6 @@ import React, { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
 import { ClipLoader } from "react-spinners";
-import NotificationCenter from "@/components/NotificationCenter";
 import {
   fetchPurchaseOrders,
   createPurchaseOrder,
@@ -1790,9 +1789,6 @@ const PurchaseOrderComponent: React.FC = () => {
 
         <div className="flex flex-wrap items-center gap-3">
           {/* Search */}
-          {/* Add NotificationCenter for Purchase Order notifications */}
-          <NotificationCenter destination="purchase.orders" title="Purchase Order Notifications" />
-
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
             <input

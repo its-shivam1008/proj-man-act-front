@@ -5,7 +5,6 @@ import { AppDispatch, RootState } from '@/redux/store';
 import { fetchRFQs, createRFQ, updateRFQ, deleteRFQ, sendRFQ } from '@/redux/slices/purchase/rfqSlice';
 import { fetchVendors } from '@/redux/slices/purchase/vendorSlice';
 import { RFQ, RFQProduct } from '@/types/purchase';
-import NotificationCenter from '@/components/NotificationCenter';
 import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import { Button } from '@/components/ui/button';
 import { BASE_URL } from '@/utils/constants';
@@ -1276,9 +1275,6 @@ const RFQComponent: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Add NotificationCenter for RFQ notifications */}
-          <NotificationCenter destination="rfq.purchase" title="RFQ Notifications" />
-          
           <input
             type="search"
             value={search}

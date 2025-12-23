@@ -21,6 +21,10 @@ import { fetchWbsByProject } from "@/redux/slices/wbsSlice";
 import { fetchProjects } from "@/redux/slices/projectSlice";
 import { fetchWorkOrders } from "@/redux/slices/production/workOrderSlice";
 import { fetchMasterData } from "@/redux/slices/masterDataSlice";
+import { fetchEquipments } from "@/redux/slices/equipmentSlice";
+import { fetchMachineries } from "@/redux/slices/plantandmachinary/machinerySlice";
+import { fetchMaterials } from "@/redux/slices/rawmaterialSlice";
+import { fetchProducts } from "@/redux/slices/productSlice";
 
 // --- Types ---
 interface WorkCenterResource {
@@ -45,8 +49,34 @@ interface WorkCenterResource {
   productName?: string;
   productQuantity?: number;
   
+  // Equipments
+  equipmentId?: string;
+  equipmentName?: string;
+  equipmentCode?: string;
+  
+  // Machines
+  machineId?: string;
+  machineName?: string;
+  machineCode?: string;
+  machineConfig?: {
+    inputs: Array<{
+      id: string;
+      name: string;
+      quantity: number;
+      unit: string;
+    }>;
+    personHours: number;
+    output: {
+      id: string;
+      name: string;
+      quantity: number;
+      unit: string;
+      isCustom?: boolean;
+    } | null;
+  };
+  
   // Common fields
-  resourceType: "sparePart" | "wbsTask" | "project" | "product";
+  resourceType: "sparePart" | "wbsTask" | "project" | "product" | "equipment" | "machine";
   priority: "low" | "medium" | "high" | "critical";
   estimatedHours: number;
   actualHours: number;
@@ -91,6 +121,10 @@ export default function WorkCentersPageAdvanced() {
   const { projects = [] } = useSelector((state: RootState) => state.projects);
   const { list: workOrders = [] } = useSelector((state: RootState) => state.workOrders);
   const { locations = [] } = useSelector((state: RootState) => state.masterData);
+  const { equipments = [] } = useSelector((state: RootState) => state.equipment || { equipments: [] });
+  const { machineries = [] } = useSelector((state: RootState) => state.machinery || { machineries: [] });
+  const { materials: rawMaterials = [] } = useSelector((state: RootState) => state.rawMaterials || { materials: [] });
+  const { products = [] } = useSelector((state: RootState) => state.products || { products: [] });
   
   const canView = usePermission("workCenterMgt", "view");
   const canCreate = usePermission("workCenterMgt", "create");
@@ -125,9 +159,24 @@ export default function WorkCentersPageAdvanced() {
   const [selectedProjects, setSelectedProjects] = useState<Set<string>>(new Set());
   const [selectedWbsTasks, setSelectedWbsTasks] = useState<Set<string>>(new Set());
   const [selectedWorkOrders, setSelectedWorkOrders] = useState<Set<string>>(new Set());
+  const [selectedEquipments, setSelectedEquipments] = useState<Set<string>>(new Set());
+  const [selectedMachines, setSelectedMachines] = useState<Set<string>>(new Set());
   
   // Resources list
   const [resources, setResources] = useState<WorkCenterResource[]>([]);
+
+  // New state for projects and WBS tasks (separate section)
+  const [workCenterProjects, setWorkCenterProjects] = useState<any[]>([]);
+  const [workCenterWbsTasks, setWorkCenterWbsTasks] = useState<any[]>([]);
+
+  // Machine configuration state
+  const [isMachineConfigOpen, setIsMachineConfigOpen] = useState(false);
+  const [selectedMachineForConfig, setSelectedMachineForConfig] = useState<any>(null);
+  const [machineConfig, setMachineConfig] = useState({
+    inputs: [] as any[],
+    personHours: 0,
+    output: null as any // Changed from outputs array to single output
+  });
 
   // Fetch data for dropdowns
   useEffect(() => {
@@ -136,6 +185,10 @@ export default function WorkCentersPageAdvanced() {
       dispatch(fetchSpareParts({ organisationId, page: 1, limit: 100 }));
       dispatch(fetchProjects({ organisationId }));
       dispatch(fetchMasterData("location"));
+      dispatch(fetchEquipments({ organisationId }));
+      dispatch(fetchMachineries({ organisationId }));
+      dispatch(fetchMaterials({ organisationId }));
+      dispatch(fetchProducts({ organisationId }));
       
       // Load work orders from localStorage (from Product Orders page)
       const storedWorkOrders = storage.get(STORAGE_KEYS.WORK_ORDERS, []);
@@ -198,10 +251,12 @@ export default function WorkCentersPageAdvanced() {
       return;
     }
 
-    // Create work center data with resources
+    // Create work center data with all sections
     const data: any = {
       id: editingCenter?.id || `WC-${Date.now()}`,
       ...formData,
+      projects: workCenterProjects, // Include projects
+      wbsTasks: workCenterWbsTasks, // Include WBS tasks
       resources: resources, // Include resources array
       createdAt: editingCenter?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -224,6 +279,10 @@ export default function WorkCentersPageAdvanced() {
       location: center.location?._id || center.location || "",
       locationName: center.location?.name || center.locationName || "",
     });
+    
+    // Load existing projects and WBS tasks
+    setWorkCenterProjects(center.projects || []);
+    setWorkCenterWbsTasks(center.wbsTasks || []);
     
     // Load existing resources if any
     if (center.resources && Array.isArray(center.resources)) {
@@ -322,12 +381,16 @@ export default function WorkCentersPageAdvanced() {
     setSelectedProjects(new Set());
     setSelectedWbsTasks(new Set());
     setSelectedWorkOrders(new Set());
+    setSelectedEquipments(new Set());
+    setSelectedMachines(new Set());
     setResources([]);
+    setWorkCenterProjects([]);
+    setWorkCenterWbsTasks([]);
   };
 
   // Handle checkbox toggle
   const handleCheckboxToggle = (
-    type: "sparePart" | "project" | "wbsTask" | "workOrder",
+    type: "sparePart" | "project" | "wbsTask" | "workOrder" | "equipment" | "machine",
     id: string,
     checked: boolean
   ) => {
@@ -351,6 +414,16 @@ export default function WorkCentersPageAdvanced() {
       if (checked) newSet.add(id);
       else newSet.delete(id);
       setSelectedWorkOrders(newSet);
+    } else if (type === "equipment") {
+      const newSet = new Set(selectedEquipments);
+      if (checked) newSet.add(id);
+      else newSet.delete(id);
+      setSelectedEquipments(newSet);
+    } else if (type === "machine") {
+      const newSet = new Set(selectedMachines);
+      if (checked) newSet.add(id);
+      else newSet.delete(id);
+      setSelectedMachines(newSet);
     }
   };
 
@@ -430,6 +503,42 @@ export default function WorkCentersPageAdvanced() {
       }
     });
 
+    // Add equipments
+    selectedEquipments.forEach((id) => {
+      const equipment = equipments?.find((eq) => eq._id === id);
+      if (equipment) {
+        newResources.push({
+          id: `RES-EQ-${Date.now()}-${id}`,
+          resourceType: "equipment",
+          equipmentId: id,
+          equipmentName: equipment.name,
+          equipmentCode: equipment.code,
+          priority: "medium",
+          estimatedHours: 0,
+          actualHours: 0,
+          status: "planned",
+        });
+      }
+    });
+
+    // Add machines
+    selectedMachines.forEach((id) => {
+      const machine = machineries?.find((mc) => mc._id === id);
+      if (machine) {
+        newResources.push({
+          id: `RES-MC-${Date.now()}-${id}`,
+          resourceType: "machine",
+          machineId: id,
+          machineName: machine.name,
+          machineCode: machine.code,
+          priority: "medium",
+          estimatedHours: 0,
+          actualHours: 0,
+          status: "planned",
+        });
+      }
+    });
+
     if (newResources.length === 0) {
       toast.error("Please select at least one resource");
       return;
@@ -441,6 +550,8 @@ export default function WorkCentersPageAdvanced() {
     setSelectedProjects(new Set());
     setSelectedWbsTasks(new Set());
     setSelectedWorkOrders(new Set());
+    setSelectedEquipments(new Set());
+    setSelectedMachines(new Set());
     toast.success(`${newResources.length} resource(s) added`);
   };
 
@@ -448,6 +559,70 @@ export default function WorkCentersPageAdvanced() {
   const handleRemoveResource = (id: string) => {
     setResources(resources.filter((r) => r.id !== id));
     toast.success("Resource removed");
+  };
+
+  // Add selected projects and WBS tasks (for the new separate section)
+  const handleAddSelectedProjectsAndTasks = () => {
+    const newProjects: any[] = [];
+    const newWbsTasks: any[] = [];
+
+    // Add projects
+    selectedProjects.forEach((id) => {
+      const project = projects?.find((p) => p._id === id);
+      if (project) {
+        newProjects.push({
+          id: `PRJ-${Date.now()}-${id}`,
+          projectId: id,
+          projectName: project.name,
+          projectAllocation: 100,
+          priority: "medium",
+          estimatedHours: 0,
+          actualHours: 0,
+          status: "planned",
+        });
+      }
+    });
+
+    // Add WBS tasks
+    selectedWbsTasks.forEach((id) => {
+      const task = wbsTasks?.find((t) => t._id === id);
+      if (task) {
+        newWbsTasks.push({
+          id: `WBS-${Date.now()}-${id}`,
+          wbsTaskId: id,
+          wbsTaskName: task.name,
+          wbsTaskDuration: 0,
+          priority: "medium",
+          estimatedHours: 0,
+          actualHours: 0,
+          status: "planned",
+        });
+      }
+    });
+
+    if (newProjects.length === 0 && newWbsTasks.length === 0) {
+      toast.error("Please select at least one project or WBS task");
+      return;
+    }
+
+    setWorkCenterProjects([...workCenterProjects, ...newProjects]);
+    setWorkCenterWbsTasks([...workCenterWbsTasks, ...newWbsTasks]);
+    
+    // Clear selections
+    setSelectedProjects(new Set());
+    setSelectedWbsTasks(new Set());
+    toast.success(`${newProjects.length + newWbsTasks.length} item(s) added`);
+  };
+
+  // Remove functions for projects and WBS tasks
+  const handleRemoveProject = (id: string) => {
+    setWorkCenterProjects(workCenterProjects.filter((p) => p.id !== id));
+    toast.success("Project removed");
+  };
+
+  const handleRemoveWbsTask = (id: string) => {
+    setWorkCenterWbsTasks(workCenterWbsTasks.filter((t) => t.id !== id));
+    toast.success("WBS task removed");
   };
 
 
@@ -693,47 +868,15 @@ export default function WorkCentersPageAdvanced() {
                 </Select>
               </div>
 
-              {/* Resources Section with Checkboxes */}
+              {/* Projects and WBS Tasks Section */}
               <div className="border-t pt-6">
-                <h3 className="text-lg font-semibold mb-4">Work Center Resources</h3>
+                <h3 className="text-lg font-semibold mb-4">Projects and WBS Tasks</h3>
                 
-                <Tabs defaultValue="sparePart" className="w-full">
-                  <TabsList className="grid w-full grid-cols-4">
-                    <TabsTrigger value="sparePart">Spare Parts</TabsTrigger>
+                <Tabs defaultValue="project" className="w-full">
+                  <TabsList className="grid w-full grid-cols-2">
                     <TabsTrigger value="project">Projects</TabsTrigger>
                     <TabsTrigger value="wbsTask">WBS Tasks</TabsTrigger>
-                    <TabsTrigger value="workOrder">Work Orders</TabsTrigger>
                   </TabsList>
-
-                  {/* Spare Parts Tab */}
-                  <TabsContent value="sparePart" className="space-y-2">
-                    <div className="border rounded-lg p-3 max-h-60 overflow-y-auto">
-                      {spareParts && spareParts.length > 0 ? (
-                        spareParts.map((part) => (
-                          <div key={part._id} className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded">
-                            <Checkbox
-                              id={`sp-${part._id}`}
-                              checked={selectedSpareParts.has(part._id)}
-                              onCheckedChange={(checked) =>
-                                handleCheckboxToggle("sparePart", part._id, checked as boolean)
-                              }
-                            />
-                            <label
-                              htmlFor={`sp-${part._id}`}
-                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
-                            >
-                              {part.name} ({part.code})
-                            </label>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="text-sm text-gray-500 text-center py-4">No spare parts available</div>
-                      )}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {selectedSpareParts.size} selected
-                    </div>
-                  </TabsContent>
 
                   {/* Projects Tab */}
                   <TabsContent value="project" className="space-y-2">
@@ -800,6 +943,246 @@ export default function WorkCentersPageAdvanced() {
                       {selectedWbsTasks.size} selected
                     </div>
                   </TabsContent>
+                </Tabs>
+
+                {/* Add Selected Projects and Tasks Button */}
+                <div className="mt-4">
+                  <Button
+                    type="button"
+                    onClick={handleAddSelectedProjectsAndTasks}
+                    className="w-full"
+                    variant="outline"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Selected Projects & Tasks
+                  </Button>
+                </div>
+
+                {/* Added Projects and Tasks List */}
+                {(workCenterProjects.length > 0 || workCenterWbsTasks.length > 0) && (
+                  <div className="mt-4 space-y-2">
+                    <Label>Added Items ({workCenterProjects.length + workCenterWbsTasks.length})</Label>
+                    <div className="border rounded-lg divide-y max-h-60 overflow-y-auto">
+                      {workCenterProjects.map((project) => (
+                        <div key={project.id} className="p-3 flex items-center justify-between hover:bg-gray-50">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-xs px-2 py-1 rounded font-medium bg-green-100 text-green-800">
+                                Project
+                              </span>
+                              <span className="font-medium text-sm">{project.projectName}</span>
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRemoveProject(project.id)}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      ))}
+                      {workCenterWbsTasks.map((task) => (
+                        <div key={task.id} className="p-3 flex items-center justify-between hover:bg-gray-50">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-xs px-2 py-1 rounded font-medium bg-purple-100 text-purple-800">
+                                WBS Task
+                              </span>
+                              <span className="font-medium text-sm">{task.wbsTaskName}</span>
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRemoveWbsTask(task.id)}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Work Center Resources Section */}
+              <div className="border-t pt-6">
+                <h3 className="text-lg font-semibold mb-4">Work Center Resources</h3>
+                
+                <Tabs defaultValue="sparePart" className="w-full">
+                  <TabsList className="grid w-full grid-cols-4">
+                    <TabsTrigger value="sparePart">Spare Parts</TabsTrigger>
+                    <TabsTrigger value="equipment">Equipments</TabsTrigger>
+                    <TabsTrigger value="machine">Machines</TabsTrigger>
+                    <TabsTrigger value="workOrder">Work Orders</TabsTrigger>
+                  </TabsList>
+
+                  {/* Spare Parts Tab */}
+                  <TabsContent value="sparePart" className="space-y-2">
+                    <div className="border rounded-lg p-3 max-h-60 overflow-y-auto">
+                      {spareParts && spareParts.length > 0 ? (
+                        spareParts.map((part) => (
+                          <div key={part._id} className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded">
+                            <Checkbox
+                              id={`sp-${part._id}`}
+                              checked={selectedSpareParts.has(part._id)}
+                              onCheckedChange={(checked) =>
+                                handleCheckboxToggle("sparePart", part._id, checked as boolean)
+                              }
+                            />
+                            <label
+                              htmlFor={`sp-${part._id}`}
+                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
+                            >
+                              {part.name} ({part.code})
+                            </label>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-sm text-gray-500 text-center py-4">No spare parts available</div>
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {selectedSpareParts.size} selected
+                    </div>
+                  </TabsContent>
+
+                  {/* Equipments Tab */}
+                  <TabsContent value="equipment" className="space-y-2">
+                    <div className="border rounded-lg p-3 max-h-60 overflow-y-auto">
+                      {equipments && equipments.length > 0 ? (
+                        equipments.map((equipment) => (
+                          <div key={equipment._id} className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded">
+                            <Checkbox
+                              id={`eq-${equipment._id}`}
+                              checked={selectedEquipments.has(equipment._id)}
+                              onCheckedChange={(checked) =>
+                                handleCheckboxToggle("equipment", equipment._id, checked as boolean)
+                              }
+                            />
+                            <label
+                              htmlFor={`eq-${equipment._id}`}
+                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
+                            >
+                              {equipment.name} ({equipment.code})
+                            </label>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-sm text-gray-500 text-center py-4">No equipments available</div>
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {selectedEquipments.size} selected
+                    </div>
+                  </TabsContent>
+
+                  {/* Machines Tab */}
+                  <TabsContent value="machine" className="space-y-2">
+                    <div className="border rounded-lg p-3 max-h-60 overflow-y-auto">
+                      {machineries && machineries.length > 0 ? (
+                        machineries.map((machine) => (
+                          <div 
+                            key={machine._id} 
+                            className="flex items-center justify-between p-3 hover:bg-blue-50 rounded border cursor-pointer transition-colors"
+                            onClick={() => {
+                              setSelectedMachineForConfig(machine);
+                              setMachineConfig({
+                                inputs: [],
+                                personHours: 0,
+                                output: null
+                              });
+                              setIsMachineConfigOpen(true);
+                            }}
+                          >
+                            <div className="flex-1">
+                              <div className="font-medium text-sm">{machine.name}</div>
+                              <div className="text-xs text-gray-500">Code: {machine.code}</div>
+                            </div>
+                            <div className="text-blue-600 text-sm">
+                              Configure →
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-sm text-gray-500 text-center py-4">No machines available</div>
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-2">
+                      Click on a machine to configure its inputs, person hours, and outputs
+                    </div>
+                  </TabsContent>
+
+                  {/* Projects Tab */}
+                  {/* <TabsContent value="project" className="space-y-2">
+                    <div className="border rounded-lg p-3 max-h-60 overflow-y-auto">
+                      {projects && projects.length > 0 ? (
+                        projects.map((project) => (
+                          <div key={project._id} className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded">
+                            <Checkbox
+                              id={`prj-${project._id}`}
+                              checked={selectedProjects.has(project._id)}
+                              onCheckedChange={(checked) => {
+                                handleCheckboxToggle("project", project._id, checked as boolean);
+                                // Fetch WBS tasks when project is selected
+                                if (checked) {
+                                  dispatch(fetchWbsByProject(project._id));
+                                }
+                              }}
+                            />
+                            <label
+                              htmlFor={`prj-${project._id}`}
+                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
+                            >
+                              {project.name}
+                            </label>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-sm text-gray-500 text-center py-4">No projects available</div>
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {selectedProjects.size} selected
+                    </div>
+                  </TabsContent> */}
+
+                  {/* WBS Tasks Tab */}
+                  {/* <TabsContent value="wbsTask" className="space-y-2">
+                    <div className="border rounded-lg p-3 max-h-60 overflow-y-auto">
+                      {wbsTasks && wbsTasks.length > 0 ? (
+                        wbsTasks.map((task) => (
+                          <div key={task._id} className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded">
+                            <Checkbox
+                              id={`wbs-${task._id}`}
+                              checked={selectedWbsTasks.has(task._id)}
+                              onCheckedChange={(checked) =>
+                                handleCheckboxToggle("wbsTask", task._id, checked as boolean)
+                              }
+                            />
+                            <label
+                              htmlFor={`wbs-${task._id}`}
+                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
+                            >
+                              {task.name}
+                            </label>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-sm text-gray-500 text-center py-4">
+                          {selectedProjects.size > 0 ? "No WBS tasks available" : "Select a project first"}
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {selectedWbsTasks.size} selected
+                    </div>
+                  </TabsContent> */}
 
                   {/* Work Orders Tab */}
                   <TabsContent value="workOrder" className="space-y-2">
@@ -858,15 +1241,27 @@ export default function WorkCentersPageAdvanced() {
                                 resource.resourceType === "sparePart" ? "bg-blue-100 text-blue-800" :
                                 resource.resourceType === "project" ? "bg-green-100 text-green-800" :
                                 resource.resourceType === "wbsTask" ? "bg-purple-100 text-purple-800" :
+                                resource.resourceType === "equipment" ? "bg-cyan-100 text-cyan-800" :
+                                resource.resourceType === "machine" ? "bg-indigo-100 text-indigo-800" :
                                 "bg-orange-100 text-orange-800"
                               }`}>
                                 {resource.resourceType === "sparePart" ? "Spare Part" :
                                  resource.resourceType === "project" ? "Project" :
-                                 resource.resourceType === "wbsTask" ? "WBS Task" : "Work Order"}
+                                 resource.resourceType === "wbsTask" ? "WBS Task" :
+                                 resource.resourceType === "equipment" ? "Equipment" :
+                                 resource.resourceType === "machine" ? "Machine" : "Work Order"}
                               </span>
                               <span className="font-medium text-sm">
-                                {resource.sparePartName || resource.projectName || resource.wbsTaskName || resource.productName}
+                                {resource.sparePartName || resource.projectName || resource.wbsTaskName || 
+                                 resource.equipmentName || resource.machineName || resource.productName}
                               </span>
+                              {resource.resourceType === "machine" && resource.machineConfig && (
+                                <div className="text-xs text-gray-500 mt-1">
+                                  Inputs: {resource.machineConfig.inputs.length} | 
+                                  Person Hours: {resource.machineConfig.personHours} | 
+                                  Output: {resource.machineConfig.output ? resource.machineConfig.output.name : 'None'}
+                                </div>
+                              )}
                             </div>
                           </div>
                           <Button
@@ -896,6 +1291,290 @@ export default function WorkCentersPageAdvanced() {
               </Button>
 
             </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Machine Configuration Dialog */}
+        <Dialog open={isMachineConfigOpen} onOpenChange={setIsMachineConfigOpen}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>
+                Configure Machine: {selectedMachineForConfig?.name}
+              </DialogTitle>
+            </DialogHeader>
+            
+            {selectedMachineForConfig && (
+              <div className="space-y-6">
+                {/* Machine Info */}
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h4 className="font-medium text-sm mb-2">Machine Details</h4>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-600">Name:</span> {selectedMachineForConfig.name}
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Code:</span> {selectedMachineForConfig.code}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Person Hours */}
+                <div>
+                  <Label className="text-base font-medium">Person Hours Required</Label>
+                  <Input
+                    type="number"
+                    value={machineConfig.personHours}
+                    onChange={(e) =>
+                      setMachineConfig({
+                        ...machineConfig,
+                        personHours: parseFloat(e.target.value) || 0
+                      })
+                    }
+                    placeholder="Enter person hours required"
+                    className="mt-2"
+                  />
+                </div>
+
+                {/* Inputs Section */}
+                <div>
+                  <Label className="text-base font-medium">Input Materials</Label>
+                  <div className="mt-2 space-y-3">
+                    {/* Raw Materials Selection */}
+                    <div className="border rounded-lg p-4">
+                      <Label className="text-sm font-medium">Select Raw Materials</Label>
+                      <div className="mt-2 max-h-40 overflow-y-auto space-y-2">
+                        {rawMaterials && rawMaterials.length > 0 ? (
+                          rawMaterials.map((material) => (
+                            <div key={material._id} className="flex items-center space-x-2">
+                              <Checkbox
+                                id={`input-${material._id}`}
+                                onCheckedChange={(checked) => {
+                                  if (checked) {
+                                    setMachineConfig({
+                                      ...machineConfig,
+                                      inputs: [...machineConfig.inputs, {
+                                        id: material._id,
+                                        name: material.name,
+                                        quantity: 0,
+                                        unit: material.unit || 'pcs'
+                                      }]
+                                    });
+                                  } else {
+                                    setMachineConfig({
+                                      ...machineConfig,
+                                      inputs: machineConfig.inputs.filter(input => input.id !== material._id)
+                                    });
+                                  }
+                                }}
+                              />
+                              <label htmlFor={`input-${material._id}`} className="text-sm cursor-pointer">
+                                {material.name} ({material.unit || 'pcs'})
+                              </label>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-sm text-gray-500">No raw materials available</div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Selected Inputs with Quantities */}
+                    {machineConfig.inputs.length > 0 && (
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium">Selected Input Materials</Label>
+                        {machineConfig.inputs.map((input, index) => (
+                          <div key={input.id} className="flex items-center gap-2 p-2 border rounded">
+                            <span className="flex-1 text-sm">{input.name}</span>
+                            <Input
+                              type="number"
+                              value={input.quantity}
+                              onChange={(e) => {
+                                const newInputs = [...machineConfig.inputs];
+                                newInputs[index].quantity = parseFloat(e.target.value) || 0;
+                                setMachineConfig({
+                                  ...machineConfig,
+                                  inputs: newInputs
+                                });
+                              }}
+                              placeholder="Qty"
+                              className="w-20"
+                            />
+                            <span className="text-sm text-gray-500">{input.unit}</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setMachineConfig({
+                                  ...machineConfig,
+                                  inputs: machineConfig.inputs.filter((_, i) => i !== index)
+                                });
+                              }}
+                              className="text-red-600"
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Outputs Section */}
+                <div>
+                  <Label className="text-base font-medium">Output Product (Select One)</Label>
+                  <div className="mt-2 space-y-3">
+                    {/* Products Selection */}
+                    <div className="border rounded-lg p-4">
+                      <Label className="text-sm font-medium">Select Product</Label>
+                      <div className="mt-2 max-h-40 overflow-y-auto space-y-2">
+                        {products && products.length > 0 ? (
+                          products.map((product) => (
+                            <div key={product._id} className="flex items-center space-x-2">
+                              <input
+                                type="radio"
+                                id={`output-${product._id}`}
+                                name="outputProduct"
+                                checked={machineConfig.output?.id === product._id}
+                                onChange={() => {
+                                  setMachineConfig({
+                                    ...machineConfig,
+                                    output: {
+                                      id: product._id,
+                                      name: product.name,
+                                      quantity: 0,
+                                      unit: product.unit || 'pcs',
+                                      isCustom: false
+                                    }
+                                  });
+                                }}
+                                className="w-4 h-4"
+                              />
+                              <label htmlFor={`output-${product._id}`} className="text-sm cursor-pointer">
+                                {product.name} ({product.unit || 'pcs'})
+                              </label>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-sm text-gray-500">No products available</div>
+                        )}
+                      </div>
+                      
+                      {/* Add Custom Product */}
+                      <div className="mt-3 pt-3 border-t">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const customName = prompt("Enter custom product name:");
+                            if (customName) {
+                              setMachineConfig({
+                                ...machineConfig,
+                                output: {
+                                  id: `custom-${Date.now()}`,
+                                  name: customName,
+                                  quantity: 0,
+                                  unit: 'pcs',
+                                  isCustom: true
+                                }
+                              });
+                            }
+                          }}
+                        >
+                          <Plus className="w-4 h-4 mr-2" />
+                          Add Custom Product
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Selected Output with Quantity */}
+                    {machineConfig.output && (
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium">Selected Output Product</Label>
+                        <div className="flex items-center gap-2 p-2 border rounded">
+                          <span className="flex-1 text-sm">
+                            {machineConfig.output.name}
+                            {machineConfig.output.isCustom && <span className="ml-1 text-xs text-blue-600">(Custom)</span>}
+                          </span>
+                          <Input
+                            type="number"
+                            value={machineConfig.output.quantity}
+                            onChange={(e) => {
+                              setMachineConfig({
+                                ...machineConfig,
+                                output: {
+                                  ...machineConfig.output,
+                                  quantity: parseFloat(e.target.value) || 0
+                                }
+                              });
+                            }}
+                            placeholder="Qty"
+                            className="w-20"
+                          />
+                          <span className="text-sm text-gray-500">{machineConfig.output.unit}</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setMachineConfig({
+                                ...machineConfig,
+                                output: null
+                              });
+                            }}
+                            className="text-red-600"
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-2 pt-4 border-t">
+                  <Button
+                    onClick={() => {
+                      // Add the configured machine to resources
+                      const newResource = {
+                        id: `RES-MC-${Date.now()}-${selectedMachineForConfig._id}`,
+                        resourceType: "machine",
+                        machineId: selectedMachineForConfig._id,
+                        machineName: selectedMachineForConfig.name,
+                        machineCode: selectedMachineForConfig.code,
+                        machineConfig: machineConfig,
+                        priority: "medium",
+                        estimatedHours: 0,
+                        actualHours: 0,
+                        status: "planned",
+                      };
+                      
+                      setResources([...resources, newResource]);
+                      setIsMachineConfigOpen(false);
+                      setSelectedMachineForConfig(null);
+                      setMachineConfig({ inputs: [], personHours: 0, output: null });
+                      toast.success("Machine configuration saved and added to resources");
+                    }}
+                    className="flex-1"
+                  >
+                    Save Configuration & Add to Resources
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setIsMachineConfigOpen(false);
+                      setSelectedMachineForConfig(null);
+                      setMachineConfig({ inputs: [], personHours: 0, output: null });
+                    }}
+                    variant="outline"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
       </div>
@@ -1048,26 +1727,94 @@ export default function WorkCentersPageAdvanced() {
                 <CardContent>
                   <p className="text-sm text-muted-foreground mb-2">{c.description}</p>
                   
+                  {/* Projects and WBS Tasks Display */}
+                  {(c.projects && c.projects.length > 0) || (c.wbsTasks && c.wbsTasks.length > 0) ? (
+                    <div className="mb-3 p-3 bg-blue-50 rounded-lg">
+                      <h4 className="text-sm font-medium mb-2">
+                        Projects & Tasks ({(c.projects?.length || 0) + (c.wbsTasks?.length || 0)}):
+                      </h4>
+                      <div className="space-y-1 text-xs">
+                        {c.projects?.map((project) => (
+                          <div key={project.id} className="flex items-center gap-2">
+                            <span className="bg-green-100 text-green-800 px-2 py-1 rounded font-medium">Project</span>
+                            <span className="font-medium">{project.projectName}</span>
+                            <span className="text-gray-500">({project.projectAllocation}% allocation)</span>
+                          </div>
+                        ))}
+                        {c.wbsTasks?.map((task) => (
+                          <div key={task.id} className="flex items-center gap-2">
+                            <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded font-medium">WBS Task</span>
+                            <span className="font-medium">{task.wbsTaskName}</span>
+                            <span className="text-gray-500">({task.wbsTaskDuration}h duration)</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
                   {/* Resources Section - Show new resources array or legacy single resources */}
                   {((c as any).resources && (c as any).resources.length > 0) ? (
                     <div className="mb-3 p-3 bg-gray-50 rounded-lg">
                       <h4 className="text-sm font-medium mb-2">Resources ({(c as any).resources.length}):</h4>
-                      <div className="space-y-1 text-xs">
+                      <div className="space-y-2 text-xs">
                         {(c as any).resources.map((resource: WorkCenterResource) => (
-                          <div key={resource.id} className="flex items-center gap-2">
-                            <span className={`px-2 py-1 rounded font-medium ${
-                              resource.resourceType === "sparePart" ? "bg-blue-100 text-blue-800" :
-                              resource.resourceType === "project" ? "bg-green-100 text-green-800" :
-                              resource.resourceType === "wbsTask" ? "bg-purple-100 text-purple-800" :
-                              "bg-orange-100 text-orange-800"
-                            }`}>
-                              {resource.resourceType === "sparePart" ? "Spare Part" :
-                               resource.resourceType === "project" ? "Project" :
-                               resource.resourceType === "wbsTask" ? "WBS Task" : "Work Order"}
-                            </span>
-                            <span>
-                              {resource.sparePartName || resource.projectName || resource.wbsTaskName || resource.productName}
-                            </span>
+                          <div key={resource.id} className="border-l-2 border-gray-300 pl-2">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={`px-2 py-1 rounded font-medium ${
+                                resource.resourceType === "sparePart" ? "bg-blue-100 text-blue-800" :
+                                resource.resourceType === "project" ? "bg-green-100 text-green-800" :
+                                resource.resourceType === "wbsTask" ? "bg-purple-100 text-purple-800" :
+                                resource.resourceType === "equipment" ? "bg-cyan-100 text-cyan-800" :
+                                resource.resourceType === "machine" ? "bg-indigo-100 text-indigo-800" :
+                                "bg-orange-100 text-orange-800"
+                              }`}>
+                                {resource.resourceType === "sparePart" ? "Spare Part" :
+                                 resource.resourceType === "project" ? "Project" :
+                                 resource.resourceType === "wbsTask" ? "WBS Task" :
+                                 resource.resourceType === "equipment" ? "Equipment" :
+                                 resource.resourceType === "machine" ? "Machine" : "Work Order"}
+                              </span>
+                              <span className="font-medium">
+                                {resource.sparePartName || resource.projectName || resource.wbsTaskName || 
+                                 resource.equipmentName || resource.machineName || resource.productName}
+                              </span>
+                            </div>
+                            
+                            {/* Machine Configuration Details */}
+                            {resource.resourceType === "machine" && resource.machineConfig && (
+                              <div className="ml-4 mt-1 space-y-1">
+                                <div className="text-gray-600">
+                                  <strong>Person Hours:</strong> {resource.machineConfig.personHours}
+                                </div>
+                                
+                                {resource.machineConfig.inputs.length > 0 && (
+                                  <div className="text-gray-600">
+                                    <strong>Input Materials:</strong>
+                                    <div className="ml-2 mt-1">
+                                      {resource.machineConfig.inputs.map((input, idx) => (
+                                        <div key={idx} className="flex items-center gap-1">
+                                          <span>• {input.name}</span>
+                                          <span className="text-gray-500">({input.quantity} {input.unit})</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                
+                                {resource.machineConfig.output && (
+                                  <div className="text-gray-600">
+                                    <strong>Output Product:</strong>
+                                    <div className="ml-2 flex items-center gap-1">
+                                      <span>• {resource.machineConfig.output.name}</span>
+                                      <span className="text-gray-500">({resource.machineConfig.output.quantity} {resource.machineConfig.output.unit})</span>
+                                      {resource.machineConfig.output.isCustom && (
+                                        <span className="text-blue-600 text-xs">(Custom)</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
