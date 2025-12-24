@@ -43,6 +43,9 @@ import workOrderReducer from "./slices/production/workOrderSlice";
 import sparePartsReducer from "./slices/plantandmachinary/sparePartsSlice";
 import materialIssueReducer from "./slices/production/materialIssueSlice";
 import itemMasterReducer from "./slices/production/itemMasterSlice";
+import ppcReducer from "./slices/production/ppcSlice";
+import grnReducer from "./slices/production/grnSlice";
+import qualityReducer from "./slices/production/qualitySlice";
 export const store = configureStore({
   reducer: {
     itemMaster: itemMasterReducer,
@@ -89,6 +92,9 @@ export const store = configureStore({
     workOrders: workOrderReducer,
     spareParts: sparePartsReducer,
     materialIssue: materialIssueReducer,
+    ppc: ppcReducer,
+    grn: grnReducer,
+    quality: qualityReducer,
   },
 });
 

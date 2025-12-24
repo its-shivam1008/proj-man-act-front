@@ -1,14 +1,17 @@
 import { usePermission } from "@/hooks/userPermission";
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../../components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import { Button } from "../../../components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
 import { Badge } from "../../../components/ui/badge";
-import { AlertTriangle, Download, Plus, ShieldAlert, Trash2 } from "lucide-react";
+import { Download, Plus, ShieldAlert } from "lucide-react";
+import { useDispatch, useSelector } from "react-redux";
+import { toast } from "sonner";
 
 import {
   ResponsiveContainer,
@@ -21,12 +24,27 @@ import {
   Legend,
   BarChart,
   Bar,
-  PieChart,
-  Pie,
-  Cell,
 } from "recharts";
 
 import { storage, STORAGE_KEYS } from "../../../lib/storage";
+import { 
+  fetchForecasts, 
+  createForecast, 
+  updateForecast,
+  deleteForecast as deleteForecastAction,
+  fetchMPS, 
+  createMPS,
+  updateMPS,
+  deleteMPS as deleteMPSAction,
+  generateMPS, 
+  fetchMRPLines,
+  runMRP,
+  fetchPlannedOrders,
+  createPlannedOrder,
+  updatePlannedOrder,
+  deletePlannedOrder as deletePlannedOrderAction
+} from "../../../redux/slices/production/ppcSlice";
+import axios from "../../../utils/axiosApi";
 
 /**
 STORAGE_KEYS used (ensure these exist in your storage.ts):
@@ -41,43 +59,60 @@ STORAGE_KEYS used (ensure these exist in your storage.ts):
 - (optional) PRODUCTION_TARGET_PER_DAY, SCRAP_COST_PER_UNIT
 */
 
-const genId = (pref = "id") => `${pref}_${Math.random().toString(36).slice(2, 9)}`;
+/* ----------------------------- Helpers ----------------------------- */
+const safeGet = <T,>(key: string, def: T) => storage.get(key, def);
 
 /* ----------------------------- Types ----------------------------- */
 type Forecast = {
-  id: string;
+  _id?: string;
+  id?: string;
   productId: string;
-  period: string; // e.g., 2025-11 or 2025-W45
-  forecastQty: number;
+  rawMaterialId?: string;
+  currentStock: number;
+  demandForecast: number;
+  suggestedReplenishment: number;
+  leadTime: number;
+  priority: "low" | "medium" | "high" | "critical";
+  replenishmentRule: "automatic" | "manual";
+  organisationId?: string;
   createdAt?: string;
+  updatedAt?: string;
 };
 
 type MPS = {
-  id: string;
+  _id?: string;
+  id?: string;
   productId: string;
   period: string;
   plannedQty: number;
   status?: "planned" | "released" | "closed";
+  organisationId?: string;
   createdAt?: string;
+  updatedAt?: string;
 };
 
 type MrpLine = {
-  id: string;
+  _id?: string;
+  id?: string;
   materialId: string;
   requiredQty: number;
   availableQty: number;
   shortageQty: number;
   prCreated?: boolean;
+  organisationId?: string;
 };
 
 type PlannedOrder = {
-  id: string;
+  _id?: string;
+  id?: string;
   productId: string;
   quantity: number;
   startDate: string;
   endDate: string;
   status?: "planned" | "released" | "closed";
+  organisationId?: string;
   createdAt?: string;
+  updatedAt?: string;
 };
 
 type WorkCenter = {
@@ -87,15 +122,27 @@ type WorkCenter = {
   costRatePerHour?: number;
 };
 
-/* ----------------------------- Helpers ----------------------------- */
-const safeGet = <T,>(key: string, def: T) => storage.get(key, def);
-
 /* ----------------------------- Component ----------------------------- */
 export default function PPCDashboard() {
+  const dispatch = useDispatch();
+  const ppcState = useSelector((state: any) => state.ppc || {});
+  const { forecasts = [], mps = [], plannedOrders = [] } = ppcState;
+  
+  // Check authentication state
+  const authState = useSelector((state: any) => state.auth || {});
+  const { userProfile, organisationId, isAuthenticated } = authState;
+  
   const canView = usePermission("ppc", "view");
   const canCreate = usePermission("ppc", "create");
   const canEdit = usePermission("ppc", "edit");
   const canDelete = usePermission("ppc", "delete");
+
+  // Debug authentication
+  useEffect(() => {
+    console.log("PPC: Auth state:", { userProfile, organisationId, isAuthenticated });
+    console.log("PPC: User profile exists:", !!userProfile);
+    console.log("PPC: Organisation ID:", organisationId);
+  }, [userProfile, organisationId, isAuthenticated]);
 
   if (!canView) {
     return (
@@ -110,31 +157,109 @@ export default function PPCDashboard() {
       </div>
     );
   }
-  /* ----------------------------- Data states ----------------------------- */
-  const [forecasts, setForecasts] = useState<Forecast[]>(() => safeGet(STORAGE_KEYS.FORECASTS, []));
-  const [mps, setMps] = useState<MPS[]>(() => safeGet(STORAGE_KEYS.MPS_PLANS, []));
-  const [mrpLines, setMrpLines] = useState<MrpLine[]>(() => safeGet(STORAGE_KEYS.MRP_REQUIREMENTS, []));
-  const [plannedOrders, setPlannedOrders] = useState<PlannedOrder[]>(() => safeGet(STORAGE_KEYS.PLANNED_ORDERS, []));
-  const [workCenters, setWorkCenters] = useState<WorkCenter[]>(() => safeGet(STORAGE_KEYS.WORK_CENTERS, []));
-  const items = safeGet(STORAGE_KEYS.ITEMS, []); // for display
-  const boms = safeGet(STORAGE_KEYS.BOMS, []); // BOMs used by MRP
-  const inventory = safeGet(STORAGE_KEYS.INVENTORY, {}); // map itemId -> qty
 
-  /* ----------------------------- Persist to storage ----------------------------- */
-  useEffect(() => storage.set(STORAGE_KEYS.FORECASTS, forecasts), [forecasts]);
-  useEffect(() => storage.set(STORAGE_KEYS.MPS_PLANS, mps), [mps]);
-  useEffect(() => storage.set(STORAGE_KEYS.MRP_REQUIREMENTS, mrpLines), [mrpLines]);
-  useEffect(() => storage.set(STORAGE_KEYS.PLANNED_ORDERS, plannedOrders), [plannedOrders]);
+  // Check if user is authenticated
+  if (!isAuthenticated) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Authentication Required
+        </h3>
+        <p className="text-gray-600">
+          Please log in to access the PPC dashboard.
+        </p>
+      </div>
+    );
+  }
+
+  /* ----------------------------- Data states ----------------------------- */
+  const [mrpLines, setMrpLines] = useState<MrpLine[]>([]);
+  const [workCenters] = useState<WorkCenter[]>(() => safeGet(STORAGE_KEYS.WORK_CENTERS, []) || []);
+  const [products, setProducts] = useState<any[]>([]);
+  const items = safeGet(STORAGE_KEYS.ITEMS, []) as any[] || []; // for display
+  const routings = safeGet(STORAGE_KEYS.ROUTINGS, []) as any[] || []; // for CRP calculation
+
+  /* ----------------------------- Load data on mount ----------------------------- */
+  // Function to fetch products
+  const fetchProducts = async () => {
+    try {
+      if (organisationId) {
+        console.log("PPC: Fetching products for orgId:", organisationId);
+        const response = await axios.get(`/inventory/product/all/${organisationId}`);
+        console.log("PPC: Products API response:", response.data);
+        if (response.data.success) {
+          const productsData = response.data.products || []; // products is the correct field
+          console.log("PPC: Products data:", productsData);
+          setProducts(productsData);
+        } else {
+          console.log("PPC: Products API returned success: false");
+        }
+      }
+    } catch (error) {
+      console.error("Failed to fetch products:", error);
+      console.error("Error response:", error.response?.data);
+    }
+  };
+
+  // Helper function to get product name by ID
+  const getProductName = (productId: string) => {
+    const product = products.find((p) => p._id === productId);
+    return product ? `${product.name} (${product.code || product._id})` : productId;
+  };
+
+  useEffect(() => {
+    // Debug: Check if user is authenticated
+    const token = localStorage.getItem("token");
+    console.log("PPC: Token exists:", !!token);
+    console.log("PPC: Token value:", token?.substring(0, 20) + "...");
+    console.log("PPC: Is authenticated:", isAuthenticated);
+    console.log("PPC: Organisation ID from Redux:", organisationId);
+    
+    // Only load data if user is authenticated
+    if (isAuthenticated && organisationId) {
+      console.log("PPC: Loading data...");
+      dispatch(fetchForecasts() as any);
+      dispatch(fetchMPS() as any);
+      dispatch(fetchPlannedOrders() as any);
+      dispatch(fetchMRPLines() as any); // Fetch MRP lines on page load
+      console.log("PPC: About to fetch products...");
+      fetchProducts(); // Fetch products list
+    } else {
+      console.log("PPC: User not authenticated or no organisation ID");
+      console.log("PPC: isAuthenticated:", isAuthenticated);
+      console.log("PPC: organisationId:", organisationId);
+    }
+  }, [dispatch, isAuthenticated, organisationId]);
+
+  // Update local MRP lines when Redux state changes
+  const reduxMrpLines = useSelector((state: any) => state.ppc?.mrpLines || []);
+  useEffect(() => {
+    if (reduxMrpLines && reduxMrpLines.length > 0) {
+      setMrpLines(reduxMrpLines);
+    }
+  }, [reduxMrpLines]);
 
   /* ----------------------------- UI/CRUD states: Forecast ----------------------------- */
   const [forecastDialogOpen, setForecastDialogOpen] = useState(false);
   const [editingForecast, setEditingForecast] = useState<Forecast | null>(null);
-  const [forecastForm, setForecastForm] = useState<Partial<Forecast>>({ productId: "", period: "", forecastQty: 0 });
+  const [forecastForm, setForecastForm] = useState<Partial<Forecast>>({ 
+    productId: "", 
+    currentStock: 0, 
+    demandForecast: 0, 
+    suggestedReplenishment: 0, 
+    leadTime: 0,
+    priority: "low",
+    replenishmentRule: "automatic"
+  });
 
   /* ----------------------------- UI/CRUD states: MPS ----------------------------- */
   const [mpsDialogOpen, setMpsDialogOpen] = useState(false);
   const [editingMps, setEditingMps] = useState<MPS | null>(null);
   const [mpsForm, setMpsForm] = useState<Partial<MPS>>({ productId: "", period: "", plannedQty: 0 });
+
+  /* ----------------------------- UI/CRUD states: MRP ----------------------------- */
+  const [mrpDialogOpen, setMrpDialogOpen] = useState(false);
 
   /* ----------------------------- UI/CRUD states: Planned Orders ----------------------------- */
   const [poDialogOpen, setPoDialogOpen] = useState(false);
@@ -144,130 +269,256 @@ export default function PPCDashboard() {
   /* ----------------------------- UI: MRP lines are edited inline, CRP just views ----------------------------- */
 
   /* ----------------------------- Forecast CRUD ----------------------------- */
-  useEffect(() => setForecasts(safeGet(STORAGE_KEYS.FORECASTS, [])), []); // reload on mount
-  const openNewForecast = () => { setEditingForecast(null); setForecastForm({ productId: "", period: "", forecastQty: 0 }); setForecastDialogOpen(true); };
-  const openEditForecast = (f: Forecast) => { setEditingForecast(f); setForecastForm({ ...f }); setForecastDialogOpen(true); };
-  const saveForecast = () => {
-    if (!forecastForm.productId || !forecastForm.period) return alert("Product and period required");
-    const now = new Date().toISOString();
-    if (editingForecast) {
-      setForecasts(forecasts.map((x) => x.id === editingForecast.id ? { ...x, ...forecastForm, forecastQty: Number(forecastForm.forecastQty) || 0, createdAt: now } as Forecast : x));
-    } else {
-      setForecasts([...forecasts, { id: genId("f"), productId: forecastForm.productId!, period: forecastForm.period!, forecastQty: Number(forecastForm.forecastQty) || 0, createdAt: now }]);
-    }
-    setForecastDialogOpen(false);
+  const openNewForecast = () => { 
+    setEditingForecast(null); 
+    setForecastForm({ 
+      productId: "", 
+      currentStock: 0, 
+      demandForecast: 0, 
+      suggestedReplenishment: 0, 
+      leadTime: 0,
+      priority: "low",
+      replenishmentRule: "automatic"
+    }); 
+    setForecastDialogOpen(true); 
   };
-  const deleteForecast = (id: string) => setForecasts(forecasts.filter((f) => f.id !== id));
+  
+  const openEditForecast = (f: Forecast) => { 
+    setEditingForecast(f); 
+    setForecastForm({ ...f }); 
+    setForecastDialogOpen(true); 
+  };
+  
+  const saveForecast = async () => {
+    if (!forecastForm.productId || !forecastForm.demandForecast) {
+      toast.error("Product and demand forecast are required");
+      return;
+    }
+    
+    try {
+      if (editingForecast) {
+        // Update existing forecast
+        await dispatch(updateForecast({ 
+          id: editingForecast._id || editingForecast.id || '', 
+          data: forecastForm 
+        }) as any);
+        toast.success("Forecast updated successfully");
+      } else {
+        // Create new forecast
+        await dispatch(createForecast(forecastForm) as any);
+        toast.success("Forecast created successfully");
+      }
+      
+      setForecastDialogOpen(false);
+    } catch (error) {
+      toast.error("Failed to save forecast");
+      console.error(error);
+    }
+  };
+  
+  const deleteForecast = async (id: string) => {
+    try {
+      await dispatch(deleteForecastAction(id) as any);
+      toast.success("Forecast deleted successfully");
+    } catch (error) {
+      toast.error("Failed to delete forecast");
+      console.error(error);
+    }
+  };
 
   /* ----------------------------- MPS CRUD ----------------------------- */
-  useEffect(() => setMps(safeGet(STORAGE_KEYS.MPS_PLANS, [])), []);
-  const openNewMps = () => { setEditingMps(null); setMpsForm({ productId: "", period: "", plannedQty: 0 }); setMpsDialogOpen(true); };
-  const openEditMps = (x: MPS) => { setEditingMps(x); setMpsForm({ ...x }); setMpsDialogOpen(true); };
-  const saveMps = () => {
-    if (!mpsForm.productId || !mpsForm.period) return alert("Product and period required");
-    const now = new Date().toISOString();
-    if (editingMps) {
-      setMps(mps.map((m) => m.id === editingMps.id ? { ...m, ...mpsForm, plannedQty: Number(mpsForm.plannedQty) || 0, createdAt: now } as MPS : m));
-    } else {
-      setMps([...mps, { id: genId("mps"), productId: mpsForm.productId!, period: mpsForm.period!, plannedQty: Number(mpsForm.plannedQty) || 0, status: "planned", createdAt: now }]);
-    }
-    setMpsDialogOpen(false);
+  const openNewMps = () => { 
+    setEditingMps(null); 
+    setMpsForm({ productId: "", period: "", plannedQty: 0 }); 
+    setMpsDialogOpen(true); 
   };
-  const deleteMps = (id: string) => setMps(mps.filter((m) => m.id !== id));
+  
+  const openEditMps = (x: MPS) => { 
+    setEditingMps(x); 
+    setMpsForm({ ...x }); 
+    setMpsDialogOpen(true); 
+  };
+  
+  const saveMps = async () => {
+    if (!mpsForm.productId || !mpsForm.period) {
+      toast.error("Product and period are required");
+      return;
+    }
+    
+    try {
+      if (editingMps) {
+        // Update existing MPS
+        await dispatch(updateMPS({ 
+          id: editingMps._id || editingMps.id || '', 
+          data: mpsForm 
+        }) as any);
+        toast.success("MPS updated successfully");
+      } else {
+        // Create new MPS
+        await dispatch(createMPS(mpsForm) as any);
+        toast.success("MPS created successfully");
+      }
+      
+      setMpsDialogOpen(false);
+    } catch (error) {
+      toast.error("Failed to save MPS");
+      console.error(error);
+    }
+  };
+  
+  const deleteMps = async (id: string) => {
+    try {
+      await dispatch(deleteMPSAction(id) as any);
+      toast.success("MPS deleted successfully");
+    } catch (error) {
+      toast.error("Failed to delete MPS");
+      console.error(error);
+    }
+  };
 
-  /* Auto-generate MPS from Forecast: sums forecasts grouped by product+period */
-  const generateMpsFromForecast = () => {
-    if (!Array.isArray(forecasts) || forecasts.length === 0) return alert("No forecasts to generate MPS from");
-    const map: Record<string, number> = {};
-    forecasts.forEach((f) => {
-      const key = `${f.productId}||${f.period}`;
-      map[key] = (map[key] || 0) + (Number(f.forecastQty) || 0);
-    });
-    const generated: MPS[] = Object.keys(map).map((k) => {
-      const [productId, period] = k.split("||");
-      return { id: genId("mps"), productId, period, plannedQty: map[k], status: "planned", createdAt: new Date().toISOString() };
-    });
-    // merge (replace same product+period)
-    const others = mps.filter((m) => !generated.some((g) => g.productId === m.productId && g.period === m.period));
-    setMps([...others, ...generated]);
+  /* Auto-generate MPS from Forecast */
+  const generateMpsFromForecast = async () => {
+    if (!Array.isArray(forecasts) || forecasts.length === 0) {
+      toast.error("No forecasts to generate MPS from");
+      return;
+    }
+    
+    try {
+      await dispatch(generateMPS() as any);
+      toast.success("MPS generated from forecasts successfully");
+    } catch (error) {
+      toast.error("Failed to generate MPS");
+      console.error(error);
+    }
   };
 
   /* ----------------------------- MRP (run from MPS & BOMs & INVENTORY) ----------------------------- */
-  useEffect(() => setMrpLines(safeGet(STORAGE_KEYS.MRP_REQUIREMENTS, [])), []);
-  const runMrp = () => {
-    const mpsList: MPS[] = safeGet(STORAGE_KEYS.MPS_PLANS, []);
-    const bomsList: any[] = safeGet(STORAGE_KEYS.BOMS, []);
-    const inventoryMap: Record<string, number> = safeGet(STORAGE_KEYS.INVENTORY, {});
-    const reqMap: Record<string, number> = {};
-
-    // Expand each MPS row using matching BOM (if BOM missing, skip)
-    (mpsList || []).forEach((plan) => {
-      const plannedQty = Number(plan.plannedQty) || 0;
-      if (plannedQty <= 0) return;
-      const bom = (bomsList || []).find((b: any) => b.productId === plan.productId);
-      if (!bom || !Array.isArray(bom.lines)) return;
-      bom.lines.forEach((ln: any) => {
-        const itemId = ln.itemId;
-        const qtyPer = Number(ln.qty) || 0;
-        reqMap[itemId] = (reqMap[itemId] || 0) + qtyPer * plannedQty;
-      });
-    });
-
-    const lines: MrpLine[] = Object.keys(reqMap).map((itemId) => {
-      const req = reqMap[itemId] || 0;
-      const avail = Number(inventoryMap[itemId] || 0);
-      const shortage = Math.max(0, req - avail);
-      return { id: genId("mrp"), materialId: itemId, requiredQty: req, availableQty: avail, shortageQty: shortage, prCreated: false };
-    });
-
-    setMrpLines(lines);
+  const openMrpDialog = () => {
+    setMrpDialogOpen(true);
   };
 
-  const createPrForLine = (id: string) => {
-    setMrpLines(mrpLines.map((l) => l.id === id ? { ...l, prCreated: true } : l));
-    alert("Purchase Requisition simulated/created.");
+  const runMrpCalculation = async () => {
+    try {
+      await dispatch(runMRP() as any);
+      toast.success("MRP calculation completed");
+      setMrpDialogOpen(false);
+    } catch (error) {
+      toast.error("Failed to run MRP");
+      console.error(error);
+    }
   };
 
-  const updateMrpAvailable = (id: string, val: number) => {
-    setMrpLines(mrpLines.map((l) => l.id === id ? { ...l, availableQty: val, shortageQty: Math.max(0, l.requiredQty - val) } : l));
+  const createPrForLine = async (id: string) => {
+    try {
+      await axios.post(`/ppc/mrp/${id}/create-pr`);
+      setMrpLines(mrpLines.map((l) => l._id === id || l.id === id ? { ...l, prCreated: true } : l));
+      toast.success("Purchase Requisition created successfully");
+    } catch (error) {
+      toast.error("Failed to create Purchase Requisition");
+      console.error(error);
+    }
+  };
+
+  const updateMrpAvailable = async (id: string, val: number) => {
+    try {
+      await axios.put(`/ppc/mrp/${id}`, { availableQty: val });
+      setMrpLines(mrpLines.map((l) => 
+        (l._id === id || l.id === id) ? { 
+          ...l, 
+          availableQty: val, 
+          shortageQty: Math.max(0, l.requiredQty - val) 
+        } : l
+      ));
+    } catch (error) {
+      toast.error("Failed to update MRP line");
+      console.error(error);
+    }
   };
 
   /* ----------------------------- Planned Orders CRUD & auto-generate from MPS ----------------------------- */
-  useEffect(() => setPlannedOrders(safeGet(STORAGE_KEYS.PLANNED_ORDERS, [])), []);
-  const openNewPo = () => { setEditingPo(null); setPoForm({ productId: "", quantity: 0, startDate: new Date().toISOString().slice(0, 10), endDate: new Date().toISOString().slice(0, 10) }); setPoDialogOpen(true); };
-  const openEditPo = (p: PlannedOrder) => { setEditingPo(p); setPoForm({ ...p }); setPoDialogOpen(true); };
-  const savePo = () => {
-    if (!poForm.productId || !poForm.startDate) return alert("Product & start date required");
-    const now = new Date().toISOString();
-    if (editingPo) {
-      setPlannedOrders(plannedOrders.map((x) => x.id === editingPo.id ? { ...x, ...poForm, quantity: Number(poForm.quantity) || 0, createdAt: now } as PlannedOrder : x));
-    } else {
-      setPlannedOrders([...plannedOrders, { id: genId("po"), productId: poForm.productId!, quantity: Number(poForm.quantity) || 0, startDate: poForm.startDate!, endDate: poForm.endDate || poForm.startDate!, status: "planned", createdAt: now }]);
-    }
-    setPoDialogOpen(false);
+  const openNewPo = () => { 
+    setEditingPo(null); 
+    setPoForm({ 
+      productId: "", 
+      quantity: 0, 
+      startDate: new Date().toISOString().slice(0, 10), 
+      endDate: new Date().toISOString().slice(0, 10) 
+    }); 
+    setPoDialogOpen(true); 
   };
-  const deletePo = (id: string) => setPlannedOrders(plannedOrders.filter((p) => p.id !== id));
+  
+  const openEditPo = (p: PlannedOrder) => { 
+    setEditingPo(p); 
+    setPoForm({ ...p }); 
+    setPoDialogOpen(true); 
+  };
+  
+  const savePo = async () => {
+    if (!poForm.productId || !poForm.startDate) {
+      toast.error("Product & start date are required");
+      return;
+    }
+    
+    try {
+      if (editingPo) {
+        // Update existing planned order
+        await dispatch(updatePlannedOrder({ 
+          id: editingPo._id || editingPo.id || '', 
+          data: poForm 
+        }) as any);
+        toast.success("Planned order updated successfully");
+      } else {
+        // Create new planned order
+        await dispatch(createPlannedOrder(poForm) as any);
+        toast.success("Planned order created successfully");
+      }
+      
+      setPoDialogOpen(false);
+    } catch (error) {
+      toast.error("Failed to save planned order");
+      console.error(error);
+    }
+  };
+  
+  const deletePo = async (id: string) => {
+    try {
+      await dispatch(deletePlannedOrderAction(id) as any);
+      toast.success("Planned order deleted successfully");
+    } catch (error) {
+      toast.error("Failed to delete planned order");
+      console.error(error);
+    }
+  };
 
-  const generatePoFromMps = () => {
-    const mpsList = safeGet(STORAGE_KEYS.MPS_PLANS, []);
-    if (!Array.isArray(mpsList) || mpsList.length === 0) return alert("No MPS rows to generate orders from");
-    const newOrders: PlannedOrder[] = (mpsList || []).map((m) => ({
-      id: genId("po"),
-      productId: m.productId,
-      quantity: Number(m.plannedQty) || 0,
-      startDate: `${m.period}-01`, // naive mapping: month start; adapt as needed
-      endDate: `${m.period}-01`,
-      status: "planned",
-      createdAt: new Date().toISOString(),
-    }));
-    setPlannedOrders([...plannedOrders, ...newOrders]);
+  const generatePoFromMps = async () => {
+    if (!Array.isArray(mps) || mps.length === 0) {
+      toast.error("No MPS rows to generate orders from");
+      return;
+    }
+    
+    try {
+      const newOrders = mps.map((m: any) => ({
+        productId: m.productId,
+        quantity: Number(m.plannedQty) || 0,
+        startDate: `${m.period}-01`, // naive mapping: month start; adapt as needed
+        endDate: `${m.period}-01`,
+        status: "planned",
+      }));
+      
+      // Create multiple planned orders
+      await Promise.all(newOrders.map(order => dispatch(createPlannedOrder(order) as any)));
+      
+      toast.success("Planned orders generated from MPS successfully");
+    } catch (error) {
+      toast.error("Failed to generate planned orders");
+      console.error(error);
+    }
   };
 
   /* ----------------------------- CRP: calculate load from plannedOrders & routings ----------------------------- */
-  const routings = safeGet(STORAGE_KEYS.ROUTINGS, []);
   const crpLoadByWC = useMemo(() => {
     const map: Record<string, number> = {}; // minutes
-    (plannedOrders || []).forEach((po) => {
+    (plannedOrders || []).forEach((po: any) => {
       const qty = Number(po.quantity) || 0;
       const routing = (routings || []).find((r: any) => r.productId === po.productId);
       if (!routing || !Array.isArray(routing.operations)) return;
@@ -299,15 +550,18 @@ export default function PPCDashboard() {
 
   /* ----------------------------- Charts data helpers ----------------------------- */
   const forecastTrend = useMemo(() => {
-    // aggregate qty by period
+    // aggregate qty by product
     const map: Record<string, number> = {};
-    forecasts.forEach((f) => map[f.period] = (map[f.period] || 0) + (Number(f.forecastQty) || 0));
+    (forecasts || []).forEach((f: any) => {
+      const productName = getProductName(f.productId);
+      map[productName] = (map[productName] || 0) + (Number(f.demandForecast) || 0);
+    });
     return Object.keys(map).sort().map((p) => ({ period: p, qty: map[p] }));
-  }, [forecasts]);
+  }, [forecasts, products]);
 
   const mpsTrend = useMemo(() => {
     const map: Record<string, number> = {};
-    mps.forEach((x) => map[x.period] = (map[x.period] || 0) + (Number(x.plannedQty) || 0));
+    (mps || []).forEach((x: any) => map[x.period] = (map[x.period] || 0) + (Number(x.plannedQty) || 0));
     return Object.keys(map).sort().map((p) => ({ period: p, qty: map[p] }));
   }, [mps]);
 
@@ -322,7 +576,7 @@ export default function PPCDashboard() {
           <p className="text-muted-foreground">Forecast → MPS → MRP → CRP → Planned Orders — linked with Product Master & Inventory</p>
           <div className="flex gap-2 mt-2">
             {shortages.length > 0 && <Badge variant="destructive">Shortages: {shortages.length}</Badge>}
-            {overloaded.length > 0 && <Badge variant="warning">Overloaded WCs: {overloaded.length}</Badge>}
+            {overloaded.length > 0 && <Badge variant="destructive">Overloaded WCs: {overloaded.length}</Badge>}
           </div>
         </div>
 
@@ -384,17 +638,21 @@ export default function PPCDashboard() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Product</TableHead>
-                          <TableHead>Period</TableHead>
-                          <TableHead>Qty</TableHead>
+                          <TableHead>Demand Forecast</TableHead>
+                          <TableHead>Current Stock</TableHead>
+                          <TableHead>Suggested Replenishment</TableHead>
+                          <TableHead>Priority</TableHead>
                           <TableHead />
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {forecasts.map((f) => (
-                          <TableRow key={f.id}>
-                            <TableCell>{(items.find((it: any) => it.id === f.productId)?.name) || f.productId}</TableCell>
-                            <TableCell>{f.period}</TableCell>
-                            <TableCell>{f.forecastQty}</TableCell>
+                        {(forecasts || []).map((f: any) => (
+                          <TableRow key={f._id || f.id}>
+                            <TableCell>{getProductName(f.productId)}</TableCell>
+                            <TableCell>{f.demandForecast}</TableCell>
+                            <TableCell>{f.currentStock}</TableCell>
+                            <TableCell>{f.suggestedReplenishment}</TableCell>
+                            <TableCell><Badge variant={f.priority === 'high' || f.priority === 'critical' ? 'destructive' : 'default'}>{f.priority}</Badge></TableCell>
                             <TableCell>
                               <div className="flex gap-2">
                                 <Button
@@ -409,7 +667,7 @@ export default function PPCDashboard() {
                                   size="icon"
                                   variant="ghost"
                                   disabled={!canDelete}
-                                  onClick={() => canDelete && deleteForecast(f.id)}
+                                  onClick={() => canDelete && deleteForecast(f._id || f.id || '')}
                                   className={canDelete ? "" : "opacity-50 cursor-not-allowed"}
                                 >
                                   🗑</Button>
@@ -419,7 +677,7 @@ export default function PPCDashboard() {
                         ))}
                       </TableBody>
                     </Table>
-                    {forecasts.length === 0 && <div className="text-center text-muted-foreground py-6">No forecasts yet.</div>}
+                    {(forecasts || []).length === 0 && <div className="text-center text-muted-foreground py-6">No forecasts yet.</div>}
                   </CardContent>
                 </Card>
               </div>
@@ -479,9 +737,9 @@ export default function PPCDashboard() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {mps.map((r) => (
-                          <TableRow key={r.id}>
-                            <TableCell>{(items.find((it: any) => it.id === r.productId)?.name) || r.productId}</TableCell>
+                        {(mps || []).map((r: any) => (
+                          <TableRow key={r._id || r.id}>
+                            <TableCell>{getProductName(r.productId)}</TableCell>
                             <TableCell>{r.period}</TableCell>
                             <TableCell>{r.plannedQty}</TableCell>
                             <TableCell><Badge>{r.status || "planned"}</Badge></TableCell>
@@ -499,7 +757,7 @@ export default function PPCDashboard() {
                                   size="icon"
                                   variant="ghost"
                                   disabled={!canDelete}
-                                  onClick={() => canDelete && deleteMps(r.id)}
+                                  onClick={() => canDelete && deleteMps(r._id || r.id || '')}
                                   className={canDelete ? "" : "opacity-50 cursor-not-allowed"}
                                 >
                                   🗑</Button>
@@ -509,7 +767,7 @@ export default function PPCDashboard() {
                         ))}
                       </TableBody>
                     </Table>
-                    {mps.length === 0 && <div className="text-center text-muted-foreground py-6">No MPS plans defined.</div>}
+                    {(mps || []).length === 0 && <div className="text-center text-muted-foreground py-6">No MPS plans defined.</div>}
                   </CardContent>
                 </Card>
               </div>
@@ -525,7 +783,7 @@ export default function PPCDashboard() {
                 <div className="flex gap-2">
                   <Button
                     disabled={!canCreate}
-                    onClick={() => canCreate && runMrp()}
+                    onClick={() => canCreate && openMrpDialog()}
                     className={canCreate ? "" : "opacity-50 cursor-not-allowed"}
                   >
                     <Plus className="mr-2 h-4 w-4" /> Run MRP</Button>
@@ -547,7 +805,7 @@ export default function PPCDashboard() {
                     </TableHeader>
                     <TableBody>
                       {mrpLines.map((l) => (
-                        <TableRow key={l.id}>
+                        <TableRow key={l._id || l.id}>
                           <TableCell>{(items.find((it: any) => it.id === l.materialId)?.name) || l.materialId}</TableCell>
                           <TableCell>{l.requiredQty}</TableCell>
                           <TableCell>
@@ -555,7 +813,7 @@ export default function PPCDashboard() {
                               type="number"
                               value={l.availableQty}
                               disabled={!canEdit}
-                              onChange={(e) => canEdit && updateMrpAvailable(l.id, Number(e.target.value) || 0)}
+                              onChange={(e) => canEdit && updateMrpAvailable(l._id || l.id || '', Number(e.target.value) || 0)}
                               className={!canEdit ? "opacity-50 cursor-not-allowed" : ""}
                             />
 
@@ -565,7 +823,7 @@ export default function PPCDashboard() {
                             <div className="flex gap-2">
                               <Button
                                 disabled={!canCreate || l.prCreated || l.shortageQty <= 0}
-                                onClick={() => canCreate && createPrForLine(l.id)}
+                                onClick={() => canCreate && createPrForLine(l._id || l.id || '')}
                               >
                                 Create PR</Button>
                               {l.prCreated && <Badge>PR Created</Badge>}
@@ -677,9 +935,9 @@ export default function PPCDashboard() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {plannedOrders.map((o) => (
-                        <TableRow key={o.id}>
-                          <TableCell>{(items.find((it: any) => it.id === o.productId)?.name) || o.productId}</TableCell>
+                      {(plannedOrders || []).map((o: any) => (
+                        <TableRow key={o._id || o.id}>
+                          <TableCell>{getProductName(o.productId)}</TableCell>
                           <TableCell>{o.quantity}</TableCell>
                           <TableCell>{o.startDate}</TableCell>
                           <TableCell>{o.endDate}</TableCell>
@@ -698,7 +956,7 @@ export default function PPCDashboard() {
                                 size="icon"
                                 variant="ghost"
                                 disabled={!canDelete}
-                                onClick={() => canDelete && deletePo(o.id)}
+                                onClick={() => canDelete && deletePo(o._id || o.id || '')}
                                 className={canDelete ? "" : "opacity-50 cursor-not-allowed"}
                               >
                                 🗑
@@ -710,7 +968,7 @@ export default function PPCDashboard() {
                       ))}
                     </TableBody>
                   </Table>
-                  {plannedOrders.length === 0 && <div className="text-center text-muted-foreground py-6">No planned orders yet.</div>}
+                  {(plannedOrders || []).length === 0 && <div className="text-center text-muted-foreground py-6">No planned orders yet.</div>}
                 </CardContent>
               </Card>
             </TabsContent>
@@ -725,12 +983,45 @@ export default function PPCDashboard() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>{editingForecast ? "Edit Forecast" : "New Forecast"}</DialogTitle></DialogHeader>
           <div className="grid gap-2">
-            <Label>Product ID</Label>
-            <Input value={forecastForm.productId || ""} onChange={(e) => setForecastForm({ ...forecastForm, productId: e.target.value })} />
-            <Label>Period (e.g., 2025-11)</Label>
-            <Input value={forecastForm.period || ""} onChange={(e) => setForecastForm({ ...forecastForm, period: e.target.value })} />
-            <Label>Forecast Qty</Label>
-            <Input type="number" value={forecastForm.forecastQty ?? 0} onChange={(e) => setForecastForm({ ...forecastForm, forecastQty: Number(e.target.value) })} />
+            <Label>Product</Label>
+            <Select 
+              value={forecastForm.productId || ""} 
+              onValueChange={(value) => setForecastForm({ ...forecastForm, productId: value })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select a product" />
+              </SelectTrigger>
+              <SelectContent>
+                {products.length === 0 ? (
+                  <SelectItem value="" disabled>No products available (Total: {products.length})</SelectItem>
+                ) : (
+                  products.map((product) => (
+                    <SelectItem key={product._id} value={product._id}>
+                      {product.name} ({product.code || product._id})
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+            <Label>Current Stock</Label>
+            <Input type="number" value={forecastForm.currentStock ?? 0} onChange={(e) => setForecastForm({ ...forecastForm, currentStock: Number(e.target.value) })} />
+            <Label>Demand Forecast</Label>
+            <Input type="number" value={forecastForm.demandForecast ?? 0} onChange={(e) => setForecastForm({ ...forecastForm, demandForecast: Number(e.target.value) })} />
+            <Label>Suggested Replenishment</Label>
+            <Input type="number" value={forecastForm.suggestedReplenishment ?? 0} onChange={(e) => setForecastForm({ ...forecastForm, suggestedReplenishment: Number(e.target.value) })} />
+            <Label>Lead Time (days)</Label>
+            <Input type="number" value={forecastForm.leadTime ?? 0} onChange={(e) => setForecastForm({ ...forecastForm, leadTime: Number(e.target.value) })} />
+            <Label>Priority</Label>
+            <select 
+              value={forecastForm.priority || "low"} 
+              onChange={(e) => setForecastForm({ ...forecastForm, priority: e.target.value as any })}
+              className="w-full p-2 border rounded"
+            >
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </select>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setForecastDialogOpen(false)}>Cancel</Button>
@@ -748,8 +1039,26 @@ export default function PPCDashboard() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>{editingMps ? "Edit MPS" : "New MPS"}</DialogTitle></DialogHeader>
           <div className="grid gap-2">
-            <Label>Product ID</Label>
-            <Input value={mpsForm.productId || ""} onChange={(e) => setMpsForm({ ...mpsForm, productId: e.target.value })} />
+            <Label>Product</Label>
+            <Select 
+              value={mpsForm.productId || ""} 
+              onValueChange={(value) => setMpsForm({ ...mpsForm, productId: value })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select a product" />
+              </SelectTrigger>
+              <SelectContent>
+                {products.length === 0 ? (
+                  <SelectItem value="" disabled>No products available (Total: {products.length})</SelectItem>
+                ) : (
+                  products.map((product) => (
+                    <SelectItem key={product._id} value={product._id}>
+                      {product.name} ({product.code || product._id})
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
             <Label>Period</Label>
             <Input value={mpsForm.period || ""} onChange={(e) => setMpsForm({ ...mpsForm, period: e.target.value })} />
             <Label>Planned Qty</Label>
@@ -771,8 +1080,26 @@ export default function PPCDashboard() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>{editingPo ? "Edit Order" : "New Order"}</DialogTitle></DialogHeader>
           <div className="grid gap-2">
-            <Label>Product ID</Label>
-            <Input value={poForm.productId || ""} onChange={(e) => setPoForm({ ...poForm, productId: e.target.value })} />
+            <Label>Product</Label>
+            <Select 
+              value={poForm.productId || ""} 
+              onValueChange={(value) => setPoForm({ ...poForm, productId: value })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select a product" />
+              </SelectTrigger>
+              <SelectContent>
+                {products.length === 0 ? (
+                  <SelectItem value="" disabled>No products available (Total: {products.length})</SelectItem>
+                ) : (
+                  products.map((product) => (
+                    <SelectItem key={product._id} value={product._id}>
+                      {product.name} ({product.code || product._id})
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
             <Label>Quantity</Label>
             <Input type="number" value={poForm.quantity ?? 0} onChange={(e) => setPoForm({ ...poForm, quantity: Number(e.target.value) })} />
             <Label>Start Date</Label>
@@ -787,6 +1114,68 @@ export default function PPCDashboard() {
               onClick={() => (editingPo ? canEdit : canCreate) && savePo()}
             >
               Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* MRP Configuration Dialog */}
+      <Dialog open={mrpDialogOpen} onOpenChange={setMrpDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Run MRP Calculation</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <h4 className="font-semibold text-blue-900 mb-2">MRP Process Overview</h4>
+              <p className="text-sm text-blue-800 mb-2">
+                Material Requirements Planning (MRP) will calculate material needs based on:
+              </p>
+              <ul className="text-sm text-blue-800 space-y-1 ml-4">
+                <li>• Current Master Production Schedule (MPS)</li>
+                <li>• Bill of Materials (BOM) for each product</li>
+                <li>• Current inventory levels</li>
+              </ul>
+            </div>
+            
+            <div className="bg-yellow-50 p-4 rounded-lg">
+              <h4 className="font-semibold text-yellow-900 mb-2">⚠️ Prerequisites Required</h4>
+              <p className="text-sm text-yellow-800 mb-2">
+                Before running MRP, ensure you have:
+              </p>
+              <ul className="text-sm text-yellow-800 space-y-1 ml-4">
+                <li>• At least one MPS record with planned quantity</li>
+                <li>• BOMs created for your products in BOM Management</li>
+                <li>• Materials/Raw materials defined in BOM items</li>
+              </ul>
+            </div>
+
+            <div className="bg-red-50 p-4 rounded-lg">
+              <h4 className="font-semibold text-red-900 mb-2">⚠️ Important Notice</h4>
+              <p className="text-sm text-red-800">
+                Running MRP will clear all existing MRP lines and recalculate material requirements from scratch.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <Label className="font-semibold">MPS Records</Label>
+                <p className="text-muted-foreground">{(mps || []).length} active plans</p>
+              </div>
+              <div>
+                <Label className="font-semibold">Current MRP Lines</Label>
+                <p className="text-muted-foreground">{mrpLines.length} existing lines</p>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMrpDialogOpen(false)}>Cancel</Button>
+            <Button
+              disabled={!canCreate}
+              onClick={() => canCreate && runMrpCalculation()}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              Run MRP Calculation
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

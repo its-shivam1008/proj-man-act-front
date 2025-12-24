@@ -1,6 +1,7 @@
 import { usePermission } from "@/hooks/userPermission";
 import { useEffect, useMemo, useState } from "react";
-import { storage, STORAGE_KEYS } from "../../../lib/storage";
+import { useDispatch, useSelector } from "react-redux";
+import { toast } from "sonner";
 import {
   Card,
   CardContent,
@@ -10,6 +11,7 @@ import {
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import {
   Table,
   TableBody,
@@ -43,6 +45,17 @@ import {
   Legend,
 } from "recharts";
 import { Plus, Check, XCircle, ShieldAlert } from "lucide-react";
+import {
+  fetchPlans,
+  fetchInspections,
+  fetchNCRs,
+  fetchCAPAs,
+  createInspection,
+  createPlan,
+  createNCR,
+  createCAPA,
+} from "../../../redux/slices/production/qualitySlice";
+import axios from "../../../utils/axiosApi";
 
 const genId = (p = "id") => `${p}_${Math.random().toString(36).slice(2, 9)}`;
 const nowISO = () => new Date().toISOString();
@@ -56,10 +69,19 @@ const nowISO = () => new Date().toISOString();
  */
 
 export default function QualityInspectionPage() {
+  const dispatch = useDispatch();
+  const qualityState = useSelector((state: any) => state.quality || {});
+  const { plans = [], inspections = [], ncrs = [], capas = [], loading = false } = qualityState;
+  
+  // Check authentication state
+  const authState = useSelector((state: any) => state.auth || {});
+  const { userProfile, organisationId, isAuthenticated } = authState;
+
   const canView = usePermission("qualityInspection", "view");
   const canCreate = usePermission("qualityInspection", "create");
   const canEdit = usePermission("qualityInspection", "edit");
   const canDelete = usePermission("qualityInspection", "delete");
+  
   if (!canView) {
     return (
       <div className="text-center py-12 px-4">
@@ -73,30 +95,44 @@ export default function QualityInspectionPage() {
       </div>
     );
   }
-  // Local state mapped from storage
-  const [plans, setPlans] = useState(() => storage.get(STORAGE_KEYS.QUALITY_PLANS, []));
-  const [inspections, setInspections] = useState(() => storage.get(STORAGE_KEYS.INSPECTIONS, []));
-  const [ncrs, setNCRs] = useState(() => storage.get(STORAGE_KEYS.NCR_REPORTS, []));
-  const [capas, setCAPAs] = useState(() => storage.get(STORAGE_KEYS.CAPA_ACTIONS, []));
-  const [grns, setGrns] = useState(() => storage.get(STORAGE_KEYS.GRNS, []));
-  const [inventory, setInventory] = useState(() => storage.get(STORAGE_KEYS.INVENTORY, {}));
-  const [wip, setWip] = useState(() => storage.get(STORAGE_KEYS.WIP_INVENTORY, {}));
+
+  // Check if user is authenticated
+  if (!isAuthenticated) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Authentication Required
+        </h3>
+        <p className="text-gray-600">
+          Please log in to access the Quality Inspection dashboard.
+        </p>
+      </div>
+    );
+  }
+
+  // Load data on mount
+  useEffect(() => {
+    if (isAuthenticated && organisationId) {
+      console.log("Quality: Loading data...");
+      dispatch(fetchPlans() as any);
+      dispatch(fetchInspections() as any);
+      dispatch(fetchNCRs() as any);
+      dispatch(fetchCAPAs() as any);
+    }
+  }, [dispatch, isAuthenticated, organisationId]);
+
+  // Debug: Log inspections data
+  useEffect(() => {
+    console.log("Inspections data:", inspections);
+  }, [inspections]);
 
   // UI state
   const [tab, setTab] = useState("plans");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<any>({});
 
-  // persist back to storage whenever these states change
-  useEffect(() => storage.set(STORAGE_KEYS.QUALITY_PLANS, plans), [plans]);
-  useEffect(() => storage.set(STORAGE_KEYS.INSPECTIONS, inspections), [inspections]);
-  useEffect(() => storage.set(STORAGE_KEYS.NCR_REPORTS, ncrs), [ncrs]);
-  useEffect(() => storage.set(STORAGE_KEYS.CAPA_ACTIONS, capas), [capas]);
-  useEffect(() => storage.set(STORAGE_KEYS.GRNS, grns), [grns]);
-  useEffect(() => storage.set(STORAGE_KEYS.INVENTORY, inventory), [inventory]);
-  useEffect(() => storage.set(STORAGE_KEYS.WIP_INVENTORY, wip), [wip]);
-
-  /** ---------- Analytics (unchanged) ---------- */
+  /** ---------- Analytics (updated to use Redux data) ---------- */
   const passFailStats = useMemo(() => {
     const pass = inspections.filter((i) => i.result === "Pass").length;
     const fail = inspections.filter((i) => i.result === "Fail").length;
@@ -115,166 +151,46 @@ export default function QualityInspectionPage() {
     return Object.entries(map).map(([status, count]) => ({ status, count }));
   }, [capas]);
 
-  /** ---------- CRUD for plans / inspections / ncr / capa (unchanged) ---------- */
-  const addRecord = () => {
-    if (tab === "plans") {
-      setPlans((p) => [...p, { id: genId("plan"), ...form }]);
-    } else if (tab === "inspections") {
-      const record = { id: genId("insp"), date: nowISO(), ...form };
-      setInspections((p) => [record, ...p]);
-      if (form.result === "Fail") autoGenerateNCR(record);
-    } else if (tab === "ncrs") {
-      setNCRs((p) => [{ id: genId("ncr"), createdAt: nowISO(), ...form }, ...p]);
-    } else if (tab === "capas") {
-      setCAPAs((p) => [{ id: genId("capa"), ...form }, ...p]);
-    }
-    setForm({});
-    setDialogOpen(false);
-  };
-
-  const autoGenerateNCR = (inspection: any) => {
-    const ncr = {
-      id: genId("ncr"),
-      inspectionId: inspection.id,
-      cause: inspection.remarks || "Inspection failure",
-      severity: "Major",
-      status: "Open",
-      responsibleDept: "Quality",
-      createdAt: nowISO(),
-    };
-    setNCRs((p) => [ncr, ...p]);
-    // Optionally create CAPA stub
-    setCAPAs((p) => [{ id: genId("capa"), ncrId: ncr.id, type: "Corrective", action: "Investigation", owner: "QA", dueDate: "", status: "Open" }, ...p]);
-  };
-
-  /** ---------- GRN integration helpers ---------- */
-
-  // find all GRN items that are pending QC
-  const pendingGrnItems = useMemo(() => {
-    const items: {
-      grnId: string;
-      productId: string;
-      batchNo: string;
-      qty: number;
-      unitValue?: number;
-      totalValue?: number;
-    }[] = [];
-    grns.forEach((g: any) => {
-      (g.items || []).forEach((it: any) => {
-        if (it.status === "Pending QC" || it.status === "Pending") {
-          items.push({ grnId: g.id, productId: it.productId, batchNo: it.batchNo, qty: it.qty, unitValue: it.unitValue, totalValue: it.totalValue });
-        }
-      });
-    });
-    return items;
-  }, [grns]);
-
-  // Accept a GRN batch: mark GRN item accepted, mark inventory batch released, create inspection (Pass)
-  const acceptGrnBatch = (grnId: string, productId: string, batchNo: string) => {
-    // 1) update grns
-    const newGrns = grns.map((g: any) =>
-      g.id === grnId
-        ? { ...g, items: g.items.map((it: any) => (it.productId === productId && it.batchNo === batchNo ? { ...it, status: "Accepted" } : it)) }
-        : g
-    );
-    setGrns(newGrns);
-
-    // 2) update inventory batch status
-    const inv = { ...inventory };
-    if (inv[productId]?.batches && inv[productId].batches[batchNo]) {
-      inv[productId].batches[batchNo].status = "Released";
-    } else {
-      // if inventory doesn't have this batch (maybe GRN created earlier), add it
-      inv[productId] = inv[productId] || { qty: 0, batches: {}, valuation: 0, warehouse: "Finished" };
-      inv[productId].batches = inv[productId].batches || {};
-      inv[productId].batches[batchNo] = { qty: 0, status: "Released" };
-    }
-    setInventory(inv);
-
-    // 3) create inspection record (Pass)
-    const insp = {
-      id: genId("insp"),
-      planId: "", // could map to final plan
-      date: nowISO(),
-      inspector: "",
-      result: "Pass",
-      remarks: `Auto-accepted from GRN ${grnId}`,
-      linkedBatch: batchNo,
-      linkedGRN: grnId,
-    };
-    setInspections((p) => [insp, ...p]);
-  };
-
-  // Reject a GRN batch: mark GRN item rejected, move qty back to WIP, adjust inventory, create NCR/CAPA and inspection (Fail)
-  const rejectGrnBatch = (grnId: string, productId: string, batchNo: string) => {
-    // 1) update grns
-    const newGrns = grns.map((g: any) =>
-      g.id === grnId
-        ? { ...g, items: g.items.map((it: any) => (it.productId === productId && it.batchNo === batchNo ? { ...it, status: "Rejected" } : it)) }
-        : g
-    );
-    setGrns(newGrns);
-
-    // 2) move qty from inventory back to WIP (reduce inventory, increase wip)
-    const inv = { ...inventory };
-    const w = { ...wip };
-    const batchInfo = inv[productId]?.batches?.[batchNo];
-
-    const qtyToMove = batchInfo?.qty ?? (() => {
-      // try find in GRN to get qty
-      const g = grns.find((x: any) => x.id === grnId);
-      const it = g?.items?.find((x: any) => x.batchNo === batchNo && x.productId === productId);
-      return it?.qty || 0;
-    })();
-
-    // reduce inventory totals
-    if (inv[productId]) {
-      inv[productId].qty = Math.max(0, (inv[productId].qty || 0) - qtyToMove);
-      if (inv[productId].batches && inv[productId].batches[batchNo]) {
-        delete inv[productId].batches[batchNo];
+  /** ---------- CRUD functions (updated to use Redux actions) ---------- */
+  const addRecord = async () => {
+    try {
+      if (tab === "plans") {
+        await dispatch(createPlan(form) as any);
+        toast.success("Quality plan created successfully");
+      } else if (tab === "inspections") {
+        await dispatch(createInspection(form) as any);
+        toast.success("Inspection record created successfully");
+      } else if (tab === "ncrs") {
+        await dispatch(createNCR(form) as any);
+        toast.success("NCR created successfully");
+      } else if (tab === "capas") {
+        await dispatch(createCAPA(form) as any);
+        toast.success("CAPA created successfully");
       }
+      setForm({});
+      setDialogOpen(false);
+    } catch (error) {
+      toast.error("Failed to create record");
+      console.error(error);
     }
-    // add to WIP
-    w[productId] = { ...(w[productId] || {}), qty: (w[productId]?.qty || 0) + qtyToMove };
+  };
 
-    setInventory(inv);
-    setWip(w);
+  /** ---------- GRN integration helpers (temporarily disabled - needs GRN backend integration) ---------- */
+  
+  // TODO: Implement GRN integration with backend
+  const pendingGrnItems = useMemo(() => {
+    // Placeholder - will be implemented when GRN backend is integrated
+    return [];
+  }, []);
 
-    // 3) create inspection record (Fail)
-    const insp = {
-      id: genId("insp"),
-      planId: "", // map to plan if needed
-      date: nowISO(),
-      inspector: "",
-      result: "Fail",
-      remarks: `Auto-rejected from GRN ${grnId}`,
-      linkedBatch: batchNo,
-      linkedGRN: grnId,
-    };
-    setInspections((p) => [insp, ...p]);
+  const acceptGrnBatch = (grnId: string, productId: string, batchNo: string) => {
+    // TODO: Implement with backend API
+    toast.info("GRN integration will be implemented with backend");
+  };
 
-    // 4) create NCR and CAPA
-    const ncr = {
-      id: genId("ncr"),
-      inspectionId: insp.id,
-      cause: `Rejected batch ${batchNo}`,
-      severity: "Major",
-      status: "Open",
-      responsibleDept: "Quality",
-      createdAt: nowISO(),
-    };
-    setNCRs((p) => [ncr, ...p]);
-
-    const capa = {
-      id: genId("capa"),
-      ncrId: ncr.id,
-      type: "Corrective",
-      action: "Investigate rejection and quarantine material",
-      owner: "QA",
-      dueDate: "",
-      status: "Open",
-    };
-    setCAPAs((p) => [capa, ...p]);
+  const rejectGrnBatch = (grnId: string, productId: string, batchNo: string) => {
+    // TODO: Implement with backend API  
+    toast.info("GRN integration will be implemented with backend");
   };
 
   /** ---------- Form rendering (unchanged from previous version) ---------- */
@@ -286,12 +202,16 @@ export default function QualityInspectionPage() {
             <Label>Plan Name</Label>
             <Input value={form.name || ""} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             <Label>Type</Label>
-            <select className="border p-2 rounded-md w-full" value={form.type || ""} onChange={(e) => setForm({ ...form, type: e.target.value })}>
-              <option value="">Select Type</option>
-              <option value="Incoming">Incoming</option>
-              <option value="In-Process">In-Process</option>
-              <option value="Final">Final</option>
-            </select>
+            <Select value={form.type || ""} onValueChange={(value) => setForm({ ...form, type: value })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Incoming">Incoming</SelectItem>
+                <SelectItem value="In-Process">In-Process</SelectItem>
+                <SelectItem value="Final">Final</SelectItem>
+              </SelectContent>
+            </Select>
             <Label>Sampling Procedure</Label>
             <Input value={form.sampling || ""} onChange={(e) => setForm({ ...form, sampling: e.target.value })} />
             <Label>Acceptance Criteria</Label>
@@ -302,18 +222,28 @@ export default function QualityInspectionPage() {
         return (
           <>
             <Label>Inspection Plan</Label>
-            <select className="border p-2 rounded-md w-full" value={form.planId || ""} onChange={(e) => setForm({ ...form, planId: e.target.value })}>
-              <option value="">Select Plan</option>
-              {plans.map((p: any) => (<option key={p.id} value={p.id}>{p.name}</option>))}
-            </select>
+            <Select value={form.planId || ""} onValueChange={(value) => setForm({ ...form, planId: value })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select Plan" />
+              </SelectTrigger>
+              <SelectContent>
+                {plans.map((p: any) => (
+                  <SelectItem key={p._id} value={p._id}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Label>Inspector</Label>
             <Input value={form.inspector || ""} onChange={(e) => setForm({ ...form, inspector: e.target.value })} />
             <Label>Result</Label>
-            <select className="border p-2 rounded-md w-full" value={form.result || ""} onChange={(e) => setForm({ ...form, result: e.target.value })}>
-              <option value="">Select</option>
-              <option value="Pass">Pass</option>
-              <option value="Fail">Fail</option>
-            </select>
+            <Select value={form.result || ""} onValueChange={(value) => setForm({ ...form, result: value })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select Result" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Pass">Pass</SelectItem>
+                <SelectItem value="Fail">Fail</SelectItem>
+              </SelectContent>
+            </Select>
             <Label>Remarks</Label>
             <Input value={form.remarks || ""} onChange={(e) => setForm({ ...form, remarks: e.target.value })} />
           </>
@@ -324,12 +254,16 @@ export default function QualityInspectionPage() {
             <Label>Cause</Label>
             <Input value={form.cause || ""} onChange={(e) => setForm({ ...form, cause: e.target.value })} />
             <Label>Severity</Label>
-            <select className="border p-2 rounded-md w-full" value={form.severity || ""} onChange={(e) => setForm({ ...form, severity: e.target.value })}>
-              <option value="">Select</option>
-              <option value="Minor">Minor</option>
-              <option value="Major">Major</option>
-              <option value="Critical">Critical</option>
-            </select>
+            <Select value={form.severity || ""} onValueChange={(value) => setForm({ ...form, severity: value })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select Severity" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Minor">Minor</SelectItem>
+                <SelectItem value="Major">Major</SelectItem>
+                <SelectItem value="Critical">Critical</SelectItem>
+              </SelectContent>
+            </Select>
             <Label>Responsible Department</Label>
             <Input value={form.responsibleDept || ""} onChange={(e) => setForm({ ...form, responsibleDept: e.target.value })} />
           </>
@@ -338,27 +272,41 @@ export default function QualityInspectionPage() {
         return (
           <>
             <Label>NCR ID</Label>
-            <select className="border p-2 rounded-md w-full" value={form.ncrId || ""} onChange={(e) => setForm({ ...form, ncrId: e.target.value })}>
-              <option value="">Select NCR</option>
-              {ncrs.map((n: any) => (<option key={n.id} value={n.id}>{n.id}</option>))}
-            </select>
+            <Select value={form.ncrId || ""} onValueChange={(value) => setForm({ ...form, ncrId: value })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select NCR" />
+              </SelectTrigger>
+              <SelectContent>
+                {ncrs.map((n: any) => (
+                  <SelectItem key={n._id} value={n._id}>{n._id}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Label>Type</Label>
-            <select className="border p-2 rounded-md w-full" value={form.type || ""} onChange={(e) => setForm({ ...form, type: e.target.value })}>
-              <option value="">Select Type</option>
-              <option value="Corrective">Corrective</option>
-              <option value="Preventive">Preventive</option>
-            </select>
+            <Select value={form.type || ""} onValueChange={(value) => setForm({ ...form, type: value })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Corrective">Corrective</SelectItem>
+                <SelectItem value="Preventive">Preventive</SelectItem>
+              </SelectContent>
+            </Select>
             <Label>Action</Label>
             <Input value={form.action || ""} onChange={(e) => setForm({ ...form, action: e.target.value })} />
             <Label>Owner</Label>
             <Input value={form.owner || ""} onChange={(e) => setForm({ ...form, owner: e.target.value })} />
             <Label>Status</Label>
-            <select className="border p-2 rounded-md w-full" value={form.status || ""} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-              <option value="">Select</option>
-              <option value="Open">Open</option>
-              <option value="In Progress">In Progress</option>
-              <option value="Closed">Closed</option>
-            </select>
+            <Select value={form.status || ""} onValueChange={(value) => setForm({ ...form, status: value })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Open">Open</SelectItem>
+                <SelectItem value="In Progress">In Progress</SelectItem>
+                <SelectItem value="Closed">Closed</SelectItem>
+              </SelectContent>
+            </Select>
           </>
         );
       default:
@@ -404,7 +352,7 @@ export default function QualityInspectionPage() {
                 </TableHeader>
                 <TableBody>
                   {plans.map((p: any) => (
-                    <TableRow key={p.id}>
+                    <TableRow key={p._id}>
                       <TableCell>{p.name}</TableCell>
                       <TableCell>{p.type}</TableCell>
                       <TableCell>{p.sampling}</TableCell>
@@ -445,9 +393,14 @@ export default function QualityInspectionPage() {
                   </TableHeader>
                   <TableBody>
                     {inspections.map((i: any) => (
-                      <TableRow key={i.id}>
-                        <TableCell>{new Date(i.date).toLocaleString()}</TableCell>
-                        <TableCell>{plans.find((p: any) => p.id === i.planId)?.name || "—"}</TableCell>
+                      <TableRow key={i._id}>
+                        <TableCell>{new Date(i.createdAt || i.date).toLocaleString()}</TableCell>
+                        <TableCell>{
+                          // Handle both populated and non-populated planId
+                          typeof i.planId === 'object' && i.planId?.name 
+                            ? i.planId.name 
+                            : plans.find((p: any) => p._id === i.planId)?.name || "—"
+                        }</TableCell>
                         <TableCell>{i.inspector || "—"}</TableCell>
                         <TableCell><Badge variant={i.result === "Pass" ? "success" : i.result === "Fail" ? "destructive" : undefined}>{i.result}</Badge></TableCell>
                         <TableCell>{i.remarks}</TableCell>
@@ -476,35 +429,30 @@ export default function QualityInspectionPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {pendingGrnItems.map((it) => {
-                        const g = grns.find((x: any) => x.id === it.grnId);
-                        return (
-                          <TableRow key={it.batchNo}>
-                            <TableCell>{it.grnId}</TableCell>
-                            <TableCell>{it.productId}</TableCell>
-                            <TableCell>{it.batchNo}</TableCell>
-                            <TableCell>{it.qty}</TableCell>
-                            <TableCell className="grid grid-cols-2 gap-2">
-                              <Button
-                                disabled={!canEdit}
-                                onClick={() => canEdit && acceptGrnBatch(it.grnId, it.productId, it.batchNo)}
-                                className={`${!canEdit ? "opacity-50 cursor-not-allowed" : "bg-green-600"} w-full bg-green-600`}
-                              >
-
-                                <Check className="mr-2 h-4 w-4" /> Accept
-                              </Button>
-                              <Button
-                                disabled={!canEdit}
-                                onClick={() => canEdit && rejectGrnBatch(it.grnId, it.productId, it.batchNo)}
-                                className={`${!canEdit ? "opacity-50 cursor-not-allowed" : "bg-red-600"} w-full bg-red-600`}
-                              >
-
-                                <XCircle className="mr-2 h-4 w-4" /> Reject
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
+                      {pendingGrnItems.map((it: any) => (
+                        <TableRow key={it.batchNo}>
+                          <TableCell>{it.grnId}</TableCell>
+                          <TableCell>{it.productId}</TableCell>
+                          <TableCell>{it.batchNo}</TableCell>
+                          <TableCell>{it.qty}</TableCell>
+                          <TableCell className="grid grid-cols-2 gap-2">
+                            <Button
+                              disabled={!canEdit}
+                              onClick={() => canEdit && acceptGrnBatch(it.grnId, it.productId, it.batchNo)}
+                              className={`${!canEdit ? "opacity-50 cursor-not-allowed" : "bg-green-600"} w-full bg-green-600`}
+                            >
+                              <Check className="mr-2 h-4 w-4" /> Accept
+                            </Button>
+                            <Button
+                              disabled={!canEdit}
+                              onClick={() => canEdit && rejectGrnBatch(it.grnId, it.productId, it.batchNo)}
+                              className={`${!canEdit ? "opacity-50 cursor-not-allowed" : "bg-red-600"} w-full bg-red-600`}
+                            >
+                              <XCircle className="mr-2 h-4 w-4" /> Reject
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
                     </TableBody>
                   </Table>
                 )}
@@ -539,8 +487,8 @@ export default function QualityInspectionPage() {
                 </TableHeader>
                 <TableBody>
                   {ncrs.map((n: any) => (
-                    <TableRow key={n.id}>
-                      <TableCell>{n.id}</TableCell>
+                    <TableRow key={n._id}>
+                      <TableCell>{n._id}</TableCell>
                       <TableCell>{n.cause}</TableCell>
                       <TableCell>{n.severity}</TableCell>
                       <TableCell><Badge>{n.status}</Badge></TableCell>
@@ -578,8 +526,8 @@ export default function QualityInspectionPage() {
                 </TableHeader>
                 <TableBody>
                   {capas.map((c: any) => (
-                    <TableRow key={c.id}>
-                      <TableCell>{c.id}</TableCell>
+                    <TableRow key={c._id}>
+                      <TableCell>{c._id}</TableCell>
                       <TableCell>{c.type}</TableCell>
                       <TableCell>{c.action}</TableCell>
                       <TableCell>{c.owner}</TableCell>
