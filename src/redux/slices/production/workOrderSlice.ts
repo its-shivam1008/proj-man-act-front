@@ -1,74 +1,120 @@
+// redux/slices/workOrderSlice.ts
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import axios from "@/utils/axiosApi";
 
+/* ================= TYPES ================= */
+export interface WorkOrder {
+  _id: string;
+  orderNo: string;
+  productId: string;
+  productName?: string;
+  quantity: number;
+  status: string;
+  startDate?: string;
+  endDate?: string;
+  dueDate?: string;
+  notes?: string;
+  imageUrl?: string;
+}
+
+interface WorkOrderState {
+  list: WorkOrder[];
+  loading: boolean;
+  error: string | null;
+}
+
+/* ================= INITIAL STATE ================= */
+const initialState: WorkOrderState = {
+  list: [],
+  loading: false,
+  error: null,
+};
+
+/* ================= THUNKS ================= */
 export const fetchWorkOrders = createAsyncThunk(
-  "workOrders/fetch",
-  async () => {
-    const res = await axios.get("/work-orders");
-    return res.data.data;
+  "workOrder/fetch",
+  async (_, { rejectWithValue }) => {
+    try {
+      const res = await axios.get("/fetch/work-order");
+      return res.data.data;
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.message || "Fetch failed");
+    }
   }
 );
 
 export const createWorkOrder = createAsyncThunk(
-  "workOrders/create",
-  async (data: any) => {
-    const res = await axios.post("/work-orders", data);
-    return res.data.data;
+  "workOrder/create",
+  async (payload: Partial<WorkOrder>, { rejectWithValue }) => {
+    try {
+      const res = await axios.post("/create/work-order", payload);
+      return res.data.data;
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.message || "Create failed");
+    }
   }
 );
 
 export const updateWorkOrder = createAsyncThunk(
-  "workOrders/update",
-  async ({ id, data }: any) => {
-    const res = await axios.put(`/work-orders/${id}`, data);
-    return res.data.data;
+  "workOrder/update",
+  async ({ id, data }: { id: string; data: Partial<WorkOrder> }, { rejectWithValue }) => {
+    try {
+      const res = await axios.put(`/work-order/${id}`, data);
+      return res.data.data;
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.message || "Update failed");
+    }
   }
 );
 
 export const deleteWorkOrder = createAsyncThunk(
-  "workOrders/delete",
-  async (id: string) => {
-    await axios.delete(`/work-orders/${id}`);
-    return id;
+  "workOrder/delete",
+  async (id: string, { rejectWithValue }) => {
+    try {
+      await axios.delete(`/work-order/${id}`);
+      return id;
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.message || "Delete failed");
+    }
   }
 );
 
-const slice = createSlice({
-  name: "workOrders",
-  initialState: {
-    list: [],
-    loading: false,
-  },
+/* ================= SLICE ================= */
+const workOrderSlice = createSlice({
+  name: "workOrder",
+  initialState,
   reducers: {},
-  extraReducers: (b) => {
-    // All addCase calls must come before addMatcher calls
-    b.addCase(fetchWorkOrders.fulfilled, (s, a) => {
-      s.list = a.payload;
-    });
+  extraReducers: (builder) => {
+    builder
+      /* FETCH */
+      .addCase(fetchWorkOrders.pending, (state) => {
+        state.loading = true;
+      })
+      .addCase(fetchWorkOrders.fulfilled, (state, action) => {
+        state.loading = false;
+        state.list = action.payload;
+      })
+      .addCase(fetchWorkOrders.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload as string;
+      })
 
-    b.addCase(createWorkOrder.fulfilled, (s, a) => {
-      s.list.unshift(a.payload);
-    });
+      /* CREATE */
+      .addCase(createWorkOrder.fulfilled, (state, action) => {
+        state.list.unshift(action.payload);
+      })
 
-    b.addCase(updateWorkOrder.fulfilled, (s, a) => {
-      const i = s.list.findIndex((w: any) => w._id === a.payload._id);
-      if (i !== -1) s.list[i] = a.payload;
-    });
+      /* UPDATE */
+      .addCase(updateWorkOrder.fulfilled, (state, action) => {
+        const idx = state.list.findIndex(w => w._id === action.payload._id);
+        if (idx !== -1) state.list[idx] = action.payload;
+      })
 
-    b.addCase(deleteWorkOrder.fulfilled, (s, a) => {
-      s.list = s.list.filter((w: any) => w._id !== a.payload);
-    });
-
-    // addMatcher calls must come after all addCase calls
-    b.addMatcher(
-      (a) => a.type.startsWith("workOrders/") && a.type.endsWith("/pending"),
-      (s) => { s.loading = true; }
-    );
-    b.addMatcher(
-      (a) => a.type.startsWith("workOrders/") && a.type.endsWith("/fulfilled"),
-      (s) => { s.loading = false; }
-    );
+      /* DELETE */
+      .addCase(deleteWorkOrder.fulfilled, (state, action) => {
+        state.list = state.list.filter(w => w._id !== action.payload);
+      });
   },
 });
 
-export default slice.reducer;
+export default workOrderSlice.reducer;

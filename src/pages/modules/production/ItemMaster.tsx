@@ -3,11 +3,27 @@ import React, { useState, useEffect, useMemo } from "react";
 import { Plus, Edit2, Trash2, Package, Search, TrendingUp, RefreshCcw, ShieldAlert } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
+import { useDispatch, useSelector } from "react-redux";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
+import type { RootState, AppDispatch } from "@/redux/store";
+
+import {
+  fetchItems,
+  createItem,
+  updateItem,
+  deleteItem,
+} from "@/redux/slices/production/itemMasterSlice";
+
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // --- Local Storage Helpers ---
-const STORAGE_KEYS = {
-  ITEMS: "ITEM_MASTER_DATA",
-};
+
 
 const getStorage = <T,>(key: string, def: T): T => {
   if (typeof window === "undefined") return def;
@@ -21,7 +37,6 @@ const getStorage = <T,>(key: string, def: T): T => {
 const setStorage = (key: string, value: any) => {
   localStorage.setItem(key, JSON.stringify(value));
 };
-const genId = () => `ITEM-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
 
 // --- Type ---
 interface ItemMaster {
@@ -42,6 +57,15 @@ interface ItemMaster {
 // --- Component ---
 export default function ItemMaster() {
 
+  const dispatch = useDispatch();
+  const { locations = [] } = useSelector((state: any) => state.masterData);
+
+
+  const { list: items, loading } = useSelector(
+    (state: RootState) => state.itemMaster
+  );
+  const organisationId = localStorage.getItem("organisationId");
+
   const canView = usePermission("itemMaster", "view");
   const canCreate = usePermission("itemMaster", "create");
   const canEdit = usePermission("itemMaster", "edit");
@@ -59,7 +83,6 @@ export default function ItemMaster() {
       </div>
     );
   }
-  const [items, setItems] = useState<ItemMaster[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingItem, setEditingItem] = useState<ItemMaster | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -76,26 +99,31 @@ export default function ItemMaster() {
   });
 
   // Load from localStorage
-  useEffect(() => {
-    const data = getStorage<ItemMaster[]>(STORAGE_KEYS.ITEMS, []);
-    setItems(data);
-  }, []);
 
-  const saveToStorage = (updated: ItemMaster[]) => {
-    setItems(updated);
-    setStorage(STORAGE_KEYS.ITEMS, updated);
-  };
+  useEffect(() => {
+    if (!organisationId) return;
+
+    dispatch(
+      fetchItems({
+        organisationId,      // ✅ REQUIRED
+        search: searchTerm,
+      })
+    );
+
+    dispatch(fetchMasterData("location"));
+  }, [dispatch, organisationId, searchTerm]);
+
 
   // Derived Stats
-  const totalItems = items.length;
-  const lowStockCount = items.filter((i) => i.stockQuantity <= i.reorderLevel).length;
+  const totalItems = items?.length;
+  const lowStockCount = items?.filter((i) => i.stockQuantity <= i.reorderLevel).length;
   const totalInventoryValue = items
-    .reduce((sum, i) => sum + i.stockQuantity * i.standardCost, 0)
-    .toFixed(2);
+    ?.reduce((sum, i) => sum + i.stockQuantity * i.standardCost, 0)
+    ?.toFixed(2);
 
   // Filtered items
   const filteredItems = useMemo(() => {
-    return items.filter(
+    return items?.filter(
       (i) =>
         i.itemCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
         i.itemName.toLowerCase().includes(searchTerm.toLowerCase())
@@ -103,33 +131,56 @@ export default function ItemMaster() {
   }, [searchTerm, items]);
 
   // CRUD
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!formData.itemCode || !formData.itemName) {
       toast.error("Item Code and Name are required");
       return;
     }
 
-    const now = new Date().toISOString();
-    if (editingItem) {
-      const updated = items.map((it) =>
-        it.id === editingItem.id
-          ? { ...formData, id: editingItem.id, updatedAt: now } as ItemMaster
-          : it
-      );
-      saveToStorage(updated);
-      toast.success("Item updated successfully");
-    } else {
-      const newItem: ItemMaster = {
-        ...(formData as ItemMaster),
-        id: genId(),
-        createdAt: now,
-      };
-      saveToStorage([newItem, ...items]);
-      toast.success("Item added successfully");
+    if (!organisationId) {
+      toast.error("Organisation not found. Please login again.");
+      return;
     }
-    resetForm();
+
+    try {
+      if (editingItem) {
+        await dispatch(
+          updateItem({
+            id: editingItem._id,
+            data: {
+              ...formData,
+              organisationId,
+            },
+          })
+        ).unwrap();
+
+        toast.success("Item updated");
+      } else {
+        await dispatch(
+          createItem({
+            ...formData,
+            organisationId,
+          })
+        ).unwrap();
+
+        toast.success("Item created");
+      }
+
+      resetForm();
+      dispatch(
+        fetchItems({
+          organisationId,
+        })
+      );
+
+    } catch (err: any) {
+      toast.error(err?.message || "Operation failed");
+    }
   };
+
+
 
   // if (editingItem && !canEdit) {
   //   return (
@@ -154,13 +205,18 @@ export default function ItemMaster() {
     setShowForm(true);
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm("Are you sure you want to delete this item?")) {
-      const updated = items.filter((i) => i.id !== id);
-      saveToStorage(updated);
+  const handleDelete = async (_id: string) => {
+    if (!confirm("Delete this item?")) return;
+
+    try {
+      await dispatch(deleteItem(_id)).unwrap();
       toast.success("Item deleted");
+    } catch {
+      toast.error("Delete failed");
     }
   };
+
+
 
   const resetForm = () => {
     setEditingItem(null);
@@ -179,12 +235,15 @@ export default function ItemMaster() {
   };
 
   const resetAll = () => {
-    if (confirm("Clear all items?")) {
-      setStorage(STORAGE_KEYS.ITEMS, []);
-      setItems([]);
-      toast("All items cleared!");
-    }
+    setSearchTerm("");
+    dispatch(fetchItems({ organisationId }));
   };
+
+  const getLocationName = (id: string) => {
+    const loc = locations.find((l: any) => l._id === id);
+    return loc ? loc.name : "N/A";
+  };
+
 
   return (
     <div className="space-y-6 p-5 max-w-7xl mx-auto">
@@ -256,7 +315,7 @@ export default function ItemMaster() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {filteredItems.length === 0 ? (
+              {filteredItems?.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="text-center py-12 text-gray-400">
                     <Package className="mx-auto mb-2" size={42} />
@@ -264,7 +323,7 @@ export default function ItemMaster() {
                   </td>
                 </tr>
               ) : (
-                filteredItems.map((item) => (
+                filteredItems?.map((item) => (
                   <motion.tr
                     key={item.id}
                     initial={{ opacity: 0 }}
@@ -297,7 +356,9 @@ export default function ItemMaster() {
                     </td>
                     <td className="px-6 py-3">{item.unit}</td>
                     <td className="px-6 py-3">${item.standardCost.toFixed(2)}</td>
-                    <td className="px-6 py-3">{item.location}</td>
+                    {/* <td className="px-6 py-3">{item.location}</td> */}
+                    <td className="px-6 py-3">{getLocationName(item.location)}</td>
+
                     <td className="px-6 py-3">
                       <div className="flex gap-3">
                         <button
@@ -309,7 +370,7 @@ export default function ItemMaster() {
                         </button>
                         <button
                           disabled={!canDelete}
-                          onClick={() => canDelete && handleDelete(item.id)}
+                          onClick={() => canDelete && handleDelete(item._id)}
                           className={`${canDelete ? "text-red-600 hover:text-red-800" : "text-gray-400 cursor-not-allowed"}`}
                         >
                           <Trash2 size={16} />
@@ -393,12 +454,31 @@ export default function ItemMaster() {
                     onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
                     className="border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500"
                   />
-                  <input
-                    placeholder="Location"
-                    value={formData.location}
-                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                    className="border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                  />
+                  <div>
+                    <label className="text-sm font-medium text-gray-700 mb-1 block">
+                      Location
+                    </label>
+
+                    <Select
+                      value={formData.location}
+                      onValueChange={(v) =>
+                        setFormData({ ...formData, location: v })
+                      }
+                    >
+                      <SelectTrigger className="border p-2 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                        <SelectValue placeholder="Select Location" />
+                      </SelectTrigger>
+
+                      <SelectContent>
+                        {locations.map((l: any) => (
+                          <SelectItem key={l._id} value={l._id}>
+                            {l.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
                 </div>
 
                 <div className="grid grid-cols-3 gap-4">

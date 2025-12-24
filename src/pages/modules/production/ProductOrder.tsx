@@ -1,4 +1,12 @@
 import { usePermission } from "@/hooks/userPermission";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "../../../components/ui/select";
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Card, CardHeader, CardTitle, CardContent,
@@ -21,16 +29,24 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
 } from "recharts";
-import { storage, STORAGE_KEYS } from "../../../lib/storage";
-
+import { useDispatch, useSelector } from "react-redux";
+import type { RootState, AppDispatch } from "@/redux/store";
+import {
+  fetchWorkOrders,
+  createWorkOrder,
+  updateWorkOrder,
+  deleteWorkOrder,
+} from "@/redux/slices/production/workOrderSlice";
+import { fetchProducts } from "@/redux/slices/productSlice";
 /* -----------------------------------
    Type Definitions
 ----------------------------------- */
 type WorkOrder = {
   id: string;
   orderNo: string;
-  productId: string;
+  productCode?: string;
   productName?: string;
+  productId?: string;
   quantity: number;
   batchNo?: string;
   bomId?: string;
@@ -79,6 +95,14 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
    Main Component
 ----------------------------------- */
 export default function WorkOrdersAdvanced() {
+  const dispatch = useDispatch<AppDispatch>();
+
+  const { list: orders, loading } = useSelector(
+    (state: RootState) => state.workOrders
+  );
+
+  const { products } = useSelector((state: RootState) => state.products);
+
 
   const canView = usePermission("productOrders", "view");
   const canCreate = usePermission("productOrders", "create");
@@ -98,21 +122,13 @@ export default function WorkOrdersAdvanced() {
       </div>
     );
   }
-  const [orders, setOrders] = useState<WorkOrder[]>(() => storage.get(STORAGE_KEYS.WORK_ORDERS, []));
-  const [inventory, setInventory] = useState<Record<string, any>>(() => storage.get(STORAGE_KEYS.INVENTORY, {}));
-  const boms = storage.get(STORAGE_KEYS.BOMS, []);
-  const routings = storage.get(STORAGE_KEYS.ROUTINGS, []);
-  const workCenters = storage.get(STORAGE_KEYS.WORK_CENTERS, []);
-  const items = storage.get(STORAGE_KEYS.ITEMS, []);
-  const [logs, setLogs] = useState<WorkLog[]>(() => storage.get(STORAGE_KEYS.WORK_LOGS, []));
-  const [audit, setAudit] = useState<Audit[]>(() => storage.get(STORAGE_KEYS.WORK_ORDER_AUDIT, []));
 
-  const timersRef = useRef<Record<string, number | null>>({});
+
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<WorkOrder | null>(null);
   const [form, setForm] = useState<Partial<WorkOrder>>({
-    productId: "",
+    productCode: "",
     productName: "",
     quantity: 0,
     batchNo: "",
@@ -133,12 +149,14 @@ export default function WorkOrdersAdvanced() {
   /* -----------------------------------
      Persist to localStorage
   ----------------------------------- */
+  const orgID = localStorage.getItem('organisationId') || undefined;
   useEffect(() => {
-    storage.set(STORAGE_KEYS.WORK_ORDERS, orders);
-    storage.set(STORAGE_KEYS.INVENTORY, inventory);
-    storage.set(STORAGE_KEYS.WORK_LOGS, logs);
-    storage.set(STORAGE_KEYS.WORK_ORDER_AUDIT, audit);
-  }, [orders, inventory, logs, audit]);
+    if (orgID) {
+      dispatch(fetchProducts(orgID));
+    }
+    dispatch(fetchWorkOrders());
+  }, [dispatch]);
+
 
   /* -----------------------------------
      Derived Data
@@ -157,7 +175,6 @@ export default function WorkOrdersAdvanced() {
   const openNew = () => {
     setEditing(null);
     setForm({
-      productId: "",
       productName: "",
       quantity: 0,
       batchNo: "",
@@ -184,66 +201,72 @@ export default function WorkOrdersAdvanced() {
   };
 
   const save = () => {
-    if (!form.productId || !form.quantity) return alert("Product and quantity are required");
+    if (!form.productName || !form.quantity || form.quantity <= 0) {
+      alert("Product and quantity are required");
+      return;
+    }
 
-    const now = new Date().toISOString();
-    const payload: WorkOrder = {
-      ...(editing || {}),
-      id: editing ? editing.id : genId("wo"),
-      orderNo: editing ? editing.orderNo : `WO-${todayISO()}-${Math.floor(Math.random() * 9000) + 1000}`,
-      productId: form.productId!,
-      productName: form.productName || form.productId,
+    const payload: any = {
+      productId: form.productId,
+      productName: form.productName,
       quantity: Number(form.quantity),
       batchNo: form.batchNo,
-      bomId: form.bomId,
-      routingId: form.routingId,
-      workCenterId: form.workCenterId,
       startDate: form.startDate,
       endDate: form.endDate,
       dueDate: form.dueDate,
-      status: form.status,
-      operators: form.operators || [],
-      attachments: form.attachments || [],
-      plannedHours: form.plannedHours || 0,
-      plannedCost: form.plannedCost || 0,
-      actualHours: form.actualHours || 0,
-      notes: form.notes || "",
-      imageUrl: form.imageUrl || "",
-      createdAt: editing ? editing.createdAt : now,
-      updatedAt: now,
+      status: form.status || "planned",
+      notes: form.notes,
+      imageUrl: form.imageUrl,
+      plannedHours: Number(form.plannedHours) || 0,
     };
 
-    const updated = editing
-      ? orders.map((o) => (o.id === editing.id ? payload : o))
-      : [payload, ...orders];
-    setOrders(updated);
+    if (editing?._id) {
+      dispatch(updateWorkOrder({ id: editing._id, data: payload }));
+    } else {
+      dispatch(createWorkOrder(payload));
+    }
+
     setDialogOpen(false);
   };
+
 
   const remove = (id: string) => {
     if (!confirm("Delete this work order?")) return;
     setOrders((prev) => prev.filter((o) => o.id !== id));
   };
+  useEffect(() => {
+    if (!form.productCode) return;
 
-  /* -----------------------------------
+    const selected = products.find(p => p.code === form.productCode);
+
+    if (selected) {
+      setForm((prev) => ({
+        ...prev,
+        productName: selected.name,
+      }));
+    }
+  }, [form.productCode, products]);
+
+  /* --------
+  --------------------------
      Inventory Safe Renderer
   ----------------------------------- */
-  const renderInventory = () => {
-    const entries = Object.entries(inventory || {});
-    if (entries.length === 0) return <div>No inventory data</div>;
+  // const renderInventory = () => {
+  //   const entries = Object.entries(inventory || {});
+  //   if (entries.length === 0) return <div>No inventory data</div>;
 
-    return entries.map(([key, val]) => {
-      const item = items.find((i: any) => i.id === key);
-      const name = item?.name || key;
-      const qty = typeof val === "object" ? val.qty : val;
-      const wh = typeof val === "object" ? val.warehouse : "—";
-      return (
-        <div key={key} className="text-sm border-b border-dashed py-1">
-          {name}: <strong>{qty}</strong> (Warehouse: {wh})
-        </div>
-      );
-    });
-  };
+  //   return entries.map(([key, val]) => {
+  //     const item = items.find((i: any) => i.id === key);
+  //     const name = item?.name || key;
+  //     const qty = typeof val === "object" ? val.qty : val;
+  //     const wh = typeof val === "object" ? val.warehouse : "—";
+  //     return (
+  //       <div key={key} className="text-sm border-b border-dashed py-1">
+  //         {name}: <strong>{qty}</strong> (Warehouse: {wh})
+  //       </div>
+  //     );
+  //   });
+  // };
 
   /* -----------------------------------
      Export CSV
@@ -304,7 +327,7 @@ export default function WorkOrdersAdvanced() {
       <Card>
         <CardHeader><CardTitle>Inventory Snapshot</CardTitle></CardHeader>
         <CardContent>
-          <div className="max-h-48 overflow-y-auto">{renderInventory()}</div>
+          {/* <div className="max-h-48 overflow-y-auto">{renderInventory()}</div> */}
         </CardContent>
       </Card>
 
@@ -318,7 +341,7 @@ export default function WorkOrdersAdvanced() {
                 <TableHead>Order</TableHead>
                 <TableHead>Product</TableHead>
                 <TableHead>Qty</TableHead>
-               {/* <TableHead>Work Center</TableHead> */}
+                {/* <TableHead>Work Center</TableHead> */}
                 <TableHead>Status</TableHead>
                 <TableHead>Planned Hrs</TableHead>
                 <TableHead>Image</TableHead>
@@ -335,13 +358,13 @@ export default function WorkOrdersAdvanced() {
                   {/* <TableCell>{wo.workCenterId || "—"}</TableCell> */}
                   <TableCell><Badge>{wo.status}</Badge></TableCell>
                   <TableCell>{wo.plannedHours ?? "—"}</TableCell>
-                  
+
                   {/* Image Column */}
                   <TableCell>
                     {wo.imageUrl ? (
-                      <img 
-                        src={wo.imageUrl} 
-                        alt="Work Order" 
+                      <img
+                        src={wo.imageUrl}
+                        alt="Work Order"
                         className="w-12 h-12 object-cover rounded border cursor-pointer hover:scale-110 transition-transform"
                         onClick={() => {
                           // Open image in modal or new tab
@@ -352,12 +375,12 @@ export default function WorkOrdersAdvanced() {
                       <span className="text-gray-400 text-sm">No image</span>
                     )}
                   </TableCell>
-                  
+
                   {/* Notes Column */}
                   <TableCell>
                     {wo.notes ? (
-                      <div 
-                        className="max-w-32 truncate cursor-pointer hover:text-blue-600" 
+                      <div
+                        className="max-w-32 truncate cursor-pointer hover:text-blue-600"
                         title={wo.notes}
                       >
                         {wo.notes}
@@ -366,7 +389,7 @@ export default function WorkOrdersAdvanced() {
                       <span className="text-gray-400 text-sm">No notes</span>
                     )}
                   </TableCell>
-                  
+
                   <TableCell>
                     <div className="flex gap-2">
                       <Button
@@ -411,14 +434,48 @@ export default function WorkOrdersAdvanced() {
             }}
           >
 
+            {/* <div>
+              <Label>Product Code</Label>
+              <Input
+                placeholder="Enter Product Code"
+                value={form.productCode || ""}
+                onChange={(e) =>
+                  setForm({ ...form, productCode: e.target.value })
+                }
+              />
+            </div> */}
+
             <div>
-              <Label>Product ID</Label>
-              <Input value={form.productId || ""} onChange={(e) => setForm({ ...form, productId: e.target.value })} />
+              <Label>Product</Label>
+              <Select
+                value={form.productName || ""}
+                onValueChange={(value) => {
+                  // 1. Find the full product object using the name
+                  const selectedProduct = products.find(p => p.name === value);
+
+                  // 2. Set both the Name (for display) and the ID (for the database)
+                  setForm((prev) => ({
+                    ...prev,
+                    productName: value,
+                    productId: selectedProduct?._id, // <--- CRITICAL FIX
+                  }));
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Product" />
+                </SelectTrigger>
+                <SelectContent>
+                  {products.map((product) => (
+                    // Use product.name as the value instead of product.code
+                    <SelectItem key={product._id} value={product.name}>
+                      {product.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <div>
-              <Label>Product Name</Label>
-              <Input value={form.productName || ""} onChange={(e) => setForm({ ...form, productName: e.target.value })} />
-            </div>
+
+
             <div>
               <Label>Quantity</Label>
               <Input type="number" value={form.quantity ?? 0} onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })} />
@@ -429,27 +486,56 @@ export default function WorkOrdersAdvanced() {
             </div> */}
             <div>
               <Label>Status</Label>
-              <Input value={form.status || "planned"} onChange={(e) => setForm({ ...form, status: e.target.value as any })} />
+              <Select
+                value={form.status || "planned"}
+                onValueChange={(value) =>
+                  setForm({ ...form, status: value as any })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+
+                <SelectContent>
+                  <SelectItem value="planned">Planned</SelectItem>
+                  <SelectItem value="released">Released</SelectItem>
+                  <SelectItem value="in-progress">In Progress</SelectItem>
+                  <SelectItem value="paused">Paused</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+
+            <div>
+              <Label>Planned Hours</Label>
+              <Input
+                type="number"
+                placeholder="e.g. 8"
+                value={form.plannedHours || ""}
+                onChange={(e) => setForm({ ...form, plannedHours: Number(e.target.value) })}
+              />
+            </div>
+
             <div>
               <Label>Due Date</Label>
               <Input type="date" value={form.dueDate || todayISO()} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} />
             </div>
-            
+
             {/* New Fields */}
             <div className="col-span-2">
               <Label>Notes</Label>
-              <Input 
-                value={form.notes || ""} 
-                onChange={(e) => setForm({ ...form, notes: e.target.value })} 
+              <Input
+                value={form.notes || ""}
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
                 placeholder="Enter any additional notes..."
               />
             </div>
-            
+
             <div className="col-span-2">
               <Label>Upload Image</Label>
-              <Input 
-                type="file" 
+              <Input
+                type="file"
                 accept="image/*"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
@@ -457,10 +543,10 @@ export default function WorkOrdersAdvanced() {
                     // Create a preview URL
                     const reader = new FileReader();
                     reader.onloadend = () => {
-                      setForm({ 
-                        ...form, 
+                      setForm({
+                        ...form,
                         imageFile: file,
-                        imageUrl: reader.result as string 
+                        imageUrl: reader.result as string
                       });
                     };
                     reader.readAsDataURL(file);
@@ -469,9 +555,9 @@ export default function WorkOrdersAdvanced() {
               />
               {form.imageUrl && (
                 <div className="mt-2">
-                  <img 
-                    src={form.imageUrl} 
-                    alt="Preview" 
+                  <img
+                    src={form.imageUrl}
+                    alt="Preview"
                     className="max-w-xs max-h-40 rounded border"
                   />
                 </div>

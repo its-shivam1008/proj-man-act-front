@@ -101,16 +101,17 @@ export default function AdvancedBOMPage() {
   }, []);
 
   useEffect(() => {
-    if (organisationId) {
-      dispatch(
-        fetchBOMs({
-          page,
-          limit,
-          search: searchTerm,
-        })
-      );
-    }
+    if (!organisationId) return;
+
+    dispatch(
+      fetchBOMs({
+        organisationId,  
+        limit,
+        search: searchTerm,
+      })
+    );
   }, [page, searchTerm, organisationId, dispatch]);
+
 
   const handleReset = () => {
     setSearchTerm("");
@@ -532,10 +533,10 @@ export default function AdvancedBOMPage() {
                     <div className="flex gap-2 items-center">
                       <span
                         className={`px-3 py-1 rounded-full text-xs font-medium ${b.status === "active"
-                            ? "bg-green-100 text-green-700"
-                            : b.status === "draft"
-                              ? "bg-yellow-100 text-yellow-700"
-                              : "bg-gray-100 text-gray-600"
+                          ? "bg-green-100 text-green-700"
+                          : b.status === "draft"
+                            ? "bg-yellow-100 text-yellow-700"
+                            : "bg-gray-100 text-gray-600"
                           }`}
                       >
                         {b.status}

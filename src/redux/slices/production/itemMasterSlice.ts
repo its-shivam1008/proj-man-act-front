@@ -29,33 +29,70 @@ const initialState = {
 /* THUNKS */
 export const fetchItems = createAsyncThunk(
   "itemMaster/fetch",
-  async (params: { page?: number; limit?: number; search?: string }) => {
-    const res = await axios.get("/items", { params });
+  async (
+    {
+      organisationId,
+      page = 1,
+      limit = 10,
+      search = "",
+    }: {
+      organisationId: string;
+      page?: number;
+      limit?: number;
+      search?: string;
+    },
+    { rejectWithValue }
+  ) => {
+    if (!organisationId) {
+      return rejectWithValue("Organisation ID missing");
+    }
+
+    const res = await axios.get("/items/get/data", {
+      params: { organisationId, page, limit, search },
+    });
+
     return res.data;
   }
 );
 
+
+
 export const createItem = createAsyncThunk(
   "itemMaster/create",
-  async (data: Partial<ItemMaster>) => {
-    const res = await axios.post("/items", data);
-    return res.data.data;
+  async (data: Partial<ItemMaster>, { rejectWithValue }) => {
+    try {
+      const res = await axios.post("/items/create", data);
+      return res.data.data;
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.message || "Create failed");
+    }
   }
 );
 
 export const updateItem = createAsyncThunk(
   "itemMaster/update",
-  async ({ id, data }: { id: string; data: Partial<ItemMaster> }) => {
-    const res = await axios.put(`/items/${id}`, data);
-    return res.data.data;
+  async (
+    { id, data }: { id: string; data: Partial<ItemMaster> },
+    { rejectWithValue }
+  ) => {
+    try {
+      const res = await axios.put(`/items/update/${id}`, data);
+      return res.data.data;
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.message || "Update failed");
+    }
   }
 );
 
 export const deleteItem = createAsyncThunk(
   "itemMaster/delete",
-  async (id: string) => {
-    await axios.delete(`/items/${id}`);
-    return id;
+  async (id: string, { rejectWithValue }) => {
+    try {
+      await axios.delete(`/items/delete/${id}`);
+      return id;
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.message || "Delete failed");
+    }
   }
 );
 
@@ -66,25 +103,54 @@ const itemMasterSlice = createSlice({
   reducers: {},
   extraReducers: (builder) => {
     builder
+
+      /* ================= FETCH ================= */
       .addCase(fetchItems.pending, (state) => {
         state.loading = true;
+        state.error = null;
       })
       .addCase(fetchItems.fulfilled, (state, action) => {
         state.loading = false;
-        state.list = action.payload.data;
-        state.pagination = action.payload.pagination;
+        state.list = action.payload?.data || [];
+        state.pagination = action.payload?.pagination || initialState.pagination;
       })
+      .addCase(fetchItems.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload as string;
+      })
+
+      /* ================= CREATE ================= */
       .addCase(createItem.fulfilled, (state, action) => {
         state.list.unshift(action.payload);
+        state.pagination.total += 1;
       })
+      .addCase(createItem.rejected, (state, action) => {
+        state.error = action.payload as string;
+      })
+
+      /* ================= UPDATE ================= */
       .addCase(updateItem.fulfilled, (state, action) => {
-        const i = state.list.findIndex(i => i._id === action.payload._id);
-        if (i !== -1) state.list[i] = action.payload;
+        const index = state.list.findIndex(
+          (i) => i._id === action.payload._id
+        );
+        if (index !== -1) {
+          state.list[index] = action.payload;
+        }
       })
+      .addCase(updateItem.rejected, (state, action) => {
+        state.error = action.payload as string;
+      })
+
+      /* ================= DELETE ================= */
       .addCase(deleteItem.fulfilled, (state, action) => {
-        state.list = state.list.filter(i => i._id !== action.payload);
+        state.list = state.list.filter((i) => i._id !== action.payload);
+        state.pagination.total -= 1;
+      })
+      .addCase(deleteItem.rejected, (state, action) => {
+        state.error = action.payload as string;
       });
   },
 });
+
 
 export default itemMasterSlice.reducer;

@@ -1,6 +1,7 @@
 import { usePermission } from "@/hooks/userPermission";
 import React, { useEffect, useMemo, useState } from "react";
 import { storage, STORAGE_KEYS } from "../../../lib/storage";
+import { useDispatch, useSelector } from "react-redux";
 import {
     Card, CardContent, CardHeader, CardTitle
 } from "../../../components/ui/card";
@@ -15,11 +16,15 @@ import { Plus, Download, Barcode, Package, RefreshCw, CheckCircle, FileText, Shi
 import {
     ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell
 } from "recharts";
+import { RootState } from "@/redux/store";
+import { fetchIssueSlips, fetchLedger, fetchWIP } from "@/redux/slices/production/materialIssueSlice";
 
 // Generate random ID
 const genId = (p = "id") => `${p}_${Math.random().toString(36).slice(2, 9)}`;
 
 export default function MaterialIssue() {
+
+    const dispatch = useDispatch();
     const canView = usePermission("materialIssueConsumption", "view");
     const canCreate = usePermission("materialIssueConsumption", "create");
     const canEdit = usePermission("materialIssueConsumption", "edit");
@@ -37,7 +42,9 @@ export default function MaterialIssue() {
             </div>
         );
     }
-    const [issueSlips, setIssueSlips] = useState<any[]>([]);
+    const { issueSlips, ledger, wip, loading, error } =
+        useSelector((state: RootState) => state.materialIssue);
+
     const [open, setOpen] = useState(false);
     const [form, setForm] = useState<any>({
         workOrderId: "",
@@ -48,20 +55,25 @@ export default function MaterialIssue() {
 
     // Data sources
     const workOrders = storage.get(STORAGE_KEYS.WORK_ORDERS, []);
-    const boms = storage.get(STORAGE_KEYS.BOMS, []);
-    const inventory = storage.get(STORAGE_KEYS.INVENTORY, {});
-    const items = storage.get(STORAGE_KEYS.ITEMS, []);
+    const { list: boms} = useSelector(
+        (state: RootState) => state.bom
+    );
 
-    const ledger = storage.get(STORAGE_KEYS.INVENTORY_LEDGER, []);
-    const wip = storage.get(STORAGE_KEYS.WIP_INVENTORY, {});
+    const { materials, loading: materialLoading } = useSelector(
+        (state: RootState) => state.rawMaterials
+    );
+    const { list: items} = useSelector(
+        (state: RootState) => state.itemMaster
+    );
 
+    // const ledger = storage.get(STORAGE_KEYS.INVENTORY_LEDGER, []);
+    // const wip = storage.get(STORAGE_KEYS.WIP_INVENTORY, {});
     useEffect(() => {
-        setIssueSlips(storage.get(STORAGE_KEYS.ISSUE_SLIPS, []));
+        dispatch(fetchIssueSlips());
+        dispatch(fetchLedger());
+        dispatch(fetchWIP());
     }, []);
 
-    useEffect(() => {
-        storage.set(STORAGE_KEYS.ISSUE_SLIPS, issueSlips);
-    }, [issueSlips]);
 
     /* -------------------- Helpers -------------------- */
     const getBOMItems = (workOrderId: string) => {
@@ -392,7 +404,7 @@ export default function MaterialIssue() {
                                 className="border rounded-md px-2 py-1 w-full"
                             >
                                 <option value="">Select Work Order</option>
-                                {workOrders.map((w: any) => (
+                                {workOrders?.map((w: any) => (
                                     <option key={w.id} value={w.id}>{w.orderNo} — {w.productName}</option>
                                 ))}
                             </select>

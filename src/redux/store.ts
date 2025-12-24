@@ -41,8 +41,11 @@ import reminderReducer from "./slices/reminderSlice";
 import bomReducer from "./slices/production/bomSlice";
 import workOrderReducer from "./slices/production/workOrderSlice";
 import sparePartsReducer from "./slices/plantandmachinary/sparePartsSlice";
+import materialIssueReducer from "./slices/production/materialIssueSlice";
+import itemMasterReducer from "./slices/production/itemMasterSlice";
 export const store = configureStore({
   reducer: {
+    itemMaster: itemMasterReducer,
     auth: authReducer,
     projects: projectReducer,
     wbs: wbsReducer,
@@ -85,6 +88,7 @@ export const store = configureStore({
     bom: bomReducer,
     workOrders: workOrderReducer,
     spareParts: sparePartsReducer,
+    materialIssue: materialIssueReducer,
   },
 });
 
