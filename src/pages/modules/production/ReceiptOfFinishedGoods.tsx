@@ -11,12 +11,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../../../components/ui/dialog";
 import { Badge } from "../../../components/ui/badge";
 import { Plus, Check, XCircle, ShieldAlert } from "lucide-react";
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Area } from "recharts";
 import {
   fetchGRNs,
   fetchPendingQC,
   createGRN,
   updateQC,
+  fetchGRNTrend,
 } from "../../../redux/slices/production/grnSlice";
 import axios from "../../../utils/axiosApi";
 
@@ -45,7 +46,7 @@ export default function ReceiptOfFinishedGoods() {
   const dispatch = useDispatch();
   const grnState = useSelector((state: any) => state.grn || {});
   const { grns = [], pendingQC = [], loading = false } = grnState;
-  
+
   // Check authentication state
   const authState = useSelector((state: any) => state.auth || {});
   const { userProfile, organisationId, isAuthenticated } = authState;
@@ -54,7 +55,7 @@ export default function ReceiptOfFinishedGoods() {
   const canCreate = usePermission("receipt", "create");
   const canEdit = usePermission("receipt", "edit");
   const canDelete = usePermission("receipt", "delete");
-  
+
   if (!canView) {
     return (
       <div className="text-center py-12 px-4">
@@ -156,11 +157,11 @@ export default function ReceiptOfFinishedGoods() {
       };
 
       await dispatch(createGRN(grnData) as any);
-      
+
       // Refresh data
       dispatch(fetchGRNs() as any);
       dispatch(fetchPendingQC() as any);
-      
+
       // Reset form
       setFormItems([]);
       setManualProductId("");
@@ -168,7 +169,7 @@ export default function ReceiptOfFinishedGoods() {
       setRemarks("");
       setAcceptedBy("");
       setOpenDialog(false);
-      
+
       toast.success("GRN created successfully");
     } catch (error) {
       toast.error("Failed to create GRN");
@@ -180,11 +181,11 @@ export default function ReceiptOfFinishedGoods() {
   const updateBatchQC = async (productId: string, batchNo: string, action: "Accepted" | "Rejected") => {
     try {
       await dispatch(updateQC({ productId, batchNo, action }) as any);
-      
+
       // Refresh data
       dispatch(fetchPendingQC() as any);
       dispatch(fetchGRNs() as any);
-      
+
       toast.success(`Batch ${action.toLowerCase()} successfully`);
     } catch (error) {
       toast.error(`Failed to ${action.toLowerCase()} batch`);
@@ -193,15 +194,13 @@ export default function ReceiptOfFinishedGoods() {
   };
 
   /** ---------------------- Analytics ---------------------- */
-  const grnTrend = useMemo(() => {
-    const map: Record<string, number> = {};
-    grns.forEach((g: any) => {
-      const date = new Date(g.createdAt || g.date).toISOString().slice(0, 10);
-      const total = g.items.reduce((s: number, i: any) => s + (i.totalValue || i.qty * 100), 0);
-      map[date] = (map[date] || 0) + total;
-    });
-    return Object.entries(map).map(([date, value]) => ({ date, value }));
-  }, [grns]);
+  const { trend } = useSelector((state: any) => state.grn);
+  const [range, setRange] = useState<"daily" | "weekly" | "monthly">("daily");
+
+  useEffect(() => {
+    dispatch(fetchGRNTrend(range));
+  }, [range]);
+
 
   /** ---------------------- UI ---------------------- */
   const addManualItem = () => {
@@ -212,12 +211,12 @@ export default function ReceiptOfFinishedGoods() {
     const batch = generateBatch(manualProductId);
     const unitValue = estimateValue(manualProductId);
     const totalValue = unitValue * Number(manualQty);
-    setFormItems((p) => [...p, { 
-      productId: manualProductId, 
-      qty: Number(manualQty), 
-      batchNo: batch, 
-      unitValue, 
-      totalValue 
+    setFormItems((p) => [...p, {
+      productId: manualProductId,
+      qty: Number(manualQty),
+      batchNo: batch,
+      unitValue,
+      totalValue
     }]);
     setManualProductId("");
     setManualQty("");
@@ -331,26 +330,44 @@ export default function ReceiptOfFinishedGoods() {
               </TableRow>
             </TableHeader>
             <TableBody>
+              {pendingQC.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-muted-foreground">
+                    No Pending QC Batches
+                  </TableCell>
+                </TableRow>
+              )}
+
               {pendingQC.map((item: any) => {
                 const product = products.find(p => p._id === item.productId);
+
                 return (
                   <TableRow key={item.batchNo}>
                     <TableCell>{item.batchNo}</TableCell>
-                    <TableCell>{product?.name || item.productId}</TableCell>
+                    <TableCell>{product?.name || "Unknown Product"}</TableCell>
                     <TableCell>{item.qty}</TableCell>
-                    <TableCell><Badge>Pending</Badge></TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{item.status}</Badge>
+                    </TableCell>
                     <TableCell className="flex gap-2">
                       <Button
-                        className="w-full bg-green-600"
+                        size="sm"
+                        className="bg-green-600"
                         disabled={!canEdit}
-                        onClick={() => canEdit && updateBatchQC(item.productId, item.batchNo, "Accepted")}
+                        onClick={() =>
+                          updateBatchQC(item.productId, item.batchNo, "Accepted")
+                        }
                       >
                         Accept
                       </Button>
+
                       <Button
-                        className="w-full bg-red-600"
+                        size="sm"
+                        className="bg-red-600"
                         disabled={!canEdit}
-                        onClick={() => canEdit && updateBatchQC(item.productId, item.batchNo, "Rejected")}
+                        onClick={() =>
+                          updateBatchQC(item.productId, item.batchNo, "Rejected")
+                        }
                       >
                         Reject
                       </Button>
@@ -359,25 +376,97 @@ export default function ReceiptOfFinishedGoods() {
                 );
               })}
             </TableBody>
+
           </Table>
         </CardContent>
       </Card>
 
       {/* GRN Trend */}
       <Card>
-        <CardHeader><CardTitle>GRN Value Trend</CardTitle></CardHeader>
-        <CardContent className="h-[220px]">
+        <CardHeader>
+          <CardTitle>GRN Value Trend</CardTitle>
+
+          {/* Range Toggle */}
+          <div className="flex gap-2 mt-2">
+            {["daily", "weekly", "monthly"].map((r) => (
+              <Button
+                key={r}
+                size="sm"
+                variant={range === r ? "default" : "outline"}
+                onClick={() => setRange(r as any)}
+              >
+                {r.toUpperCase()}
+              </Button>
+            ))}
+          </div>
+        </CardHeader>
+
+        {/* ✅ Chart ALWAYS goes inside CardContent */}
+        <CardContent className="h-[280px]">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={grnTrend}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="date" />
-              <YAxis />
-              <Tooltip />
-              <Line dataKey="value" stroke="#00C49F" />
+            <LineChart
+              data={trend}
+              margin={{ top: 10, right: 20, left: 0, bottom: 5 }}
+            >
+              {/* Subtle grid */}
+              <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.3} />
+
+              {/* Axis */}
+              <XAxis
+                dataKey="date"
+                tick={{ fontSize: 12 }}
+                tickMargin={8}
+              />
+              <YAxis
+                tick={{ fontSize: 12 }}
+                tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
+              />
+
+              {/* Tooltip */}
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "#ffffff",
+                  borderRadius: "8px",
+                  border: "1px solid #e5e7eb",
+                  fontSize: "13px",
+                }}
+                formatter={(v: any) => [`₹${v.toLocaleString()}`, "GRN Value"]}
+                labelStyle={{ fontWeight: 600 }}
+              />
+
+              {/* Smooth animated line */}
+              <Line
+                type="monotone"
+                dataKey="value"
+                stroke="#10B981"           // Tailwind green-500
+                strokeWidth={3}
+                dot={false}                // Cleaner look
+                activeDot={{ r: 6 }}
+                isAnimationActive
+                animationDuration={600}
+              />
+
+              {/* Gradient area under line */}
+              <defs>
+                <linearGradient id="grnGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#10B981" stopOpacity={0.25} />
+                  <stop offset="100%" stopColor="#10B981" stopOpacity={0.05} />
+                </linearGradient>
+              </defs>
+
+              <Area
+                type="monotone"
+                dataKey="value"
+                stroke="none"
+                fill="url(#grnGradient)"
+              />
             </LineChart>
           </ResponsiveContainer>
         </CardContent>
+
       </Card>
+
+
     </div>
   );
 }
