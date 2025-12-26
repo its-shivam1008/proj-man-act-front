@@ -46,6 +46,9 @@ import itemMasterReducer from "./slices/production/itemMasterSlice";
 import ppcReducer from "./slices/production/ppcSlice";
 import grnReducer from "./slices/production/grnSlice";
 import qualityReducer from "./slices/production/qualitySlice";
+import costingPerformanceReducer from "./slices/production/costingPerformanceSlice";
+import workCenterReducer from "./slices/production/workCenterSlice";
+import productionExecutionReducer from "./slices/production/productionExecutionSlice";
 export const store = configureStore({
   reducer: {
     itemMaster: itemMasterReducer,
@@ -95,6 +98,9 @@ export const store = configureStore({
     ppc: ppcReducer,
     grn: grnReducer,
     quality: qualityReducer,
+    costingPerformance: costingPerformanceReducer,
+    workCenters: workCenterReducer,
+    productionExecution: productionExecutionReducer,
   },
 });
 

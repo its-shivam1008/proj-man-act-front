@@ -1,7 +1,7 @@
 import { usePermission } from "@/hooks/userPermission";
-import React, { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Edit, Trash2, Search, Download, Upload, BarChart3, ShieldAlert, X } from "lucide-react";
+import { Plus, Edit, Trash2, Search, Download, Upload, BarChart3, ShieldAlert, X, Loader2 } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import type { RootState, AppDispatch } from "@/redux/store";
 import { Button } from "../../../components/ui/button";
@@ -13,7 +13,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Textarea } from "../../../components/ui/textarea";
 import { Checkbox } from "../../../components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui/tabs";
-import { storage, STORAGE_KEYS } from "../../../lib/storage";
 import { toast } from "sonner";
 import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip } from "recharts";
 import { fetchSpareParts } from "@/redux/slices/plantandmachinary/sparePartsSlice";
@@ -25,134 +24,43 @@ import { fetchEquipments } from "@/redux/slices/equipmentSlice";
 import { fetchMachineries } from "@/redux/slices/plantandmachinary/machinerySlice";
 import { fetchMaterials } from "@/redux/slices/rawmaterialSlice";
 import { fetchProducts } from "@/redux/slices/productSlice";
-
-// --- Types ---
-interface WorkCenterResource {
-  id: string;
-  // Spare Parts
-  sparePartId?: string;
-  sparePartName?: string;
-  sparePartQuantity?: number;
-  
-  // WBS Tasks
-  wbsTaskId?: string;
-  wbsTaskName?: string;
-  wbsTaskDuration?: number;
-  
-  // Projects
-  projectId?: string;
-  projectName?: string;
-  projectAllocation?: number;
-  
-  // Products
-  productId?: string;
-  productName?: string;
-  productQuantity?: number;
-  
-  // Equipments
-  equipmentId?: string;
-  equipmentName?: string;
-  equipmentCode?: string;
-  
-  // Machines
-  machineId?: string;
-  machineName?: string;
-  machineCode?: string;
-  machineConfig?: {
-    inputs: Array<{
-      id: string;
-      name: string;
-      quantity: number;
-      unit: string;
-    }>;
-    personHours: number;
-    output: {
-      id: string;
-      name: string;
-      quantity: number;
-      unit: string;
-      isCustom?: boolean;
-    } | null;
-  };
-  
-  // Common fields
-  resourceType: "sparePart" | "wbsTask" | "project" | "product" | "equipment" | "machine";
-  priority: "low" | "medium" | "high" | "critical";
-  estimatedHours: number;
-  actualHours: number;
-  status: "planned" | "in-progress" | "completed" | "on-hold";
-  notes?: string;
-  startDate?: string;
-  endDate?: string;
-}
-
-interface WorkCenter {
-  id: string;
-  code: string;
-  name: string;
-  description: string;
-  capacity: number;
-  costPerHour: number;
-  efficiency: number;
-  status: "active" | "maintenance" | "inactive";
-  shift: "single" | "double" | "triple";
-  operatorCount: number;
-  location?: string;
-  locationName?: string;
-  // Resource fields
-  sparePartId?: string;
-  sparePartName?: string;
-  projectId?: string;
-  projectName?: string;
-  wbsTaskId?: string;
-  wbsTaskName?: string;
-  workOrderId?: string;
-  workOrderNumber?: string;
-  createdAt: string;
-  updatedAt: string;
-}
+import {
+  fetchWorkCenters,
+  createWorkCenter,
+  updateWorkCenter,
+  deleteWorkCenter,
+  fetchWorkCenterAnalytics,
+  clearError,
+  type WorkCenter,
+  type WorkCenterResource,
+} from "@/redux/slices/production/workCenterSlice";
 
 export default function WorkCentersPageAdvanced() {
   const dispatch = useDispatch<AppDispatch>();
   
-  // Redux selectors
-  const { items: spareParts = [] } = useSelector((state: RootState) => state.spareParts);
-  const { wbs: wbsTasks = [] } = useSelector((state: RootState) => state.wbs);
-  const { projects = [] } = useSelector((state: RootState) => state.projects);
-  const { list: workOrders = [] } = useSelector((state: RootState) => state.workOrders);
-  const { locations = [] } = useSelector((state: RootState) => state.masterData);
-  const { equipments = [] } = useSelector((state: RootState) => state.equipment || { equipments: [] });
-  const { machineries = [] } = useSelector((state: RootState) => state.machinery || { machineries: [] });
-  const { materials: rawMaterials = [] } = useSelector((state: RootState) => state.rawMaterials || { materials: [] });
-  const { products = [] } = useSelector((state: RootState) => state.products || { products: [] });
-  
+  // Permission checks - must be called before any conditional logic
   const canView = usePermission("workCenterMgt", "view");
   const canCreate = usePermission("workCenterMgt", "create");
   const canEdit = usePermission("workCenterMgt", "edit");
   const canDelete = usePermission("workCenterMgt", "delete");
   
-  if (!canView) {
-    return (
-      <div className="text-center py-12 px-4">
-        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
-        <h3 className="text-xl font-semibold text-gray-900 mb-2">
-          Access Denied
-        </h3>
-        <p className="text-gray-600">
-          You do not have the necessary permissions to view this page.
-        </p>
-      </div>
-    );
-  }
+  // Redux selectors with proper fallbacks
+  const { list: workCenters = [], loading, error, analytics } = useSelector((state: RootState) => state.workCenters);
+  const { items: spareParts = [] } = useSelector((state: RootState) => state.spareParts);
+  const { wbs: wbsTasks = [] } = useSelector((state: RootState) => state.wbs);
+  const { projects = [] } = useSelector((state: RootState) => state.projects);
+  const { list: workOrders = [] } = useSelector((state: RootState) => state.workOrders);
+  const { locations = [] } = useSelector((state: RootState) => state.masterData);
+  const { equipments = [] } = useSelector((state: RootState) => state.equipment);
+  const { machineries = [] } = useSelector((state: RootState) => state.machinery);
+  const { materials: rawMaterials = [] } = useSelector((state: RootState) => state.rawMaterials);
+  const { products = [] } = useSelector((state: RootState) => state.products);
   
-  const [workCenters, setWorkCenters] = useState<WorkCenter[]>([]);
+  // All state hooks must be declared before any early returns
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCenter, setEditingCenter] = useState<WorkCenter | null>(null);
-  
-  // Local state for work orders from localStorage
-  const [localWorkOrders, setLocalWorkOrders] = useState<any[]>([]);
   
   // Multi-select state for checkboxes
   const [selectedSpareParts, setSelectedSpareParts] = useState<Set<string>>(new Set());
@@ -178,98 +86,161 @@ export default function WorkCentersPageAdvanced() {
     output: null as any // Changed from outputs array to single output
   });
 
-  // Fetch data for dropdowns
-  useEffect(() => {
-    const organisationId = localStorage.getItem("organisationId");
-    if (organisationId) {
-      dispatch(fetchSpareParts({ organisationId, page: 1, limit: 100 }));
-      dispatch(fetchProjects({ organisationId }));
-      dispatch(fetchMasterData("location"));
-      dispatch(fetchEquipments({ organisationId }));
-      dispatch(fetchMachineries({ organisationId }));
-      dispatch(fetchMaterials({ organisationId }));
-      dispatch(fetchProducts({ organisationId }));
-      
-      // Load work orders from localStorage (from Product Orders page)
-      const storedWorkOrders = storage.get(STORAGE_KEYS.WORK_ORDERS, []);
-      setLocalWorkOrders(storedWorkOrders);
-    }
-  }, [dispatch]);
-
-  const [formData, setFormData] = useState<Omit<WorkCenter, "id" | "createdAt" | "updatedAt">>({
+  const [formData, setFormData] = useState({
     code: "",
     name: "",
     description: "",
     capacity: 8,
     costPerHour: 0,
     efficiency: 100,
-    status: "active",
-    shift: "single",
+    status: "active" as const,
+    shift: "single" as const,
     operatorCount: 1,
     location: "",
     locationName: "",
-    sparePartId: "",
-    sparePartName: "",
-    projectId: "",
-    projectName: "",
-    wbsTaskId: "",
-    wbsTaskName: "",
-    workOrderId: "",
-    workOrderNumber: "",
   });
 
-
-  // Load
+  // Fetch data for dropdowns
   useEffect(() => {
-    const saved = storage.get<WorkCenter[]>(STORAGE_KEYS.WORK_CENTERS, []);
-    setWorkCenters(saved);
-  }, []);
+    const organisationId = localStorage.getItem("organisationId");
+    const token = localStorage.getItem("token");
+    
+    if (organisationId && token) {
+      dispatch(fetchSpareParts({ organisationId, page: 1, limit: 100 }));
+      dispatch(fetchProjects({ organisationId }));
+      dispatch(fetchMasterData("location"));
+      dispatch(fetchEquipments({ organisationId }));
+      dispatch(fetchMachineries({ page: 1, limit: 100, location: "" }));
+      dispatch(fetchMaterials({ page: 1, limit: 100, location: "", warehouse: "" }));
+      dispatch(fetchProducts({ page: 1, limit: 100 }));
+      
+      // Fetch work orders from Redux store
+      dispatch(fetchWorkOrders());
+    }
+  }, [dispatch]);
 
-  // Save
-  const persist = (data: WorkCenter[]) => {
-    storage.set(STORAGE_KEYS.WORK_CENTERS, data);
-    setWorkCenters(data);
-  };
+  // Fetch work centers data
+  useEffect(() => {
+    // Only fetch if user is authenticated
+    const token = localStorage.getItem("token");
+    if (token) {
+      dispatch(fetchWorkCenters());
+      dispatch(fetchWorkCenterAnalytics());
+    }
+  }, [dispatch]);
 
-  // Analytics
-  const totalCenters = workCenters.length;
-  const avgEfficiency = useMemo(
-    () =>
-      totalCenters === 0
-        ? 0
-        : Math.round(
-          workCenters.reduce((sum, w) => sum + (w.efficiency || 0), 0) / totalCenters
-        ),
-    [workCenters]
+  // Analytics - use Redux analytics data when available, fallback to calculated values
+  const totalCenters = analytics?.total || workCenters.length;
+  const calculatedAvgEfficiency = useMemo(() => {
+  if (workCenters.length === 0) return 0;
+  return Math.round(
+    workCenters.reduce((sum, w) => sum + (w.efficiency || 0), 0) / workCenters.length
+  );
+}, [workCenters]);
+
+const avgEfficiency = analytics?.avgEfficiency ?? calculatedAvgEfficiency;
+
+  const activeCenters = analytics?.active || workCenters.filter((w) => w.status === "active").length;
+
+  // Filtering & search
+  const filtered = workCenters.filter(
+    (w) =>
+      (filterStatus === "all" || w.status === filterStatus) &&
+      (w.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        w.code.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  const activeCenters = workCenters.filter((w) => w.status === "active").length;
+  // Simulate performance trend data
+  const trendData = useMemo(
+    () =>
+      workCenters.map((w) => ({
+        name: w.name,
+        efficiency: w.efficiency,
+        cost: Math.round(w.costPerHour * w.capacity),
+      })),
+    [workCenters]
+  );
+  
+  // Early return after all hooks are declared
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h3>
+        <p className="text-gray-600">
+          You do not have the necessary permissions to view this page.
+        </p>
+      </div>
+    );
+  }
 
-  const handleSave = () => {
+  // Show loading state
+  if (loading && workCenters.length === 0) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 animate-spin" />
+        <span className="ml-2">Loading work centers...</span>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (error && !loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px] flex-col">
+        <div className="text-red-500 mb-4">Error: {error}</div>
+        <Button onClick={() => {
+          dispatch(clearError());
+          dispatch(fetchWorkCenters());
+        }}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  const handleSave = async () => {
     if (!formData.code || !formData.name) {
       toast.error("Please fill all required fields");
       return;
     }
 
-    // Create work center data with all sections
-    const data: any = {
-      id: editingCenter?.id || `WC-${Date.now()}`,
-      ...formData,
-      projects: workCenterProjects, // Include projects
-      wbsTasks: workCenterWbsTasks, // Include WBS tasks
-      resources: resources, // Include resources array
-      createdAt: editingCenter?.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    try {
+      // Create work center data with all sections, excluding legacy fields
+      const data: Partial<WorkCenter> = {
+        code: formData.code,
+        name: formData.name,
+        description: formData.description,
+        capacity: formData.capacity,
+        costPerHour: formData.costPerHour,
+        efficiency: formData.efficiency,
+        status: formData.status,
+        shift: formData.shift,
+        operatorCount: formData.operatorCount,
+        location: formData.location || undefined, // Only include if not empty
+        resources: resources, // Include resources array
+        projects: workCenterProjects, // Include projects
+        wbsTasks: workCenterWbsTasks, // Include WBS tasks
+      };
 
-    const updated = editingCenter
-      ? workCenters.map((w) => (w.id === editingCenter.id ? data : w))
-      : [...workCenters, data];
-
-    persist(updated);
-    setIsDialogOpen(false);
-    toast.success(editingCenter ? "Work center updated" : "Work center created");
-    resetForm();
+      if (editingCenter) {
+        await dispatch(updateWorkCenter({ id: editingCenter._id, data })).unwrap();
+        toast.success("Work center updated successfully");
+      } else {
+        await dispatch(createWorkCenter(data)).unwrap();
+        toast.success("Work center created successfully");
+        // Refresh the list to ensure new data is displayed
+        dispatch(fetchWorkCenters());
+        dispatch(fetchWorkCenterAnalytics());
+      }
+      
+      setIsDialogOpen(false);
+      resetForm();
+    } catch (error: any) {
+      toast.error(error || "Failed to save work center");
+    }
   };
 
   const handleEdit = (center: any) => {
@@ -348,10 +319,15 @@ export default function WorkCentersPageAdvanced() {
     setIsDialogOpen(true);
   };
 
-  const handleDelete = (id: string) => {
-    const updated = workCenters.filter((w) => w.id !== id);
-    persist(updated);
-    toast.success("Work center deleted");
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this work center?")) return;
+    
+    try {
+      await dispatch(deleteWorkCenter(id)).unwrap();
+      toast.success("Work center deleted successfully");
+    } catch (error: any) {
+      toast.error(error || "Failed to delete work center");
+    }
   };
 
   const resetForm = () => {
@@ -368,14 +344,6 @@ export default function WorkCentersPageAdvanced() {
       operatorCount: 1,
       location: "",
       locationName: "",
-      sparePartId: "",
-      sparePartName: "",
-      projectId: "",
-      projectName: "",
-      wbsTaskId: "",
-      wbsTaskName: "",
-      workOrderId: "",
-      workOrderNumber: "",
     });
     setSelectedSpareParts(new Set());
     setSelectedProjects(new Set());
@@ -487,7 +455,7 @@ export default function WorkCentersPageAdvanced() {
 
     // Add work orders
     selectedWorkOrders.forEach((id) => {
-      const wo = localWorkOrders?.find((w) => w.id === id);
+      const wo = workOrders?.find((w) => w._id === id);
       if (wo) {
         newResources.push({
           id: `RES-WO-${Date.now()}-${id}`,
@@ -625,27 +593,6 @@ export default function WorkCentersPageAdvanced() {
     toast.success("WBS task removed");
   };
 
-
-
-  // Filtering & search
-  const filtered = workCenters.filter(
-    (w) =>
-      (filterStatus === "all" || w.status === filterStatus) &&
-      (w.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        w.code.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
-
-  // Simulate performance trend data
-  const trendData = useMemo(
-    () =>
-      workCenters.map((w) => ({
-        name: w.name,
-        efficiency: w.efficiency,
-        cost: Math.round(w.costPerHour * w.capacity),
-      })),
-    [workCenters]
-  );
-
   // Export / Import
   const handleExport = () => {
     const blob = new Blob([JSON.stringify(workCenters, null, 2)], {
@@ -663,8 +610,8 @@ export default function WorkCentersPageAdvanced() {
     const text = await file.text();
     const parsed = JSON.parse(text);
     if (Array.isArray(parsed)) {
-      persist(parsed);
-      toast.success("Work centers imported successfully");
+      // Import functionality would need to be implemented with backend API
+      toast.error("Import functionality not yet implemented");
     } else toast.error("Invalid file format");
   };
 
@@ -1187,18 +1134,18 @@ export default function WorkCentersPageAdvanced() {
                   {/* Work Orders Tab */}
                   <TabsContent value="workOrder" className="space-y-2">
                     <div className="border rounded-lg p-3 max-h-60 overflow-y-auto">
-                      {localWorkOrders && localWorkOrders.length > 0 ? (
-                        localWorkOrders.map((wo) => (
-                          <div key={wo.id} className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded">
+                      {workOrders && workOrders.length > 0 ? (
+                        workOrders.map((wo) => (
+                          <div key={wo._id} className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded">
                             <Checkbox
-                              id={`wo-${wo.id}`}
-                              checked={selectedWorkOrders.has(wo.id)}
+                              id={`wo-${wo._id}`}
+                              checked={selectedWorkOrders.has(wo._id)}
                               onCheckedChange={(checked) =>
-                                handleCheckboxToggle("workOrder", wo.id, checked as boolean)
+                                handleCheckboxToggle("workOrder", wo._id, checked as boolean)
                               }
                             />
                             <label
-                              htmlFor={`wo-${wo.id}`}
+                              htmlFor={`wo-${wo._id}`}
                               className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
                             >
                               {wo.orderNo} - {wo.productName}
@@ -1539,17 +1486,17 @@ export default function WorkCentersPageAdvanced() {
                   <Button
                     onClick={() => {
                       // Add the configured machine to resources
-                      const newResource = {
+                      const newResource: WorkCenterResource = {
                         id: `RES-MC-${Date.now()}-${selectedMachineForConfig._id}`,
-                        resourceType: "machine",
+                        resourceType: "machine" as const,
                         machineId: selectedMachineForConfig._id,
                         machineName: selectedMachineForConfig.name,
                         machineCode: selectedMachineForConfig.code,
                         machineConfig: machineConfig,
-                        priority: "medium",
+                        priority: "medium" as const,
                         estimatedHours: 0,
                         actualHours: 0,
-                        status: "planned",
+                        status: "planned" as const,
                       };
                       
                       setResources([...resources, newResource]);
@@ -1679,7 +1626,7 @@ export default function WorkCentersPageAdvanced() {
         ) : (
           filtered.map((c) => (
             <motion.div
-              key={c.id}
+              key={c._id}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
@@ -1715,7 +1662,7 @@ export default function WorkCentersPageAdvanced() {
                         size="icon"
                         variant="destructive"
                         disabled={!canDelete}
-                        onClick={() => canDelete && handleDelete(c.id)}
+                        onClick={() => canDelete && handleDelete(c._id)}
                         className={!canDelete ? "opacity-50 cursor-not-allowed" : ""}
                       >
 

@@ -86,7 +86,7 @@ export const fetchStandards = createAsyncThunk(
   "costing/fetchStandards",
   async (_, { rejectWithValue }) => {
     try {
-      const res = await axios.get("/costing/standards");
+      const res = await axios.get("/api/costing/standards");
       return res.data.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message);
@@ -98,7 +98,7 @@ export const createStandard = createAsyncThunk(
   "costing/createStandard",
   async (payload: Partial<StandardCost>, { rejectWithValue }) => {
     try {
-      const res = await axios.post("/costing/standards", payload);
+      const res = await axios.post("/api/costing/standards", payload);
       return res.data.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message);
@@ -113,7 +113,7 @@ export const updateStandard = createAsyncThunk(
     { rejectWithValue }
   ) => {
     try {
-      const res = await axios.put(`/costing/standards/${id}`, data);
+      const res = await axios.put(`/api/costing/standards/${id}`, data);
       return res.data.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message);
@@ -125,7 +125,7 @@ export const deleteStandard = createAsyncThunk(
   "costing/deleteStandard",
   async (id: string, { rejectWithValue }) => {
     try {
-      await axios.delete(`/costing/standards/${id}`);
+      await axios.delete(`/api/costing/standards/${id}`);
       return id;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message);
@@ -141,7 +141,7 @@ export const fetchActuals = createAsyncThunk(
   "costing/fetchActuals",
   async (_, { rejectWithValue }) => {
     try {
-      const res = await axios.get("/costing/actuals");
+      const res = await axios.get("/api/costing/actuals");
       return res.data.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message);
@@ -153,7 +153,7 @@ export const createActual = createAsyncThunk(
   "costing/createActual",
   async (payload: Partial<ActualCost>, { rejectWithValue }) => {
     try {
-      const res = await axios.post("/costing/actuals", payload);
+      const res = await axios.post("/api/costing/actuals", payload);
       return res.data.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message);
@@ -168,7 +168,7 @@ export const updateActual = createAsyncThunk(
     { rejectWithValue }
   ) => {
     try {
-      const res = await axios.put(`/costing/actuals/${id}`, data);
+      const res = await axios.put(`/api/costing/actuals/${id}`, data);
       return res.data.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message);
@@ -180,7 +180,7 @@ export const deleteActual = createAsyncThunk(
   "costing/deleteActual",
   async (id: string, { rejectWithValue }) => {
     try {
-      await axios.delete(`/costing/actuals/${id}`);
+      await axios.delete(`/api/costing/actuals/${id}`);
       return id;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message);
@@ -196,7 +196,7 @@ export const fetchMetrics = createAsyncThunk(
   "costing/fetchMetrics",
   async (_, { rejectWithValue }) => {
     try {
-      const res = await axios.get("/costing/metrics");
+      const res = await axios.get("/api/costing/metrics");
       return res.data.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message);
@@ -208,7 +208,22 @@ export const createMetric = createAsyncThunk(
   "costing/createMetric",
   async (payload: Partial<PerfMetric>, { rejectWithValue }) => {
     try {
-      const res = await axios.post("/costing/metrics", payload);
+      const res = await axios.post("/api/costing/metrics", payload);
+      return res.data.data;
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.message);
+    }
+  }
+);
+
+export const updateMetric = createAsyncThunk(
+  "costing/updateMetric",
+  async (
+    { id, data }: { id: string; data: Partial<PerfMetric> },
+    { rejectWithValue }
+  ) => {
+    try {
+      const res = await axios.put(`/api/costing/metrics/${id}`, data);
       return res.data.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message);
@@ -220,7 +235,7 @@ export const deleteMetric = createAsyncThunk(
   "costing/deleteMetric",
   async (id: string, { rejectWithValue }) => {
     try {
-      await axios.delete(`/costing/metrics/${id}`);
+      await axios.delete(`/api/costing/metrics/${id}`);
       return id;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message);
@@ -238,23 +253,6 @@ const costingSlice = createSlice({
   reducers: {},
   extraReducers: (builder) => {
     builder
-      /* ===== LOADING ===== */
-      .addMatcher(
-        (action) => action.type.startsWith("costing/") && action.type.endsWith("/pending"),
-        (state) => {
-          state.loading = true;
-          state.error = null;
-        }
-      )
-
-      .addMatcher(
-        (action) => action.type.startsWith("costing/") && action.type.endsWith("/rejected"),
-        (state, action) => {
-          state.loading = false;
-          state.error = action.payload as string;
-        }
-      )
-
       /* ===== STANDARDS ===== */
       .addCase(fetchStandards.fulfilled, (state, action) => {
         state.loading = false;
@@ -295,9 +293,29 @@ const costingSlice = createSlice({
       .addCase(createMetric.fulfilled, (state, action) => {
         state.metrics.unshift(action.payload);
       })
+      .addCase(updateMetric.fulfilled, (state, action) => {
+        const i = state.metrics.findIndex(m => m._id === action.payload._id);
+        if (i !== -1) state.metrics[i] = action.payload;
+      })
       .addCase(deleteMetric.fulfilled, (state, action) => {
         state.metrics = state.metrics.filter(m => m._id !== action.payload);
-      });
+      })
+
+      /* ===== LOADING & ERROR HANDLING ===== */
+      .addMatcher(
+        (action) => action.type.startsWith("costing/") && action.type.endsWith("/pending"),
+        (state) => {
+          state.loading = true;
+          state.error = null;
+        }
+      )
+      .addMatcher(
+        (action) => action.type.startsWith("costing/") && action.type.endsWith("/rejected"),
+        (state, action) => {
+          state.loading = false;
+          state.error = action.payload as string;
+        }
+      );
   },
 });
 

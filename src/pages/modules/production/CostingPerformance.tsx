@@ -1,6 +1,24 @@
 import { usePermission } from "@/hooks/userPermission";
 import React, { useEffect, useMemo, useState } from "react";
-import { storage, STORAGE_KEYS } from "../../../lib/storage";
+import { useDispatch, useSelector } from "react-redux";
+import { RootState, AppDispatch } from "../../../redux/store";
+import {
+  fetchStandards,
+  createStandard,
+  updateStandard,
+  deleteStandard,
+  fetchActuals,
+  createActual,
+  updateActual,
+  deleteActual,
+  fetchMetrics,
+  createMetric,
+  updateMetric,
+  deleteMetric,
+  StandardCost,
+  ActualCost,
+  PerfMetric,
+} from "../../../redux/slices/production/costingPerformanceSlice";
 import { Card, CardHeader, CardTitle, CardContent } from "../../../components/ui/card";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
@@ -10,63 +28,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../../components/ui/tabs";
 import { Badge } from "../../../components/ui/badge";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, LineChart, Line, PieChart, Pie, Cell, Legend } from "recharts";
-import { Plus, Edit2, Trash2, Download, Upload, ShieldAlert } from "lucide-react";
-type StandardCost = {
-  id: string;
-  productId: string;
-  productName?: string;
-  unitQty: number; // per unit basis
-  material: number;
-  labour: number;
-  machine: number;
-  overheads: number;
-  updatedAt?: string;
-};
+import { Plus, Edit2, Trash2, Download, Upload, ShieldAlert, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 
-type ActualCost = {
-  id: string;
-  workOrderId?: string;
-  productId: string;
-  batchNo?: string;
-  producedQty: number;
-  material: number;
-  labour: number;
-  machine: number;
-  overheads: number;
-  startTime?: string; // ISO
-  endTime?: string; // ISO
-  remarks?: string;
-  recordedAt?: string;
-};
-
-type PerfMetric = {
-  id: string;
-  productId?: string;
-  date: string;
-  yieldPct?: number; // 0-100
-  scrapPct?: number;
-  machineUtilPct?: number;
-  labourEffPct?: number;
-  notes?: string;
-};
-
-/* ----------------------------- Keys ----------------------------- */
-const KEYS = {
-  STANDARDS: "COST_STANDARDS",
-  ACTUALS: "COST_ACTUALS",
-  METRICS: "PERF_METRICS",
-  AUDIT: "COST_AUDIT", // optional extra audit log
-};
-
-/* --------------------------- Helpers ---------------------------- */
-const genId = (p = "id") => `${p}_${Math.random().toString(36).slice(2, 9)}`;
-const nowISO = () => new Date().toISOString();
-
+/* ----------------------------- Helpers ----------------------------- */
 const sum = (arr: number[]) => arr.reduce((s, v) => s + Number(v || 0), 0);
 
 /* --------------------------- Component -------------------------- */
 export default function CostingPerformance() {
-
+  const dispatch = useDispatch<AppDispatch>();
+  const { standards, actuals, metrics, loading, error } = useSelector(
+    (state: RootState) => state.costingPerformance
+  );
 
   const canView = usePermission("costingPerformance", "view");
   const canCreate = usePermission("costingPerformance", "create");
@@ -86,10 +59,6 @@ export default function CostingPerformance() {
       </div>
     );
   }
-  // load from storage
-  const [standards, setStandards] = useState<StandardCost[]>(() => storage.get<StandardCost[]>(KEYS.STANDARDS, []));
-  const [actuals, setActuals] = useState<ActualCost[]>(() => storage.get<ActualCost[]>(KEYS.ACTUALS, []));
-  const [metrics, setMetrics] = useState<PerfMetric[]>(() => storage.get<PerfMetric[]>(KEYS.METRICS, []));
 
   // dialogs / forms
   const [tab, setTab] = useState<"overview" | "standards" | "actuals" | "metrics">("overview");
@@ -103,21 +72,28 @@ export default function CostingPerformance() {
   const [metricDialogOpen, setMetricDialogOpen] = useState(false);
   const [metricForm, setMetricForm] = useState<Partial<PerfMetric>>({ date: new Date().toISOString().slice(0, 10) });
 
-  // persist changes
-  useEffect(() => storage.set(KEYS.STANDARDS, standards), [standards]);
-  useEffect(() => storage.set(KEYS.ACTUALS, actuals), [actuals]);
-  useEffect(() => storage.set(KEYS.METRICS, metrics), [metrics]);
+  // Load data on component mount
+  useEffect(() => {
+    console.log('CostingPerformance: Loading data on mount...');
+    dispatch(fetchStandards())
+      .then((result) => console.log('Standards loaded:', result))
+      .catch((error) => console.error('Standards load error:', error));
+    
+    dispatch(fetchActuals())
+      .then((result) => console.log('Actuals loaded:', result))
+      .catch((error) => console.error('Actuals load error:', error));
+    
+    dispatch(fetchMetrics())
+      .then((result) => console.log('Metrics loaded:', result))
+      .catch((error) => console.error('Metrics load error:', error));
+  }, [dispatch]);
 
-  // audit helper
-  const audit = (action: string, details?: any) => {
-    const entry = { id: genId("audit"), timestamp: nowISO(), action, details };
-    try {
-      storage.push(KEYS.AUDIT, entry);
-    } catch {
-      // if COST_AUDIT not present, attempt AUDIT_LOGS
-      storage.push(STORAGE_KEYS.AUDIT_LOGS || "AUDIT_LOGS", entry);
+  // Show error toast if there's an error
+  useEffect(() => {
+    if (error) {
+      toast.error(error);
     }
-  };
+  }, [error]);
 
   /* --------------------- Derived analytics --------------------- */
 
@@ -173,93 +149,190 @@ export default function CostingPerformance() {
   /* ---------------------- CRUD Handlers ----------------------- */
 
   // Standards
-  const saveStandard = () => {
-    if (!stdForm.productId) return alert("Product ID required");
-    const now = nowISO();
-    if (stdForm.id) {
-      setStandards((prev) => prev.map((s) => (s.id === stdForm.id ? { ...(s as StandardCost), ...(stdForm as StandardCost), updatedAt: now } : s)));
-      audit("update-standard", stdForm);
-    } else {
-      const s: StandardCost = { id: genId("std"), unitQty: 1, material: 0, labour: 0, machine: 0, overheads: 0, updatedAt: now, ...(stdForm as any) };
-      setStandards((prev) => [s, ...prev]);
-      audit("create-standard", s);
+  const saveStandard = async () => {
+    if (!stdForm.productId) {
+      toast.error("Product ID required");
+      return;
     }
-    setStdDialogOpen(false);
-    setStdForm({});
+    
+    try {
+      // Clean and format the data before sending
+      const cleanedData = {
+        productId: stdForm.productId,
+        productName: stdForm.productName || undefined,
+        unitQty: Number(stdForm.unitQty) || 1,
+        material: Number(stdForm.material) || 0,
+        labour: Number(stdForm.labour) || 0,
+        machine: Number(stdForm.machine) || 0,
+        overheads: Number(stdForm.overheads) || 0,
+      };
+      
+      if (stdForm._id) {
+        await dispatch(updateStandard({ 
+          id: stdForm._id, 
+          data: cleanedData 
+        })).unwrap();
+        toast.success("Standard updated successfully");
+      } else {
+        await dispatch(createStandard(cleanedData)).unwrap();
+        toast.success("Standard created successfully");
+      }
+      setStdDialogOpen(false);
+      setStdForm({});
+    } catch (error: any) {
+      console.error('Save Standard Error:', error);
+      const errorMessage = error?.message || error || "Failed to save standard";
+      toast.error(errorMessage);
+    }
   };
 
   const editStandard = (id: string) => {
-    const s = standards.find((x) => x.id === id);
+    const s = standards.find((x) => x._id === id);
     if (s) {
       setStdForm(s);
       setStdDialogOpen(true);
     }
   };
 
-  const deleteStandard = (id: string) => {
+  const deleteStandardHandler = async (id: string) => {
     if (!confirm("Delete standard?")) return;
-    setStandards((p) => p.filter((x) => x.id !== id));
-    audit("delete-standard", { id });
+    
+    try {
+      await dispatch(deleteStandard(id)).unwrap();
+      toast.success("Standard deleted successfully");
+    } catch (error: any) {
+      console.error('Delete Standard Error:', error);
+      const errorMessage = error?.message || error || "Failed to delete standard";
+      toast.error(errorMessage);
+    }
   };
 
   // Actuals
-  const saveActual = () => {
-    if (!actForm.productId) return alert("Product ID required");
-    if (!actForm.producedQty || actForm.producedQty <= 0) return alert("Produced Qty required");
-    const now = nowISO();
-    if (actForm.id) {
-      setActuals((prev) => prev.map((a) => (a.id === actForm.id ? { ...(a as ActualCost), ...(actForm as ActualCost), recordedAt: now } : a)));
-      audit("update-actual", actForm);
-    } else {
-      const rec: ActualCost = { id: genId("act"), producedQty: actForm.producedQty || 0, material: 0, labour: 0, machine: 0, overheads: 0, recordedAt: now, ...(actForm as any) };
-      setActuals((prev) => [rec, ...prev]);
-      audit("create-actual", rec);
+  const saveActual = async () => {
+    if (!actForm.productId) {
+      toast.error("Product ID required");
+      return;
     }
-    setActDialogOpen(false);
-    setActForm({ producedQty: 0 });
+    if (!actForm.producedQty || actForm.producedQty <= 0) {
+      toast.error("Produced Qty required");
+      return;
+    }
+    
+    try {
+      // Clean and format the data before sending
+      const cleanedData = {
+        productId: actForm.productId,
+        workOrderId: actForm.workOrderId || undefined,
+        batchNo: actForm.batchNo || undefined,
+        producedQty: Number(actForm.producedQty),
+        material: Number(actForm.material) || 0,
+        labour: Number(actForm.labour) || 0,
+        machine: Number(actForm.machine) || 0,
+        overheads: Number(actForm.overheads) || 0,
+        startTime: actForm.startTime || undefined,
+        endTime: actForm.endTime || undefined,
+        remarks: actForm.remarks || undefined,
+      };
+      
+      if (actForm._id) {
+        await dispatch(updateActual({ 
+          id: actForm._id, 
+          data: cleanedData 
+        })).unwrap();
+        toast.success("Actual cost updated successfully");
+      } else {
+        await dispatch(createActual(cleanedData)).unwrap();
+        toast.success("Actual cost created successfully");
+      }
+      setActDialogOpen(false);
+      setActForm({ producedQty: 0 });
+    } catch (error: any) {
+      console.error('Save Actual Error:', error);
+      const errorMessage = error?.message || error || "Failed to save actual cost";
+      toast.error(errorMessage);
+    }
   };
 
   const editActual = (id: string) => {
-    const a = actuals.find((x) => x.id === id);
+    const a = actuals.find((x) => x._id === id);
     if (a) {
       setActForm(a);
       setActDialogOpen(true);
     }
   };
 
-  const deleteActual = (id: string) => {
+  const deleteActualHandler = async (id: string) => {
     if (!confirm("Delete actual record?")) return;
-    setActuals((p) => p.filter((x) => x.id !== id));
-    audit("delete-actual", { id });
+    
+    try {
+      await dispatch(deleteActual(id)).unwrap();
+      toast.success("Actual cost deleted successfully");
+    } catch (error: any) {
+      console.error('Delete Actual Error:', error);
+      const errorMessage = error?.message || error || "Failed to delete actual cost";
+      toast.error(errorMessage);
+    }
   };
 
   // Metrics
-  const saveMetric = () => {
-    if (!metricForm.date) return alert("Date required");
-    const m: PerfMetric = { id: metricForm.id || genId("met"), ...(metricForm as any) } as PerfMetric;
-    if (metricForm.id) {
-      setMetrics((p) => p.map((x) => (x.id === m.id ? m : x)));
-      audit("update-metric", m);
-    } else {
-      setMetrics((p) => [m, ...p]);
-      audit("create-metric", m);
+  const saveMetric = async () => {
+    if (!metricForm.date) {
+      toast.error("Date required");
+      return;
     }
-    setMetricDialogOpen(false);
-    setMetricForm({ date: new Date().toISOString().slice(0, 10) });
+    
+    try {
+      // Clean and format the data before sending
+      const cleanedData = {
+        productId: metricForm.productId || undefined,
+        date: metricForm.date,
+        yieldPct: metricForm.yieldPct ? Number(metricForm.yieldPct) : undefined,
+        scrapPct: metricForm.scrapPct ? Number(metricForm.scrapPct) : undefined,
+        machineUtilPct: metricForm.machineUtilPct ? Number(metricForm.machineUtilPct) : undefined,
+        labourEffPct: metricForm.labourEffPct ? Number(metricForm.labourEffPct) : undefined,
+        notes: metricForm.notes || undefined,
+      };
+      
+      if (metricForm._id) {
+        // Update existing metric
+        await dispatch(updateMetric({ 
+          id: metricForm._id, 
+          data: cleanedData 
+        })).unwrap();
+        toast.success("Metric updated successfully");
+      } else {
+        // Create new metric
+        await dispatch(createMetric(cleanedData)).unwrap();
+        toast.success("Metric created successfully");
+      }
+      setMetricDialogOpen(false);
+      setMetricForm({ date: new Date().toISOString().slice(0, 10) });
+    } catch (error: any) {
+      console.error('Save Metric Error:', error);
+      const errorMessage = error?.message || error || "Failed to save metric";
+      toast.error(errorMessage);
+    }
   };
 
   const editMetric = (id: string) => {
-    const m = metrics.find((x) => x.id === id);
+    const m = metrics.find((x) => x._id === id);
     if (m) {
       setMetricForm(m);
       setMetricDialogOpen(true);
     }
   };
 
-  const deleteMetric = (id: string) => {
+  const deleteMetricHandler = async (id: string) => {
     if (!confirm("Delete metric?")) return;
-    setMetrics((p) => p.filter((x) => x.id !== id));
-    audit("delete-metric", { id });
+    
+    try {
+      await dispatch(deleteMetric(id)).unwrap();
+      toast.success("Metric deleted successfully");
+    } catch (error: any) {
+      console.error('Delete Metric Error:', error);
+      const errorMessage = error?.message || error || "Failed to delete metric";
+      toast.error(errorMessage);
+    }
   };
 
   /* ----------------------- Export / Import ---------------------- */
@@ -268,7 +341,7 @@ export default function CostingPerformance() {
       standards,
       actuals,
       metrics,
-      exportedAt: nowISO(),
+      exportedAt: new Date().toISOString(),
     };
     const blob = new Blob([JSON.stringify(dump, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -277,22 +350,56 @@ export default function CostingPerformance() {
     a.download = `CostingBackup_${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    toast.success("Data exported successfully");
   };
 
   const importModule = async (file?: File) => {
     try {
       const f = file || (document.querySelector<HTMLInputElement>("#costing-import")?.files?.[0] as File);
-      if (!f) return alert("Choose a JSON file to import");
+      if (!f) {
+        toast.error("Choose a JSON file to import");
+        return;
+      }
       const txt = await f.text();
       const parsed = JSON.parse(txt);
-      if (parsed.standards) setStandards(parsed.standards);
-      if (parsed.actuals) setActuals(parsed.actuals);
-      if (parsed.metrics) setMetrics(parsed.metrics);
-      audit("import-module", { fileName: f.name });
-      alert("Import complete");
+      
+      // Import standards
+      if (parsed.standards && Array.isArray(parsed.standards)) {
+        for (const standard of parsed.standards) {
+          try {
+            await dispatch(createStandard(standard)).unwrap();
+          } catch (error) {
+            console.error("Failed to import standard:", error);
+          }
+        }
+      }
+      
+      // Import actuals
+      if (parsed.actuals && Array.isArray(parsed.actuals)) {
+        for (const actual of parsed.actuals) {
+          try {
+            await dispatch(createActual(actual)).unwrap();
+          } catch (error) {
+            console.error("Failed to import actual:", error);
+          }
+        }
+      }
+      
+      // Import metrics
+      if (parsed.metrics && Array.isArray(parsed.metrics)) {
+        for (const metric of parsed.metrics) {
+          try {
+            await dispatch(createMetric(metric)).unwrap();
+          } catch (error) {
+            console.error("Failed to import metric:", error);
+          }
+        }
+      }
+      
+      toast.success("Import completed successfully");
     } catch (err) {
       console.error(err);
-      alert("Import failed");
+      toast.error("Import failed");
     }
   };
 
@@ -339,13 +446,23 @@ export default function CostingPerformance() {
     setStdDialogOpen(true);
   };
   const openNewActual = () => {
-    setActForm({ producedQty: 0, recordedAt: nowISO() });
+    setActForm({ producedQty: 0 });
     setActDialogOpen(true);
   };
   const openNewMetric = () => {
     setMetricForm({ date: new Date().toISOString().slice(0, 10) });
     setMetricDialogOpen(true);
   };
+
+  // Show loading spinner if data is loading
+  if (loading && standards.length === 0 && actuals.length === 0 && metrics.length === 0) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 animate-spin" />
+        <span className="ml-2">Loading costing data...</span>
+      </div>
+    );
+  }
 
   /* ----------------------- Render --------------------------- */
   return (
@@ -447,7 +564,7 @@ export default function CostingPerformance() {
             <h2 className="text-xl font-semibold">Standard Costs</h2>
             <Button
               disabled={!canCreate}
-              onClick={() => canCreate && openNewActual()}
+              onClick={() => canCreate && openNewStandard()}
               className={canCreate ? "" : "opacity-50 cursor-not-allowed"}
             >
               <Plus className="mr-2" />New Standard</Button>
@@ -466,7 +583,7 @@ export default function CostingPerformance() {
                 </TableHeader>
                 <TableBody>
                   {standards.map((s) => (
-                    <TableRow key={s.id}>
+                    <TableRow key={s._id}>
                       <TableCell>{s.productId} {s.productName ? `— ${s.productName}` : ""}</TableCell>
                       <TableCell>
                         ₹{((s.material + s.labour + s.machine + s.overheads) || 0).toFixed(2)}<div className="text-sm text-muted-foreground">
@@ -478,7 +595,7 @@ export default function CostingPerformance() {
                         <Button
                           className="w-full"
                           disabled={!canEdit}
-                          onClick={() => canEdit && editStandard(s.id)}
+                          onClick={() => canEdit && editStandard(s._id)}
                         >
                           <Edit2 className="mr-2" />Edit
                         </Button>
@@ -486,7 +603,7 @@ export default function CostingPerformance() {
                         <Button
                           className="w-full"
                           disabled={!canDelete}
-                          onClick={() => canDelete && deleteStandard(s.id)}
+                          onClick={() => canDelete && deleteStandardHandler(s._id)}
                         >
                           <Trash2 className="mr-2" />Delete
                         </Button>
@@ -528,8 +645,8 @@ export default function CostingPerformance() {
                 </TableHeader>
                 <TableBody>
                   {actualsWithVariance.map((a) => (
-                    <TableRow key={a.id}>
-                      <TableCell>{a.workOrderId || a.batchNo || a.id}</TableCell>
+                    <TableRow key={a._id}>
+                      <TableCell>{a.workOrderId || a.batchNo || a._id}</TableCell>
                       <TableCell>{a.productId}</TableCell>
                       <TableCell>{a.producedQty}</TableCell>
                       <TableCell>
@@ -540,7 +657,7 @@ export default function CostingPerformance() {
                         <Button
                           className="w-full"
                           disabled={!canEdit}
-                          onClick={() => canEdit && editActual(a.id)}
+                          onClick={() => canEdit && editActual(a._id)}
                         >
                           <Edit2 className="mr-2" />Edit
                         </Button>
@@ -548,7 +665,7 @@ export default function CostingPerformance() {
                         <Button
                           className="w-full"
                           disabled={!canDelete}
-                          onClick={() => canDelete && deleteActual(a.id)}
+                          onClick={() => canDelete && deleteActualHandler(a._id)}
                         >
                           <Trash2 className="mr-2" />Delete
                         </Button>
@@ -589,7 +706,7 @@ export default function CostingPerformance() {
                 </TableHeader>
                 <TableBody>
                   {metrics.map((m) => (
-                    <TableRow key={m.id}>
+                    <TableRow key={m._id}>
                       <TableCell>{m.date}</TableCell>
                       <TableCell>{m.productId || "—"}</TableCell>
                       <TableCell>{m.yieldPct ?? "—"}</TableCell>
@@ -599,7 +716,7 @@ export default function CostingPerformance() {
                       <TableCell className="flex gap-2">
                         <Button
                           disabled={!canEdit}
-                          onClick={() => canEdit && editMetric(m.id)}
+                          onClick={() => canEdit && editMetric(m._id)}
                           className={canEdit ? "" : "opacity-50 cursor-not-allowed"}
                         >
                           Edit
@@ -607,7 +724,7 @@ export default function CostingPerformance() {
 
                         <Button
                           disabled={!canDelete}
-                          onClick={() => canDelete && deleteMetric(m.id)}
+                          onClick={() => canDelete && deleteMetricHandler(m._id)}
                           className={canDelete ? "" : "opacity-50 cursor-not-allowed"}
                         >
                           Delete
@@ -626,7 +743,7 @@ export default function CostingPerformance() {
       {/* Standard Dialog */}
       <Dialog open={stdDialogOpen} onOpenChange={setStdDialogOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>{stdForm.id ? "Edit Standard" : "New Standard"}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{stdForm._id ? "Edit Standard" : "New Standard"}</DialogTitle></DialogHeader>
           <div className="grid gap-2">
             <Label>Product ID</Label>
             <Input value={stdForm.productId || ""} onChange={(e) => setStdForm({ ...stdForm, productId: e.target.value })} />
@@ -646,8 +763,8 @@ export default function CostingPerformance() {
           <DialogFooter>
             <Button
               className="w-full"
-              disabled={!(stdForm.id ? canEdit : canCreate)}
-              onClick={() => (stdForm.id ? canEdit : canCreate) && saveStandard()}
+              disabled={!(stdForm._id ? canEdit : canCreate)}
+              onClick={() => (stdForm._id ? canEdit : canCreate) && saveStandard()}
             >
               Save Standard
             </Button>
@@ -658,7 +775,7 @@ export default function CostingPerformance() {
       {/* Actual Dialog */}
       <Dialog open={actDialogOpen} onOpenChange={setActDialogOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>{actForm.id ? "Edit Actual" : "New Actual"}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{actForm._id ? "Edit Actual" : "New Actual"}</DialogTitle></DialogHeader>
           <div className="grid gap-2">
             <Label>Work Order / Batch</Label>
             <Input value={actForm.workOrderId || actForm.batchNo || ""} onChange={(e) => setActForm({ ...actForm, workOrderId: e.target.value })} />
@@ -684,8 +801,8 @@ export default function CostingPerformance() {
           <DialogFooter>
             <Button
               className="w-full"
-              disabled={!(actForm.id ? canEdit : canCreate)}
-              onClick={() => (actForm.id ? canEdit : canCreate) && saveActual()}
+              disabled={!(actForm._id ? canEdit : canCreate)}
+              onClick={() => (actForm._id ? canEdit : canCreate) && saveActual()}
             >
               Save Actual
             </Button>
@@ -696,7 +813,7 @@ export default function CostingPerformance() {
       {/* Metric Dialog */}
       <Dialog open={metricDialogOpen} onOpenChange={setMetricDialogOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>{metricForm.id ? "Edit Metric" : "New Metric"}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{metricForm._id ? "Edit Metric" : "New Metric"}</DialogTitle></DialogHeader>
           <div className="grid gap-2">
             <Label>Date</Label>
             <Input value={metricForm.date || ""} onChange={(e) => setMetricForm({ ...metricForm, date: e.target.value })} />
@@ -716,8 +833,8 @@ export default function CostingPerformance() {
           <DialogFooter>
             <Button
               className="w-full"
-              disabled={!(metricForm.id ? canEdit : canCreate)}
-              onClick={() => (metricForm.id ? canEdit : canCreate) && saveMetric()}
+              disabled={!(metricForm._id ? canEdit : canCreate)}
+              onClick={() => (metricForm._id ? canEdit : canCreate) && saveMetric()}
             >
               Save Metric
             </Button>
