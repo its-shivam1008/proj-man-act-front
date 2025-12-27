@@ -7,7 +7,7 @@ import axios from "@/utils/axiosApi";
 export const fetchIssueSlips = createAsyncThunk(
   "materialIssue/fetch",
   async () => {
-    const res = await axios.get("/material-issue");
+    const res = await axios.get("/material-issue/get");
     return res.data.data;
   }
 );
@@ -41,6 +41,13 @@ export const fetchWIP = createAsyncThunk(
   async () => {
     const res = await axios.get("/material-issue/wip/all");
     return res.data.data;
+  }
+);
+export const deleteIssueSlip = createAsyncThunk(
+  "materialIssue/delete",
+  async (id: string) => {
+    await axios.delete(`/material-issue/${id}`);
+    return id;
   }
 );
 
@@ -89,7 +96,13 @@ const materialIssueSlice = createSlice({
     /* ---------- LEDGER ---------- */
     builder.addCase(fetchLedger.fulfilled, (state, action) => {
       state.ledger = action.payload;
-    });
+    })
+      .addCase(deleteIssueSlip.fulfilled, (state, action) => {
+        state.issueSlips = state.issueSlips.filter(
+          (s: any) => s._id !== action.payload
+        );
+      });
+
 
     /* ---------- WIP ---------- */
     builder.addCase(fetchWIP.fulfilled, (state, action) => {
