@@ -46,6 +46,48 @@ import {
 } from "../../../redux/slices/production/ppcSlice";
 import axios from "../../../utils/axiosApi";
 
+// Helper function to create movement entry
+const createMovementEntry = async (data: {
+  materialId?: string;
+  materialName: string;
+  quantity: number;
+  unit: string;
+  source: string;
+  destination: string;
+  referenceNumber: string;
+  remarks?: string;
+  itemType: "material" | "product";
+  unitCost?: number;
+}) => {
+  try {
+    const organisationId = localStorage.getItem("organisationId");
+    if (!organisationId) return false;
+
+    const movementData = {
+      organisationId,
+      materialId: data.materialId || null,
+      materialName: data.materialName,
+      movementType: "outbound",
+      quantity: data.quantity,
+      unit: data.unit,
+      source: data.source,
+      destination: data.destination,
+      referenceNumber: data.referenceNumber,
+      remarks: data.remarks || "",
+      unitCost: data.unitCost || 0,
+      totalCost: (data.unitCost || 0) * data.quantity,
+      itemType: data.itemType,
+      movementDate: new Date().toISOString(),
+    };
+
+    const response = await axios.post("/material-movements", movementData);
+    return response.data.success;
+  } catch (error: any) {
+    console.error("Failed to create movement entry:", error);
+    return false;
+  }
+};
+
 /**
 STORAGE_KEYS used (ensure these exist in your storage.ts):
 - FORECASTS
@@ -196,7 +238,7 @@ export default function PPCDashboard() {
           console.log("PPC: Products API returned success: false");
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to fetch products:", error);
       console.error("Error response:", error.response?.data);
     }
@@ -269,6 +311,34 @@ export default function PPCDashboard() {
   /* ----------------------------- UI: MRP lines are edited inline, CRP just views ----------------------------- */
 
   /* ----------------------------- Forecast CRUD ----------------------------- */
+  // Function to fetch current stock for a product
+  const fetchProductStock = async (productId: string) => {
+    try {
+      const response = await axios.get(`/product/single/${productId}`);
+      if (response.data.success && response.data.product) {
+        const product = response.data.product;
+        // Calculate total stock from all warehouses
+        const totalStock = product.stocks?.reduce((sum: number, stock: any) => sum + (stock.quantity || 0), 0) || 0;
+        return totalStock;
+      }
+      return 0;
+    } catch (error: any) {
+      console.error("Failed to fetch product stock:", error);
+      return 0;
+    }
+  };
+
+  // Function to handle product selection in forecast form
+  const handleForecastProductChange = async (productId: string) => {
+    setForecastForm({ ...forecastForm, productId });
+    
+    if (productId) {
+      // Fetch and set current stock automatically
+      const currentStock = await fetchProductStock(productId);
+      setForecastForm(prev => ({ ...prev, productId, currentStock }));
+    }
+  };
+
   const openNewForecast = () => { 
     setEditingForecast(null); 
     setForecastForm({ 
@@ -289,10 +359,83 @@ export default function PPCDashboard() {
     setForecastDialogOpen(true); 
   };
   
+  // Function to deduct stock from product
+  const deductProductStock = async (productId: string, quantityToDeduct: number) => {
+    try {
+      // First get the current product details
+      const response = await axios.get(`/product/single/${productId}`);
+      if (response.data.success && response.data.product) {
+        const product = response.data.product;
+        
+        // Calculate total current stock
+        const totalCurrentStock = product.stocks?.reduce((sum: number, stock: any) => sum + (stock.quantity || 0), 0) || 0;
+        
+        // Check if there's enough stock
+        if (totalCurrentStock < quantityToDeduct) {
+          toast.warning(`Insufficient stock! Available: ${totalCurrentStock}, Required: ${quantityToDeduct}`);
+          return false;
+        }
+        
+        // Calculate new stock quantities by deducting from each warehouse proportionally
+        let remainingToDeduct = quantityToDeduct;
+        const updatedStocks = product.stocks?.map((stock: any) => {
+          const currentQty = stock.quantity || 0;
+          
+          if (remainingToDeduct > 0 && currentQty > 0) {
+            const deductFromThisStock = Math.min(currentQty, remainingToDeduct);
+            remainingToDeduct -= deductFromThisStock;
+            
+            return {
+              ...stock,
+              quantity: currentQty - deductFromThisStock
+            };
+          }
+          return stock;
+        }) || [];
+
+        // Update the product with new stock quantities
+        const updateResponse = await axios.put(`/product/update/${productId}`, {
+          ...product,
+          stocks: updatedStocks
+        });
+
+        if (updateResponse.data.success) {
+          console.log(`✅ Successfully deducted ${quantityToDeduct} units from product ${productId}`);
+          return true;
+        }
+      }
+      return false;
+    } catch (error: any) {
+      console.error("Failed to deduct product stock:", error);
+      return false;
+    }
+  };
+
   const saveForecast = async () => {
     if (!forecastForm.productId || !forecastForm.demandForecast) {
       toast.error("Product and demand forecast are required");
       return;
+    }
+    
+    const demandQuantity = Number(forecastForm.demandForecast) || 0;
+    
+    // For new forecasts, check if there's enough stock before saving
+    if (!editingForecast && demandQuantity > 0) {
+      try {
+        const response = await axios.get(`/product/single/${forecastForm.productId}`);
+        if (response.data.success && response.data.product) {
+          const totalCurrentStock = response.data.product.stocks?.reduce((sum: number, stock: any) => sum + (stock.quantity || 0), 0) || 0;
+          
+          if (totalCurrentStock < demandQuantity) {
+            toast.error(`Cannot create forecast! Insufficient stock. Available: ${totalCurrentStock}, Required: ${demandQuantity}`);
+            return;
+          }
+        }
+      } catch (error: any) {
+        console.error("Failed to check stock availability:", error);
+        toast.error("Failed to verify stock availability");
+        return;
+      }
     }
     
     try {
@@ -306,11 +449,46 @@ export default function PPCDashboard() {
       } else {
         // Create new forecast
         await dispatch(createForecast(forecastForm) as any);
-        toast.success("Forecast created successfully");
+        
+        // After successfully creating forecast, deduct the demand quantity from product stock
+        if (demandQuantity > 0) {
+          const stockDeducted = await deductProductStock(forecastForm.productId, demandQuantity);
+          if (stockDeducted) {
+            // Create movement entry for the stock deduction
+            const product = products.find(p => p._id === forecastForm.productId);
+            const movementCreated = await createMovementEntry({
+              materialId: forecastForm.productId,
+              materialName: product?.name || "Unknown Product",
+              quantity: demandQuantity,
+              unit: "pcs", // You may want to get this from product data
+              source: "Finished Goods Inventory",
+              destination: "PPC Forecast",
+              referenceNumber: `FORECAST-${Date.now()}`,
+              remarks: `Stock deducted for demand forecast`,
+              itemType: "product",
+              unitCost: 0 // You may want to get actual cost from product
+            });
+
+            if (movementCreated) {
+              toast.success(`Forecast created, ${demandQuantity} units deducted from stock, and movement entry created`);
+            } else {
+              toast.success(`Forecast created and ${demandQuantity} units deducted from stock`);
+              toast.warning("Could not create movement entry - please check manually");
+            }
+          } else {
+            toast.success("Forecast created successfully");
+            toast.warning("Could not deduct stock - please check manually");
+          }
+        } else {
+          toast.success("Forecast created successfully");
+        }
       }
       
+      // Refresh products data to show updated stock
+      fetchProducts();
+      
       setForecastDialogOpen(false);
-    } catch (error) {
+    } catch (error: any) {
       toast.error("Failed to save forecast");
       console.error(error);
     }
@@ -320,7 +498,7 @@ export default function PPCDashboard() {
     try {
       await dispatch(deleteForecastAction(id) as any);
       toast.success("Forecast deleted successfully");
-    } catch (error) {
+    } catch (error: any) {
       toast.error("Failed to delete forecast");
       console.error(error);
     }
@@ -360,7 +538,7 @@ export default function PPCDashboard() {
       }
       
       setMpsDialogOpen(false);
-    } catch (error) {
+    } catch (error: any) {
       toast.error("Failed to save MPS");
       console.error(error);
     }
@@ -370,7 +548,7 @@ export default function PPCDashboard() {
     try {
       await dispatch(deleteMPSAction(id) as any);
       toast.success("MPS deleted successfully");
-    } catch (error) {
+    } catch (error: any) {
       toast.error("Failed to delete MPS");
       console.error(error);
     }
@@ -386,7 +564,7 @@ export default function PPCDashboard() {
     try {
       await dispatch(generateMPS() as any);
       toast.success("MPS generated from forecasts successfully");
-    } catch (error) {
+    } catch (error: any) {
       toast.error("Failed to generate MPS");
       console.error(error);
     }
@@ -402,7 +580,7 @@ export default function PPCDashboard() {
       await dispatch(runMRP() as any);
       toast.success("MRP calculation completed");
       setMrpDialogOpen(false);
-    } catch (error) {
+    } catch (error: any) {
       toast.error("Failed to run MRP");
       console.error(error);
     }
@@ -413,7 +591,7 @@ export default function PPCDashboard() {
       await axios.post(`/ppc/mrp/${id}/create-pr`);
       setMrpLines(mrpLines.map((l) => l._id === id || l.id === id ? { ...l, prCreated: true } : l));
       toast.success("Purchase Requisition created successfully");
-    } catch (error) {
+    } catch (error: any) {
       toast.error("Failed to create Purchase Requisition");
       console.error(error);
     }
@@ -429,7 +607,7 @@ export default function PPCDashboard() {
           shortageQty: Math.max(0, l.requiredQty - val) 
         } : l
       ));
-    } catch (error) {
+    } catch (error: any) {
       toast.error("Failed to update MRP line");
       console.error(error);
     }
@@ -474,7 +652,7 @@ export default function PPCDashboard() {
       }
       
       setPoDialogOpen(false);
-    } catch (error) {
+    } catch (error: any) {
       toast.error("Failed to save planned order");
       console.error(error);
     }
@@ -484,7 +662,7 @@ export default function PPCDashboard() {
     try {
       await dispatch(deletePlannedOrderAction(id) as any);
       toast.success("Planned order deleted successfully");
-    } catch (error) {
+    } catch (error: any) {
       toast.error("Failed to delete planned order");
       console.error(error);
     }
@@ -509,7 +687,7 @@ export default function PPCDashboard() {
       await Promise.all(newOrders.map(order => dispatch(createPlannedOrder(order) as any)));
       
       toast.success("Planned orders generated from MPS successfully");
-    } catch (error) {
+    } catch (error: any) {
       toast.error("Failed to generate planned orders");
       console.error(error);
     }
@@ -986,7 +1164,7 @@ export default function PPCDashboard() {
             <Label>Product</Label>
             <Select 
               value={forecastForm.productId || ""} 
-              onValueChange={(value) => setForecastForm({ ...forecastForm, productId: value })}
+              onValueChange={handleForecastProductChange}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select a product" />
@@ -1007,6 +1185,19 @@ export default function PPCDashboard() {
             <Input type="number" value={forecastForm.currentStock ?? 0} onChange={(e) => setForecastForm({ ...forecastForm, currentStock: Number(e.target.value) })} />
             <Label>Demand Forecast</Label>
             <Input type="number" value={forecastForm.demandForecast ?? 0} onChange={(e) => setForecastForm({ ...forecastForm, demandForecast: Number(e.target.value) })} />
+            {/* Stock validation indicator */}
+            {forecastForm.productId && forecastForm.demandForecast && forecastForm.currentStock !== undefined && (
+              <div className={`text-sm p-2 rounded ${
+                Number(forecastForm.currentStock) >= Number(forecastForm.demandForecast) 
+                  ? 'bg-green-50 text-green-700 border border-green-200' 
+                  : 'bg-red-50 text-red-700 border border-red-200'
+              }`}>
+                {Number(forecastForm.currentStock) >= Number(forecastForm.demandForecast) 
+                  ? `✅ Sufficient stock available (${forecastForm.currentStock} ≥ ${forecastForm.demandForecast})`
+                  : `⚠️ Insufficient stock! Available: ${forecastForm.currentStock}, Required: ${forecastForm.demandForecast}`
+                }
+              </div>
+            )}
             <Label>Suggested Replenishment</Label>
             <Input type="number" value={forecastForm.suggestedReplenishment ?? 0} onChange={(e) => setForecastForm({ ...forecastForm, suggestedReplenishment: Number(e.target.value) })} />
             <Label>Lead Time (days)</Label>

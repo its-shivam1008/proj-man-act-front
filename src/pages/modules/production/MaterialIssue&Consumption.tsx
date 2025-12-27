@@ -21,6 +21,8 @@ import {
 import { RootState } from "@/redux/store";
 import { createIssueSlip, deleteIssueSlip, fetchIssueSlips, fetchLedger, fetchWIP } from "@/redux/slices/production/materialIssueSlice";
 import { fetchMaterials } from "@/redux/slices/rawmaterialSlice";
+import axios from "../../../utils/axiosApi";
+import { toast } from "sonner";
 // Generate random ID
 const genId = (p = "id") => `${p}_${Math.random().toString(36).slice(2, 9)}`;
 
@@ -30,12 +32,64 @@ export default function MaterialIssue() {
     );
     const [selectedItems, setSelectedItems] = useState<any[]>([]);
 
-
     const dispatch = useDispatch();
     const canView = usePermission("materialIssueConsumption", "view");
     const canCreate = usePermission("materialIssueConsumption", "create");
     const canEdit = usePermission("materialIssueConsumption", "edit");
     const canDelete = usePermission("materialIssueConsumption", "delete");
+
+    // Stock management functions for raw materials
+    // Function to fetch current stock for a raw material
+    const fetchMaterialStock = async (materialId: string) => {
+        try {
+            const response = await axios.get(`/raw/single/${materialId}`);
+            if (response.data.success && response.data.material) {
+                const material = response.data.material;
+                // Calculate total stock from all warehouses using remainingQuantity
+                const totalStock = material.stocks?.reduce((sum: number, stock: any) => sum + (stock.remainingQuantity || 0), 0) || 0;
+                return totalStock;
+            }
+            return 0;
+        } catch (error: any) {
+            console.error("Failed to fetch material stock:", error);
+            return 0;
+        }
+    };
+
+    // Function to validate stock availability for all selected items
+    const validateMaterialStockAvailability = async (items: any[]) => {
+        const stockValidations = [];
+        
+        for (const item of items) {
+            if (item.issueQty > 0) {
+                try {
+                    const response = await axios.get(`/raw/single/${item.itemId}`);
+                    if (response.data.success && response.data.material) {
+                        const totalCurrentStock = response.data.material.stocks?.reduce((sum: number, stock: any) => sum + (stock.remainingQuantity || 0), 0) || 0;
+                        
+                        stockValidations.push({
+                            materialId: item.itemId,
+                            materialName: item.itemName,
+                            required: item.issueQty,
+                            available: totalCurrentStock,
+                            sufficient: totalCurrentStock >= item.issueQty
+                        });
+                    }
+                } catch (error: any) {
+                    console.error(`Failed to check stock for material ${item.itemId}:`, error);
+                    stockValidations.push({
+                        materialId: item.itemId,
+                        materialName: item.itemName,
+                        required: item.issueQty,
+                        available: 0,
+                        sufficient: false
+                    });
+                }
+            }
+        }
+        
+        return stockValidations;
+    };
     if (!canView) {
         return (
             <div className="text-center py-12 px-4">
@@ -151,28 +205,69 @@ export default function MaterialIssue() {
         return list.reduce((s, i) => s + (Number(i.issueQty) * Number(i.rate || 1)), 0);
     };
 
-    const handleIssue = () => {
+    const handleIssue = async () => {
         if (!form.workOrderId) {
-            alert("Please select Work Order");
+            toast.error("Please select Work Order");
             return;
         }
 
         if (!selectedItems.length) {
-            alert("Select at least one material");
+            toast.error("Select at least one material");
             return;
         }
 
-        dispatch(createIssueSlip({
-            organisationId: localStorage.getItem("organisationId"),
-            workOrderId: form.workOrderId,
-            items: selectedItems,
-            remarks: form.remarks,
-            autoBackflush: form.autoBackflush,
-        }));
+        // Validate stock availability for all selected items
+        try {
+            const stockValidations = await validateMaterialStockAvailability(selectedItems);
+            const insufficientItems = stockValidations.filter(v => !v.sufficient);
+            
+            if (insufficientItems.length > 0) {
+                const errorMessage = insufficientItems.map(item => 
+                    `${item.materialName}: Available ${item.available}, Required ${item.required}`
+                ).join('\n');
+                
+                toast.error(`Cannot issue materials! Insufficient stock for:\n${errorMessage}`);
+                return;
+            }
+        } catch (error: any) {
+            console.error("Failed to validate stock availability:", error);
+            toast.error("Failed to verify stock availability");
+            return;
+        }
 
+        try {
+            // The backend createIssueSlip already handles stock deduction using FIFO logic
+            // So we don't need to deduct stock manually in the frontend
+            await dispatch(createIssueSlip({
+                organisationId: localStorage.getItem("organisationId"),
+                workOrderId: form.workOrderId,
+                items: selectedItems,
+                remarks: form.remarks,
+                autoBackflush: form.autoBackflush,
+            }));
 
-        setSelectedItems([]);
-        setOpen(false);
+            // Reset form and close dialog
+            setSelectedItems([]);
+            setForm({
+                workOrderId: "",
+                items: [],
+                remarks: "",
+                autoBackflush: false,
+            });
+            setOpen(false);
+
+            // Show success message
+            toast.success(`Material issue slip created successfully for ${selectedItems.length} materials`);
+
+            // Refresh materials data to show updated stock
+            const orgId = localStorage.getItem('organisationId') || '';
+            if (orgId) {
+                dispatch(fetchMaterials({ page, limit }));
+            }
+        } catch (error) {
+            toast.error("Failed to create material issue slip");
+            console.error(error);
+        }
     };
 
 
@@ -512,7 +607,7 @@ export default function MaterialIssue() {
                                         const rate = getRateFIFO(m);
 
                                         return (
-                                            <TableRow key={m._id}>
+                                            <TableRow key={m._id} className="space-y-2">
                                                 <TableCell>
                                                     <input
                                                         type="checkbox"
@@ -540,32 +635,58 @@ export default function MaterialIssue() {
                                                     />
                                                 </TableCell>
 
-                                                <TableCell>{m.name}</TableCell>
+                                                <TableCell>
+                                                    <div>
+                                                        <div className="font-medium">{m.name}</div>
+                                                        {availableQty === 0 && (
+                                                            <div className="text-xs text-red-600 mt-1">
+                                                                ⚠️ Out of stock
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </TableCell>
 
                                                 <TableCell>
-                                                    {availableQty} {m.unitOfMeasure}
+                                                    <div className={`${availableQty === 0 ? 'text-red-600' : availableQty < 10 ? 'text-yellow-600' : 'text-green-600'}`}>
+                                                        {availableQty} {m.unitOfMeasure}
+                                                    </div>
                                                 </TableCell>
 
                                                 <TableCell>
                                                     {selected && (
-                                                        <Input
-                                                            type="number"
-                                                            min={1}
-                                                            max={availableQty}
-                                                            value={selected.issueQty}
-                                                            onChange={(e) =>
-                                                                setSelectedItems(prev =>
-                                                                    prev.map(i =>
-                                                                        i.itemId === m._id
-                                                                            ? {
-                                                                                ...i,
-                                                                                issueQty: Math.min(+e.target.value, availableQty),
-                                                                            }
-                                                                            : i
+                                                        <div className="space-y-2">
+                                                            <Input
+                                                                type="number"
+                                                                min={1}
+                                                                max={availableQty}
+                                                                value={selected.issueQty}
+                                                                onChange={(e) =>
+                                                                    setSelectedItems(prev =>
+                                                                        prev.map(i =>
+                                                                            i.itemId === m._id
+                                                                                ? {
+                                                                                    ...i,
+                                                                                    issueQty: Math.min(+e.target.value, availableQty),
+                                                                                }
+                                                                                : i
+                                                                        )
                                                                     )
-                                                                )
-                                                            }
-                                                        />
+                                                                }
+                                                            />
+                                                            {/* Stock validation indicator */}
+                                                            {selected.issueQty > 0 && (
+                                                                <div className={`text-xs p-1 rounded ${
+                                                                    availableQty >= selected.issueQty 
+                                                                        ? 'bg-green-50 text-green-700' 
+                                                                        : 'bg-red-50 text-red-700'
+                                                                }`}>
+                                                                    {availableQty >= selected.issueQty 
+                                                                        ? `✅ Available: ${availableQty}`
+                                                                        : `⚠️ Need: ${selected.issueQty}, Have: ${availableQty}`
+                                                                    }
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                     )}
                                                 </TableCell>
 
@@ -592,6 +713,30 @@ export default function MaterialIssue() {
 
                                 </TableBody>
                             </Table>
+
+                            {/* Overall stock status summary for selected items */}
+                            {selectedItems.length > 0 && (
+                                <div className="mt-3 text-center">
+                                    {(() => {
+                                        const insufficientItems = selectedItems.filter(item => item.availableQty < item.issueQty);
+                                        const sufficientItems = selectedItems.filter(item => item.availableQty >= item.issueQty);
+                                        
+                                        if (insufficientItems.length === 0) {
+                                            return (
+                                                <div className="text-sm p-2 bg-green-50 text-green-700 border border-green-200 rounded">
+                                                    ✅ All selected materials have sufficient stock ({selectedItems.length} items)
+                                                </div>
+                                            );
+                                        } else {
+                                            return (
+                                                <div className="text-sm p-2 bg-red-50 text-red-700 border border-red-200 rounded">
+                                                    ⚠️ {insufficientItems.length} material(s) have insufficient stock out of {selectedItems.length} selected
+                                                </div>
+                                            );
+                                        }
+                                    })()}
+                                </div>
+                            )}
 
                         </div>
 

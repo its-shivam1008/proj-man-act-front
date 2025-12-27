@@ -132,6 +132,23 @@ export const respondToMaterialPurchase = createAsyncThunk(
   }
 );
 
+export const respondToMaterialIssue = createAsyncThunk(
+  "notifications/respondToMaterialIssue",
+  async ({ notificationId, response }: { notificationId: string, response: "accepted" | "rejected" }, { rejectWithValue }) => {
+    try {
+      console.log("🚀 Sending material issue response:", { notificationId, response });
+      const apiResponse = await api.post("/purchase/orders/material-issue-response", { notificationId, response });
+      console.log("✅ Material issue response success:", apiResponse.data);
+      return { ...apiResponse.data, notificationId, response };
+    } catch (error: any) {
+      console.error("❌ Material issue response error:", error);
+      console.error("❌ Error response:", error.response?.data);
+      console.error("❌ Error status:", error.response?.status);
+      return rejectWithValue(error.response?.data?.message || "Failed to respond to material issue");
+    }
+  }
+);
+
 export const markAsRead = createAsyncThunk(
   "notifications/markAsRead",
   async (notificationId: string, { rejectWithValue }) => {
@@ -227,6 +244,14 @@ const notificationSlice = createSlice({
     });
     builder.addCase(respondToMaterialPurchase.fulfilled, (state, action) => {
       // Update the specific material purchase notification in the list
+      const index = state.list.findIndex(n => n._id === action.payload.notificationId);
+      if (index !== -1) {
+        state.list[index].inviteResponse = action.payload.response;
+        state.list[index].status = 'read'; // Mark as read after responding
+      }
+    });
+    builder.addCase(respondToMaterialIssue.fulfilled, (state, action) => {
+      // Update the specific material issue notification in the list
       const index = state.list.findIndex(n => n._id === action.payload.notificationId);
       if (index !== -1) {
         state.list[index].inviteResponse = action.payload.response;

@@ -9,6 +9,9 @@ import {
   Trash2,
   XCircle,
   ShieldAlert,
+  Calendar,
+  User,
+  Hash,
 } from "lucide-react";
 import {
   Accordion,
@@ -19,6 +22,27 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
   fetchStores,
   addStore,
   updateStore,
@@ -28,6 +52,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
 import { usePermission } from "@/hooks/userPermission";
 import { fetchMasterData } from "@/redux/slices/masterDataSlice";
+import NotificationCenter from "@/components/NotificationCenter";
 
 
 interface StoreData {
@@ -46,6 +71,22 @@ interface StoreData {
   lowStockAlerts: string[];
 }
 
+interface MaterialIssueItem {
+  _id: string;
+  workOrderCode: string;
+  issueDate: string;
+  totalValue: number;
+  items: {
+    itemName: string;
+    issueQty: number;
+    unit: string;
+    rate: number;
+    lineValue: number;
+  }[];
+  acceptedDate: string;
+  status: 'accepted';
+}
+
 const StoresManagement: React.FC = () => {
   const canView = usePermission("stores", "view");
   const canCreate = usePermission("stores", "create");
@@ -53,6 +94,10 @@ const StoresManagement: React.FC = () => {
   const canDelete = usePermission("stores", "delete");
   const [showStoreForm, setShowStoreForm] = useState(false);
   const [editingStoreId, setEditingStoreId] = useState<string | null>(null);
+  const [materialIssues, setMaterialIssues] = useState<MaterialIssueItem[]>([]);
+  const [selectedIssueItems, setSelectedIssueItems] = useState<MaterialIssueItem | null>(null);
+  const [showItemsDialog, setShowItemsDialog] = useState(false);
+  
   if (!canView) {
     return (
       <div className="text-center py-20">
@@ -81,6 +126,66 @@ const StoresManagement: React.FC = () => {
   useEffect(() => {
     dispatch(fetchMasterData("location"));
     dispatch(fetchStores({ page: 1, limit: 100, location: locationFilter }));
+    
+    // Load material issues from localStorage
+    const loadMaterialIssues = () => {
+      const stored = localStorage.getItem('acceptedMaterialIssues');
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          // Filter out any sample data (data with IDs starting with 'sample-')
+          const realData = parsed.filter((item: MaterialIssueItem) => !item._id.startsWith('sample-'));
+          setMaterialIssues(realData);
+          
+          // Update localStorage with only real data
+          if (realData.length !== parsed.length) {
+            localStorage.setItem('acceptedMaterialIssues', JSON.stringify(realData));
+          }
+        } catch (error) {
+          console.error('Error parsing stored material issues:', error);
+          // Clear corrupted data
+          localStorage.removeItem('acceptedMaterialIssues');
+        }
+      }
+    };
+    
+    loadMaterialIssues();
+    
+    console.log('🏪 Store page loaded, current material issues:', materialIssues.length);
+    
+    // Listen for material issue acceptance events
+    const handleMaterialIssueAccepted = (event: CustomEvent) => {
+      const issueData = event.detail;
+      console.log('🎯 Material issue accepted in store page:', issueData);
+      
+      // Create new material issue entry
+      const newIssue: MaterialIssueItem = {
+        _id: issueData.issueSlipId || `issue-${Date.now()}`,
+        workOrderCode: issueData.workOrderCode,
+        issueDate: issueData.issueDate || new Date().toISOString(),
+        totalValue: issueData.totalValue,
+        items: issueData.items || [],
+        acceptedDate: new Date().toISOString(),
+        status: 'accepted'
+      };
+      
+      console.log('📦 Adding new material issue to store table:', newIssue);
+      
+      setMaterialIssues(prev => {
+        const updated = [newIssue, ...prev];
+        // Save to localStorage
+        localStorage.setItem('acceptedMaterialIssues', JSON.stringify(updated));
+        console.log('✅ Material issue saved to localStorage, total issues:', updated.length);
+        return updated;
+      });
+    };
+    
+    // Add event listener
+    window.addEventListener('materialIssueAccepted', handleMaterialIssueAccepted as EventListener);
+    
+    return () => {
+      window.removeEventListener('materialIssueAccepted', handleMaterialIssueAccepted as EventListener);
+    };
   }, [dispatch, locationFilter]);
 
   const handleAdd = () => {
@@ -102,6 +207,19 @@ const StoresManagement: React.FC = () => {
   const handleCloseForm = () => {
     setShowStoreForm(false);
     setEditingStoreId(null);
+  };
+
+  const handleClearMaterialIssues = () => {
+    if (window.confirm("Are you sure you want to clear all material issues? This action cannot be undone.")) {
+      setMaterialIssues([]);
+      localStorage.removeItem('acceptedMaterialIssues');
+      console.log('✅ All material issues cleared from store page');
+    }
+  };
+
+  const handleShowItems = (issue: MaterialIssueItem) => {
+    setSelectedIssueItems(issue);
+    setShowItemsDialog(true);
   };
 
   const handleSubmit = (formData: any) => {
@@ -382,18 +500,259 @@ const StoresManagement: React.FC = () => {
           <Store className="text-green-600" />
           Retail Stores & Branches
         </h1>
-        <Button
-          disabled={!canCreate}
-          onClick={handleAdd}
-          className=" flex items-center gap-2"
-        >
-          <Plus className="w-5 h-5" /> Add Store
-        </Button>
+        <div className="flex gap-2">
+          <NotificationCenter 
+            destination="inventory.store" 
+            title="Store Notifications"
+          />
+          <Button
+            disabled={!canCreate}
+            onClick={handleAdd}
+            className=" flex items-center gap-2"
+          >
+            <Plus className="w-5 h-5" /> Add Store
+          </Button>
+        </div>
       </div>
 
       {showStoreForm && (
         <StoreForm initialData={stores.find((s) => s._id === editingStoreId)} />
       )}
+
+      {/* Material Issues Table Section */}
+      <Card className="shadow-lg">
+        <CardHeader>
+          <div className="flex justify-between items-center">
+            <CardTitle className="flex items-center gap-3 text-xl">
+              <Package className="text-blue-600" />
+              Accepted Material Issues
+              <Badge variant="secondary" className="ml-2">
+                {materialIssues.length} Items
+              </Badge>
+            </CardTitle>
+            {materialIssues.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleClearMaterialIssues}
+                className="text-red-600 border-red-200 hover:bg-red-50"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Clear All
+              </Button>
+            )}
+            
+            {/* Test Button for Development */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const testData = {
+                  issueSlipId: `test-${Date.now()}`,
+                  workOrderCode: `WO-TEST-${Math.floor(Math.random() * 1000)}`,
+                  issueDate: new Date().toISOString(),
+                  totalValue: 12500,
+                  items: [
+                    {
+                      itemName: 'Test Material A',
+                      issueQty: 10,
+                      unit: 'kg',
+                      rate: 500,
+                      lineValue: 5000
+                    },
+                    {
+                      itemName: 'Test Material B',
+                      issueQty: 15,
+                      unit: 'pcs',
+                      rate: 500,
+                      lineValue: 7500
+                    }
+                  ]
+                };
+                
+                const event = new CustomEvent('materialIssueAccepted', { detail: testData });
+                window.dispatchEvent(event);
+                console.log('🧪 Test material issue event dispatched');
+              }}
+              className="text-blue-600 border-blue-200 hover:bg-blue-50"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Test Add
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {materialIssues.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <Package className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+              <p className="text-lg font-medium">No material issues accepted yet</p>
+              <p className="text-sm">Accepted material issue notifications will appear here</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[150px]">
+                      <div className="flex items-center gap-2">
+                        <Hash className="w-4 h-4" />
+                        Work Order
+                      </div>
+                    </TableHead>
+                    <TableHead>
+                      <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4" />
+                        Issue Date
+                      </div>
+                    </TableHead>
+                    <TableHead>
+                      <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4" />
+                        Accepted Date
+                      </div>
+                    </TableHead>
+                    <TableHead>Items Count</TableHead>
+                    <TableHead className="text-right">Total Value</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {materialIssues.map((issue) => (
+                    <TableRow key={issue._id} className="hover:bg-gray-50">
+                      <TableCell className="font-medium">
+                        {issue.workOrderCode}
+                      </TableCell>
+                      <TableCell>
+                        {new Date(issue.issueDate).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell>
+                        {new Date(issue.acceptedDate).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleShowItems(issue)}
+                          className="hover:bg-blue-50 text-blue-600 font-medium"
+                        >
+                          <Badge variant="outline" className="cursor-pointer hover:bg-blue-50">
+                            {issue.items.length} items
+                          </Badge>
+                        </Button>
+                      </TableCell>
+                      <TableCell className="text-right font-semibold">
+                        ₹{issue.totalValue.toLocaleString()}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="default" className="bg-green-100 text-green-800">
+                          Accepted
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            // Show detailed view of items
+                            const itemsList = issue.items.map(item => 
+                              `• ${item.itemName}: ${item.issueQty} ${item.unit} @ ₹${item.rate} = ₹${item.lineValue}`
+                            ).join('\n');
+                            
+                            alert(`Material Issue Details:\n\nWork Order: ${issue.workOrderCode}\nTotal Value: ₹${issue.totalValue}\n\nItems:\n${itemsList}`);
+                          }}
+                        >
+                          View Details
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Items Detail Dialog */}
+      <Dialog open={showItemsDialog} onOpenChange={setShowItemsDialog}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-3 text-xl">
+              <Package className="text-blue-600" />
+              Material Issue Items - {selectedIssueItems?.workOrderCode}
+            </DialogTitle>
+          </DialogHeader>
+          
+          {selectedIssueItems && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+                <div>
+                  <span className="text-sm text-gray-600">Work Order:</span>
+                  <p className="font-semibold">{selectedIssueItems.workOrderCode}</p>
+                </div>
+                <div>
+                  <span className="text-sm text-gray-600">Total Value:</span>
+                  <p className="font-semibold text-green-600">₹{selectedIssueItems.totalValue.toLocaleString()}</p>
+                </div>
+                <div>
+                  <span className="text-sm text-gray-600">Issue Date:</span>
+                  <p className="font-semibold">{new Date(selectedIssueItems.issueDate).toLocaleDateString()}</p>
+                </div>
+                <div>
+                  <span className="text-sm text-gray-600">Accepted Date:</span>
+                  <p className="font-semibold">{new Date(selectedIssueItems.acceptedDate).toLocaleDateString()}</p>
+                </div>
+              </div>
+              
+              <div>
+                <h4 className="font-semibold text-lg mb-3 flex items-center gap-2">
+                  <Package className="w-5 h-5 text-blue-600" />
+                  Items Details ({selectedIssueItems.items.length} items)
+                </h4>
+                
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Item Name</TableHead>
+                        <TableHead className="text-right">Quantity</TableHead>
+                        <TableHead>Unit</TableHead>
+                        <TableHead className="text-right">Rate (₹)</TableHead>
+                        <TableHead className="text-right">Line Value (₹)</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {selectedIssueItems.items.map((item, index) => (
+                        <TableRow key={index} className="hover:bg-gray-50">
+                          <TableCell className="font-medium">{item.itemName}</TableCell>
+                          <TableCell className="text-right font-semibold">{item.issueQty}</TableCell>
+                          <TableCell>
+                            <Badge variant="secondary">{item.unit}</Badge>
+                          </TableCell>
+                          <TableCell className="text-right">₹{item.rate.toLocaleString()}</TableCell>
+                          <TableCell className="text-right font-semibold text-green-600">
+                            ₹{item.lineValue.toLocaleString()}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                
+                <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold text-green-800">Total Value:</span>
+                    <span className="text-xl font-bold text-green-600">
+                      ₹{selectedIssueItems.totalValue.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {loading && <p className="text-center py-10">Loading stores...</p>}
 

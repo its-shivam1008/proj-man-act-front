@@ -34,6 +34,49 @@ import {
   type WorkCenter,
   type WorkCenterResource,
 } from "@/redux/slices/production/workCenterSlice";
+import axios from "../../../utils/axiosApi";
+
+// Helper function to create movement entry
+const createMovementEntry = async (data: {
+  materialId?: string;
+  materialName: string;
+  quantity: number;
+  unit: string;
+  source: string;
+  destination: string;
+  referenceNumber: string;
+  remarks?: string;
+  itemType: "material" | "product";
+  unitCost?: number;
+}) => {
+  try {
+    const organisationId = localStorage.getItem("organisationId");
+    if (!organisationId) return false;
+
+    const movementData = {
+      organisationId,
+      materialId: data.materialId || null,
+      materialName: data.materialName,
+      movementType: "outbound",
+      quantity: data.quantity,
+      unit: data.unit,
+      source: data.source,
+      destination: data.destination,
+      referenceNumber: data.referenceNumber,
+      remarks: data.remarks || "",
+      unitCost: data.unitCost || 0,
+      totalCost: (data.unitCost || 0) * data.quantity,
+      itemType: data.itemType,
+      movementDate: new Date().toISOString(),
+    };
+
+    const response = await axios.post("/material-movements", movementData);
+    return response.data.success;
+  } catch (error: any) {
+    console.error("Failed to create movement entry:", error);
+    return false;
+  }
+};
 
 export default function WorkCentersPageAdvanced() {
   const dispatch = useDispatch<AppDispatch>();
@@ -55,6 +98,111 @@ export default function WorkCentersPageAdvanced() {
   const { machineries = [] } = useSelector((state: RootState) => state.machinery);
   const { materials: rawMaterials = [] } = useSelector((state: RootState) => state.rawMaterials);
   const { products = [] } = useSelector((state: RootState) => state.products);
+
+  // Stock management functions for raw materials
+  // Function to fetch current stock for a raw material
+  const fetchMaterialStock = async (materialId: string) => {
+    try {
+      const response = await axios.get(`/raw/single/${materialId}`);
+      if (response.data.success && response.data.material) {
+        const material = response.data.material;
+        // Calculate total stock from all warehouses using remainingQuantity
+        const totalStock = material.stocks?.reduce((sum: number, stock: any) => sum + (stock.remainingQuantity || 0), 0) || 0;
+        return totalStock;
+      }
+      return 0;
+    } catch (error: any) {
+      console.error("Failed to fetch material stock:", error);
+      return 0;
+    }
+  };
+
+  // Function to deduct stock from raw material
+  const deductMaterialStock = async (materialId: string, quantityToDeduct: number) => {
+    try {
+      // First get the current material details
+      const response = await axios.get(`/raw/single/${materialId}`);
+      if (response.data.success && response.data.material) {
+        const material = response.data.material;
+        
+        // Calculate total current stock using remainingQuantity
+        const totalCurrentStock = material.stocks?.reduce((sum: number, stock: any) => sum + (stock.remainingQuantity || 0), 0) || 0;
+        
+        // Check if there's enough stock
+        if (totalCurrentStock < quantityToDeduct) {
+          toast.warning(`Insufficient stock for ${material.name}! Available: ${totalCurrentStock}, Required: ${quantityToDeduct}`);
+          return false;
+        }
+        
+        // Calculate new stock quantities by deducting from each warehouse using FIFO logic
+        let remainingToDeduct = quantityToDeduct;
+        const updatedStocks = material.stocks?.map((stock: any) => {
+          const currentQty = stock.remainingQuantity || 0;
+          
+          if (remainingToDeduct > 0 && currentQty > 0) {
+            const deductFromThisStock = Math.min(currentQty, remainingToDeduct);
+            remainingToDeduct -= deductFromThisStock;
+            
+            return {
+              ...stock,
+              remainingQuantity: currentQty - deductFromThisStock
+            };
+          }
+          return stock;
+        }) || [];
+
+        // Update the material with new stock quantities
+        const updateResponse = await axios.put(`/raw/update/${materialId}`, {
+          ...material,
+          stocks: updatedStocks
+        });
+
+        if (updateResponse.data.success) {
+          console.log(`✅ Successfully deducted ${quantityToDeduct} units from material ${materialId}`);
+          return true;
+        }
+      }
+      return false;
+    } catch (error: any) {
+      console.error("Failed to deduct material stock:", error);
+      return false;
+    }
+  };
+
+  // Function to validate stock availability for machine configuration inputs
+  const validateMachineInputStockAvailability = async (inputs: any[]) => {
+    const stockValidations = [];
+    
+    for (const input of inputs) {
+      if (input.quantity > 0) {
+        try {
+          const response = await axios.get(`/raw/single/${input.id}`);
+          if (response.data.success && response.data.material) {
+            const totalCurrentStock = response.data.material.stocks?.reduce((sum: number, stock: any) => sum + (stock.remainingQuantity || 0), 0) || 0;
+            
+            stockValidations.push({
+              materialId: input.id,
+              materialName: input.name,
+              required: input.quantity,
+              available: totalCurrentStock,
+              sufficient: totalCurrentStock >= input.quantity
+            });
+          }
+        } catch (error: any) {
+          console.error(`Failed to check stock for material ${input.id}:`, error);
+          stockValidations.push({
+            materialId: input.id,
+            materialName: input.name,
+            required: input.quantity,
+            available: 0,
+            sufficient: false
+          });
+        }
+      }
+    }
+    
+    return stockValidations;
+  };
   
   // All state hooks must be declared before any early returns
   const [searchTerm, setSearchTerm] = useState("");
@@ -85,6 +233,7 @@ export default function WorkCentersPageAdvanced() {
     personHours: 0,
     output: null as any // Changed from outputs array to single output
   });
+  const [materialStocks, setMaterialStocks] = useState<Record<string, number>>({});
 
   const [formData, setFormData] = useState({
     code: "",
@@ -1295,21 +1444,32 @@ const avgEfficiency = analytics?.avgEfficiency ?? calculatedAvgEfficiency;
                             <div key={material._id} className="flex items-center space-x-2">
                               <Checkbox
                                 id={`input-${material._id}`}
-                                onCheckedChange={(checked) => {
+                                onCheckedChange={async (checked) => {
                                   if (checked) {
+                                    // Fetch current stock for the selected material
+                                    const currentStock = await fetchMaterialStock(material._id);
+                                    setMaterialStocks(prev => ({ ...prev, [material._id]: currentStock }));
+                                    
                                     setMachineConfig({
                                       ...machineConfig,
                                       inputs: [...machineConfig.inputs, {
                                         id: material._id,
                                         name: material.name,
                                         quantity: 0,
-                                        unit: material.unit || 'pcs'
+                                        unit: material.unit || 'pcs',
+                                        currentStock: currentStock
                                       }]
                                     });
                                   } else {
                                     setMachineConfig({
                                       ...machineConfig,
                                       inputs: machineConfig.inputs.filter(input => input.id !== material._id)
+                                    });
+                                    // Remove from stock tracking
+                                    setMaterialStocks(prev => {
+                                      const newStocks = { ...prev };
+                                      delete newStocks[material._id];
+                                      return newStocks;
                                     });
                                   }
                                 }}
@@ -1330,39 +1490,86 @@ const avgEfficiency = analytics?.avgEfficiency ?? calculatedAvgEfficiency;
                       <div className="space-y-2">
                         <Label className="text-sm font-medium">Selected Input Materials</Label>
                         {machineConfig.inputs.map((input, index) => (
-                          <div key={input.id} className="flex items-center gap-2 p-2 border rounded">
-                            <span className="flex-1 text-sm">{input.name}</span>
-                            <Input
-                              type="number"
-                              value={input.quantity}
-                              onChange={(e) => {
-                                const newInputs = [...machineConfig.inputs];
-                                newInputs[index].quantity = parseFloat(e.target.value) || 0;
-                                setMachineConfig({
-                                  ...machineConfig,
-                                  inputs: newInputs
-                                });
-                              }}
-                              placeholder="Qty"
-                              className="w-20"
-                            />
-                            <span className="text-sm text-gray-500">{input.unit}</span>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setMachineConfig({
-                                  ...machineConfig,
-                                  inputs: machineConfig.inputs.filter((_, i) => i !== index)
-                                });
-                              }}
-                              className="text-red-600"
-                            >
-                              <X className="w-4 h-4" />
-                            </Button>
+                          <div key={input.id} className="space-y-2">
+                            <div className="flex items-center gap-2 p-2 border rounded">
+                              <span className="flex-1 text-sm">{input.name}</span>
+                              <Input
+                                type="number"
+                                value={input.quantity}
+                                onChange={(e) => {
+                                  const newInputs = [...machineConfig.inputs];
+                                  newInputs[index].quantity = parseFloat(e.target.value) || 0;
+                                  setMachineConfig({
+                                    ...machineConfig,
+                                    inputs: newInputs
+                                  });
+                                }}
+                                placeholder="Qty"
+                                className="w-20"
+                              />
+                              <span className="text-sm text-gray-500">{input.unit}</span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setMachineConfig({
+                                    ...machineConfig,
+                                    inputs: machineConfig.inputs.filter((_, i) => i !== index)
+                                  });
+                                  // Remove from stock tracking
+                                  setMaterialStocks(prev => {
+                                    const newStocks = { ...prev };
+                                    delete newStocks[input.id];
+                                    return newStocks;
+                                  });
+                                }}
+                                className="text-red-600"
+                              >
+                                <X className="w-4 h-4" />
+                              </Button>
+                            </div>
+                            
+                            {/* Stock validation indicator */}
+                            {input.currentStock !== undefined && input.quantity > 0 && (
+                              <div className={`text-xs p-2 rounded mx-2 ${
+                                input.currentStock >= input.quantity 
+                                  ? 'bg-green-50 text-green-700 border border-green-200' 
+                                  : 'bg-red-50 text-red-700 border border-red-200'
+                              }`}>
+                                {input.currentStock >= input.quantity 
+                                  ? `✅ Stock: ${input.currentStock} (Sufficient)`
+                                  : `⚠️ Stock: ${input.currentStock} (Need: ${input.quantity})`
+                                }
+                              </div>
+                            )}
                           </div>
                         ))}
+                        
+                        {/* Overall stock status summary */}
+                        {machineConfig.inputs.some(input => input.currentStock !== undefined) && (
+                          <div className="mt-3 text-center">
+                            {(() => {
+                              const inputsWithStock = machineConfig.inputs.filter(input => input.currentStock !== undefined);
+                              const sufficientInputs = inputsWithStock.filter(input => (input.currentStock || 0) >= input.quantity);
+                              const insufficientInputs = inputsWithStock.filter(input => (input.currentStock || 0) < input.quantity);
+                              
+                              if (insufficientInputs.length === 0) {
+                                return (
+                                  <div className="text-sm p-2 bg-green-50 text-green-700 border border-green-200 rounded">
+                                    ✅ All materials have sufficient stock
+                                  </div>
+                                );
+                              } else {
+                                return (
+                                  <div className="text-sm p-2 bg-red-50 text-red-700 border border-red-200 rounded">
+                                    ⚠️ {insufficientInputs.length} material(s) have insufficient stock
+                                  </div>
+                                );
+                              }
+                            })()}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1484,7 +1691,67 @@ const avgEfficiency = analytics?.avgEfficiency ?? calculatedAvgEfficiency;
                 {/* Action Buttons */}
                 <div className="flex gap-2 pt-4 border-t">
                   <Button
-                    onClick={() => {
+                    onClick={async () => {
+                      // Validate stock availability for input materials
+                      if (machineConfig.inputs.length > 0) {
+                        try {
+                          const stockValidations = await validateMachineInputStockAvailability(machineConfig.inputs);
+                          const insufficientItems = stockValidations.filter(v => !v.sufficient);
+                          
+                          if (insufficientItems.length > 0) {
+                            const errorMessage = insufficientItems.map(item => 
+                              `${item.materialName}: Available ${item.available}, Required ${item.required}`
+                            ).join('\n');
+                            
+                            toast.error(`Cannot save machine configuration! Insufficient stock for:\n${errorMessage}`);
+                            return;
+                          }
+                        } catch (error: any) {
+                          console.error("Failed to validate stock availability:", error);
+                          toast.error("Failed to verify stock availability");
+                          return;
+                        }
+                      }
+
+                      // Deduct stock from input materials
+                      let allStockDeducted = true;
+                      const deductionResults = [];
+                      const movementResults = [];
+                      
+                      for (const input of machineConfig.inputs) {
+                        if (input.quantity > 0) {
+                          const stockDeducted = await deductMaterialStock(input.id, input.quantity);
+                          deductionResults.push({
+                            materialName: input.name,
+                            quantity: input.quantity,
+                            success: stockDeducted
+                          });
+                          
+                          if (!stockDeducted) {
+                            allStockDeducted = false;
+                          } else {
+                            // Create movement entry for the stock deduction
+                            const movementCreated = await createMovementEntry({
+                              materialId: input.id,
+                              materialName: input.name,
+                              quantity: input.quantity,
+                              unit: input.unit,
+                              source: "Raw Material Inventory",
+                              destination: `Work Center Machine: ${selectedMachineForConfig.name}`,
+                              referenceNumber: `WC-MACHINE-${Date.now()}`,
+                              remarks: `Material consumed for machine configuration in work center`,
+                              itemType: "material",
+                              unitCost: 0 // You may want to get actual cost from material
+                            });
+                            
+                            movementResults.push({
+                              materialName: input.name,
+                              movementCreated
+                            });
+                          }
+                        }
+                      }
+
                       // Add the configured machine to resources
                       const newResource: WorkCenterResource = {
                         id: `RES-MC-${Date.now()}-${selectedMachineForConfig._id}`,
@@ -1503,7 +1770,35 @@ const avgEfficiency = analytics?.avgEfficiency ?? calculatedAvgEfficiency;
                       setIsMachineConfigOpen(false);
                       setSelectedMachineForConfig(null);
                       setMachineConfig({ inputs: [], personHours: 0, output: null });
-                      toast.success("Machine configuration saved and added to resources");
+                      
+                      // Show appropriate success message
+                      if (machineConfig.inputs.length === 0) {
+                        toast.success("Machine configuration saved and added to resources");
+                      } else if (allStockDeducted) {
+                        const totalMaterials = deductionResults.length;
+                        const successfulMovements = movementResults.filter(r => r.movementCreated).length;
+                        
+                        if (successfulMovements === totalMaterials) {
+                          toast.success(`Machine configured, stock deducted for ${totalMaterials} materials, and movement entries created`);
+                        } else {
+                          toast.success(`Machine configured and stock deducted for ${totalMaterials} materials`);
+                          if (successfulMovements < totalMaterials) {
+                            toast.warning(`Could not create movement entries for ${totalMaterials - successfulMovements} materials`);
+                          }
+                        }
+                      } else {
+                        toast.success("Machine configuration saved");
+                        const failedDeductions = deductionResults.filter(r => !r.success);
+                        if (failedDeductions.length > 0) {
+                          toast.warning(`Could not deduct stock for ${failedDeductions.length} materials - please check manually`);
+                        }
+                      }
+
+                      // Refresh materials data to show updated stock
+                      const organisationId = localStorage.getItem("organisationId");
+                      if (organisationId) {
+                        dispatch(fetchMaterials({ page: 1, limit: 100, location: "", warehouse: "" }));
+                      }
                     }}
                     className="flex-1"
                   >

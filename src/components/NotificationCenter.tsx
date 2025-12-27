@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
-import { fetchNotifications, respondToInvite, respondToMaterialPurchase, respondToMaterialRequest, markAsRead, markAllAsRead } from "@/redux/slices/notificationSlice";
+import { fetchNotifications, respondToInvite, respondToMaterialPurchase, respondToMaterialRequest, respondToMaterialIssue, markAsRead, markAllAsRead } from "@/redux/slices/notificationSlice";
 import { updateUserProfile } from "@/redux/slices/authSlice";
 import {
   Bell,
@@ -11,7 +11,8 @@ import {
   UserPlus,
   Check,
   X,
-  CheckCheck
+  CheckCheck,
+  Package
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -186,7 +187,59 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
     dispatch(respondToMaterialPurchase({ notificationId, response }));
   };
 
-  // Handle RFQ to Purchase Order notification accept/reject
+  // Handle Material Issue notification accept/reject
+  const handleMaterialIssueResponse = async (notificationId: string, response: "accepted" | "rejected") => {
+    try {
+      // Use the material issue response endpoint
+      const apiUrl = BASE_URL || 'http://localhost:4000';
+      const res = await fetch(`${apiUrl}/purchase/orders/material-issue-response`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ notificationId, response })
+      });
+
+      if (res.ok) {
+        const result = await res.json();
+        
+        if (response === "accepted") {
+          console.log("✅ Material issue notification accepted successfully");
+          
+          // Find the notification to get material data
+          const notification = filteredNotifications.find(n => n._id === notificationId);
+          if (notification && notification.materialData) {
+            console.log('🎯 Dispatching material issue accepted event with data:', notification.materialData);
+            
+            // Dispatch custom event for store page to catch
+            const materialIssueEvent = new CustomEvent('materialIssueAccepted', {
+              detail: notification.materialData
+            });
+            window.dispatchEvent(materialIssueEvent);
+            console.log("✅ Material issue accepted event dispatched successfully");
+          } else {
+            console.warn('⚠️ No material data found in notification for event dispatch');
+          }
+          
+          alert("✅ Material issue accepted! Materials have been added to store.");
+        } else {
+          console.log("❌ Material issue notification rejected");
+          alert("Material issue rejected successfully.");
+        }
+        
+        // Refresh notifications to update the UI
+        fetchNotificationHelper();
+      } else {
+        const errorData = await res.json();
+        console.error("❌ Material issue response error:", errorData);
+        alert(errorData.message || 'Failed to process material issue response');
+      }
+    } catch (error) {
+      console.error('Failed to respond to material issue notification:', error);
+      alert("Failed to process material issue response. Please try again.");
+    }
+  };
   const handleRfqToPoResponse = async (notificationId: string, response: "accepted" | "rejected") => {
     try {
       // Use the new RFQ to PO response endpoint
@@ -381,6 +434,8 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                 const isRfqToPoNotification = notification.type === 'rfqToPurchaseOrder';
                 const isPendingRfqToPoNotification = isRfqToPoNotification && notification.inviteResponse === 'pending';
                 const isMaterialAvailableNotification = notification.type === 'material_available';
+                const isMaterialIssueNotification = notification.type === 'materialIssue';
+                const isPendingMaterialIssueNotification = isMaterialIssueNotification && notification.inviteResponse === 'pending';
 
                 // Debug logging
                 console.log('🔍 Notification debug:', {
@@ -392,6 +447,8 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                   isRfqToPoNotification,
                   isPendingRfqToPoNotification,
                   isMaterialAvailableNotification,
+                  isMaterialIssueNotification,
+                  isPendingMaterialIssueNotification,
                   itemName: notification.itemName,
                   destination: notification.destination,
                   source: notification.source
@@ -413,6 +470,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                           isMaterialRequest ? "bg-blue-100 text-blue-600" :
                           isRfqToPoNotification ? "bg-green-100 text-green-600" :
                           isMaterialAvailableNotification ? "bg-emerald-100 text-emerald-600" :
+                          isMaterialIssueNotification ? "bg-orange-100 text-orange-600" :
                           notification.source?.includes("procurement") ? "bg-orange-100 text-orange-600" :
                           notification.source?.includes("delivery") ? "bg-green-100 text-green-600" :
                           "bg-blue-100 text-blue-600"
@@ -421,6 +479,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                          notification.type === "deadline_reminder" ? <Bell className="h-4 w-4" /> :
                          isLowStockNotification ? <AlertCircle className="h-4 w-4" /> :
                          isMaterialAvailableNotification ? <CheckCircle className="h-4 w-4" /> :
+                         isMaterialIssueNotification ? <Package className="h-4 w-4" /> :
                          <AlertCircle className="h-4 w-4" />}
                       </div>
 
@@ -434,6 +493,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                               isMaterialRequest ? "Material Request for RFQ" :
                               isRfqToPoNotification ? "RFQ Ready for Purchase Order" :
                               isMaterialAvailableNotification ? "Material Available in Inventory" :
+                              isMaterialIssueNotification ? "Material Issue Slip Created" :
                               (notification.itemName ? `Item: ${notification.itemName}` : "New Update")}
                           </p>
                           <span className="text-[10px] text-gray-400 whitespace-nowrap shrink-0">
@@ -570,6 +630,46 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                           </div>
                         )}
                         
+                        {/* Material Issue Information */}
+                        {isMaterialIssueNotification && notification.materialData && (
+                          <div className="mt-2 p-2 bg-orange-50 rounded-lg border border-orange-200">
+                            <div className="text-xs text-orange-800 space-y-1">
+                              <div className="flex items-center gap-2">
+                                <Package className="h-3 w-3" />
+                                <span><strong>Material Issue Slip:</strong></span>
+                              </div>
+                              <div><strong>Work Order:</strong> {notification.materialData.workOrderCode}</div>
+                              <div><strong>Items Count:</strong> {notification.materialData.items?.length || 0}</div>
+                              <div><strong>Total Value:</strong> ₹{notification.materialData.totalValue?.toLocaleString()}</div>
+                              {notification.materialData.issueDate && (
+                                <div><strong>Issue Date:</strong> {new Date(notification.materialData.issueDate).toLocaleDateString()}</div>
+                              )}
+                              {notification.materialData.autoBackflush && (
+                                <div className="flex items-center gap-1">
+                                  <CheckCircle className="h-3 w-3" />
+                                  <span><strong>Auto Backflush:</strong> Enabled</span>
+                                </div>
+                              )}
+                              {notification.materialData.items && notification.materialData.items.length > 0 && (
+                                <div className="mt-2">
+                                  <strong>Materials:</strong>
+                                  <ul className="mt-1 space-y-1">
+                                    {notification.materialData.items.slice(0, 3).map((item: any, index: number) => (
+                                      <li key={index} className="flex justify-between">
+                                        <span>{item.itemName}</span>
+                                        <span>{item.issueQty} {item.unit}</span>
+                                      </li>
+                                    ))}
+                                    {notification.materialData.items.length > 3 && (
+                                      <li className="text-gray-600">...and {notification.materialData.items.length - 3} more items</li>
+                                    )}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        
                         {/* Stock Information for materials with low stock */}
                         {notification.materialData?.stockInfo?.isLowStock && (
                           <div className="mt-2 p-2 bg-red-50 rounded-lg border border-red-200">
@@ -679,6 +779,27 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                           </div>
                         )}
 
+                        {/* Material Issue Actions */}
+                        {isPendingMaterialIssueNotification && (
+                          <div className="flex gap-2 mt-3">
+                            <Button 
+                              size="sm" 
+                              className="h-7 px-3 bg-green-600 hover:bg-green-700 text-white"
+                              onClick={() => handleMaterialIssueResponse(notification._id, "accepted")}
+                            >
+                              <Check className="h-3 w-3 mr-1" /> Accept & Add to Store
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              variant="outline" 
+                              className="h-7 px-3 text-red-600 border-red-200 hover:bg-red-50"
+                              onClick={() => handleMaterialIssueResponse(notification._id, "rejected")}
+                            >
+                              <X className="h-3 w-3 mr-1" /> Reject
+                            </Button>
+                          </div>
+                        )}
+
                         {/* RFQ to PO Actions */}
                         {/* {isPendingRfqToPoNotification && (
                           <div className="flex gap-2 mt-3">
@@ -728,6 +849,14 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                            <div className="mt-2">
                              <Badge variant={notification.inviteResponse === 'accepted' ? 'default' : 'destructive'} className="text-[10px]">
                                {notification.inviteResponse === 'accepted' ? 'Accepted - PO Ready' : 'Rejected'}
+                             </Badge>
+                           </div>
+                        )}
+                        
+                        {isMaterialIssueNotification && !isPendingMaterialIssueNotification && (
+                           <div className="mt-2">
+                             <Badge variant={notification.inviteResponse === 'accepted' ? 'default' : 'destructive'} className="text-[10px]">
+                               {notification.inviteResponse === 'accepted' ? 'Accepted - Added to Store' : 'Rejected'}
                              </Badge>
                            </div>
                         )}

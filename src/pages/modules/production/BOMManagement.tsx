@@ -15,6 +15,49 @@ import { toast } from "sonner";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
 import { createBOM, deleteBOM, fetchBOMs, updateBOM } from "@/redux/slices/production/bomSlice";
+import axios from "../../../utils/axiosApi";
+
+// Helper function to create movement entry
+const createMovementEntry = async (data: {
+  materialId?: string;
+  materialName: string;
+  quantity: number;
+  unit: string;
+  source: string;
+  destination: string;
+  referenceNumber: string;
+  remarks?: string;
+  itemType: "material" | "product";
+  unitCost?: number;
+}) => {
+  try {
+    const organisationId = localStorage.getItem("organisationId");
+    if (!organisationId) return false;
+
+    const movementData = {
+      organisationId,
+      materialId: data.materialId || null,
+      materialName: data.materialName,
+      movementType: "outbound",
+      quantity: data.quantity,
+      unit: data.unit,
+      source: data.source,
+      destination: data.destination,
+      referenceNumber: data.referenceNumber,
+      remarks: data.remarks || "",
+      unitCost: data.unitCost || 0,
+      totalCost: (data.unitCost || 0) * data.quantity,
+      itemType: data.itemType,
+      movementDate: new Date().toISOString(),
+    };
+
+    const response = await axios.post("/material-movements", movementData);
+    return response.data.success;
+  } catch (error: any) {
+    console.error("Failed to create movement entry:", error);
+    return false;
+  }
+};
 
 // --- Types ---
 interface Material {
@@ -39,6 +82,7 @@ interface BOMItem {
   quantity: number;
   unit: string;
   cost?: number;
+  currentStock?: number;
 }
 
 interface BOM {
@@ -201,6 +245,108 @@ export default function AdvancedBOMPage() {
   const draftCount = boms.filter(b => b.status === "draft").length;
 
   // --- CRUD ---
+  // Function to fetch current stock for a raw material
+  const fetchMaterialStock = async (materialId: string) => {
+    try {
+      const response = await axios.get(`/raw/single/${materialId}`);
+      if (response.data.success && response.data.material) {
+        const material = response.data.material;
+        // Calculate total stock from all warehouses using remainingQuantity
+        const totalStock = material.stocks?.reduce((sum: number, stock: any) => sum + (stock.remainingQuantity || 0), 0) || 0;
+        return totalStock;
+      }
+      return 0;
+    } catch (error: any) {
+      console.error("Failed to fetch material stock:", error);
+      return 0;
+    }
+  };
+
+  // Function to deduct stock from raw material
+  const deductMaterialStock = async (materialId: string, quantityToDeduct: number) => {
+    try {
+      // First get the current material details
+      const response = await axios.get(`/raw/single/${materialId}`);
+      if (response.data.success && response.data.material) {
+        const material = response.data.material;
+        
+        // Calculate total current stock using remainingQuantity
+        const totalCurrentStock = material.stocks?.reduce((sum: number, stock: any) => sum + (stock.remainingQuantity || 0), 0) || 0;
+        
+        // Check if there's enough stock
+        if (totalCurrentStock < quantityToDeduct) {
+          toast.warning(`Insufficient stock for ${material.name}! Available: ${totalCurrentStock}, Required: ${quantityToDeduct}`);
+          return false;
+        }
+        
+        // Calculate new stock quantities by deducting from each warehouse using FIFO logic
+        let remainingToDeduct = quantityToDeduct;
+        const updatedStocks = material.stocks?.map((stock: any) => {
+          const currentQty = stock.remainingQuantity || 0;
+          
+          if (remainingToDeduct > 0 && currentQty > 0) {
+            const deductFromThisStock = Math.min(currentQty, remainingToDeduct);
+            remainingToDeduct -= deductFromThisStock;
+            
+            return {
+              ...stock,
+              remainingQuantity: currentQty - deductFromThisStock
+            };
+          }
+          return stock;
+        }) || [];
+
+        // Update the material with new stock quantities
+        const updateResponse = await axios.put(`/raw/update/${materialId}`, {
+          ...material,
+          stocks: updatedStocks
+        });
+
+        if (updateResponse.data.success) {
+          console.log(`✅ Successfully deducted ${quantityToDeduct} units from material ${materialId}`);
+          return true;
+        }
+      }
+      return false;
+    } catch (error: any) {
+      console.error("Failed to deduct material stock:", error);
+      return false;
+    }
+  };
+
+  // Function to validate stock availability for all BOM items
+  const validateBOMStockAvailability = async (items: BOMItem[]) => {
+    const stockValidations = [];
+    
+    for (const item of items) {
+      try {
+        const response = await axios.get(`/raw/single/${item.materialId}`);
+        if (response.data.success && response.data.material) {
+          const totalCurrentStock = response.data.material.stocks?.reduce((sum: number, stock: any) => sum + (stock.remainingQuantity || 0), 0) || 0;
+          
+          stockValidations.push({
+            materialId: item.materialId,
+            materialName: item.materialName,
+            required: item.quantity,
+            available: totalCurrentStock,
+            sufficient: totalCurrentStock >= item.quantity
+          });
+        }
+      } catch (error: any) {
+        console.error(`Failed to check stock for material ${item.materialId}:`, error);
+        stockValidations.push({
+          materialId: item.materialId,
+          materialName: item.materialName,
+          required: item.quantity,
+          available: 0,
+          sufficient: false
+        });
+      }
+    }
+    
+    return stockValidations;
+  };
+
   const handleSave = async () => {
     const organisationId = localStorage.getItem("organisationId");
 
@@ -212,6 +358,27 @@ export default function AdvancedBOMPage() {
     if (!formData.productId || formData.items.length === 0) {
       toast.error("Product & materials required");
       return;
+    }
+
+    // For new BOMs, validate stock availability before saving
+    if (!editingBOM && formData.items.length > 0) {
+      try {
+        const stockValidations = await validateBOMStockAvailability(formData.items);
+        const insufficientItems = stockValidations.filter(v => !v.sufficient);
+        
+        if (insufficientItems.length > 0) {
+          const errorMessage = insufficientItems.map(item => 
+            `${item.materialName}: Available ${item.available}, Required ${item.required}`
+          ).join('\n');
+          
+          toast.error(`Cannot create BOM! Insufficient stock for:\n${errorMessage}`);
+          return;
+        }
+      } catch (error: any) {
+        console.error("Failed to validate stock availability:", error);
+        toast.error("Failed to verify stock availability");
+        return;
+      }
     }
 
     try {
@@ -235,7 +402,71 @@ export default function AdvancedBOMPage() {
             ...formData,
           })
         ).unwrap();
-        toast.success("BOM created successfully");
+        
+        // After successfully creating BOM, deduct quantities from material stocks
+        let allStockDeducted = true;
+        const deductionResults = [];
+        const movementResults = [];
+        
+        for (const item of formData.items) {
+          if (item.quantity > 0) {
+            const stockDeducted = await deductMaterialStock(item.materialId, item.quantity);
+            deductionResults.push({
+              materialName: item.materialName,
+              quantity: item.quantity,
+              success: stockDeducted
+            });
+            
+            if (!stockDeducted) {
+              allStockDeducted = false;
+            } else {
+              // Create movement entry for the stock deduction
+              const movementCreated = await createMovementEntry({
+                materialId: item.materialId,
+                materialName: item.materialName,
+                quantity: item.quantity,
+                unit: item.unit,
+                source: "Raw Material Inventory",
+                destination: "BOM Production",
+                referenceNumber: `BOM-${Date.now()}`,
+                remarks: `Material consumed for BOM creation`,
+                itemType: "material",
+                unitCost: (item.cost || 0) / item.quantity
+              });
+              
+              movementResults.push({
+                materialName: item.materialName,
+                movementCreated
+              });
+            }
+          }
+        }
+        
+        if (allStockDeducted) {
+          const totalItems = deductionResults.length;
+          const successfulMovements = movementResults.filter(r => r.movementCreated).length;
+          
+          if (successfulMovements === totalItems) {
+            toast.success(`BOM created, stock deducted for ${totalItems} materials, and movement entries created`);
+          } else {
+            toast.success(`BOM created and stock deducted for ${totalItems} materials`);
+            if (successfulMovements < totalItems) {
+              toast.warning(`Could not create movement entries for ${totalItems - successfulMovements} materials`);
+            }
+          }
+        } else {
+          toast.success("BOM created successfully");
+          const failedDeductions = deductionResults.filter(r => !r.success);
+          if (failedDeductions.length > 0) {
+            toast.warning(`Could not deduct stock for ${failedDeductions.length} materials - please check manually`);
+          }
+        }
+      }
+
+      // Refresh materials data to show updated stock
+      const orgId = localStorage.getItem("organisationId");
+      if (orgId) {
+        dispatch(fetchMaterials(orgId));
       }
 
       setIsDialogOpen(false);
@@ -280,10 +511,11 @@ export default function AdvancedBOMPage() {
   };
 
 
-  const addItem = () => {
+  const addItem = async () => {
     if (!materials || materials.length === 0) return;
     const mat = materials[0];
     const price = getPrice(mat);
+    const currentStock = await fetchMaterialStock(mat._id);
 
     setFormData({
       ...formData,
@@ -295,24 +527,29 @@ export default function AdvancedBOMPage() {
           quantity: 1,
           unit: mat.stocks[0]?.unitOfMeasure || "",
           cost: price, // Now uses correct data
+          currentStock: currentStock,
         },
       ],
     });
   };
 
 
-  const updateItem = (index: number, field: keyof BOMItem, value: any) => {
+  const updateItem = async (index: number, field: keyof BOMItem, value: any) => {
     const items = [...formData.items];
     const mat = materials.find(m => m._id === (field === "materialId" ? value : items[index].materialId));
     const price = mat ? getPrice(mat) : 0;
 
     if (field === "materialId") {
+      // Fetch current stock for the selected material
+      const currentStock = await fetchMaterialStock(value);
+      
       items[index] = {
         ...items[index],
         materialId: mat!._id,
         materialName: mat!.name,
         unit: mat!.unitOfMeasure,
         cost: price * items[index].quantity,
+        currentStock: currentStock, // Add current stock info
       };
     } else if (field === "quantity") {
       const qty = Number(value) || 0;
@@ -420,40 +657,82 @@ export default function AdvancedBOMPage() {
                       key={i}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="flex gap-2 items-center p-2 bg-muted rounded"
+                      className="space-y-2"
                     >
-                      <Select value={it.materialId} onValueChange={(v) => updateItem(i, "materialId", v)}>
-                        <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {materials.map(m => <SelectItem key={m._id} value={m._id}>{m.name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                      <Input
-                        type="number"
-                        value={it.quantity}
-                        onChange={(e) => updateItem(i, "quantity", e.target.value)}
-                        className="w-24"
-                        placeholder="Qty"
-                      />
-                      <Input value={it.unit} className="w-20" disabled />
-                      <span className="text-sm text-muted-foreground">₹{(it.cost || 0).toFixed(2)}</span>
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="destructive"
-                        disabled={editingBOM ? !canEdit : !canCreate}
-                        onClick={() => (editingBOM ? canEdit : canCreate) && removeItem(i)}
-                        className={editingBOM ? (canEdit ? "" : "opacity-50 cursor-not-allowed") : (canCreate ? "" : "opacity-50 cursor-not-allowed")}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-
+                      <div className="flex gap-2 items-center p-2 bg-muted rounded">
+                        <Select value={it.materialId} onValueChange={(v) => updateItem(i, "materialId", v)}>
+                          <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {materials.map(m => <SelectItem key={m._id} value={m._id}>{m.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          type="number"
+                          value={it.quantity}
+                          onChange={(e) => updateItem(i, "quantity", e.target.value)}
+                          className="w-24"
+                          placeholder="Qty"
+                        />
+                        <Input value={it.unit} className="w-20" disabled />
+                        <span className="text-sm text-muted-foreground">₹{(it.cost || 0).toFixed(2)}</span>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="destructive"
+                          disabled={editingBOM ? !canEdit : !canCreate}
+                          onClick={() => (editingBOM ? canEdit : canCreate) && removeItem(i)}
+                          className={editingBOM ? (canEdit ? "" : "opacity-50 cursor-not-allowed") : (canCreate ? "" : "opacity-50 cursor-not-allowed")}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                      
+                      {/* Stock validation indicator */}
+                      {it.currentStock !== undefined && it.quantity > 0 && (
+                        <div className={`text-xs p-2 rounded mx-2 ${
+                          it.currentStock >= it.quantity 
+                            ? 'bg-green-50 text-green-700 border border-green-200' 
+                            : 'bg-red-50 text-red-700 border border-red-200'
+                        }`}>
+                          {it.currentStock >= it.quantity 
+                            ? `✅ Stock: ${it.currentStock} (Sufficient)`
+                            : `⚠️ Stock: ${it.currentStock} (Need: ${it.quantity})`
+                          }
+                        </div>
+                      )}
                     </motion.div>
                   ))}
                 </div>
                 {formData.items.length > 0 && (
-                  <div className="text-right mt-2 text-sm font-semibold">
-                    Total Material Cost: ₹{totalCost(formData.items)}
+                  <div className="mt-2 space-y-2">
+                    <div className="text-right text-sm font-semibold">
+                      Total Material Cost: ₹{totalCost(formData.items)}
+                    </div>
+                    
+                    {/* Overall stock status summary */}
+                    {formData.items.some(item => item.currentStock !== undefined) && (
+                      <div className="text-center">
+                        {(() => {
+                          const itemsWithStock = formData.items.filter(item => item.currentStock !== undefined);
+                          const sufficientItems = itemsWithStock.filter(item => (item.currentStock || 0) >= item.quantity);
+                          const insufficientItems = itemsWithStock.filter(item => (item.currentStock || 0) < item.quantity);
+                          
+                          if (insufficientItems.length === 0) {
+                            return (
+                              <div className="text-sm p-2 bg-green-50 text-green-700 border border-green-200 rounded">
+                                ✅ All materials have sufficient stock
+                              </div>
+                            );
+                          } else {
+                            return (
+                              <div className="text-sm p-2 bg-red-50 text-red-700 border border-red-200 rounded">
+                                ⚠️ {insufficientItems.length} material(s) have insufficient stock
+                              </div>
+                            );
+                          }
+                        })()}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

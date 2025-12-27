@@ -21,6 +21,48 @@ import {
 } from "../../../redux/slices/production/grnSlice";
 import axios from "../../../utils/axiosApi";
 
+// Helper function to create movement entry
+const createMovementEntry = async (data: {
+  materialId?: string;
+  materialName: string;
+  quantity: number;
+  unit: string;
+  source: string;
+  destination: string;
+  referenceNumber: string;
+  remarks?: string;
+  itemType: "material" | "product";
+  unitCost?: number;
+}) => {
+  try {
+    const organisationId = localStorage.getItem("organisationId");
+    if (!organisationId) return false;
+
+    const movementData = {
+      organisationId,
+      materialId: data.materialId || null,
+      materialName: data.materialName,
+      movementType: "outbound",
+      quantity: data.quantity,
+      unit: data.unit,
+      source: data.source,
+      destination: data.destination,
+      referenceNumber: data.referenceNumber,
+      remarks: data.remarks || "",
+      unitCost: data.unitCost || 0,
+      totalCost: (data.unitCost || 0) * data.quantity,
+      itemType: data.itemType,
+      movementDate: new Date().toISOString(),
+    };
+
+    const response = await axios.post("/material-movements", movementData);
+    return response.data.success;
+  } catch (error: any) {
+    console.error("Failed to create movement entry:", error);
+    return false;
+  }
+};
+
 type GRNItem = {
   productId: string;
   qty: number;
@@ -55,6 +97,110 @@ export default function ReceiptOfFinishedGoods() {
   const canCreate = usePermission("receipt", "create");
   const canEdit = usePermission("receipt", "edit");
   const canDelete = usePermission("receipt", "delete");
+
+  // Stock management functions for products
+  // Function to fetch current stock for a product
+  const fetchProductStock = async (productId: string) => {
+    try {
+      const response = await axios.get(`/product/single/${productId}`);
+      if (response.data.success && response.data.product) {
+        const product = response.data.product;
+        // Calculate total stock from all warehouses
+        const totalStock = product.stocks?.reduce((sum: number, stock: any) => sum + (stock.quantity || 0), 0) || 0;
+        return totalStock;
+      }
+      return 0;
+    } catch (error: any) {
+      console.error("Failed to fetch product stock:", error);
+      return 0;
+    }
+  };
+
+  // Function to deduct stock from product
+  const deductProductStock = async (productId: string, quantityToDeduct: number) => {
+    try {
+      // First get the current product details
+      const response = await axios.get(`/product/single/${productId}`);
+      if (response.data.success && response.data.product) {
+        const product = response.data.product;
+        
+        // Calculate total current stock
+        const totalCurrentStock = product.stocks?.reduce((sum: number, stock: any) => sum + (stock.quantity || 0), 0) || 0;
+        
+        // Check if there's enough stock
+        if (totalCurrentStock < quantityToDeduct) {
+          toast.warning(`Insufficient stock for ${product.name}! Available: ${totalCurrentStock}, Required: ${quantityToDeduct}`);
+          return false;
+        }
+        
+        // Calculate new stock quantities by deducting from each warehouse
+        let remainingToDeduct = quantityToDeduct;
+        const updatedStocks = product.stocks?.map((stock: any) => {
+          const currentQty = stock.quantity || 0;
+          
+          if (remainingToDeduct > 0 && currentQty > 0) {
+            const deductFromThisStock = Math.min(currentQty, remainingToDeduct);
+            remainingToDeduct -= deductFromThisStock;
+            
+            return {
+              ...stock,
+              quantity: currentQty - deductFromThisStock
+            };
+          }
+          return stock;
+        }) || [];
+
+        // Update the product with new stock quantities
+        const updateResponse = await axios.put(`/product/update/${productId}`, {
+          ...product,
+          stocks: updatedStocks
+        });
+
+        if (updateResponse.data.success) {
+          console.log(`✅ Successfully deducted ${quantityToDeduct} units from product ${productId}`);
+          return true;
+        }
+      }
+      return false;
+    } catch (error: any) {
+      console.error("Failed to deduct product stock:", error);
+      return false;
+    }
+  };
+
+  // Function to validate stock availability for all GRN items
+  const validateGRNStockAvailability = async (items: GRNItem[]) => {
+    const stockValidations = [];
+    
+    for (const item of items) {
+      try {
+        const response = await axios.get(`/product/single/${item.productId}`);
+        if (response.data.success && response.data.product) {
+          const totalCurrentStock = response.data.product.stocks?.reduce((sum: number, stock: any) => sum + (stock.quantity || 0), 0) || 0;
+          
+          stockValidations.push({
+            productId: item.productId,
+            productName: response.data.product.name,
+            required: item.qty,
+            available: totalCurrentStock,
+            sufficient: totalCurrentStock >= item.qty
+          });
+        }
+      } catch (error: any) {
+        console.error(`Failed to check stock for product ${item.productId}:`, error);
+        const product = products.find(p => p._id === item.productId);
+        stockValidations.push({
+          productId: item.productId,
+          productName: product?.name || 'Unknown Product',
+          required: item.qty,
+          available: 0,
+          sufficient: false
+        });
+      }
+    }
+    
+    return stockValidations;
+  };
 
   if (!canView) {
     return (
@@ -103,6 +249,8 @@ export default function ReceiptOfFinishedGoods() {
   const [acceptedBy, setAcceptedBy] = useState("");
   const [requireFinalQC, setRequireFinalQC] = useState(true);
   const [products, setProducts] = useState<any[]>([]);
+  const [currentStock, setCurrentStock] = useState<number>(0);
+  const [selectedProductName, setSelectedProductName] = useState<string>("");
 
   // Debug: Log products data
   useEffect(() => {
@@ -126,6 +274,24 @@ export default function ReceiptOfFinishedGoods() {
   }, [isAuthenticated, organisationId]);
 
   /** ---------------------- Helpers ---------------------- */
+  // Function to handle product selection and fetch stock
+  const handleProductSelection = async (productId: string) => {
+    setManualProductId(productId);
+    
+    if (productId) {
+      // Fetch and set current stock automatically
+      const stock = await fetchProductStock(productId);
+      setCurrentStock(stock);
+      
+      // Set product name for display
+      const product = products.find(p => p._id === productId);
+      setSelectedProductName(product?.name || "");
+    } else {
+      setCurrentStock(0);
+      setSelectedProductName("");
+    }
+  };
+
   const generateBatch = (productId: string) => {
     const d = new Date();
     const datePart = d.toISOString().slice(0, 10).replace(/-/g, "");
@@ -145,6 +311,25 @@ export default function ReceiptOfFinishedGoods() {
       return;
     }
 
+    // Validate stock availability for all items
+    try {
+      const stockValidations = await validateGRNStockAvailability(formItems);
+      const insufficientItems = stockValidations.filter(v => !v.sufficient);
+      
+      if (insufficientItems.length > 0) {
+        const errorMessage = insufficientItems.map(item => 
+          `${item.productName}: Available ${item.available}, Required ${item.required}`
+        ).join('\n');
+        
+        toast.error(`Cannot create GRN! Insufficient stock for:\n${errorMessage}`);
+        return;
+      }
+    } catch (error: any) {
+      console.error("Failed to validate stock availability:", error);
+      toast.error("Failed to verify stock availability");
+      return;
+    }
+
     try {
       const grnData = {
         items: formItems.map((item) => ({
@@ -158,6 +343,46 @@ export default function ReceiptOfFinishedGoods() {
 
       await dispatch(createGRN(grnData) as any);
 
+      // After successfully creating GRN, deduct quantities from product stocks
+      let allStockDeducted = true;
+      const deductionResults = [];
+      const movementResults = [];
+      
+      for (const item of formItems) {
+        if (item.qty > 0) {
+          const stockDeducted = await deductProductStock(item.productId, item.qty);
+          const product = products.find(p => p._id === item.productId);
+          deductionResults.push({
+            productName: product?.name || 'Unknown Product',
+            quantity: item.qty,
+            success: stockDeducted
+          });
+          
+          if (!stockDeducted) {
+            allStockDeducted = false;
+          } else {
+            // Create movement entry for the stock deduction
+            const movementCreated = await createMovementEntry({
+              materialId: item.productId,
+              materialName: product?.name || 'Unknown Product',
+              quantity: item.qty,
+              unit: "pcs", // You may want to get this from product data
+              source: "Finished Goods Inventory",
+              destination: "GRN Receipt",
+              referenceNumber: `GRN-${Date.now()}`,
+              remarks: `Product received through GRN`,
+              itemType: "product",
+              unitCost: item.unitValue || 0
+            });
+            
+            movementResults.push({
+              productName: product?.name || 'Unknown Product',
+              movementCreated
+            });
+          }
+        }
+      }
+
       // Refresh data
       dispatch(fetchGRNs() as any);
       dispatch(fetchPendingQC() as any);
@@ -168,9 +393,36 @@ export default function ReceiptOfFinishedGoods() {
       setManualQty("");
       setRemarks("");
       setAcceptedBy("");
+      setCurrentStock(0);
+      setSelectedProductName("");
       setOpenDialog(false);
 
-      toast.success("GRN created successfully");
+      // Show appropriate success message
+      if (allStockDeducted) {
+        const totalItems = deductionResults.length;
+        const successfulMovements = movementResults.filter(r => r.movementCreated).length;
+        
+        if (successfulMovements === totalItems) {
+          toast.success(`GRN created, stock deducted for ${totalItems} products, and movement entries created`);
+        } else {
+          toast.success(`GRN created and stock deducted for ${totalItems} products`);
+          if (successfulMovements < totalItems) {
+            toast.warning(`Could not create movement entries for ${totalItems - successfulMovements} products`);
+          }
+        }
+      } else {
+        toast.success("GRN created successfully");
+        const failedDeductions = deductionResults.filter(r => !r.success);
+        if (failedDeductions.length > 0) {
+          toast.warning(`Could not deduct stock for ${failedDeductions.length} products - please check manually`);
+        }
+      }
+
+      // Refresh products data to show updated stock
+      if (organisationId) {
+        const res = await axios.get(`/inventory/product/all/${organisationId}`);
+        setProducts(res.data.products || []);
+      }
     } catch (error) {
       toast.error("Failed to create GRN");
       console.error(error);
@@ -208,6 +460,13 @@ export default function ReceiptOfFinishedGoods() {
       toast.error("Please select product and enter quantity");
       return;
     }
+
+    // Check if there's enough stock
+    if (currentStock < Number(manualQty)) {
+      toast.error(`Insufficient stock! Available: ${currentStock}, Required: ${manualQty}`);
+      return;
+    }
+
     const batch = generateBatch(manualProductId);
     const unitValue = estimateValue(manualProductId);
     const totalValue = unitValue * Number(manualQty);
@@ -220,6 +479,9 @@ export default function ReceiptOfFinishedGoods() {
     }]);
     setManualProductId("");
     setManualQty("");
+    setCurrentStock(0);
+    setSelectedProductName("");
+    toast.success("Item added successfully");
   };
 
   return (
@@ -258,7 +520,7 @@ export default function ReceiptOfFinishedGoods() {
             <div className="grid md:grid-cols-2 gap-3">
               <div>
                 <Label>Product</Label>
-                <Select value={manualProductId} onValueChange={setManualProductId}>
+                <Select value={manualProductId} onValueChange={handleProductSelection}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select Product" />
                   </SelectTrigger>
@@ -274,6 +536,27 @@ export default function ReceiptOfFinishedGoods() {
               <div>
                 <Label>Quantity</Label>
                 <Input type="number" value={manualQty as any} onChange={(e) => setManualQty(Number(e.target.value))} />
+                
+                {/* Stock validation indicator */}
+                {manualProductId && selectedProductName && (
+                  <div className="mt-2">
+                    <div className="text-sm text-gray-600 mb-1">
+                      Current Stock: <span className="font-medium">{currentStock}</span> units
+                    </div>
+                    {manualQty && Number(manualQty) > 0 && (
+                      <div className={`text-xs p-2 rounded ${
+                        currentStock >= Number(manualQty) 
+                          ? 'bg-green-50 text-green-700 border border-green-200' 
+                          : 'bg-red-50 text-red-700 border border-red-200'
+                      }`}>
+                        {currentStock >= Number(manualQty) 
+                          ? `✅ Sufficient stock available (${currentStock} ≥ ${manualQty})`
+                          : `⚠️ Insufficient stock! Available: ${currentStock}, Required: ${manualQty}`
+                        }
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
             <Button
@@ -304,6 +587,22 @@ export default function ReceiptOfFinishedGoods() {
                 })}
               </TableBody>
             </Table>
+            
+            {/* Overall stock status summary for added items */}
+            {formItems.length > 0 && (
+              <div className="mt-3 text-center">
+                {(() => {
+                  // We'll need to check stock for each item when displaying this summary
+                  // For now, show a simple count
+                  return (
+                    <div className="text-sm p-2 bg-blue-50 text-blue-700 border border-blue-200 rounded">
+                      📦 {formItems.length} item(s) added to GRN
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+            
             <Label>Accepted By</Label>
             <Input value={acceptedBy} onChange={(e) => setAcceptedBy(e.target.value)} />
             <Label>Remarks</Label>

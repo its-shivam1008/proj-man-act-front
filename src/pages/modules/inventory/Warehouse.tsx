@@ -48,6 +48,7 @@ import {
   createRack,
   getWarehouseCapacity,
 } from "@/redux/slices/rackSlice";
+import NotificationCenter from "@/components/NotificationCenter";
 import {
   fetchShelves,
   createShelf,
