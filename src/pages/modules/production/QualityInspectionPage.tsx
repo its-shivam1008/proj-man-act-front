@@ -54,11 +54,16 @@ import {
   createPlan,
   createNCR,
   createCAPA,
+  updatePlan,
+  deletePlan,
+  deleteNCR,
+  deleteCAPA,
+  updateCAPA,
+  updateNCR,
+  deleteInspection,
+  updateInspection
 } from "../../../redux/slices/production/qualitySlice";
-import axios from "../../../utils/axiosApi";
 
-const genId = (p = "id") => `${p}_${Math.random().toString(36).slice(2, 9)}`;
-const nowISO = () => new Date().toISOString();
 
 /**
  * QUALITY INSPECTION (Integrated with GRN)
@@ -72,16 +77,16 @@ export default function QualityInspectionPage() {
   const dispatch = useDispatch();
   const qualityState = useSelector((state: any) => state.quality || {});
   const { plans = [], inspections = [], ncrs = [], capas = [], loading = false } = qualityState;
-  
+
   // Check authentication state
   const authState = useSelector((state: any) => state.auth || {});
-  const { userProfile, organisationId, isAuthenticated } = authState;
+  const { organisationId, isAuthenticated } = authState;
 
   const canView = usePermission("qualityInspection", "view");
   const canCreate = usePermission("qualityInspection", "create");
   const canEdit = usePermission("qualityInspection", "edit");
   const canDelete = usePermission("qualityInspection", "delete");
-  
+
   if (!canView) {
     return (
       <div className="text-center py-12 px-4">
@@ -155,28 +160,77 @@ export default function QualityInspectionPage() {
   const addRecord = async () => {
     try {
       if (tab === "plans") {
-        await dispatch(createPlan(form) as any);
-        toast.success("Quality plan created successfully");
-      } else if (tab === "inspections") {
-        await dispatch(createInspection(form) as any);
-        toast.success("Inspection record created successfully");
-      } else if (tab === "ncrs") {
-        await dispatch(createNCR(form) as any);
-        toast.success("NCR created successfully");
-      } else if (tab === "capas") {
-        await dispatch(createCAPA(form) as any);
-        toast.success("CAPA created successfully");
+        if (form._id) {
+          await dispatch(updatePlan({ id: form._id, data: form }) as any);
+          toast.success("Plan updated");
+        } else {
+          await dispatch(createPlan(form) as any);
+          toast.success("Plan created");
+        }
       }
+
+      if (tab === "inspections") {
+        await dispatch(createInspection(form) as any);
+        toast.success("Inspection created");
+      }
+
+      if (tab === "ncrs") {
+        if (form._id) {
+          await dispatch(updateNCR({ id: form._id, data: form }) as any);
+          toast.success("NCR updated");
+        } else {
+          await dispatch(createNCR(form) as any);
+          toast.success("NCR created");
+        }
+      }
+
+      if (tab === "capas") {
+        if (form._id) {
+          await dispatch(updateCAPA({ id: form._id, data: form }) as any);
+          toast.success("CAPA updated");
+        } else {
+          await dispatch(createCAPA(form) as any);
+          toast.success("CAPA created");
+        }
+      }
+      if (tab === "inspections") {
+        if (form._id) {
+          await dispatch(updateInspection({ id: form._id, data: form }) as any);
+          toast.success("Inspection updated");
+        } else {
+          await dispatch(createInspection(form) as any);
+          toast.success("Inspection created");
+        }
+      }
+
+
       setForm({});
       setDialogOpen(false);
-    } catch (error) {
-      toast.error("Failed to create record");
-      console.error(error);
+    } catch (err) {
+      toast.error("Operation failed");
+      console.error(err);
     }
   };
 
+  const confirmDelete = async (
+    message: string,
+    onConfirm: () => Promise<any> | void
+  ) => {
+    const ok = window.confirm(message);
+    if (!ok) return;
+
+    try {
+      await onConfirm();
+      toast.success("Deleted successfully");
+    } catch (err) {
+      toast.error("Delete failed");
+      console.error(err);
+    }
+  };
+
+
   /** ---------- GRN integration helpers (temporarily disabled - needs GRN backend integration) ---------- */
-  
+
   // TODO: Implement GRN integration with backend
   const pendingGrnItems = useMemo(() => {
     // Placeholder - will be implemented when GRN backend is integrated
@@ -348,6 +402,7 @@ export default function QualityInspectionPage() {
                     <TableHead>Type</TableHead>
                     <TableHead>Sampling</TableHead>
                     <TableHead>Criteria</TableHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -357,6 +412,35 @@ export default function QualityInspectionPage() {
                       <TableCell>{p.type}</TableCell>
                       <TableCell>{p.sampling}</TableCell>
                       <TableCell>{p.criteria}</TableCell>
+                      <TableCell className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={!canEdit}
+                          onClick={() => {
+                            setForm(p);
+                            setDialogOpen(true);
+                          }}
+                        >
+                          Edit
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={!canDelete}
+                          onClick={() =>
+                            confirmDelete(
+                              "Are you sure you want to delete this Plan?",
+                              () => dispatch(deletePlan(p._id) as any)
+                            )
+                          }
+                        >
+                          Delete
+                        </Button>
+
+                      </TableCell>
+
                     </TableRow>
                   ))}
                 </TableBody>
@@ -389,6 +473,8 @@ export default function QualityInspectionPage() {
                       <TableHead>Inspector</TableHead>
                       <TableHead>Result</TableHead>
                       <TableHead>Remarks</TableHead>
+                      <TableHead>Actions</TableHead>
+
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -397,13 +483,43 @@ export default function QualityInspectionPage() {
                         <TableCell>{new Date(i.createdAt || i.date).toLocaleString()}</TableCell>
                         <TableCell>{
                           // Handle both populated and non-populated planId
-                          typeof i.planId === 'object' && i.planId?.name 
-                            ? i.planId.name 
+                          typeof i.planId === 'object' && i.planId?.name
+                            ? i.planId.name
                             : plans.find((p: any) => p._id === i.planId)?.name || "—"
                         }</TableCell>
                         <TableCell>{i.inspector || "—"}</TableCell>
                         <TableCell><Badge variant={i.result === "Pass" ? "success" : i.result === "Fail" ? "destructive" : undefined}>{i.result}</Badge></TableCell>
                         <TableCell>{i.remarks}</TableCell>
+                        <TableCell className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={!canEdit}
+                            onClick={() => {
+                              setForm(i);
+                              setTab("inspections");
+                              setDialogOpen(true);
+                            }}
+                          >
+                            Edit
+                          </Button>
+
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            disabled={!canDelete}
+                            onClick={() =>
+                              confirmDelete(
+                                "Are you sure you want to delete this Inspection?",
+                                () => dispatch(deleteInspection(i._id) as any)
+                              )
+                            }
+                          >
+                            Delete
+                          </Button>
+
+                        </TableCell>
+
                       </TableRow>
                     ))}
                   </TableBody>
@@ -483,6 +599,7 @@ export default function QualityInspectionPage() {
                     <TableHead>Severity</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Dept</TableHead>
+                    <TableHead>Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -493,6 +610,36 @@ export default function QualityInspectionPage() {
                       <TableCell>{n.severity}</TableCell>
                       <TableCell><Badge>{n.status}</Badge></TableCell>
                       <TableCell>{n.responsibleDept}</TableCell>
+                      <TableCell className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={!canEdit}
+                          onClick={() => {
+                            setForm(n);
+                            setTab("ncrs");
+                            setDialogOpen(true);
+                          }}
+                        >
+                          Edit
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={!canDelete}
+                          onClick={() =>
+                            confirmDelete(
+                              "Are you sure you want to delete this NCR?",
+                              () => dispatch(deleteNCR(n._id) as any)
+                            )
+                          }
+                        >
+                          Delete
+                        </Button>
+
+                      </TableCell>
+
                     </TableRow>
                   ))}
                 </TableBody>
@@ -522,6 +669,8 @@ export default function QualityInspectionPage() {
                     <TableHead>Action</TableHead>
                     <TableHead>Owner</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
+
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -532,6 +681,36 @@ export default function QualityInspectionPage() {
                       <TableCell>{c.action}</TableCell>
                       <TableCell>{c.owner}</TableCell>
                       <TableCell><Badge>{c.status}</Badge></TableCell>
+                      <TableCell className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={!canEdit}
+                          onClick={() => {
+                            setForm(c);
+                            setTab("capas");
+                            setDialogOpen(true);
+                          }}
+                        >
+                          Edit
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={!canDelete}
+                          onClick={() =>
+                            confirmDelete(
+                              "Are you sure you want to delete this CAPA?",
+                              () => dispatch(deleteCAPA(c._id) as any)
+                            )
+                          }
+                        >
+                          Delete
+                        </Button>
+
+                      </TableCell>
+
                     </TableRow>
                   ))}
                 </TableBody>
@@ -593,7 +772,12 @@ export default function QualityInspectionPage() {
       {/* Generic dialog used for creating Plans / Inspections / NCR / CAPA */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>New Record</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>
+              {form._id ? "Edit Record" : "New Record"}
+            </DialogTitle>
+
+          </DialogHeader>
           <div
             className="grid gap-3 py-3"
             style={{
@@ -612,8 +796,8 @@ export default function QualityInspectionPage() {
               Save
             </Button>
           </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
     </div >
   );
 }
