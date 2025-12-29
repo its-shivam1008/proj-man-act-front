@@ -41,6 +41,9 @@ import EquipmentUtilisationDashboard from "@/components/reports/EquipmentUtilisa
 import WipSummaryReport from "@/components/reports/WipSummaryReport";
 import DailyProductionReport from "@/components/reports/DailyProductionReport";
 import CostVsOutputAnalysis from "@/components/reports/CostVsOutputAnalysis";
+import DowntimeAnalysisReport from "@/components/reports/DowntimeAnalysisReport";
+import ProductionEfficiencyReport from "@/components/reports/ProductionEfficiencyReport";
+import OrderProgressTrackerReport from "@/components/reports/OrderProgressTrackerReport";
 
 export default function ProductionReportingAnalytics() {
   const dispatch = useDispatch<AppDispatch>();
@@ -53,8 +56,15 @@ export default function ProductionReportingAnalytics() {
   );
 
   useEffect(() => {
+    console.log("🚀 ProductionReportingAnalytics mounted, fetching performance...");
     dispatch(fetchWorkCenterPerformance());
   }, [dispatch]);
+
+  // Debug performance data
+  useEffect(() => {
+    console.log("📊 Performance data updated:", performance?.length, "work centers");
+    console.log("Performance data:", performance);
+  }, [performance]);
 
   if (!canView) {
     return (
@@ -100,6 +110,15 @@ export default function ProductionReportingAnalytics() {
           <TabsTrigger value="costvsoutput">
             Cost vs Output
           </TabsTrigger>
+          <TabsTrigger value="downtime-analysis">
+            Downtime Analysis
+          </TabsTrigger>
+          <TabsTrigger value="production-efficiency">
+            Production Efficiency
+          </TabsTrigger>
+          <TabsTrigger value="order-progress">
+            Order Progress Tracker
+          </TabsTrigger>
 
 
 
@@ -109,114 +128,134 @@ export default function ProductionReportingAnalytics() {
         <TabsContent value="workcenter-performance">
           <div className="space-y-6">
 
+            {loading && (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
+                <p className="text-sm text-muted-foreground mt-2">Loading performance data...</p>
+              </div>
+            )}
+
+            {!loading && performance.length === 0 && (
+              <div className="text-center py-8">
+                <p className="text-gray-500">No work center performance data available</p>
+                <p className="text-sm text-gray-400">Create work centers to see performance metrics</p>
+              </div>
+            )}
+
             {/* KPI CARDS */}
-            <div className="grid xl:grid-cols-4 md:grid-cols-2 gap-4">
-              {performance.map((wc) => (
-                <Card key={wc.id} className="border-l-4 border-indigo-600">
-                  <CardHeader>
-                    <CardTitle className="text-sm">
-                      {wc.workCenterName}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span>Availability</span>
-                      <b>{wc.availability}%</b>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Performance</span>
-                      <b>{wc.performance}%</b>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Quality</span>
-                      <b>{wc.quality}%</b>
-                    </div>
-                    <div className="flex justify-between text-indigo-600">
-                      <span>OEE</span>
-                      <b>{wc.oee}%</b>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+            {!loading && performance.length > 0 && (
+              <div className="grid xl:grid-cols-4 md:grid-cols-2 gap-4">
+                {performance.map((wc) => (
+                  <Card key={wc.id} className="border-l-4 border-indigo-600">
+                    <CardHeader>
+                      <CardTitle className="text-sm">
+                        {wc.workCenterName}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span>Availability</span>
+                        <b>{wc.availability}%</b>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Performance</span>
+                        <b>{wc.performance}%</b>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Quality</span>
+                        <b>{wc.quality}%</b>
+                      </div>
+                      <div className="flex justify-between text-indigo-600">
+                        <span>OEE</span>
+                        <b>{wc.oee}%</b>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
 
             {/* CHARTS */}
-            <div className="grid md:grid-cols-2 gap-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Downtime by Work Center (min)</CardTitle>
-                </CardHeader>
-                <CardContent className="h-[320px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={performance}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="workCenterName" />
-                      <YAxis />
-                      <Tooltip />
-                      <Bar dataKey="downtimeMin" fill="#f59e0b" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
+            {!loading && performance.length > 0 && (
+              <div className="grid md:grid-cols-2 gap-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Downtime by Work Center (min)</CardTitle>
+                  </CardHeader>
+                  <CardContent className="h-[320px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={performance}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="workCenterName" />
+                        <YAxis />
+                        <Tooltip />
+                        <Bar dataKey="downtimeMin" fill="#f59e0b" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>OEE Comparison (%)</CardTitle>
-                </CardHeader>
-                <CardContent className="h-[320px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={performance}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="workCenterName" />
-                      <YAxis domain={[0, 100]} />
-                      <Tooltip />
-                      <Bar dataKey="oee" fill="#6366f1" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            </div>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>OEE Comparison (%)</CardTitle>
+                  </CardHeader>
+                  <CardContent className="h-[320px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={performance}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="workCenterName" />
+                        <YAxis domain={[0, 100]} />
+                        <Tooltip />
+                        <Bar dataKey="oee" fill="#6366f1" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
 
             {/* TABLE */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Detailed Performance</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Work Center</TableHead>
-                      <TableHead>Run Time</TableHead>
-                      <TableHead>Downtime</TableHead>
-                      <TableHead>Produced</TableHead>
-                      <TableHead>Rejected</TableHead>
-                      <TableHead>Availability %</TableHead>
-                      <TableHead>Performance %</TableHead>
-                      <TableHead>Quality %</TableHead>
-                      <TableHead>OEE %</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {performance.map((w) => (
-                      <TableRow key={w.id}>
-                        <TableCell>{w.workCenterName}</TableCell>
-                        <TableCell>{w.runTime}</TableCell>
-                        <TableCell>{w.downtimeMin}</TableCell>
-                        <TableCell>{w.produced}</TableCell>
-                        <TableCell>{w.rejected}</TableCell>
-                        <TableCell>{w.availability}</TableCell>
-                        <TableCell>{w.performance}</TableCell>
-                        <TableCell>{w.quality}</TableCell>
-                        <TableCell className="font-bold text-indigo-600">
-                          {w.oee}
-                        </TableCell>
+            {!loading && performance.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Detailed Performance</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Work Center</TableHead>
+                        <TableHead>Run Time</TableHead>
+                        <TableHead>Downtime</TableHead>
+                        <TableHead>Produced</TableHead>
+                        <TableHead>Rejected</TableHead>
+                        <TableHead>Availability %</TableHead>
+                        <TableHead>Performance %</TableHead>
+                        <TableHead>Quality %</TableHead>
+                        <TableHead>OEE %</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
+                    </TableHeader>
+                    <TableBody>
+                      {performance.map((w) => (
+                        <TableRow key={w.id}>
+                          <TableCell>{w.workCenterName}</TableCell>
+                          <TableCell>{w.runTime}</TableCell>
+                          <TableCell>{w.downtimeMin}</TableCell>
+                          <TableCell>{w.produced}</TableCell>
+                          <TableCell>{w.rejected}</TableCell>
+                          <TableCell>{w.availability}</TableCell>
+                          <TableCell>{w.performance}</TableCell>
+                          <TableCell>{w.quality}</TableCell>
+                          <TableCell className="font-bold text-indigo-600">
+                            {w.oee}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            )}
 
           </div>
         </TabsContent>
@@ -237,6 +276,15 @@ export default function ProductionReportingAnalytics() {
         </TabsContent>
         <TabsContent value="costvsoutput">
           <CostVsOutputAnalysis/>
+        </TabsContent>
+        <TabsContent value="downtime-analysis">
+          <DowntimeAnalysisReport/>
+        </TabsContent>
+        <TabsContent value="production-efficiency">
+          <ProductionEfficiencyReport/>
+        </TabsContent>
+        <TabsContent value="order-progress">
+          <OrderProgressTrackerReport/>
         </TabsContent>
 
 

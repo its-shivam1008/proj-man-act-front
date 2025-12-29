@@ -50,6 +50,9 @@ import costingPerformanceReducer from "./slices/production/costingPerformanceSli
 import workCenterReducer from "./slices/production/workCenterSlice";
 import productionExecutionReducer from "./slices/production/productionExecutionSlice";
 import productionReportingReducer from "./slices/production/productionReportingSlice";
+import downtimeAnalysisReducer from "./slices/production/downtimeAnalysisSlice";
+import productionEfficiencyReducer from "./slices/production/productionEfficiencySlice";
+import orderProgressReducer from "./slices/production/orderProgressSlice";
 export const store = configureStore({
   reducer: {
     itemMaster: itemMasterReducer,
@@ -103,6 +106,9 @@ export const store = configureStore({
     workCenters: workCenterReducer,
     productionExecution: productionExecutionReducer,
     productionReporting: productionReportingReducer,
+    downtimeAnalysis: downtimeAnalysisReducer,
+    productionEfficiency: productionEfficiencyReducer,
+    orderProgress: orderProgressReducer,
   },
 });
 

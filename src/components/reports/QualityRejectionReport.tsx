@@ -215,8 +215,8 @@ export default function QualityRejectionReport() {
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Date</TableHead>
-                                <TableHead>Product</TableHead>
-                                <TableHead>Batch</TableHead>
+                                {/* <TableHead>Product</TableHead> */}
+                                {/* <TableHead>Batch</TableHead> */}
                                 <TableHead>Inspector</TableHead>
                                 <TableHead>Result</TableHead>
                                 <TableHead>Remarks</TableHead>
@@ -228,11 +228,8 @@ export default function QualityRejectionReport() {
                                     <TableCell>
                                         {new Date(i.createdAt).toLocaleDateString()}
                                     </TableCell>
-                                    <TableCell>
-                                        {productMap[i.productId] || "-"}
-                                    </TableCell>
-
-                                    <TableCell>{i.batchNo || "-"}</TableCell>
+                                    {/* <TableCell> {productMap[i.productId] || "-"} </TableCell> */}
+                                    {/* <TableCell>{i.batchNo || "-"}</TableCell> */}
                                     <TableCell>{i.inspector || "-"}</TableCell>
                                     <TableCell>
                                         {i.result === "Fail" ? (

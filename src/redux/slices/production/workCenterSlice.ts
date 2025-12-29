@@ -174,9 +174,12 @@ export const fetchWorkCenterPerformance = createAsyncThunk(
   "workcenter/performance",
   async (_, { rejectWithValue }) => {
     try {
+      console.log("🔄 Fetching work center performance...");
       const res = await axios.get("/work-centers/performance");
+      console.log("✅ Performance data received:", res.data.data?.length, "work centers");
       return res.data.data;
     } catch (err: any) {
+      console.error("❌ Performance fetch error:", err.response?.data || err.message);
       return rejectWithValue(err.response?.data?.message || "Failed to fetch analytics");
     }
   }

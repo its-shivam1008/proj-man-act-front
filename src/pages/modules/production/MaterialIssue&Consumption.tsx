@@ -481,9 +481,9 @@ export default function MaterialIssue() {
 
     {/* ================= HEADER ================= */}
     <div>
-      <h2 className="text-2xl font-bold">WIP Summary</h2>
+      <h2 className="text-2xl font-bold">WIP Summary (Material Consumption)</h2>
       <p className="text-muted-foreground">
-        Work-in-progress inventory generated from material issues
+        Materials consumed in production processes (from inventory ledger)
       </p>
     </div>
 
@@ -491,7 +491,7 @@ export default function MaterialIssue() {
     <div className="grid xl:grid-cols-4 md:grid-cols-2 gap-4">
       <Card>
         <CardHeader>
-          <CardTitle>Total WIP Qty</CardTitle>
+          <CardTitle>Total Consumed Qty</CardTitle>
         </CardHeader>
         <CardContent className="text-3xl font-bold">
           {wip.reduce((s: number, r: any) => s + r.quantity, 0)}
@@ -500,7 +500,7 @@ export default function MaterialIssue() {
 
       <Card>
         <CardHeader>
-          <CardTitle>WIP Items</CardTitle>
+          <CardTitle>Consumed Materials</CardTitle>
         </CardHeader>
         <CardContent className="text-3xl font-bold">
           {wip.length}
@@ -509,7 +509,7 @@ export default function MaterialIssue() {
 
       <Card className="border-l-4 border-red-500">
         <CardHeader>
-          <CardTitle>High WIP</CardTitle>
+          <CardTitle>High Consumption</CardTitle>
         </CardHeader>
         <CardContent className="text-3xl font-bold text-red-600">
           {wip.filter((r: any) => r.quantity > 50).length}
@@ -518,7 +518,7 @@ export default function MaterialIssue() {
 
       <Card className="border-l-4 border-green-500">
         <CardHeader>
-          <CardTitle>Low / Near Zero</CardTitle>
+          <CardTitle>Low Consumption</CardTitle>
         </CardHeader>
         <CardContent className="text-3xl font-bold text-green-600">
           {wip.filter((r: any) => r.quantity <= 5).length}
@@ -532,7 +532,7 @@ export default function MaterialIssue() {
       {/* ================= TABLE ================= */}
       <Card className="lg:col-span-2">
         <CardHeader>
-          <CardTitle>WIP Material Details</CardTitle>
+          <CardTitle>Material Consumption Details</CardTitle>
         </CardHeader>
 
         <CardContent>
@@ -550,7 +550,7 @@ export default function MaterialIssue() {
               {wip.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={4} className="text-center">
-                    No WIP materials found
+                    No consumed materials found
                   </TableCell>
                 </TableRow>
               ) : (
@@ -599,7 +599,7 @@ export default function MaterialIssue() {
       {/* ================= PIE CHART ================= */}
       <Card>
         <CardHeader>
-          <CardTitle>WIP Distribution</CardTitle>
+          <CardTitle>Consumption Distribution</CardTitle>
         </CardHeader>
 
         <CardContent className="h-[300px]">
