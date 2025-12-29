@@ -232,8 +232,9 @@ export default function WorkOrdersAdvanced() {
 
   const remove = (id: string) => {
     if (!confirm("Delete this work order?")) return;
-    setOrders((prev) => prev.filter((o) => o.id !== id));
+    dispatch(deleteWorkOrder(id));
   };
+  ;
   useEffect(() => {
     if (!form.productCode) return;
 
@@ -406,7 +407,7 @@ export default function WorkOrdersAdvanced() {
                         size="icon"
                         variant="ghost"
                         disabled={!canDelete}
-                        onClick={() => canDelete && remove(wo.id)}
+                        onClick={() => canDelete && remove(wo._id || wo.id)}
                         className={!canDelete ? "opacity-50 cursor-not-allowed" : ""}
                       >
                         <Trash2 />

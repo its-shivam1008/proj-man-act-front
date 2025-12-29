@@ -476,66 +476,162 @@ export default function MaterialIssue() {
                 </TabsContent>
 
                 {/* WIP Summary */}
-                <TabsContent value="wip">
-  <Card>
-    <CardHeader>
-      <CardTitle>Work in Progress (WIP)</CardTitle>
-    </CardHeader>
+           <TabsContent value="wip">
+  <div className="space-y-6">
 
-    <CardContent>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div>
+    {/* ================= HEADER ================= */}
+    <div>
+      <h2 className="text-2xl font-bold">WIP Summary</h2>
+      <p className="text-muted-foreground">
+        Work-in-progress inventory generated from material issues
+      </p>
+    </div>
+
+    {/* ================= KPI CARDS ================= */}
+    <div className="grid xl:grid-cols-4 md:grid-cols-2 gap-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Total WIP Qty</CardTitle>
+        </CardHeader>
+        <CardContent className="text-3xl font-bold">
+          {wip.reduce((s: number, r: any) => s + r.quantity, 0)}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>WIP Items</CardTitle>
+        </CardHeader>
+        <CardContent className="text-3xl font-bold">
+          {wip.length}
+        </CardContent>
+      </Card>
+
+      <Card className="border-l-4 border-red-500">
+        <CardHeader>
+          <CardTitle>High WIP</CardTitle>
+        </CardHeader>
+        <CardContent className="text-3xl font-bold text-red-600">
+          {wip.filter((r: any) => r.quantity > 50).length}
+        </CardContent>
+      </Card>
+
+      <Card className="border-l-4 border-green-500">
+        <CardHeader>
+          <CardTitle>Low / Near Zero</CardTitle>
+        </CardHeader>
+        <CardContent className="text-3xl font-bold text-green-600">
+          {wip.filter((r: any) => r.quantity <= 5).length}
+        </CardContent>
+      </Card>
+    </div>
+
+    {/* ================= CHARTS + TABLE ================= */}
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+      {/* ================= TABLE ================= */}
+      <Card className="lg:col-span-2">
+        <CardHeader>
+          <CardTitle>WIP Material Details</CardTitle>
+        </CardHeader>
+
+        <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Item</TableHead>
-                <TableHead>Qty</TableHead>
+                <TableHead>Material</TableHead>
+                <TableHead>Quantity</TableHead>
+                <TableHead>Unit</TableHead>
+                <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
 
             <TableBody>
               {wip.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={2} className="text-center">
-                    No WIP materials
+                  <TableCell colSpan={4} className="text-center">
+                    No WIP materials found
                   </TableCell>
                 </TableRow>
               ) : (
-                wip.map((row: any) => (
-                  <TableRow key={row._id}>
-                    <TableCell>{row.itemId?.name}</TableCell>
-                    <TableCell>
-                      {row.quantity} {row.itemId?.unitOfMeasure}
-                    </TableCell>
-                  </TableRow>
-                ))
+                wip.map((row: any) => {
+                  const status =
+                    row.quantity > 50
+                      ? "High"
+                      : row.quantity <= 5
+                      ? "Low"
+                      : "Normal";
+
+                  return (
+                    <TableRow key={row._id}>
+                      <TableCell className="font-medium">
+                        {row.itemId?.name || "-"}
+                      </TableCell>
+
+                      <TableCell>{row.quantity}</TableCell>
+
+                      <TableCell>
+                        {row.itemId?.unitOfMeasure || "-"}
+                      </TableCell>
+
+                      <TableCell>
+                        <Badge
+                          className={
+                            status === "High"
+                              ? "bg-red-100 text-red-700"
+                              : status === "Low"
+                              ? "bg-green-100 text-green-700"
+                              : "bg-blue-100 text-blue-700"
+                          }
+                        >
+                          {status}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
-        </div>
+        </CardContent>
+      </Card>
 
-        <div>
-          <ResponsiveContainer width="100%" height={300}>
+      {/* ================= PIE CHART ================= */}
+      <Card>
+        <CardHeader>
+          <CardTitle>WIP Distribution</CardTitle>
+        </CardHeader>
+
+        <CardContent className="h-[300px]">
+          <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
-                data={wipPie}
+                data={wip.map((r: any) => ({
+                  name: r.itemId?.name || "Unknown",
+                  value: r.quantity,
+                }))}
                 dataKey="value"
                 nameKey="name"
-                outerRadius={90}
+                outerRadius={100}
                 label
               >
-                {wipPie.map((_, i) => (
-                  <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                {wip.map((_: any, i: number) => (
+                  <Cell
+                    key={i}
+                    fill={COLORS[i % COLORS.length]}
+                  />
                 ))}
               </Pie>
               <Tooltip />
             </PieChart>
           </ResponsiveContainer>
-        </div>
-      </div>
-    </CardContent>
-  </Card>
+        </CardContent>
+      </Card>
+
+    </div>
+  </div>
 </TabsContent>
+
 
 
             </Tabs>

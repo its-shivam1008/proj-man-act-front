@@ -12,27 +12,27 @@ export interface WorkCenterResource {
   sparePartId?: string;
   sparePartName?: string;
   sparePartQuantity?: number;
-  
+
   // WBS Tasks
   wbsTaskId?: string;
   wbsTaskName?: string;
   wbsTaskDuration?: number;
-  
+
   // Projects
   projectId?: string;
   projectName?: string;
   projectAllocation?: number;
-  
+
   // Products
   productId?: string;
   productName?: string;
   productQuantity?: number;
-  
+
   // Equipment
   equipmentId?: string;
   equipmentName?: string;
   equipmentCode?: string;
-  
+
   // Machine
   machineId?: string;
   machineName?: string;
@@ -53,7 +53,7 @@ export interface WorkCenterResource {
       isCustom?: boolean;
     } | null;
   };
-  
+
   // Common fields
   resourceType: "sparePart" | "wbsTask" | "project" | "product" | "equipment" | "machine";
   priority?: "low" | "medium" | "high" | "critical";
@@ -170,6 +170,17 @@ export const fetchWorkCenterAnalytics = createAsyncThunk(
     }
   }
 );
+export const fetchWorkCenterPerformance = createAsyncThunk(
+  "workcenter/performance",
+  async (_, { rejectWithValue }) => {
+    try {
+      const res = await axios.get("/work-centers/performance");
+      return res.data.data;
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.message || "Failed to fetch analytics");
+    }
+  }
+);
 
 /* =======================
    STATE TYPE
@@ -177,6 +188,7 @@ export const fetchWorkCenterAnalytics = createAsyncThunk(
 
 interface WorkCenterState {
   list: WorkCenter[];
+  performance: WorkCenterPerformance[];
   analytics: {
     total: number;
     active: number;
@@ -185,9 +197,23 @@ interface WorkCenterState {
   loading: boolean;
   error: string | null;
 }
+export interface WorkCenterPerformance {
+  id: string;
+  workCenterId: string;
+  workCenterName: string;
+  runTime: number;
+  downtimeMin: number;
+  produced: number;
+  rejected: number;
+  availability: number;
+  performance: number;
+  quality: number;
+  oee: number;
+}
 
 const initialState: WorkCenterState = {
   list: [],
+  performance: [],
   analytics: {
     total: 0,
     active: 0,
@@ -214,23 +240,32 @@ const workCenterSlice = createSlice({
     /* ---------- FETCH ---------- */
     builder.addCase(fetchWorkCenters.fulfilled, (state, action) => {
       state.loading = false;
-      state.list = action.payload;
+      state.list = action.payload.map((w: any) => ({
+        ...w,
+        id: w._id, // ✅ normalize once
+      }));
     });
 
     /* ---------- CREATE ---------- */
     builder.addCase(createWorkCenter.fulfilled, (state, action) => {
       state.loading = false;
-      state.list.unshift(action.payload);
+      state.list.unshift({
+        ...action.payload,
+        id: action.payload._id,
+      });
     });
 
     /* ---------- UPDATE ---------- */
     builder.addCase(updateWorkCenter.fulfilled, (state, action) => {
       state.loading = false;
       const index = state.list.findIndex(
-        (w) => w._id === action.payload._id
+        (w) => w.id === action.payload._id
       );
       if (index !== -1) {
-        state.list[index] = action.payload;
+        state.list[index] = {
+          ...action.payload,
+          id: action.payload._id,
+        };
       }
     });
 
@@ -238,20 +273,29 @@ const workCenterSlice = createSlice({
     builder.addCase(deleteWorkCenter.fulfilled, (state, action) => {
       state.loading = false;
       state.list = state.list.filter(
-        (w) => w._id !== action.payload
+        (w) => w.id !== action.payload
       );
     });
 
-    /* ---------- ANALYTICS ---------- */
-    builder.addCase(fetchWorkCenterAnalytics.fulfilled, (state, action) => {
+    /* ---------- PERFORMANCE REPORT ---------- */
+    builder.addCase(fetchWorkCenterPerformance.pending, (state) => {
+      state.loading = true;
+      state.error = null;
+    });
+
+    builder.addCase(fetchWorkCenterPerformance.fulfilled, (state, action) => {
       state.loading = false;
-      state.analytics = action.payload;
+      state.performance = action.payload.map((p: any) => ({
+        ...p,
+        id: p.workCenterId,
+      }));
     });
 
     /* ---------- LOADING & ERROR HANDLING ---------- */
     builder.addMatcher(
       (action) =>
-        action.type.startsWith("workCenters/") &&
+        (action.type.startsWith("workCenters/") ||
+          action.type.startsWith("workcenter/")) &&
         action.type.endsWith("/pending"),
       (state) => {
         state.loading = true;
@@ -261,7 +305,8 @@ const workCenterSlice = createSlice({
 
     builder.addMatcher(
       (action) =>
-        action.type.startsWith("workCenters/") &&
+        (action.type.startsWith("workCenters/") ||
+          action.type.startsWith("workcenter/")) &&
         action.type.endsWith("/rejected"),
       (state, action: any) => {
         state.loading = false;
@@ -269,6 +314,7 @@ const workCenterSlice = createSlice({
       }
     );
   },
+
 });
 
 export const { clearError } = workCenterSlice.actions;

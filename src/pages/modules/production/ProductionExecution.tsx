@@ -523,7 +523,7 @@ export default function ProductionExecution() {
     console.log('📊 Final operators result:', {
       assignedPersonsCount: assignedPersons.length,
       assignedPersons: assignedPersons.map(op => ({
-        id: op.id,
+        id: op._id,
         name: op.name,
         type: op.type,
         wbsTaskName: op.wbsTaskName
@@ -1037,7 +1037,7 @@ export default function ProductionExecution() {
               }
             </option>
             {availableOperators.map((op: any) => (
-              <option key={op.id || op.resourceId} value={op.id || op.resourceId}>
+              <option key={op._id || op.resourceId} value={op._id || op.resourceId}>
                 {op.name || op.personalInfo?.name || op.resourceId} 
                 {op.type && ` (${op.type})`}
               </option>
@@ -1472,7 +1472,7 @@ export default function ProductionExecution() {
                   const workOrderName = workOrder?.productName || l.workOrderId;
                   
                   // Find operator name
-                  const operator = availableOperators.find((op: any) => (op.id || op.resourceId) === l.operatorId) || 
+                  const operator = availableOperators.find((op: any) => (op._id || op.resourceId) === l.operatorId) || 
                                  employees.find((e: any) => e.id === l.operatorId);
                   const operatorName = operator?.name || operator?.personalInfo?.name || l.operatorId;
                   

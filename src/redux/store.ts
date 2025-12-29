@@ -49,6 +49,7 @@ import qualityReducer from "./slices/production/qualitySlice";
 import costingPerformanceReducer from "./slices/production/costingPerformanceSlice";
 import workCenterReducer from "./slices/production/workCenterSlice";
 import productionExecutionReducer from "./slices/production/productionExecutionSlice";
+import productionReportingReducer from "./slices/production/productionReportingSlice";
 export const store = configureStore({
   reducer: {
     itemMaster: itemMasterReducer,
@@ -101,6 +102,7 @@ export const store = configureStore({
     costingPerformance: costingPerformanceReducer,
     workCenters: workCenterReducer,
     productionExecution: productionExecutionReducer,
+    productionReporting: productionReportingReducer,
   },
 });
 
