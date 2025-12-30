@@ -17,16 +17,10 @@ export interface BOM {
   productName: string;
   version: string;
   status: "draft" | "active" | "inactive";
+  location?: string;
   items: BOMItem[];
   createdAt: string;
   updatedAt: string;
-}
-
-interface Pagination {
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
 }
 
 interface BOMState {
@@ -34,7 +28,15 @@ interface BOMState {
   selected: BOM | null;
   loading: boolean;
   error: string | null;
-  pagination: Pagination;
+  pagination: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    currentPage: number;
+    totalItems: number;
+    itemsPerPage: number;
+  };
 }
 
 /* =========================
@@ -48,8 +50,11 @@ const initialState: BOMState = {
   pagination: {
     total: 0,
     page: 1,
-    limit: 10,
+    limit: 5,
     totalPages: 0,
+    currentPage: 1,
+    totalItems: 0,
+    itemsPerPage: 5,
   },
 };
 
@@ -60,14 +65,21 @@ const initialState: BOMState = {
 // 🔹 GET BOMs (pagination)
 export const fetchBOMs = createAsyncThunk(
   "bom/fetchBOMs",
-  async ({ page = 1, limit = 10, search = "" }: any, { rejectWithValue }) => {
+  async ({ page = 1, limit = 10, search = "", location }: any, { rejectWithValue }) => {
     try {
       const organisationId = localStorage.getItem("organisationId");
 
       if (!organisationId) throw new Error("organisationId missing");
 
+      const params: any = { page, limit, search };
+      
+      // Add location parameter if provided and not "all"
+      if (location && location !== "all") {
+        params.location = location;
+      }
+
       const res = await axios.get("/bom/get/bom", {
-        params: { page, limit, search }, // Keep standard pagination here
+        params,
         headers: {
           "organisationid": organisationId // Add this line
         }
@@ -161,11 +173,15 @@ const bomSlice = createSlice({
       .addCase(fetchBOMs.fulfilled, (state, action) => {
         state.loading = false;
         state.list = action.payload.data || [];
-        state.pagination = action.payload.pagination ?? {
-          total: state.list.length,
-          page: 1,
-          limit: state.pagination.limit,
-          totalPages: 1,
+        const paginationData = action.payload.pagination;
+        state.pagination = {
+          total: paginationData?.total || 0,
+          page: paginationData?.page || 1,
+          limit: paginationData?.limit || 5,
+          totalPages: paginationData?.totalPages || 0,
+          currentPage: paginationData?.page || 1,
+          totalItems: paginationData?.total || 0,
+          itemsPerPage: paginationData?.limit || 5,
         };
       })
       .addCase(fetchBOMs.rejected, (state, action) => {

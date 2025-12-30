@@ -6,8 +6,10 @@ import axios from "@/utils/axiosApi";
 ========================= */
 export const fetchIssueSlips = createAsyncThunk(
   "materialIssue/fetch",
-  async () => {
-    const res = await axios.get("/material-issue/get");
+  async ({ location, page = 1, limit = 10, search = "" }: { location?: string; page?: number; limit?: number; search?: string } = {}) => {
+    const params: any = { page, limit, search };
+    if (location) params.location = location;
+    const res = await axios.get("/material-issue/get", { params });
     return res.data.data;
   }
 );
@@ -30,19 +32,24 @@ export const backflushIssue = createAsyncThunk(
 
 export const fetchLedger = createAsyncThunk(
   "materialIssue/ledger",
-  async () => {
-    const res = await axios.get("/material-issue/ledger/all");
+  async ({ location, page = 1, limit = 10, search = "" }: { location?: string; page?: number; limit?: number; search?: string } = {}) => {
+    const params: any = { page, limit, search };
+    if (location) params.location = location;
+    const res = await axios.get("/material-issue/ledger/all", { params });
     return res.data.data;
   }
 );
 
 export const fetchWIP = createAsyncThunk(
   "materialIssue/wip",
-  async () => {
-    const res = await axios.get("/material-issue/wip/all");
+  async ({ location, page = 1, limit = 10, search = "" }: { location?: string; page?: number; limit?: number; search?: string } = {}) => {
+    const params: any = { page, limit, search };
+    if (location) params.location = location;
+    const res = await axios.get("/material-issue/wip/all", { params });
     return res.data.data;
   }
 );
+
 export const deleteIssueSlip = createAsyncThunk(
   "materialIssue/delete",
   async (id: string) => {
@@ -62,6 +69,25 @@ const materialIssueSlice = createSlice({
     wip: [],
     loading: false,
     error: null as string | null,
+    // Pagination states
+    issueSlipsPagination: {
+      currentPage: 1,
+      totalPages: 1,
+      totalItems: 0,
+      itemsPerPage: 10
+    },
+    ledgerPagination: {
+      currentPage: 1,
+      totalPages: 1,
+      totalItems: 0,
+      itemsPerPage: 10
+    },
+    wipPagination: {
+      currentPage: 1,
+      totalPages: 1,
+      totalItems: 0,
+      itemsPerPage: 10
+    }
   },
   reducers: {},
 
@@ -73,7 +99,10 @@ const materialIssueSlice = createSlice({
       })
       .addCase(fetchIssueSlips.fulfilled, (state, action) => {
         state.loading = false;
-        state.issueSlips = action.payload;
+        state.issueSlips = action.payload.data || action.payload;
+        if (action.payload.pagination) {
+          state.issueSlipsPagination = action.payload.pagination;
+        }
       })
       .addCase(fetchIssueSlips.rejected, (state) => {
         state.loading = false;
@@ -95,7 +124,10 @@ const materialIssueSlice = createSlice({
 
     /* ---------- LEDGER ---------- */
     builder.addCase(fetchLedger.fulfilled, (state, action) => {
-      state.ledger = action.payload;
+      state.ledger = action.payload.data || action.payload;
+      if (action.payload.pagination) {
+        state.ledgerPagination = action.payload.pagination;
+      }
     })
       .addCase(deleteIssueSlip.fulfilled, (state, action) => {
         state.issueSlips = state.issueSlips.filter(
@@ -103,10 +135,12 @@ const materialIssueSlice = createSlice({
         );
       });
 
-
     /* ---------- WIP ---------- */
     builder.addCase(fetchWIP.fulfilled, (state, action) => {
-      state.wip = action.payload;
+      state.wip = action.payload.data || action.payload;
+      if (action.payload.pagination) {
+        state.wipPagination = action.payload.pagination;
+      }
     });
 
     /* ---------- GLOBAL ERROR HANDLER (LAST) ---------- */

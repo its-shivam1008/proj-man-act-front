@@ -1,7 +1,8 @@
 import { usePermission } from "@/hooks/userPermission";
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { RootState, AppDispatch } from "../../../redux/store";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import {
   fetchStandards,
   createStandard,
@@ -28,16 +29,49 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../../components/ui/tabs";
 import { Badge } from "../../../components/ui/badge";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, LineChart, Line, PieChart, Pie, Cell, Legend } from "recharts";
-import { Plus, Edit2, Trash2, Download, Upload, ShieldAlert, Loader2 } from "lucide-react";
+import { Plus, Edit2, Trash2, Download, Upload, ShieldAlert, Loader2, MapPin, Search } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandInput,
+  CommandList,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+} from "@/components/ui/command";
+import { Check, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Pagination } from "@/components/ui/pagination";
 import { toast } from "sonner";
 
 /* ----------------------------- Helpers ----------------------------- */
 const sum = (arr: number[]) => arr.reduce((s, v) => s + Number(v || 0), 0);
+const nowISO = () => new Date().toISOString();
+
+// Debounce utility function
+const debounce = (func: Function, delay: number) => {
+  let timeoutId: NodeJS.Timeout;
+  return (...args: any[]) => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => func.apply(null, args), delay);
+  };
+};
 
 /* --------------------------- Component -------------------------- */
 export default function CostingPerformance() {
   const dispatch = useDispatch<AppDispatch>();
-  const { standards, actuals, metrics, loading, error } = useSelector(
+  const { standards, actuals, metrics, loading, error, standardsPagination, actualsPagination, metricsPagination } = useSelector(
     (state: RootState) => state.costingPerformance
   );
 
@@ -45,6 +79,129 @@ export default function CostingPerformance() {
   const canCreate = usePermission("costingPerformance", "create");
   const canEdit = usePermission("costingPerformance", "edit");
   const canDelete = usePermission("costingPerformance", "delete");
+
+  // ✅ LOCATION FILTERING STATE
+  const { userProfile } = useSelector((state: RootState) => state.auth);
+  const { locations } = useSelector((state: RootState) => state.masterData);
+  const [locationFilter, setLocationFilter] = useState("all");
+  const [locationOpen, setLocationOpen] = useState(false);
+
+  const isLocationRestricted = 
+    userProfile?.role !== 'admin' && 
+    !!userProfile?.location;
+
+  // Pagination states
+  const [standardsSearch, setStandardsSearch] = useState("");
+  const [actualsSearch, setActualsSearch] = useState("");
+  const [metricsSearch, setMetricsSearch] = useState("");
+
+  // Debounced search handlers
+  const debouncedStandardsSearch = useCallback(
+    debounce((searchTerm: string) => {
+      dispatch(fetchStandards({
+        location: locationFilter !== "all" ? locationFilter : undefined,
+        page: 1,
+        limit: standardsPagination.itemsPerPage,
+        search: searchTerm
+      }));
+    }, 300),
+    [dispatch, locationFilter, standardsPagination.itemsPerPage]
+  );
+
+  const debouncedActualsSearch = useCallback(
+    debounce((searchTerm: string) => {
+      dispatch(fetchActuals({
+        location: locationFilter !== "all" ? locationFilter : undefined,
+        page: 1,
+        limit: actualsPagination.itemsPerPage,
+        search: searchTerm
+      }));
+    }, 300),
+    [dispatch, locationFilter, actualsPagination.itemsPerPage]
+  );
+
+  const debouncedMetricsSearch = useCallback(
+    debounce((searchTerm: string) => {
+      dispatch(fetchMetrics({
+        location: locationFilter !== "all" ? locationFilter : undefined,
+        page: 1,
+        limit: metricsPagination.itemsPerPage,
+        search: searchTerm
+      }));
+    }, 300),
+    [dispatch, locationFilter, metricsPagination.itemsPerPage]
+  );
+
+  // Search handlers
+  const handleStandardsSearch = (value: string) => {
+    setStandardsSearch(value);
+    debouncedStandardsSearch(value);
+  };
+
+  const handleActualsSearch = (value: string) => {
+    setActualsSearch(value);
+    debouncedActualsSearch(value);
+  };
+
+  const handleMetricsSearch = (value: string) => {
+    setMetricsSearch(value);
+    debouncedMetricsSearch(value);
+  };
+
+  // Pagination handlers
+  const handleStandardsPageChange = (page: number) => {
+    dispatch(fetchStandards({
+      location: locationFilter !== "all" ? locationFilter : undefined,
+      page,
+      limit: standardsPagination.itemsPerPage,
+      search: standardsSearch
+    }));
+  };
+
+  const handleStandardsItemsPerPageChange = (itemsPerPage: number) => {
+    dispatch(fetchStandards({
+      location: locationFilter !== "all" ? locationFilter : undefined,
+      page: 1,
+      limit: itemsPerPage,
+      search: standardsSearch
+    }));
+  };
+
+  const handleActualsPageChange = (page: number) => {
+    dispatch(fetchActuals({
+      location: locationFilter !== "all" ? locationFilter : undefined,
+      page,
+      limit: actualsPagination.itemsPerPage,
+      search: actualsSearch
+    }));
+  };
+
+  const handleActualsItemsPerPageChange = (itemsPerPage: number) => {
+    dispatch(fetchActuals({
+      location: locationFilter !== "all" ? locationFilter : undefined,
+      page: 1,
+      limit: itemsPerPage,
+      search: actualsSearch
+    }));
+  };
+
+  const handleMetricsPageChange = (page: number) => {
+    dispatch(fetchMetrics({
+      location: locationFilter !== "all" ? locationFilter : undefined,
+      page,
+      limit: metricsPagination.itemsPerPage,
+      search: metricsSearch
+    }));
+  };
+
+  const handleMetricsItemsPerPageChange = (itemsPerPage: number) => {
+    dispatch(fetchMetrics({
+      location: locationFilter !== "all" ? locationFilter : undefined,
+      page: 1,
+      limit: itemsPerPage,
+      search: metricsSearch
+    }));
+  };
 
   if (!canView) {
     return (
@@ -64,29 +221,90 @@ export default function CostingPerformance() {
   const [tab, setTab] = useState<"overview" | "standards" | "actuals" | "metrics">("overview");
 
   const [stdDialogOpen, setStdDialogOpen] = useState(false);
-  const [stdForm, setStdForm] = useState<Partial<StandardCost>>({});
+  const [stdForm, setStdForm] = useState<Partial<StandardCost & { location?: string }>>({});
 
   const [actDialogOpen, setActDialogOpen] = useState(false);
-  const [actForm, setActForm] = useState<Partial<ActualCost>>({ producedQty: 0 });
+  const [actForm, setActForm] = useState<Partial<ActualCost & { location?: string }>>({ producedQty: 0 });
 
   const [metricDialogOpen, setMetricDialogOpen] = useState(false);
-  const [metricForm, setMetricForm] = useState<Partial<PerfMetric>>({ date: new Date().toISOString().slice(0, 10) });
+  const [metricForm, setMetricForm] = useState<Partial<PerfMetric & { location?: string }>>({ date: new Date().toISOString().slice(0, 10) });
 
-  // Load data on component mount
+  // Fetch Master Data on mount
   useEffect(() => {
-    console.log('CostingPerformance: Loading data on mount...');
-    dispatch(fetchStandards())
-      .then((result) => console.log('Standards loaded:', result))
-      .catch((error) => console.error('Standards load error:', error));
-    
-    dispatch(fetchActuals())
-      .then((result) => console.log('Actuals loaded:', result))
-      .catch((error) => console.error('Actuals load error:', error));
-    
-    dispatch(fetchMetrics())
-      .then((result) => console.log('Metrics loaded:', result))
-      .catch((error) => console.error('Metrics load error:', error));
+    dispatch(fetchMasterData("location"));
   }, [dispatch]);
+
+  // Auto-set location filter for restricted users
+  useEffect(() => {
+    if (isLocationRestricted && userProfile?.location) {
+      setLocationFilter(userProfile.location);
+      // Also set form locations
+      setStdForm(prev => ({ ...prev, location: userProfile.location }));
+      setActForm(prev => ({ ...prev, location: userProfile.location }));
+      setMetricForm(prev => ({ ...prev, location: userProfile.location }));
+    }
+  }, [isLocationRestricted, userProfile, locations]);
+
+  // Load data on component mount and when location filter changes
+  useEffect(() => {
+    const locationParam = locationFilter !== "all" ? locationFilter : undefined;
+    
+    dispatch(fetchStandards({
+      location: locationParam,
+      page: standardsPagination.currentPage,
+      limit: standardsPagination.itemsPerPage,
+      search: standardsSearch
+    }));
+    dispatch(fetchActuals({
+      location: locationParam,
+      page: actualsPagination.currentPage,
+      limit: actualsPagination.itemsPerPage,
+      search: actualsSearch
+    }));
+    dispatch(fetchMetrics({
+      location: locationParam,
+      page: metricsPagination.currentPage,
+      limit: metricsPagination.itemsPerPage,
+      search: metricsSearch
+    }));
+  }, [dispatch, locationFilter]);
+
+  // Handle location filter change
+  const handleLocationFilterChange = (val: string) => {
+    setLocationFilter(val);
+    // Reset searches and fetch fresh data
+    setStandardsSearch("");
+    setActualsSearch("");
+    setMetricsSearch("");
+    
+    // Fetch data with new location filter
+    dispatch(fetchStandards({
+      location: val !== "all" ? val : undefined,
+      page: 1,
+      limit: standardsPagination.itemsPerPage,
+      search: ""
+    }));
+    dispatch(fetchActuals({
+      location: val !== "all" ? val : undefined,
+      page: 1,
+      limit: actualsPagination.itemsPerPage,
+      search: ""
+    }));
+    dispatch(fetchMetrics({
+      location: val !== "all" ? val : undefined,
+      page: 1,
+      limit: metricsPagination.itemsPerPage,
+      search: ""
+    }));
+  };
+
+  // Helper to get location name
+  const getLocationName = (locData: string | { _id: string; name: string } | undefined) => {
+    if (!locData) return "No Location";
+    if (typeof locData === 'object' && locData.name) return locData.name;
+    const found = locations.find((l: any) => l._id === locData);
+    return found ? found.name : "Unknown Location";
+  };
 
   // Show error toast if there's an error
   useEffect(() => {
@@ -154,12 +372,18 @@ export default function CostingPerformance() {
       toast.error("Product ID required");
       return;
     }
+
+    if (!stdForm.location) {
+      toast.error("Location required");
+      return;
+    }
     
     try {
       // Clean and format the data before sending
       const cleanedData = {
         productId: stdForm.productId,
         productName: stdForm.productName || undefined,
+        location: stdForm.location, // ✅ ADD LOCATION
         unitQty: Number(stdForm.unitQty) || 1,
         material: Number(stdForm.material) || 0,
         labour: Number(stdForm.labour) || 0,
@@ -217,6 +441,10 @@ export default function CostingPerformance() {
       toast.error("Produced Qty required");
       return;
     }
+    if (!actForm.location) {
+      toast.error("Location required");
+      return;
+    }
     
     try {
       // Clean and format the data before sending
@@ -224,6 +452,7 @@ export default function CostingPerformance() {
         productId: actForm.productId,
         workOrderId: actForm.workOrderId || undefined,
         batchNo: actForm.batchNo || undefined,
+        location: actForm.location, // ✅ ADD LOCATION
         producedQty: Number(actForm.producedQty),
         material: Number(actForm.material) || 0,
         labour: Number(actForm.labour) || 0,
@@ -280,11 +509,16 @@ export default function CostingPerformance() {
       toast.error("Date required");
       return;
     }
+    if (!metricForm.location) {
+      toast.error("Location required");
+      return;
+    }
     
     try {
       // Clean and format the data before sending
       const cleanedData = {
         productId: metricForm.productId || undefined,
+        location: metricForm.location, // ✅ ADD LOCATION
         date: metricForm.date,
         yieldPct: metricForm.yieldPct ? Number(metricForm.yieldPct) : undefined,
         scrapPct: metricForm.scrapPct ? Number(metricForm.scrapPct) : undefined,
@@ -432,7 +666,6 @@ export default function CostingPerformance() {
     // compare planned (sum of standards for produced qty) vs actual cost
     const planned = sum(actualsWithVariance.map((a) => a.standardTotal || 0));
     const actual = sum(actualsWithVariance.map((a) => a.actualTotal || 0));
-    const used = Math.min(actual, planned);
     const remaining = Math.max(0, planned - actual);
     return [
       { name: "Actual", value: actual },
@@ -442,15 +675,15 @@ export default function CostingPerformance() {
 
   /* --------------- small UI helpers --------------- */
   const openNewStandard = () => {
-    setStdForm({});
+    setStdForm({ location: isLocationRestricted ? userProfile?.location : "" });
     setStdDialogOpen(true);
   };
   const openNewActual = () => {
-    setActForm({ producedQty: 0 });
+    setActForm({ producedQty: 0, location: isLocationRestricted ? userProfile?.location : "" });
     setActDialogOpen(true);
   };
   const openNewMetric = () => {
-    setMetricForm({ date: new Date().toISOString().slice(0, 10) });
+    setMetricForm({ date: new Date().toISOString().slice(0, 10), location: isLocationRestricted ? userProfile?.location : "" });
     setMetricDialogOpen(true);
   };
 
@@ -473,7 +706,27 @@ export default function CostingPerformance() {
           <p className="text-muted-foreground mt-1">Standard vs Actual costing, variance analysis, and production KPIs.</p>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex items-center gap-4">
+          {/* ✅ LOCATION FILTER */}
+          <Select 
+            disabled={isLocationRestricted} 
+            value={locationFilter} 
+            onValueChange={handleLocationFilterChange}
+          >
+            <SelectTrigger className="w-48">
+              <MapPin className="w-4 h-4 mr-2" />
+              <SelectValue placeholder="Filter Location" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Locations</SelectItem>
+              {locations.map((loc: any) => (
+                <SelectItem key={loc._id} value={loc._id}>
+                  {loc.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           <Button
             className="w-full"
             disabled={!canCreate && !canEdit} // or choose canEdit only
@@ -489,7 +742,7 @@ export default function CostingPerformance() {
         </div>
       </div>
 
-      <Tabs value={tab} onValueChange={setTab}>
+      <Tabs value={tab} onValueChange={(value) => setTab(value as "overview" | "standards" | "actuals" | "metrics")}>
         <TabsList className="flex gap-2">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="standards">Standards</TabsTrigger>
@@ -561,13 +814,25 @@ export default function CostingPerformance() {
 
         <TabsContent value="standards">
           <div className="flex items-center justify-between mb-4 gap-2">
-            <h2 className="text-xl font-semibold">Standard Costs</h2>
-            <Button
-              disabled={!canCreate}
-              onClick={() => canCreate && openNewStandard()}
-              className={canCreate ? "" : "opacity-50 cursor-not-allowed"}
-            >
-              <Plus className="mr-2" />New Standard</Button>
+            <h2 className="text-xl font-semibold">Standard Costs ({standardsPagination.totalItems})</h2>
+            <div className="flex items-center gap-4">
+              <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search products..."
+                  value={standardsSearch}
+                  onChange={(e) => handleStandardsSearch(e.target.value)}
+                  className="pl-8 w-64"
+                />
+              </div>
+              <Button
+                disabled={!canCreate}
+                onClick={() => canCreate && openNewStandard()}
+                className={canCreate ? "" : "opacity-50 cursor-not-allowed"}
+              >
+                <Plus className="mr-2" />New Standard
+              </Button>
+            </div>
           </div>
 
           <Card>
@@ -576,58 +841,93 @@ export default function CostingPerformance() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Product</TableHead>
+                    <TableHead>Location</TableHead>
                     <TableHead>Per Unit (material/labour/machine/overhead)</TableHead>
                     <TableHead>Updated</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {standards.map((s) => (
-                    <TableRow key={s._id}>
-                      <TableCell>{s.productId} {s.productName ? `— ${s.productName}` : ""}</TableCell>
-                      <TableCell>
-                        ₹{((s.material + s.labour + s.machine + s.overheads) || 0).toFixed(2)}<div className="text-sm text-muted-foreground">
-                          M:{s.material} L:{s.labour} Mc:{s.machine} O:{s.overheads}
-                        </div>
-                      </TableCell>
-                      <TableCell>{s.updatedAt ? new Date(s.updatedAt).toLocaleString() : "—"}</TableCell>
-                      <TableCell className="flex gap-2">
-                        <Button
-                          className="w-full"
-                          disabled={!canEdit}
-                          onClick={() => canEdit && editStandard(s._id)}
-                        >
-                          <Edit2 className="mr-2" />Edit
-                        </Button>
-
-                        <Button
-                          className="w-full"
-                          disabled={!canDelete}
-                          onClick={() => canDelete && deleteStandardHandler(s._id)}
-                        >
-                          <Trash2 className="mr-2" />Delete
-                        </Button>
-
+                  {standards.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center py-8">
+                        {loading ? "Loading..." : "No standards found"}
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    standards.map((s) => (
+                      <TableRow key={s._id}>
+                        <TableCell>{s.productId} {s.productName ? `— ${s.productName}` : ""}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="flex items-center gap-1">
+                            <MapPin className="w-3 h-3" />
+                            {getLocationName((s as any).location)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          ₹{((s.material + s.labour + s.machine + s.overheads) || 0).toFixed(2)}<div className="text-sm text-muted-foreground">
+                            M:{s.material} L:{s.labour} Mc:{s.machine} O:{s.overheads}
+                          </div>
+                        </TableCell>
+                        <TableCell>{s.updatedAt ? new Date(s.updatedAt).toLocaleString() : "—"}</TableCell>
+                        <TableCell className="flex gap-2">
+                          <Button
+                            className="w-full"
+                            disabled={!canEdit}
+                            onClick={() => canEdit && editStandard(s._id)}
+                          >
+                            <Edit2 className="mr-2" />Edit
+                          </Button>
+
+                          <Button
+                            className="w-full"
+                            disabled={!canDelete}
+                            onClick={() => canDelete && deleteStandardHandler(s._id)}
+                          >
+                            <Trash2 className="mr-2" />Delete
+                          </Button>
+
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
+
+              {/* Pagination for Standards */}
+              <Pagination
+                currentPage={standardsPagination.currentPage}
+                totalPages={standardsPagination.totalPages}
+                totalItems={standardsPagination.totalItems}
+                itemsPerPage={standardsPagination.itemsPerPage}
+                onPageChange={handleStandardsPageChange}
+                onItemsPerPageChange={handleStandardsItemsPerPageChange}
+              />
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="actuals">
           <div className="flex items-center justify-between mb-4 gap-2">
-            <h2 className="text-xl font-semibold">Actual Costs (Production Runs)</h2>
-            <Button
-              className="w-full md:w-48"
-              disabled={!canCreate}
-              onClick={() => canCreate && openNewActual()}
-            >
-              <Plus className="mr-2" />New Actual
-            </Button>
-
+            <h2 className="text-xl font-semibold">Actual Costs (Production Runs) ({actualsPagination.totalItems})</h2>
+            <div className="flex items-center gap-4">
+              <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search products, work orders..."
+                  value={actualsSearch}
+                  onChange={(e) => handleActualsSearch(e.target.value)}
+                  className="pl-8 w-64"
+                />
+              </div>
+              <Button
+                className="w-full md:w-48"
+                disabled={!canCreate}
+                onClick={() => canCreate && openNewActual()}
+              >
+                <Plus className="mr-2" />New Actual
+              </Button>
+            </div>
           </div>
 
           <Card>
@@ -637,6 +937,7 @@ export default function CostingPerformance() {
                   <TableRow>
                     <TableHead>WO / Batch</TableHead>
                     <TableHead>Product</TableHead>
+                    <TableHead>Location</TableHead>
                     <TableHead>Qty</TableHead>
                     <TableHead>Actual vs Std (₹ / %)</TableHead>
                     <TableHead>Time (hrs)</TableHead>
@@ -644,50 +945,87 @@ export default function CostingPerformance() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {actualsWithVariance.map((a) => (
-                    <TableRow key={a._id}>
-                      <TableCell>{a.workOrderId || a.batchNo || a._id}</TableCell>
-                      <TableCell>{a.productId}</TableCell>
-                      <TableCell>{a.producedQty}</TableCell>
-                      <TableCell>
-                        ₹{(a.actualTotal || 0).toFixed(2)} vs ₹{(a.standardTotal || 0).toFixed(2)} <div className="text-sm">{(a.variancePct || 0).toFixed(2)}%</div>
-                      </TableCell>
-                      <TableCell>{a.durationHours ?? "—"}</TableCell>
-                      <TableCell className="flex gap-2">
-                        <Button
-                          className="w-full"
-                          disabled={!canEdit}
-                          onClick={() => canEdit && editActual(a._id)}
-                        >
-                          <Edit2 className="mr-2" />Edit
-                        </Button>
-
-                        <Button
-                          className="w-full"
-                          disabled={!canDelete}
-                          onClick={() => canDelete && deleteActualHandler(a._id)}
-                        >
-                          <Trash2 className="mr-2" />Delete
-                        </Button>
-
+                  {actualsWithVariance.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8">
+                        {loading ? "Loading..." : "No actual costs found"}
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    actualsWithVariance.map((a) => (
+                      <TableRow key={a._id}>
+                        <TableCell>{a.workOrderId || a.batchNo || a._id}</TableCell>
+                        <TableCell>{a.productId}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="flex items-center gap-1">
+                            <MapPin className="w-3 h-3" />
+                            {getLocationName((a as any).location)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{a.producedQty}</TableCell>
+                        <TableCell>
+                          ₹{(a.actualTotal || 0).toFixed(2)} vs ₹{(a.standardTotal || 0).toFixed(2)} <div className="text-sm">{(a.variancePct || 0).toFixed(2)}%</div>
+                        </TableCell>
+                        <TableCell>{a.durationHours ?? "—"}</TableCell>
+                        <TableCell className="flex gap-2">
+                          <Button
+                            className="w-full"
+                            disabled={!canEdit}
+                            onClick={() => canEdit && editActual(a._id)}
+                          >
+                            <Edit2 className="mr-2" />Edit
+                          </Button>
+
+                          <Button
+                            className="w-full"
+                            disabled={!canDelete}
+                            onClick={() => canDelete && deleteActualHandler(a._id)}
+                          >
+                            <Trash2 className="mr-2" />Delete
+                          </Button>
+
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
+
+              {/* Pagination for Actuals */}
+              <Pagination
+                currentPage={actualsPagination.currentPage}
+                totalPages={actualsPagination.totalPages}
+                totalItems={actualsPagination.totalItems}
+                itemsPerPage={actualsPagination.itemsPerPage}
+                onPageChange={handleActualsPageChange}
+                onItemsPerPageChange={handleActualsItemsPerPageChange}
+              />
             </CardContent>
           </Card>
         </TabsContent>
+                      
 
         <TabsContent value="metrics">
           <div className="flex items-center justify-between mb-4 gap-2">
-            <h2 className="text-xl font-semibold">Performance Metrics</h2>
-            <Button
-              disabled={!canCreate}
-              onClick={() => canCreate && openNewMetric()}
-              className={canCreate ? "" : "opacity-50 cursor-not-allowed"}
-            >
-              <Plus className="mr-2" />New Metric</Button>
+            <h2 className="text-xl font-semibold">Performance Metrics ({metricsPagination.totalItems})</h2>
+            <div className="flex items-center gap-4">
+              <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search products, notes..."
+                  value={metricsSearch}
+                  onChange={(e) => handleMetricsSearch(e.target.value)}
+                  className="pl-8 w-64"
+                />
+              </div>
+              <Button
+                disabled={!canCreate}
+                onClick={() => canCreate && openNewMetric()}
+                className={canCreate ? "" : "opacity-50 cursor-not-allowed"}
+              >
+                <Plus className="mr-2" />New Metric
+              </Button>
+            </div>
           </div>
 
           <Card>
@@ -697,6 +1035,7 @@ export default function CostingPerformance() {
                   <TableRow>
                     <TableHead>Date</TableHead>
                     <TableHead>Product</TableHead>
+                    <TableHead>Location</TableHead>
                     <TableHead>Yield %</TableHead>
                     <TableHead>Scrap %</TableHead>
                     <TableHead>Machine Util %</TableHead>
@@ -705,36 +1044,60 @@ export default function CostingPerformance() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {metrics.map((m) => (
-                    <TableRow key={m._id}>
-                      <TableCell>{m.date}</TableCell>
-                      <TableCell>{m.productId || "—"}</TableCell>
-                      <TableCell>{m.yieldPct ?? "—"}</TableCell>
-                      <TableCell>{m.scrapPct ?? "—"}</TableCell>
-                      <TableCell>{m.machineUtilPct ?? "—"}</TableCell>
-                      <TableCell>{m.labourEffPct ?? "—"}</TableCell>
-                      <TableCell className="flex gap-2">
-                        <Button
-                          disabled={!canEdit}
-                          onClick={() => canEdit && editMetric(m._id)}
-                          className={canEdit ? "" : "opacity-50 cursor-not-allowed"}
-                        >
-                          Edit
-                        </Button>
-
-                        <Button
-                          disabled={!canDelete}
-                          onClick={() => canDelete && deleteMetricHandler(m._id)}
-                          className={canDelete ? "" : "opacity-50 cursor-not-allowed"}
-                        >
-                          Delete
-                        </Button>
-
+                  {metrics.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-8">
+                        {loading ? "Loading..." : "No metrics found"}
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    metrics.map((m) => (
+                      <TableRow key={m._id}>
+                        <TableCell>{m.date}</TableCell>
+                        <TableCell>{m.productId || "—"}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="flex items-center gap-1">
+                            <MapPin className="w-3 h-3" />
+                            {getLocationName((m as any).location)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{m.yieldPct ?? "—"}</TableCell>
+                        <TableCell>{m.scrapPct ?? "—"}</TableCell>
+                        <TableCell>{m.machineUtilPct ?? "—"}</TableCell>
+                        <TableCell>{m.labourEffPct ?? "—"}</TableCell>
+                        <TableCell className="flex gap-2">
+                          <Button
+                            disabled={!canEdit}
+                            onClick={() => canEdit && editMetric(m._id)}
+                            className={canEdit ? "" : "opacity-50 cursor-not-allowed"}
+                          >
+                            Edit
+                          </Button>
+
+                          <Button
+                            disabled={!canDelete}
+                            onClick={() => canDelete && deleteMetricHandler(m._id)}
+                            className={canDelete ? "" : "opacity-50 cursor-not-allowed"}
+                          >
+                            Delete
+                          </Button>
+
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
+
+              {/* Pagination for Metrics */}
+              <Pagination
+                currentPage={metricsPagination.currentPage}
+                totalPages={metricsPagination.totalPages}
+                totalItems={metricsPagination.totalItems}
+                itemsPerPage={metricsPagination.itemsPerPage}
+                onPageChange={handleMetricsPageChange}
+                onItemsPerPageChange={handleMetricsItemsPerPageChange}
+              />
             </CardContent>
           </Card>
         </TabsContent>
@@ -749,6 +1112,63 @@ export default function CostingPerformance() {
             <Input value={stdForm.productId || ""} onChange={(e) => setStdForm({ ...stdForm, productId: e.target.value })} />
             <Label>Product Name</Label>
             <Input value={stdForm.productName || ""} onChange={(e) => setStdForm({ ...stdForm, productName: e.target.value })} />
+            
+            {/* ✅ LOCATION FIELD */}
+            <div className="flex flex-col gap-2">
+              <Label>Location *</Label>
+              <Popover open={locationOpen} onOpenChange={setLocationOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    className="justify-between disabled:opacity-75 disabled:cursor-not-allowed"
+                    disabled={isLocationRestricted}
+                  >
+                    {stdForm.location
+                      ? locations.find((l: any) => l._id === stdForm.location)?.name
+                      : "Select Location"}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                
+                {!isLocationRestricted && (
+                  <PopoverContent className="p-0">
+                    <Command>
+                      <CommandInput placeholder="Search location..." />
+                      <CommandList>
+                        <CommandEmpty>No location found.</CommandEmpty>
+                        <CommandGroup>
+                          {locations.map((l: any) => (
+                            <CommandItem
+                              key={l._id}
+                              value={l.name}
+                              onSelect={() => {
+                                setStdForm({ ...stdForm, location: l._id });
+                                setLocationOpen(false);
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  stdForm.location === l._id ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              {l.name}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                )}
+              </Popover>
+              {isLocationRestricted && (
+                <p className="text-[10px] text-muted-foreground">
+                  *Location is fixed based on your permissions.
+                </p>
+              )}
+            </div>
+
             <Label>Unit Qty (per standard)</Label>
             <Input type="number" value={stdForm.unitQty ?? 1} onChange={(e) => setStdForm({ ...stdForm, unitQty: Number(e.target.value) })} />
             <Label>Material</Label>
@@ -781,6 +1201,62 @@ export default function CostingPerformance() {
             <Input value={actForm.workOrderId || actForm.batchNo || ""} onChange={(e) => setActForm({ ...actForm, workOrderId: e.target.value })} />
             <Label>Product ID</Label>
             <Input value={actForm.productId || ""} onChange={(e) => setActForm({ ...actForm, productId: e.target.value })} />
+            
+            {/* ✅ LOCATION FIELD */}
+            <div className="flex flex-col gap-2">
+              <Label>Location *</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    className="justify-between disabled:opacity-75 disabled:cursor-not-allowed"
+                    disabled={isLocationRestricted}
+                  >
+                    {actForm.location
+                      ? locations.find((l: any) => l._id === actForm.location)?.name
+                      : "Select Location"}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                
+                {!isLocationRestricted && (
+                  <PopoverContent className="p-0">
+                    <Command>
+                      <CommandInput placeholder="Search location..." />
+                      <CommandList>
+                        <CommandEmpty>No location found.</CommandEmpty>
+                        <CommandGroup>
+                          {locations.map((l: any) => (
+                            <CommandItem
+                              key={l._id}
+                              value={l.name}
+                              onSelect={() => {
+                                setActForm({ ...actForm, location: l._id });
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  actForm.location === l._id ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              {l.name}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                )}
+              </Popover>
+              {isLocationRestricted && (
+                <p className="text-[10px] text-muted-foreground">
+                  *Location is fixed based on your permissions.
+                </p>
+              )}
+            </div>
+
             <Label>Produced Qty</Label>
             <Input type="number" value={actForm.producedQty || 0} onChange={(e) => setActForm({ ...actForm, producedQty: Number(e.target.value) })} />
             <Label>Material Cost (total)</Label>
@@ -819,6 +1295,62 @@ export default function CostingPerformance() {
             <Input value={metricForm.date || ""} onChange={(e) => setMetricForm({ ...metricForm, date: e.target.value })} />
             <Label>Product ID (optional)</Label>
             <Input value={metricForm.productId || ""} onChange={(e) => setMetricForm({ ...metricForm, productId: e.target.value })} />
+            
+            {/* ✅ LOCATION FIELD */}
+            <div className="flex flex-col gap-2">
+              <Label>Location *</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    className="justify-between disabled:opacity-75 disabled:cursor-not-allowed"
+                    disabled={isLocationRestricted}
+                  >
+                    {metricForm.location
+                      ? locations.find((l: any) => l._id === metricForm.location)?.name
+                      : "Select Location"}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                
+                {!isLocationRestricted && (
+                  <PopoverContent className="p-0">
+                    <Command>
+                      <CommandInput placeholder="Search location..." />
+                      <CommandList>
+                        <CommandEmpty>No location found.</CommandEmpty>
+                        <CommandGroup>
+                          {locations.map((l: any) => (
+                            <CommandItem
+                              key={l._id}
+                              value={l.name}
+                              onSelect={() => {
+                                setMetricForm({ ...metricForm, location: l._id });
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  metricForm.location === l._id ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              {l.name}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                )}
+              </Popover>
+              {isLocationRestricted && (
+                <p className="text-[10px] text-muted-foreground">
+                  *Location is fixed based on your permissions.
+                </p>
+              )}
+            </div>
+
             <Label>Yield %</Label>
             <Input type="number" value={metricForm.yieldPct || ""} onChange={(e) => setMetricForm({ ...metricForm, yieldPct: Number(e.target.value) })} />
             <Label>Scrap %</Label>

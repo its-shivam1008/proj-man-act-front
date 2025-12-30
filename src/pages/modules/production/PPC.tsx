@@ -9,9 +9,26 @@ import { Label } from "../../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
 import { Badge } from "../../../components/ui/badge";
-import { Download, Plus, ShieldAlert } from "lucide-react";
+import { Pagination } from "../../../components/ui/pagination";
+import { Download, Plus, ShieldAlert, Search } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import { toast } from "sonner";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandInput,
+  CommandList,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+} from "@/components/ui/command";
+import { Check, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 import {
   ResponsiveContainer,
@@ -116,6 +133,7 @@ type Forecast = {
   leadTime: number;
   priority: "low" | "medium" | "high" | "critical";
   replenishmentRule: "automatic" | "manual";
+  location?: string;
   organisationId?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -128,20 +146,10 @@ type MPS = {
   period: string;
   plannedQty: number;
   status?: "planned" | "released" | "closed";
+  location?: string;
   organisationId?: string;
   createdAt?: string;
   updatedAt?: string;
-};
-
-type MrpLine = {
-  _id?: string;
-  id?: string;
-  materialId: string;
-  requiredQty: number;
-  availableQty: number;
-  shortageQty: number;
-  prCreated?: boolean;
-  organisationId?: string;
 };
 
 type PlannedOrder = {
@@ -152,6 +160,7 @@ type PlannedOrder = {
   startDate: string;
   endDate: string;
   status?: "planned" | "released" | "closed";
+  location?: string;
   organisationId?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -168,16 +177,53 @@ type WorkCenter = {
 export default function PPCDashboard() {
   const dispatch = useDispatch();
   const ppcState = useSelector((state: any) => state.ppc || {});
-  const { forecasts = [], mps = [], plannedOrders = [] } = ppcState;
+  const { 
+    forecasts = [], 
+    forecastsPagination = { total: 0, page: 1, totalPages: 0, hasNext: false, hasPrev: false },
+    mps = [], 
+    mpsPagination = { total: 0, page: 1, totalPages: 0, hasNext: false, hasPrev: false },
+    mrpPagination = { total: 0, page: 1, totalPages: 0, hasNext: false, hasPrev: false },
+    plannedOrders = [],
+    plannedOrdersPagination = { total: 0, page: 1, totalPages: 0, hasNext: false, hasPrev: false }
+  } = ppcState;
   
   // Check authentication state
   const authState = useSelector((state: any) => state.auth || {});
   const { userProfile, organisationId, isAuthenticated } = authState;
   
+  // Master data for locations
+  const { locations } = useSelector((state: any) => state.masterData);
+  
   const canView = usePermission("ppc", "view");
   const canCreate = usePermission("ppc", "create");
   const canEdit = usePermission("ppc", "edit");
   const canDelete = usePermission("ppc", "delete");
+
+  // Location filter states
+  const [locationFilter, setLocationFilter] = useState("all");
+  const [locationOpen, setLocationOpen] = useState(false);
+  
+  // Pagination states
+  const [forecastPage, setForecastPage] = useState(1);
+  const [forecastLimit, setForecastLimit] = useState(10);
+  const [forecastSearch, setForecastSearch] = useState("");
+  
+  const [mpsPage, setMpsPage] = useState(1);
+  const [mpsLimit, setMpsLimit] = useState(10);
+  const [mpsSearch, setMpsSearch] = useState("");
+  
+  const [mrpPage, setMrpPage] = useState(1);
+  const [mrpLimit, setMrpLimit] = useState(10);
+  const [mrpSearch, setMrpSearch] = useState("");
+  
+  const [plannedOrdersPage, setPlannedOrdersPage] = useState(1);
+  const [plannedOrdersLimit, setPlannedOrdersLimit] = useState(10);
+  const [plannedOrdersSearch, setPlannedOrdersSearch] = useState("");
+  
+  // Location restriction logic (same as Projects page)
+  const isLocationRestricted = 
+    userProfile?.role !== 'admin' && 
+    !!userProfile?.location;
 
   // Debug authentication
   useEffect(() => {
@@ -216,7 +262,6 @@ export default function PPCDashboard() {
   }
 
   /* ----------------------------- Data states ----------------------------- */
-  const [mrpLines, setMrpLines] = useState<MrpLine[]>([]);
   const [workCenters] = useState<WorkCenter[]>(() => safeGet(STORAGE_KEYS.WORK_CENTERS, []) || []);
   const [products, setProducts] = useState<any[]>([]);
   const items = safeGet(STORAGE_KEYS.ITEMS, []) as any[] || []; // for display
@@ -244,6 +289,12 @@ export default function PPCDashboard() {
     }
   };
 
+  // Location filter change handler
+  const handleLocationFilterChange = (val: string) => {
+    setLocationFilter(val);
+    // You can add API calls here to filter data by location if needed
+  };
+
   // Helper function to get product name by ID
   const getProductName = (productId: string) => {
     const product = products.find((p) => p._id === productId);
@@ -258,13 +309,16 @@ export default function PPCDashboard() {
     console.log("PPC: Is authenticated:", isAuthenticated);
     console.log("PPC: Organisation ID from Redux:", organisationId);
     
+    // Fetch master data
+    dispatch(fetchMasterData("location") as any);
+    
     // Only load data if user is authenticated
     if (isAuthenticated && organisationId) {
       console.log("PPC: Loading data...");
-      dispatch(fetchForecasts() as any);
-      dispatch(fetchMPS() as any);
-      dispatch(fetchPlannedOrders() as any);
-      dispatch(fetchMRPLines() as any); // Fetch MRP lines on page load
+      dispatch(fetchForecasts({ page: 1, limit: 10 }) as any);
+      dispatch(fetchMPS({ page: 1, limit: 10 }) as any);
+      dispatch(fetchPlannedOrders({ page: 1, limit: 10 }) as any);
+      dispatch(fetchMRPLines({ page: 1, limit: 10 }) as any); // Fetch MRP lines on page load
       console.log("PPC: About to fetch products...");
       fetchProducts(); // Fetch products list
     } else {
@@ -274,13 +328,110 @@ export default function PPCDashboard() {
     }
   }, [dispatch, isAuthenticated, organisationId]);
 
-  // Update local MRP lines when Redux state changes
-  const reduxMrpLines = useSelector((state: any) => state.ppc?.mrpLines || []);
+  // Auto-set location filter for restricted users
   useEffect(() => {
-    if (reduxMrpLines && reduxMrpLines.length > 0) {
-      setMrpLines(reduxMrpLines);
+    if (isLocationRestricted && userProfile?.location) {
+      setLocationFilter(userProfile.location);
     }
-  }, [reduxMrpLines]);
+  }, [isLocationRestricted, userProfile]);
+
+  // Fetch data when location filter changes
+  useEffect(() => {
+    if (isAuthenticated && organisationId) {
+      const locationParam = locationFilter === "all" ? undefined : locationFilter;
+      
+      // Re-fetch all data with location filter and pagination
+      dispatch(fetchForecasts({ 
+        location: locationParam, 
+        page: forecastPage, 
+        limit: forecastLimit, 
+        search: forecastSearch 
+      }) as any);
+      dispatch(fetchMPS({ 
+        location: locationParam, 
+        page: mpsPage, 
+        limit: mpsLimit, 
+        search: mpsSearch 
+      }) as any);
+      dispatch(fetchPlannedOrders({ 
+        location: locationParam, 
+        page: plannedOrdersPage, 
+        limit: plannedOrdersLimit, 
+        search: plannedOrdersSearch 
+      }) as any);
+      dispatch(fetchMRPLines({ 
+        location: locationParam, 
+        page: mrpPage, 
+        limit: mrpLimit, 
+        search: mrpSearch 
+      }) as any);
+    }
+  }, [locationFilter, isAuthenticated, organisationId, dispatch, 
+      forecastPage, forecastLimit, forecastSearch,
+      mpsPage, mpsLimit, mpsSearch,
+      mrpPage, mrpLimit, mrpSearch,
+      plannedOrdersPage, plannedOrdersLimit, plannedOrdersSearch]);
+
+  // Update local MRP lines when Redux state changes - use mrpLines from Redux directly
+  const mrpLines = useSelector((state: any) => state.ppc?.mrpLines || []);
+
+  // Pagination handlers
+  const handleForecastPageChange = (page: number) => {
+    setForecastPage(page);
+  };
+
+  const handleForecastLimitChange = (limit: number) => {
+    setForecastLimit(limit);
+    setForecastPage(1); // Reset to first page when changing limit
+  };
+
+  const handleMpsPageChange = (page: number) => {
+    setMpsPage(page);
+  };
+
+  const handleMpsLimitChange = (limit: number) => {
+    setMpsLimit(limit);
+    setMpsPage(1);
+  };
+
+  const handleMrpPageChange = (page: number) => {
+    setMrpPage(page);
+  };
+
+  const handleMrpLimitChange = (limit: number) => {
+    setMrpLimit(limit);
+    setMrpPage(1);
+  };
+
+  const handlePlannedOrdersPageChange = (page: number) => {
+    setPlannedOrdersPage(page);
+  };
+
+  const handlePlannedOrdersLimitChange = (limit: number) => {
+    setPlannedOrdersLimit(limit);
+    setPlannedOrdersPage(1);
+  };
+
+  // Search handlers with debounce
+  const handleForecastSearch = (value: string) => {
+    setForecastSearch(value);
+    setForecastPage(1); // Reset to first page when searching
+  };
+
+  const handleMpsSearch = (value: string) => {
+    setMpsSearch(value);
+    setMpsPage(1);
+  };
+
+  const handleMrpSearch = (value: string) => {
+    setMrpSearch(value);
+    setMrpPage(1);
+  };
+
+  const handlePlannedOrdersSearch = (value: string) => {
+    setPlannedOrdersSearch(value);
+    setPlannedOrdersPage(1);
+  };
 
   /* ----------------------------- UI/CRUD states: Forecast ----------------------------- */
   const [forecastDialogOpen, setForecastDialogOpen] = useState(false);
@@ -348,14 +499,18 @@ export default function PPCDashboard() {
       suggestedReplenishment: 0, 
       leadTime: 0,
       priority: "low",
-      replenishmentRule: "automatic"
+      replenishmentRule: "automatic",
+      location: isLocationRestricted ? userProfile.location : undefined
     }); 
     setForecastDialogOpen(true); 
   };
   
   const openEditForecast = (f: Forecast) => { 
     setEditingForecast(f); 
-    setForecastForm({ ...f }); 
+    setForecastForm({ 
+      ...f,
+      location: f.location || (isLocationRestricted ? userProfile.location : undefined)
+    }); 
     setForecastDialogOpen(true); 
   };
   
@@ -507,13 +662,21 @@ export default function PPCDashboard() {
   /* ----------------------------- MPS CRUD ----------------------------- */
   const openNewMps = () => { 
     setEditingMps(null); 
-    setMpsForm({ productId: "", period: "", plannedQty: 0 }); 
+    setMpsForm({ 
+      productId: "", 
+      period: "", 
+      plannedQty: 0,
+      location: isLocationRestricted ? userProfile.location : undefined
+    }); 
     setMpsDialogOpen(true); 
   };
   
   const openEditMps = (x: MPS) => { 
     setEditingMps(x); 
-    setMpsForm({ ...x }); 
+    setMpsForm({ 
+      ...x,
+      location: x.location || (isLocationRestricted ? userProfile.location : undefined)
+    }); 
     setMpsDialogOpen(true); 
   };
   
@@ -589,7 +752,13 @@ export default function PPCDashboard() {
   const createPrForLine = async (id: string) => {
     try {
       await axios.post(`/ppc/mrp/${id}/create-pr`);
-      setMrpLines(mrpLines.map((l) => l._id === id || l.id === id ? { ...l, prCreated: true } : l));
+      // Re-fetch MRP lines to get updated data
+      dispatch(fetchMRPLines({ 
+        location: locationFilter === "all" ? undefined : locationFilter, 
+        page: mrpPage, 
+        limit: mrpLimit, 
+        search: mrpSearch 
+      }) as any);
       toast.success("Purchase Requisition created successfully");
     } catch (error: any) {
       toast.error("Failed to create Purchase Requisition");
@@ -600,13 +769,13 @@ export default function PPCDashboard() {
   const updateMrpAvailable = async (id: string, val: number) => {
     try {
       await axios.put(`/ppc/mrp/${id}`, { availableQty: val });
-      setMrpLines(mrpLines.map((l) => 
-        (l._id === id || l.id === id) ? { 
-          ...l, 
-          availableQty: val, 
-          shortageQty: Math.max(0, l.requiredQty - val) 
-        } : l
-      ));
+      // Re-fetch MRP lines to get updated data
+      dispatch(fetchMRPLines({ 
+        location: locationFilter === "all" ? undefined : locationFilter, 
+        page: mrpPage, 
+        limit: mrpLimit, 
+        search: mrpSearch 
+      }) as any);
     } catch (error: any) {
       toast.error("Failed to update MRP line");
       console.error(error);
@@ -620,14 +789,18 @@ export default function PPCDashboard() {
       productId: "", 
       quantity: 0, 
       startDate: new Date().toISOString().slice(0, 10), 
-      endDate: new Date().toISOString().slice(0, 10) 
+      endDate: new Date().toISOString().slice(0, 10),
+      location: isLocationRestricted ? userProfile.location : undefined
     }); 
     setPoDialogOpen(true); 
   };
   
   const openEditPo = (p: PlannedOrder) => { 
     setEditingPo(p); 
-    setPoForm({ ...p }); 
+    setPoForm({ 
+      ...p,
+      location: p.location || (isLocationRestricted ? userProfile.location : undefined)
+    }); 
     setPoDialogOpen(true); 
   };
   
@@ -723,8 +896,8 @@ export default function PPCDashboard() {
   }, [plannedOrders, routings, workCenters]);
 
   /* ----------------------------- Alerts ----------------------------- */
-  const shortages = mrpLines.filter((l) => l.shortageQty > 0);
-  const overloaded = crpLoadByWC.filter((l) => l.utilizationPercent > 100);
+  const shortages = mrpLines.filter((l: any) => l.shortageQty > 0);
+  const overloaded = crpLoadByWC.filter((l: any) => l.utilizationPercent > 100);
 
   /* ----------------------------- Charts data helpers ----------------------------- */
   const forecastTrend = useMemo(() => {
@@ -743,7 +916,7 @@ export default function PPCDashboard() {
     return Object.keys(map).sort().map((p) => ({ period: p, qty: map[p] }));
   }, [mps]);
 
-  const crpChartData = useMemo(() => crpLoadByWC.map((r) => ({ name: r.workCenterName, utilization: r.utilizationPercent })), [crpLoadByWC]);
+  const crpChartData = useMemo(() => crpLoadByWC.map((r: any) => ({ name: r.workCenterName, utilization: r.utilizationPercent })), [crpLoadByWC]);
 
   /* ----------------------------- UI ----------------------------- */
   return (
@@ -759,9 +932,48 @@ export default function PPCDashboard() {
         </div>
 
         <div className="flex gap-2">
-          <Button onClick={() => { /* quick export example: export MRP */ const csv = mrpLines.map((r) => `${r.materialId},${r.requiredQty},${r.availableQty},${r.shortageQty}`).join("\n"); const blob = new Blob([csv], { type: "text/csv" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `mrp_${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(url); }}>
+          <Button onClick={() => { 
+            /* quick export example: export MRP */ 
+            const csv = mrpLines.map((r: any) => `${r.materialId},${r.requiredQty},${r.availableQty},${r.shortageQty}`).join("\n"); 
+            const blob = new Blob([csv], { type: "text/csv" }); 
+            const url = URL.createObjectURL(blob); 
+            const a = document.createElement("a"); 
+            a.href = url; 
+            a.download = `mrp_${new Date().toISOString().slice(0, 10)}.csv`; 
+            a.click(); 
+            URL.revokeObjectURL(url); 
+          }}>
             <Download className="mr-2 h-4 w-4" /> Export MRP</Button>
         </div>
+      </div>
+
+      {/* Location Filter */}
+      <div className="flex flex-col md:flex-row items-center gap-4">
+        <div className="relative w-full md:flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <Input
+            placeholder="Search forecasts, MPS, orders..."
+            className="pl-10"
+            // You can add search functionality here if needed
+          />
+        </div>
+        <Select 
+          disabled={isLocationRestricted} 
+          value={locationFilter} 
+          onValueChange={handleLocationFilterChange}
+        >
+          <SelectTrigger className="w-full md:w-48">
+            <SelectValue placeholder="Filter Location" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Locations</SelectItem>
+            {(locations || []).map((loc: any) => (
+              <SelectItem key={loc._id} value={loc._id}>
+                {loc.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <Card>
@@ -810,12 +1022,25 @@ export default function PPCDashboard() {
                 </Card>
 
                 <Card>
-                  <CardHeader><CardTitle>Forecast List</CardTitle></CardHeader>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle>Forecast List</CardTitle>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          placeholder="Search forecasts..."
+                          value={forecastSearch}
+                          onChange={(e) => handleForecastSearch(e.target.value)}
+                          className="w-64"
+                        />
+                      </div>
+                    </div>
+                  </CardHeader>
                   <CardContent>
                     <Table>
                       <TableHeader>
                         <TableRow>
                           <TableHead>Product</TableHead>
+                          <TableHead>Location</TableHead>
                           <TableHead>Demand Forecast</TableHead>
                           <TableHead>Current Stock</TableHead>
                           <TableHead>Suggested Replenishment</TableHead>
@@ -827,6 +1052,12 @@ export default function PPCDashboard() {
                         {(forecasts || []).map((f: any) => (
                           <TableRow key={f._id || f.id}>
                             <TableCell>{getProductName(f.productId)}</TableCell>
+                            <TableCell>
+                              {f.location 
+                                ? (locations || []).find((l: any) => l._id === f.location)?.name || "Unknown"
+                                : "N/A"
+                              }
+                            </TableCell>
                             <TableCell>{f.demandForecast}</TableCell>
                             <TableCell>{f.currentStock}</TableCell>
                             <TableCell>{f.suggestedReplenishment}</TableCell>
@@ -856,6 +1087,16 @@ export default function PPCDashboard() {
                       </TableBody>
                     </Table>
                     {(forecasts || []).length === 0 && <div className="text-center text-muted-foreground py-6">No forecasts yet.</div>}
+                    
+                    {/* Forecast Pagination */}
+                    <Pagination
+                      currentPage={forecastsPagination.page}
+                      totalPages={forecastsPagination.totalPages}
+                      totalItems={forecastsPagination.total}
+                      itemsPerPage={forecastLimit}
+                      onPageChange={handleForecastPageChange}
+                      onItemsPerPageChange={handleForecastLimitChange}
+                    />
                   </CardContent>
                 </Card>
               </div>
@@ -902,12 +1143,25 @@ export default function PPCDashboard() {
                 </Card>
 
                 <Card>
-                  <CardHeader><CardTitle>MPS Table</CardTitle></CardHeader>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle>MPS Table</CardTitle>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          placeholder="Search MPS..."
+                          value={mpsSearch}
+                          onChange={(e) => handleMpsSearch(e.target.value)}
+                          className="w-64"
+                        />
+                      </div>
+                    </div>
+                  </CardHeader>
                   <CardContent>
                     <Table>
                       <TableHeader>
                         <TableRow>
                           <TableHead>Product</TableHead>
+                          <TableHead>Location</TableHead>
                           <TableHead>Period</TableHead>
                           <TableHead>Qty</TableHead>
                           <TableHead>Status</TableHead>
@@ -918,6 +1172,12 @@ export default function PPCDashboard() {
                         {(mps || []).map((r: any) => (
                           <TableRow key={r._id || r.id}>
                             <TableCell>{getProductName(r.productId)}</TableCell>
+                            <TableCell>
+                              {r.location 
+                                ? (locations || []).find((l: any) => l._id === r.location)?.name || "Unknown"
+                                : "N/A"
+                              }
+                            </TableCell>
                             <TableCell>{r.period}</TableCell>
                             <TableCell>{r.plannedQty}</TableCell>
                             <TableCell><Badge>{r.status || "planned"}</Badge></TableCell>
@@ -946,6 +1206,16 @@ export default function PPCDashboard() {
                       </TableBody>
                     </Table>
                     {(mps || []).length === 0 && <div className="text-center text-muted-foreground py-6">No MPS plans defined.</div>}
+                    
+                    {/* MPS Pagination */}
+                    <Pagination
+                      currentPage={mpsPagination.page}
+                      totalPages={mpsPagination.totalPages}
+                      totalItems={mpsPagination.total}
+                      itemsPerPage={mpsLimit}
+                      onPageChange={handleMpsPageChange}
+                      onItemsPerPageChange={handleMpsLimitChange}
+                    />
                   </CardContent>
                 </Card>
               </div>
@@ -969,7 +1239,19 @@ export default function PPCDashboard() {
               </div>
 
               <Card>
-                <CardHeader><CardTitle>MRP Lines & Purchase Reqs</CardTitle></CardHeader>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle>MRP Lines & Purchase Reqs</CardTitle>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        placeholder="Search MRP lines..."
+                        value={mrpSearch}
+                        onChange={(e) => handleMrpSearch(e.target.value)}
+                        className="w-64"
+                      />
+                    </div>
+                  </div>
+                </CardHeader>
                 <CardContent>
                   <Table>
                     <TableHeader>
@@ -982,7 +1264,7 @@ export default function PPCDashboard() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {mrpLines.map((l) => (
+                      {mrpLines.map((l: any) => (
                         <TableRow key={l._id || l.id}>
                           <TableCell>{(items.find((it: any) => it.id === l.materialId)?.name) || l.materialId}</TableCell>
                           <TableCell>{l.requiredQty}</TableCell>
@@ -1012,6 +1294,16 @@ export default function PPCDashboard() {
                     </TableBody>
                   </Table>
                   {mrpLines.length === 0 && <div className="text-center text-muted-foreground py-6">No MRP lines — run MRP first.</div>}
+                  
+                  {/* MRP Pagination */}
+                  <Pagination
+                    currentPage={mrpPagination.page}
+                    totalPages={mrpPagination.totalPages}
+                    totalItems={mrpPagination.total}
+                    itemsPerPage={mrpLimit}
+                    onPageChange={handleMrpPageChange}
+                    onItemsPerPageChange={handleMrpLimitChange}
+                  />
                 </CardContent>
               </Card>
             </TabsContent>
@@ -1055,7 +1347,7 @@ export default function PPCDashboard() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {crpLoadByWC.map((r) => (
+                        {crpLoadByWC.map((r: any) => (
                           <TableRow key={r.workCenterId}>
                             <TableCell>{r.workCenterName}</TableCell>
                             <TableCell>{(r.loadMinutes / 60).toFixed(2)}</TableCell>
@@ -1099,12 +1391,25 @@ export default function PPCDashboard() {
               </div>
 
               <Card>
-                <CardHeader><CardTitle>Planned Orders</CardTitle></CardHeader>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle>Planned Orders</CardTitle>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        placeholder="Search planned orders..."
+                        value={plannedOrdersSearch}
+                        onChange={(e) => handlePlannedOrdersSearch(e.target.value)}
+                        className="w-64"
+                      />
+                    </div>
+                  </div>
+                </CardHeader>
                 <CardContent>
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Product</TableHead>
+                        <TableHead>Location</TableHead>
                         <TableHead>Qty</TableHead>
                         <TableHead>Start</TableHead>
                         <TableHead>End</TableHead>
@@ -1116,6 +1421,12 @@ export default function PPCDashboard() {
                       {(plannedOrders || []).map((o: any) => (
                         <TableRow key={o._id || o.id}>
                           <TableCell>{getProductName(o.productId)}</TableCell>
+                          <TableCell>
+                            {o.location 
+                              ? (locations || []).find((l: any) => l._id === o.location)?.name || "Unknown"
+                              : "N/A"
+                            }
+                          </TableCell>
                           <TableCell>{o.quantity}</TableCell>
                           <TableCell>{o.startDate}</TableCell>
                           <TableCell>{o.endDate}</TableCell>
@@ -1147,6 +1458,16 @@ export default function PPCDashboard() {
                     </TableBody>
                   </Table>
                   {(plannedOrders || []).length === 0 && <div className="text-center text-muted-foreground py-6">No planned orders yet.</div>}
+                  
+                  {/* Planned Orders Pagination */}
+                  <Pagination
+                    currentPage={plannedOrdersPagination.page}
+                    totalPages={plannedOrdersPagination.totalPages}
+                    totalItems={plannedOrdersPagination.total}
+                    itemsPerPage={plannedOrdersLimit}
+                    onPageChange={handlePlannedOrdersPageChange}
+                    onItemsPerPageChange={handlePlannedOrdersLimitChange}
+                  />
                 </CardContent>
               </Card>
             </TabsContent>
@@ -1181,6 +1502,61 @@ export default function PPCDashboard() {
                 )}
               </SelectContent>
             </Select>
+
+            {/* Location Field */}
+            <Label>Location</Label>
+            <Popover open={locationOpen} onOpenChange={setLocationOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  className="justify-between disabled:opacity-75 disabled:cursor-not-allowed"
+                  disabled={isLocationRestricted}
+                >
+                  {forecastForm.location
+                    ? (locations || []).find((l: any) => l._id === forecastForm.location)?.name
+                    : "Select Location"}
+                  <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              
+              {!isLocationRestricted && (
+                <PopoverContent className="p-0">
+                  <Command>
+                    <CommandInput placeholder="Search location..." />
+                    <CommandList>
+                      <CommandEmpty>No location found.</CommandEmpty>
+                      <CommandGroup>
+                        {(locations || []).map((l: any) => (
+                          <CommandItem
+                            key={l._id}
+                            value={l.name}
+                            onSelect={() => {
+                              setForecastForm({ ...forecastForm, location: l._id });
+                              setLocationOpen(false);
+                            }}
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                forecastForm.location === l._id ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                            {l.name}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              )}
+            </Popover>
+            {isLocationRestricted && (
+              <p className="text-[10px] text-muted-foreground">
+                *Location is fixed based on your permissions.
+              </p>
+            )}
+
             <Label>Current Stock</Label>
             <Input type="number" value={forecastForm.currentStock ?? 0} onChange={(e) => setForecastForm({ ...forecastForm, currentStock: Number(e.target.value) })} />
             <Label>Demand Forecast</Label>
@@ -1250,6 +1626,61 @@ export default function PPCDashboard() {
                 )}
               </SelectContent>
             </Select>
+
+            {/* Location Field */}
+            <Label>Location</Label>
+            <Popover open={locationOpen} onOpenChange={setLocationOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  className="justify-between disabled:opacity-75 disabled:cursor-not-allowed"
+                  disabled={isLocationRestricted}
+                >
+                  {mpsForm.location
+                    ? (locations || []).find((l: any) => l._id === mpsForm.location)?.name
+                    : "Select Location"}
+                  <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              
+              {!isLocationRestricted && (
+                <PopoverContent className="p-0">
+                  <Command>
+                    <CommandInput placeholder="Search location..." />
+                    <CommandList>
+                      <CommandEmpty>No location found.</CommandEmpty>
+                      <CommandGroup>
+                        {(locations || []).map((l: any) => (
+                          <CommandItem
+                            key={l._id}
+                            value={l.name}
+                            onSelect={() => {
+                              setMpsForm({ ...mpsForm, location: l._id });
+                              setLocationOpen(false);
+                            }}
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                mpsForm.location === l._id ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                            {l.name}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              )}
+            </Popover>
+            {isLocationRestricted && (
+              <p className="text-[10px] text-muted-foreground">
+                *Location is fixed based on your permissions.
+              </p>
+            )}
+
             <Label>Period</Label>
             <Input value={mpsForm.period || ""} onChange={(e) => setMpsForm({ ...mpsForm, period: e.target.value })} />
             <Label>Planned Qty</Label>
@@ -1291,6 +1722,61 @@ export default function PPCDashboard() {
                 )}
               </SelectContent>
             </Select>
+
+            {/* Location Field */}
+            <Label>Location</Label>
+            <Popover open={locationOpen} onOpenChange={setLocationOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  className="justify-between disabled:opacity-75 disabled:cursor-not-allowed"
+                  disabled={isLocationRestricted}
+                >
+                  {poForm.location
+                    ? (locations || []).find((l: any) => l._id === poForm.location)?.name
+                    : "Select Location"}
+                  <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              
+              {!isLocationRestricted && (
+                <PopoverContent className="p-0">
+                  <Command>
+                    <CommandInput placeholder="Search location..." />
+                    <CommandList>
+                      <CommandEmpty>No location found.</CommandEmpty>
+                      <CommandGroup>
+                        {(locations || []).map((l: any) => (
+                          <CommandItem
+                            key={l._id}
+                            value={l.name}
+                            onSelect={() => {
+                              setPoForm({ ...poForm, location: l._id });
+                              setLocationOpen(false);
+                            }}
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                poForm.location === l._id ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                            {l.name}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              )}
+            </Popover>
+            {isLocationRestricted && (
+              <p className="text-[10px] text-muted-foreground">
+                *Location is fixed based on your permissions.
+              </p>
+            )}
+
             <Label>Quantity</Label>
             <Input type="number" value={poForm.quantity ?? 0} onChange={(e) => setPoForm({ ...poForm, quantity: Number(e.target.value) })} />
             <Label>Start Date</Label>

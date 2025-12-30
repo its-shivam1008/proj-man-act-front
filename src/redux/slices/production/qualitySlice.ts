@@ -2,24 +2,24 @@ import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import axios from "@/utils/axiosApi";
 
 /* THUNKS */
-export const fetchPlans = createAsyncThunk("quality/plans", async () => {
-  const res = await axios.get("/quality/plans");
-  return res.data.data;
+export const fetchPlans = createAsyncThunk("quality/plans", async (params: { location?: string; page?: number; limit?: number; search?: string } = {}) => {
+  const res = await axios.get("/quality/plans", { params });
+  return res.data;
 });
 
-export const fetchInspections = createAsyncThunk("quality/inspections", async () => {
-  const res = await axios.get("/quality/inspections");
-  return res.data.data;
+export const fetchInspections = createAsyncThunk("quality/inspections", async (params: { location?: string; page?: number; limit?: number; search?: string } = {}) => {
+  const res = await axios.get("/quality/inspections", { params });
+  return res.data;
 });
 
-export const fetchNCRs = createAsyncThunk("quality/ncrs", async () => {
-  const res = await axios.get("/quality/ncrs");
-  return res.data.data;
+export const fetchNCRs = createAsyncThunk("quality/ncrs", async (params: { location?: string; page?: number; limit?: number; search?: string } = {}) => {
+  const res = await axios.get("/quality/ncrs", { params });
+  return res.data;
 });
 
-export const fetchCAPAs = createAsyncThunk("quality/capas", async () => {
-  const res = await axios.get("/quality/capas");
-  return res.data.data;
+export const fetchCAPAs = createAsyncThunk("quality/capas", async (params: { location?: string; page?: number; limit?: number; search?: string } = {}) => {
+  const res = await axios.get("/quality/capas", { params });
+  return res.data;
 });
 
 export const createInspection = createAsyncThunk(
@@ -124,14 +124,71 @@ const slice = createSlice({
     ncrs: [],
     capas: [],
     loading: false,
+    // Pagination metadata
+    plansPagination: {
+      currentPage: 1,
+      totalPages: 1,
+      totalItems: 0,
+      itemsPerPage: 10
+    },
+    inspectionsPagination: {
+      currentPage: 1,
+      totalPages: 1,
+      totalItems: 0,
+      itemsPerPage: 10
+    },
+    ncrsPagination: {
+      currentPage: 1,
+      totalPages: 1,
+      totalItems: 0,
+      itemsPerPage: 10
+    },
+    capasPagination: {
+      currentPage: 1,
+      totalPages: 1,
+      totalItems: 0,
+      itemsPerPage: 10
+    }
   },
   reducers: {},
   extraReducers: (b) => {
     // All addCase calls must come before addMatcher calls
-    b.addCase(fetchPlans.fulfilled, (s, a) => { s.plans = a.payload; });
-    b.addCase(fetchInspections.fulfilled, (s, a) => { s.inspections = a.payload; });
-    b.addCase(fetchNCRs.fulfilled, (s, a) => { s.ncrs = a.payload; });
-    b.addCase(fetchCAPAs.fulfilled, (s, a) => { s.capas = a.payload; });
+    b.addCase(fetchPlans.fulfilled, (s, a) => { 
+      s.plans = a.payload.data; 
+      s.plansPagination = {
+        currentPage: a.payload.currentPage,
+        totalPages: a.payload.totalPages,
+        totalItems: a.payload.totalItems,
+        itemsPerPage: a.payload.itemsPerPage
+      };
+    });
+    b.addCase(fetchInspections.fulfilled, (s, a) => { 
+      s.inspections = a.payload.data; 
+      s.inspectionsPagination = {
+        currentPage: a.payload.currentPage,
+        totalPages: a.payload.totalPages,
+        totalItems: a.payload.totalItems,
+        itemsPerPage: a.payload.itemsPerPage
+      };
+    });
+    b.addCase(fetchNCRs.fulfilled, (s, a) => { 
+      s.ncrs = a.payload.data; 
+      s.ncrsPagination = {
+        currentPage: a.payload.currentPage,
+        totalPages: a.payload.totalPages,
+        totalItems: a.payload.totalItems,
+        itemsPerPage: a.payload.itemsPerPage
+      };
+    });
+    b.addCase(fetchCAPAs.fulfilled, (s, a) => { 
+      s.capas = a.payload.data; 
+      s.capasPagination = {
+        currentPage: a.payload.currentPage,
+        totalPages: a.payload.totalPages,
+        totalItems: a.payload.totalItems,
+        itemsPerPage: a.payload.itemsPerPage
+      };
+    });
     b.addCase(createInspection.fulfilled, (s, a) => {
       s.inspections.unshift(a.payload);
     });

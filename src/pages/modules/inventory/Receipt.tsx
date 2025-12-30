@@ -11,6 +11,7 @@ import { usePermission } from "@/hooks/userPermission";
 import { fetchProducts } from "@/redux/slices/productSlice";
 import { fetchWarehouses } from "@/redux/slices/warehouseSlice";
 import { fetchVendors } from "@/redux/slices/purchase/vendorSlice";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import {
   Package,
   Plus,
@@ -26,7 +27,30 @@ import {
   Trash2,
   Warehouse as WarehouseIcon,
   ShieldAlert,
+  MapPin,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandInput,
+  CommandList,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+} from "@/components/ui/command";
+import { Check, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 interface ReceiptItem {
@@ -37,6 +61,7 @@ interface ReceiptItem {
   status: "draft" | "in-progress" | "done" | "cancelled";
   scheduledDate: string;
   warehouse?: string;
+  location?: string; // ✅ ADD LOCATION FIELD
   barcode?: string;
 }
 
@@ -46,6 +71,16 @@ const Receipt: React.FC = () => {
   const canEdit = usePermission("receipt", "edit");
   const canDelete = usePermission("receipt", "delete");
   const dispatch = useDispatch();
+
+  // ✅ LOCATION FILTERING STATE
+  const { userProfile } = useSelector((state: any) => state.auth);
+  const { locations } = useSelector((state: any) => state.masterData);
+  const [locationFilter, setLocationFilter] = useState("all");
+  const [locationOpen, setLocationOpen] = useState(false);
+
+  const isLocationRestricted = 
+    userProfile?.role !== 'admin' && 
+    !!userProfile?.location;
 
   const { vendors, loading: vendorLoading } = useSelector(
     (state: any) => state.vendors
@@ -72,13 +107,41 @@ const Receipt: React.FC = () => {
   const [viewingReceipt, setViewingReceipt] = useState<ReceiptItem | null>(
     null
   );
+
+  // Fetch Master Data on mount
+  useEffect(() => {
+    dispatch(fetchMasterData("location"));
+  }, [dispatch]);
+
+  // Auto-set location filter for restricted users
+  useEffect(() => {
+    if (isLocationRestricted && userProfile?.location) {
+      setLocationFilter(userProfile.location);
+    }
+  }, [isLocationRestricted, userProfile]);
+
   const orgId = localStorage.getItem('organisationId');
   useEffect(() => {
+    const locationParam = locationFilter !== "all" ? locationFilter : undefined;
+    
     dispatch(fetchProducts(orgId));
-    dispatch(fetchReceipts());
+    dispatch(fetchReceipts(locationParam));
     dispatch(fetchWarehouses({ page: 1, limit: 200 }));
     dispatch(fetchVendors());
-  }, [dispatch]);
+  }, [dispatch, locationFilter, orgId]);
+
+  // Handle location filter change
+  const handleLocationFilterChange = (val: string) => {
+    setLocationFilter(val);
+  };
+
+  // Helper to get location name
+  const getLocationName = (locData: string | { _id: string; name: string } | undefined) => {
+    if (!locData) return "No Location";
+    if (typeof locData === 'object' && locData.name) return locData.name;
+    const found = locations.find((l: any) => l._id === locData);
+    return found ? found.name : "Unknown Location";
+  };
 
   const filteredReceipts = receipts.filter((r: ReceiptItem) => {
     const matchesSearch =
@@ -145,6 +208,7 @@ const Receipt: React.FC = () => {
     const payload = {
       receiveFrom: formData.receiveFrom,
       operationType: formData.operationType,
+      location: formData.location, // ✅ ADD LOCATION
       products: [
         {
           productId: formData.productId,
@@ -177,6 +241,7 @@ const Receipt: React.FC = () => {
       productId: initialData?.products?.[0]?.productId || "",
       quantity: (initialData?.products?.[0]?.quantity || 1).toString(),
       warehouse: initialData?.warehouse || warehouses[0]?._id || "",
+      location: initialData?.location || (isLocationRestricted ? userProfile?.location : ""), // ✅ ADD LOCATION
       scheduledDate: initialData?.scheduledDate || "",
       barcode: initialData?.barcode || "",
     });
@@ -191,6 +256,10 @@ const Receipt: React.FC = () => {
       e.preventDefault();
       if (!formData.productId) {
         toast.error("Please select a product");
+        return;
+      }
+      if (!formData.location) {
+        toast.error("Please select a location");
         return;
       }
       if (!formData.warehouse && warehouses.length > 0) {
@@ -296,6 +365,65 @@ const Receipt: React.FC = () => {
                   onChange={handleChange("quantity")}
                   className="w-full px-4 py-3 border rounded-lg"
                 />
+              </div>
+            </div>
+
+            {/* ✅ LOCATION FIELD */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="flex flex-col gap-2">
+                <label className="block text-sm font-semibold mb-2">Location *</label>
+                <Popover open={locationOpen} onOpenChange={setLocationOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className={`w-full px-4 py-3 border rounded-lg text-left flex justify-between items-center ${
+                        isLocationRestricted ? 'bg-gray-100 cursor-not-allowed' : 'hover:bg-gray-50'
+                      }`}
+                      disabled={isLocationRestricted}
+                    >
+                      {formData.location
+                        ? locations.find((l: any) => l._id === formData.location)?.name
+                        : "Select Location"}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                    </button>
+                  </PopoverTrigger>
+                  
+                  {!isLocationRestricted && (
+                    <PopoverContent className="p-0">
+                      <Command>
+                        <CommandInput placeholder="Search location..." />
+                        <CommandList>
+                          <CommandEmpty>No location found.</CommandEmpty>
+                          <CommandGroup>
+                            {locations.map((l: any) => (
+                              <CommandItem
+                                key={l._id}
+                                value={l.name}
+                                onSelect={() => {
+                                  setFormData({ ...formData, location: l._id });
+                                  setLocationOpen(false);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    formData.location === l._id ? "opacity-100" : "opacity-0"
+                                  )}
+                                />
+                                {l.name}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  )}
+                </Popover>
+                {isLocationRestricted && (
+                  <p className="text-[10px] text-muted-foreground">
+                    *Location is fixed based on your permissions.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -428,6 +556,9 @@ const Receipt: React.FC = () => {
               <div>
                 <strong>Warehouse:</strong> {warehouseName}
               </div>
+              <div>
+                <strong>Location:</strong> {getLocationName(item.location)}
+              </div>
               {item.barcode && (
                 <div>
                   <strong>Barcode:</strong> {item.barcode}
@@ -472,17 +603,39 @@ const Receipt: React.FC = () => {
             Manage incoming stock receipts and purchases
           </p>
         </div>
-        <button
-          disabled={!canCreate}
-          onClick={() => canCreate && setShowCreateForm(true)}
-          className={`px-5 py-3 rounded-lg flex items-center gap-2
-    ${canCreate
-              ? "bg-blue-600 text-white hover:bg-blue-700"
-              : "bg-gray-400 text-white cursor-not-allowed"
-            }`}
-        >
-          <Plus className="h-5 w-5" /> New Receipt
-        </button>
+        <div className="flex items-center gap-4">
+          {/* ✅ LOCATION FILTER */}
+          <Select 
+            disabled={isLocationRestricted} 
+            value={locationFilter} 
+            onValueChange={handleLocationFilterChange}
+          >
+            <SelectTrigger className="w-48">
+              <MapPin className="w-4 h-4 mr-2" />
+              <SelectValue placeholder="Filter Location" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Locations</SelectItem>
+              {locations.map((loc: any) => (
+                <SelectItem key={loc._id} value={loc._id}>
+                  {loc.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <button
+            disabled={!canCreate}
+            onClick={() => canCreate && setShowCreateForm(true)}
+            className={`px-5 py-3 rounded-lg flex items-center gap-2
+      ${canCreate
+                ? "bg-blue-600 text-white hover:bg-blue-700"
+                : "bg-gray-400 text-white cursor-not-allowed"
+              }`}
+          >
+            <Plus className="h-5 w-5" /> New Receipt
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -556,6 +709,7 @@ const Receipt: React.FC = () => {
               <th className="px-6 py-3">ID</th>
               <th className="px-6 py-3">From</th>
               <th className="px-6 py-3">Type</th>
+              <th className="px-6 py-3">Location</th>
               <th className="px-6 py-3">Products</th>
               <th className="px-6 py-3">Warehouse</th>
               <th className="px-6 py-3">Status</th>
@@ -567,13 +721,13 @@ const Receipt: React.FC = () => {
           <tbody className="divide-y divide-gray-100">
             {receiptLoading || productLoading || warehouseLoading ? (
               <tr>
-                <td colSpan={8} className="py-16 text-center text-gray-500">
+                <td colSpan={9} className="py-16 text-center text-gray-500">
                   Loading…
                 </td>
               </tr>
             ) : filteredReceipts.length === 0 ? (
               <tr>
-                <td colSpan={8} className="py-16 text-center text-gray-500">
+                <td colSpan={9} className="py-16 text-center text-gray-500">
                   No receipts found
                 </td>
               </tr>
@@ -591,6 +745,14 @@ const Receipt: React.FC = () => {
 
                   <td className="px-6 py-4 capitalize text-gray-700">
                     {r.operationType}
+                  </td>
+
+                  {/* ✅ LOCATION COLUMN */}
+                  <td className="px-6 py-4">
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
+                      <MapPin className="h-3 w-3" />
+                      {getLocationName(r.location)}
+                    </span>
                   </td>
 
                   <td className="px-6 py-4 text-gray-700 space-y-1">

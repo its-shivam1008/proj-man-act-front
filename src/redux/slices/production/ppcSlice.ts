@@ -2,10 +2,19 @@ import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import axios from "@/utils/axiosApi";
 
 // Forecast actions
-export const fetchForecasts = createAsyncThunk("ppc/forecast/get", async () => {
-  const res = await axios.get("/ppc/forecast");
-  return res.data.data;
-});
+export const fetchForecasts = createAsyncThunk(
+  "ppc/forecast/get", 
+  async (params?: { location?: string; page?: number; limit?: number; search?: string }) => {
+    const queryParams = {
+      ...(params?.location && params.location !== "all" && { location: params.location }),
+      ...(params?.page && { page: params.page }),
+      ...(params?.limit && { limit: params.limit }),
+      ...(params?.search && { search: params.search })
+    };
+    const res = await axios.get("/ppc/forecast", { params: queryParams });
+    return res.data;
+  }
+);
 
 export const createForecast = createAsyncThunk(
   "ppc/forecast/create",
@@ -32,10 +41,19 @@ export const deleteForecast = createAsyncThunk(
 );
 
 // MPS actions
-export const fetchMPS = createAsyncThunk("ppc/mps/get", async () => {
-  const res = await axios.get("/ppc/mps");
-  return res.data.data;
-});
+export const fetchMPS = createAsyncThunk(
+  "ppc/mps/get", 
+  async (params?: { location?: string; page?: number; limit?: number; search?: string }) => {
+    const queryParams = {
+      ...(params?.location && params.location !== "all" && { location: params.location }),
+      ...(params?.page && { page: params.page }),
+      ...(params?.limit && { limit: params.limit }),
+      ...(params?.search && { search: params.search })
+    };
+    const res = await axios.get("/ppc/mps", { params: queryParams });
+    return res.data;
+  }
+);
 
 export const createMPS = createAsyncThunk(
   "ppc/mps/create",
@@ -70,10 +88,19 @@ export const generateMPS = createAsyncThunk(
 );
 
 // MRP actions
-export const fetchMRPLines = createAsyncThunk("ppc/mrp/get", async () => {
-  const res = await axios.get("/ppc/mrp");
-  return res.data.data;
-});
+export const fetchMRPLines = createAsyncThunk(
+  "ppc/mrp/get", 
+  async (params?: { location?: string; page?: number; limit?: number; search?: string }) => {
+    const queryParams = {
+      ...(params?.location && params.location !== "all" && { location: params.location }),
+      ...(params?.page && { page: params.page }),
+      ...(params?.limit && { limit: params.limit }),
+      ...(params?.search && { search: params.search })
+    };
+    const res = await axios.get("/ppc/mrp", { params: queryParams });
+    return res.data;
+  }
+);
 
 export const runMRP = createAsyncThunk(
   "ppc/mrp/run",
@@ -86,9 +113,15 @@ export const runMRP = createAsyncThunk(
 // Planned Orders actions
 export const fetchPlannedOrders = createAsyncThunk(
   "ppc/orders/get",
-  async () => {
-    const res = await axios.get("/ppc/orders");
-    return res.data.data;
+  async (params?: { location?: string; page?: number; limit?: number; search?: string }) => {
+    const queryParams = {
+      ...(params?.location && params.location !== "all" && { location: params.location }),
+      ...(params?.page && { page: params.page }),
+      ...(params?.limit && { limit: params.limit }),
+      ...(params?.search && { search: params.search })
+    };
+    const res = await axios.get("/ppc/orders", { params: queryParams });
+    return res.data;
   }
 );
 
@@ -120,9 +153,13 @@ const ppcSlice = createSlice({
   name: "ppc",
   initialState: {
     forecasts: [],
+    forecastsPagination: { total: 0, page: 1, totalPages: 0, hasNext: false, hasPrev: false },
     mps: [],
+    mpsPagination: { total: 0, page: 1, totalPages: 0, hasNext: false, hasPrev: false },
     mrpLines: [],
+    mrpPagination: { total: 0, page: 1, totalPages: 0, hasNext: false, hasPrev: false },
     plannedOrders: [],
+    plannedOrdersPagination: { total: 0, page: 1, totalPages: 0, hasNext: false, hasPrev: false },
     loading: false,
     error: null,
   },
@@ -134,7 +171,14 @@ const ppcSlice = createSlice({
   extraReducers: (builder) => {
     // Forecast cases
     builder.addCase(fetchForecasts.fulfilled, (state, action) => {
-      state.forecasts = action.payload;
+      state.forecasts = action.payload.data || [];
+      state.forecastsPagination = {
+        total: action.payload.total || 0,
+        page: action.payload.page || 1,
+        totalPages: action.payload.totalPages || 0,
+        hasNext: action.payload.hasNext || false,
+        hasPrev: action.payload.hasPrev || false
+      };
     });
     
     builder.addCase(createForecast.fulfilled, (state, action) => {
@@ -154,7 +198,14 @@ const ppcSlice = createSlice({
 
     // MPS cases
     builder.addCase(fetchMPS.fulfilled, (state, action) => {
-      state.mps = action.payload;
+      state.mps = action.payload.data || [];
+      state.mpsPagination = {
+        total: action.payload.total || 0,
+        page: action.payload.page || 1,
+        totalPages: action.payload.totalPages || 0,
+        hasNext: action.payload.hasNext || false,
+        hasPrev: action.payload.hasPrev || false
+      };
     });
     
     builder.addCase(createMPS.fulfilled, (state, action) => {
@@ -178,7 +229,14 @@ const ppcSlice = createSlice({
 
     // MRP cases
     builder.addCase(fetchMRPLines.fulfilled, (state, action) => {
-      state.mrpLines = action.payload;
+      state.mrpLines = action.payload.data || [];
+      state.mrpPagination = {
+        total: action.payload.total || 0,
+        page: action.payload.page || 1,
+        totalPages: action.payload.totalPages || 0,
+        hasNext: action.payload.hasNext || false,
+        hasPrev: action.payload.hasPrev || false
+      };
     });
     
     builder.addCase(runMRP.fulfilled, (state, action) => {
@@ -187,7 +245,14 @@ const ppcSlice = createSlice({
 
     // Planned Orders cases
     builder.addCase(fetchPlannedOrders.fulfilled, (state, action) => {
-      state.plannedOrders = action.payload;
+      state.plannedOrders = action.payload.data || [];
+      state.plannedOrdersPagination = {
+        total: action.payload.total || 0,
+        page: action.payload.page || 1,
+        totalPages: action.payload.totalPages || 0,
+        hasNext: action.payload.hasNext || false,
+        hasPrev: action.payload.hasPrev || false
+      };
     });
     
     builder.addCase(createPlannedOrder.fulfilled, (state, action) => {

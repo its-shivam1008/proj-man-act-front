@@ -4,13 +4,19 @@ import axios from "@/utils/axiosApi";
 /* ======================
    THUNKS
 ====================== */
-export const fetchGRNs = createAsyncThunk("grn/fetchAll", async () => {
-  const res = await axios.get("/grn");
+export const fetchGRNs = createAsyncThunk("grn/fetchAll", async ({ location, page = 1, limit = 10, search = "" }: { location?: string; page?: number; limit?: number; search?: string } = {}) => {
+  const params: any = { page, limit, search };
+  if (location) params.location = location;
+  
+  const res = await axios.get("/grn", { params });
   return res.data.data;
 });
 
-export const fetchPendingQC = createAsyncThunk("grn/fetchPendingQC", async () => {
-  const res = await axios.get("/grn/pending-qc");
+export const fetchPendingQC = createAsyncThunk("grn/fetchPendingQC", async ({ location, page = 1, limit = 10, search = "" }: { location?: string; page?: number; limit?: number; search?: string } = {}) => {
+  const params: any = { page, limit, search };
+  if (location) params.location = location;
+  
+  const res = await axios.get("/grn/pending-qc", { params });
   return res.data.data;
 });
 
@@ -50,6 +56,19 @@ const slice = createSlice({
     wipTrend: [],
     loading: false,
     error: null as string | null,
+    // Pagination states
+    grnsPagination: {
+      currentPage: 1,
+      totalPages: 1,
+      totalItems: 0,
+      itemsPerPage: 10
+    },
+    pendingQCPagination: {
+      currentPage: 1,
+      totalPages: 1,
+      totalItems: 0,
+      itemsPerPage: 10
+    }
   },
   reducers: {},
   extraReducers: (builder) => {
@@ -61,12 +80,18 @@ const slice = createSlice({
       })
       .addCase(fetchGRNs.fulfilled, (state, action) => {
         state.loading = false;
-        state.grns = action.payload;
+        state.grns = action.payload.data || action.payload;
+        if (action.payload.pagination) {
+          state.grnsPagination = action.payload.pagination;
+        }
       })
 
       /* Pending QC */
       .addCase(fetchPendingQC.fulfilled, (state, action) => {
-        state.pendingQC = action.payload;
+        state.pendingQC = action.payload.data || action.payload;
+        if (action.payload.pagination) {
+          state.pendingQCPagination = action.payload.pagination;
+        }
       })
 
       /* Create GRN */

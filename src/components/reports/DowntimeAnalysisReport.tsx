@@ -2,7 +2,7 @@
 
 import { usePermission } from "@/hooks/userPermission";
 import { useDispatch, useSelector } from "react-redux";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   Card, CardHeader, CardTitle, CardContent,
 } from "@/components/ui/card";
@@ -31,9 +31,9 @@ import {
   CartesianGrid, XAxis, YAxis, Tooltip, Legend,
 } from "recharts";
 import { 
-  Plus, ShieldAlert, AlertTriangle, Clock, 
-  TrendingDown, Activity, DollarSign, Package,
-  Calendar, Filter, Download, Edit, Trash2
+  ShieldAlert, AlertTriangle, Clock, 
+  Activity, DollarSign,
+  Filter, Edit, Trash2, Search
 } from "lucide-react";
 import type { RootState, AppDispatch } from "@/redux/store";
 import {
@@ -43,11 +43,11 @@ import {
   updateDowntimeReport,
   deleteDowntimeReport,
   generateSampleData,
-  clearError,
   type DowntimeReport
 } from "@/redux/slices/production/downtimeAnalysisSlice";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { Pagination } from "@/components/ui/pagination";
 
 const COLORS = ["#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6", "#8b5cf6"];
 
@@ -84,12 +84,13 @@ export default function DowntimeAnalysisReport() {
   const canEdit = usePermission("downtimeAnalysis", "edit");
   const canDelete = usePermission("downtimeAnalysis", "delete");
 
-  const { reports, analytics, loading, error } = useSelector(
+  const { reports, reportsPagination, analytics, loading, error } = useSelector(
     (state: RootState) => state.downtimeAnalysis
   );
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingReport, setEditingReport] = useState<DowntimeReport | null>(null);
+  const [reportsSearch, setReportsSearch] = useState("");
   const [dateRange, setDateRange] = useState({
     startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
     endDate: new Date().toISOString().slice(0, 10)
@@ -114,9 +115,59 @@ export default function DowntimeAnalysisReport() {
     productionLoss: 0,
   });
 
+  // Debounced search function
+  const debounce = useCallback((func: Function, delay: number) => {
+    let timeoutId: NodeJS.Timeout;
+    return (...args: any[]) => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => func.apply(null, args), delay);
+    };
+  }, []);
+
+  // Debounced search handler
+  const debouncedReportsSearch = useCallback(
+    debounce((searchTerm: string) => {
+      dispatch(fetchDowntimeReports({
+        page: 1,
+        limit: reportsPagination?.itemsPerPage || 10,
+        search: searchTerm,
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate
+      }));
+    }, 300),
+    [dispatch, reportsPagination?.itemsPerPage, dateRange]
+  );
+
+  // Search handler
+  const handleReportsSearch = (value: string) => {
+    setReportsSearch(value);
+    debouncedReportsSearch(value);
+  };
+
+  // Pagination handlers
+  const handleReportsPageChange = (page: number) => {
+    dispatch(fetchDowntimeReports({
+      page,
+      limit: reportsPagination?.itemsPerPage || 10,
+      search: reportsSearch,
+      startDate: dateRange.startDate,
+      endDate: dateRange.endDate
+    }));
+  };
+
+  const handleReportsItemsPerPageChange = (itemsPerPage: number) => {
+    dispatch(fetchDowntimeReports({
+      page: 1,
+      limit: itemsPerPage,
+      search: reportsSearch,
+      startDate: dateRange.startDate,
+      endDate: dateRange.endDate
+    }));
+  };
+
   useEffect(() => {
     if (canView) {
-      dispatch(fetchDowntimeReports());
+      dispatch(fetchDowntimeReports({}));
       dispatch(fetchDowntimeAnalytics(dateRange));
     }
   }, [dispatch, canView, dateRange]);
@@ -219,7 +270,7 @@ export default function DowntimeAnalysisReport() {
   const handleGenerateSampleData = async () => {
     try {
       await dispatch(generateSampleData()).unwrap();
-      dispatch(fetchDowntimeReports());
+      dispatch(fetchDowntimeReports({}));
       dispatch(fetchDowntimeAnalytics(dateRange));
     } catch (error) {
       console.error("Failed to generate sample data:", error);
@@ -403,9 +454,9 @@ export default function DowntimeAnalysisReport() {
                     cx="50%"
                     cy="50%"
                     outerRadius={80}
-                    label={({ _id, totalMinutes }) => `${_id}: ${Math.round(totalMinutes/60)}h`}
+                    label={(entry: any) => `${entry._id}: ${Math.round(entry.totalMinutes/60)}h`}
                   >
-                    {chartData.byType.map((entry, index) => (
+                    {chartData.byType.map((_, index) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
@@ -462,7 +513,20 @@ export default function DowntimeAnalysisReport() {
       {/* REPORTS TABLE */}
       <Card>
         <CardHeader>
-          <CardTitle>Downtime Reports</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>Downtime Reports ({reportsPagination?.totalItems || 0})</CardTitle>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search reports..."
+                  value={reportsSearch}
+                  onChange={(e) => handleReportsSearch(e.target.value)}
+                  className="pl-8 w-64"
+                />
+              </div>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {reports.length === 0 ? (
@@ -472,91 +536,105 @@ export default function DowntimeAnalysisReport() {
               <p className="text-sm text-gray-400">Create your first downtime report or generate sample data</p>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Work Center</TableHead>
-                  <TableHead>Duration</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Priority</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Cost Impact</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {reports.map((report) => (
-                  <TableRow key={report._id}>
-                    <TableCell>
-                      {new Date(report.date).toLocaleDateString('en-GB')}
-                      <div className="text-xs text-muted-foreground">
-                        {report.shift} shift
-                      </div>
-                    </TableCell>
-                    <TableCell>{report.workCenterName}</TableCell>
-                    <TableCell>
-                      <div className="font-medium">
-                        {Math.round(report.durationMinutes / 60 * 10) / 10}h
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {report.startTime} - {report.endTime}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">
-                        {DOWNTIME_TYPES.find(t => t.value === report.downtimeType)?.label || report.downtimeType}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={report.category === 'planned' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}>
-                        {report.category}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={PRIORITY_COLORS[report.priority]}>
-                        {report.priority}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={STATUS_COLORS[report.status]}>
-                        {report.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="font-medium">₹{report.costImpact.toLocaleString()}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {report.productionLoss} units lost
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        {canEdit && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleEdit(report)}
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                        )}
-                        {canDelete && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDelete(report._id)}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        )}
-                      </div>
-                    </TableCell>
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Work Center</TableHead>
+                    <TableHead>Duration</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Priority</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Cost Impact</TableHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {reports.map((report) => (
+                    <TableRow key={report._id}>
+                      <TableCell>
+                        {new Date(report.date).toLocaleDateString('en-GB')}
+                        <div className="text-xs text-muted-foreground">
+                          {report.shift} shift
+                        </div>
+                      </TableCell>
+                      <TableCell>{report.workCenterName}</TableCell>
+                      <TableCell>
+                        <div className="font-medium">
+                          {Math.round(report.durationMinutes / 60 * 10) / 10}h
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {report.startTime} - {report.endTime}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">
+                          {DOWNTIME_TYPES.find(t => t.value === report.downtimeType)?.label || report.downtimeType}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={report.category === 'planned' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}>
+                          {report.category}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={PRIORITY_COLORS[report.priority]}>
+                          {report.priority}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={STATUS_COLORS[report.status]}>
+                          {report.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="font-medium">₹{report.costImpact.toLocaleString()}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {report.productionLoss} units lost
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          {canEdit && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleEdit(report)}
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                          )}
+                          {canDelete && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDelete(report._id)}
+                              className="text-red-600 hover:text-red-700"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+
+              {/* Pagination for Reports */}
+              {reportsPagination && (
+                <Pagination
+                  currentPage={reportsPagination.currentPage}
+                  totalPages={reportsPagination.totalPages}
+                  totalItems={reportsPagination.totalItems}
+                  itemsPerPage={reportsPagination.itemsPerPage}
+                  onPageChange={handleReportsPageChange}
+                  onItemsPerPageChange={handleReportsItemsPerPageChange}
+                />
+              )}
+            </>
           )}
         </CardContent>
       </Card>

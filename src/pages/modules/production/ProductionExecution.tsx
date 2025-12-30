@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../../../components/ui/dialog";
 import { Badge } from "../../../components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
+import { Pagination } from "../../../components/ui/pagination";
 import { Plus, Play, Pause, WifiOff, AlertTriangle, Download, ShieldAlert } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, LineChart, Line, Legend } from "recharts";
 import { useDispatch, useSelector } from "react-redux";
@@ -108,8 +109,41 @@ export default function ProductionExecution() {
     maintenance: maintenanceRequests = [], 
     quality: qualityChecks = [],
     loading: productionLoading = false,
-    error: productionError = null
+    error: productionError = null,
+    logsPagination = { currentPage: 1, totalPages: 1, totalItems: 0, itemsPerPage: 10 },
+    downtimePagination = { currentPage: 1, totalPages: 1, totalItems: 0, itemsPerPage: 10 },
+    maintenancePagination = { currentPage: 1, totalPages: 1, totalItems: 0, itemsPerPage: 10 },
+    qualityPagination = { currentPage: 1, totalPages: 1, totalItems: 0, itemsPerPage: 10 }
   } = productionExecutionState || {};
+
+  // Additional safety checks for pagination data
+  const safeLogsPagination = {
+    currentPage: logsPagination?.currentPage || 1,
+    totalPages: logsPagination?.totalPages || 1,
+    totalItems: logsPagination?.totalItems || 0,
+    itemsPerPage: logsPagination?.itemsPerPage || 10
+  };
+  
+  const safeDowntimePagination = {
+    currentPage: downtimePagination?.currentPage || 1,
+    totalPages: downtimePagination?.totalPages || 1,
+    totalItems: downtimePagination?.totalItems || 0,
+    itemsPerPage: downtimePagination?.itemsPerPage || 10
+  };
+  
+  const safeMaintenancePagination = {
+    currentPage: maintenancePagination?.currentPage || 1,
+    totalPages: maintenancePagination?.totalPages || 1,
+    totalItems: maintenancePagination?.totalItems || 0,
+    itemsPerPage: maintenancePagination?.itemsPerPage || 10
+  };
+  
+  const safeQualityPagination = {
+    currentPage: qualityPagination?.currentPage || 1,
+    totalPages: qualityPagination?.totalPages || 1,
+    totalItems: qualityPagination?.totalItems || 0,
+    itemsPerPage: qualityPagination?.itemsPerPage || 10
+  };
 
   // Debug logging
   console.log('Production Execution State:', {
@@ -138,6 +172,12 @@ export default function ProductionExecution() {
     const storedAttendance = storage.get(STORAGE_KEYS.ATTENDANCE, []);
     return Array.isArray(storedAttendance) ? storedAttendance : [];
   });
+
+  // Pagination and search states for each table
+  const [logsSearch, setLogsSearch] = useState("");
+  const [downtimeSearch, setDowntimeSearch] = useState("");
+  const [maintenanceSearch, setMaintenanceSearch] = useState("");
+  const [qualitySearch, setQualitySearch] = useState("");
 
   // Get employees from storage (for operator selection)
   const employees = storage.get(STORAGE_KEYS.EMPLOYEES, []) || [];
@@ -168,12 +208,12 @@ export default function ProductionExecution() {
     console.log('🚀 Initial data fetch on component mount');
     dispatch(fetchWorkOrders());
     dispatch(fetchWorkCenters());
-    dispatch(fetchMaintenance());
-    dispatch(fetchQuality());
+    dispatch(fetchMaintenance({ page: 1, limit: 10 }));
+    dispatch(fetchQuality({ page: 1, limit: 10 }));
     
     // Also fetch logs and downtime with current filter
-    dispatch(fetchLogs({ from: filterFrom, to: filterTo }));
-    dispatch(fetchDowntime({ from: filterFrom, to: filterTo }));
+    dispatch(fetchLogs({ from: filterFrom, to: filterTo, page: 1, limit: 10 }));
+    dispatch(fetchDowntime({ from: filterFrom, to: filterTo, page: 1, limit: 10 }));
   }, [dispatch]);
 
   // Persist selected work center to localStorage
@@ -214,12 +254,12 @@ export default function ProductionExecution() {
   // Refetch data when filters change (with debounce)
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      dispatch(fetchLogs({ from: filterFrom, to: filterTo }));
-      dispatch(fetchDowntime({ from: filterFrom, to: filterTo }));
+      dispatch(fetchLogs({ from: filterFrom, to: filterTo, page: 1, limit: safeLogsPagination.itemsPerPage, search: logsSearch }));
+      dispatch(fetchDowntime({ from: filterFrom, to: filterTo, page: 1, limit: safeDowntimePagination.itemsPerPage, search: downtimeSearch }));
     }, 300); // 300ms debounce
 
     return () => clearTimeout(timeoutId);
-  }, [dispatch, filterFrom, filterTo]);
+  }, [dispatch, filterFrom, filterTo, logsSearch, downtimeSearch, safeLogsPagination.itemsPerPage, safeDowntimePagination.itemsPerPage]);
 
   // persist only attendance (HR functionality) - others are now in Redux
   useEffect(() => storage.set(STORAGE_KEYS.ATTENDANCE, attendance), [attendance]);
@@ -599,36 +639,6 @@ export default function ProductionExecution() {
   }, [selectedWC, workCenters]);
 
   /* ---------- derived / chart data ---------- */
-  const filteredLogs = useMemo(() => {
-    console.log('Filtering logs:', { 
-      totalLogs: workLogs.length, 
-      filterFrom, 
-      filterTo,
-      sampleLog: workLogs[0] 
-    });
-    
-    const from = new Date(filterFrom + "T00:00:00").getTime();
-    const to = new Date(filterTo + "T23:59:59").getTime();
-    
-    const filtered = workLogs.filter(w => {
-      const t = new Date(w.timestamp).getTime();
-      const inRange = t >= from && t <= to;
-      if (!inRange && workLogs.indexOf(w) === 0) {
-        console.log('Sample log timestamp check:', {
-          logTimestamp: w.timestamp,
-          logTime: t,
-          fromTime: from,
-          toTime: to,
-          inRange
-        });
-      }
-      return inRange;
-    }).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    
-    console.log('Filtered logs result:', filtered.length);
-    return filtered;
-  }, [workLogs, filterFrom, filterTo]);
-
   const downtimeSummary = useMemo(() => {
     // sum minutes per work center in filtered range
     const map: Record<string, number> = {};
@@ -641,37 +651,6 @@ export default function ProductionExecution() {
       map[d.workCenterId] = (map[d.workCenterId] || 0) + (d.minutes || 0);
     });
     return Object.entries(map).map(([wc, min]) => ({ workCenterId: wc, minutes: min }));
-  }, [downtimeEvents, filterFrom, filterTo]);
-
-  // Filter downtime events by date range
-  const filteredDowntimeEvents = useMemo(() => {
-    console.log('Filtering downtime events:', { 
-      totalDowntime: downtimeEvents.length, 
-      filterFrom, 
-      filterTo,
-      sampleDowntime: downtimeEvents[0] 
-    });
-    
-    const from = new Date(filterFrom + "T00:00:00").getTime();
-    const to = new Date(filterTo + "T23:59:59").getTime();
-    
-    const filtered = downtimeEvents.filter(d => {
-      const startTime = new Date(d.start).getTime();
-      const inRange = startTime >= from && startTime <= to;
-      if (!inRange && downtimeEvents.indexOf(d) === 0) {
-        console.log('Sample downtime timestamp check:', {
-          downtimeStart: d.start,
-          startTime: startTime,
-          fromTime: from,
-          toTime: to,
-          inRange
-        });
-      }
-      return inRange;
-    }).sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime());
-    
-    console.log('Filtered downtime result:', filtered.length);
-    return filtered;
   }, [downtimeEvents, filterFrom, filterTo]);
 
   const productionByDay = useMemo(() => {
@@ -703,7 +682,7 @@ export default function ProductionExecution() {
       .then(() => {
         timersRef.current[woId] = Date.now();
         // Refetch logs to get updated data
-        dispatch(fetchLogs({ from: filterFrom, to: filterTo }));
+        dispatch(fetchLogs({ from: filterFrom, to: filterTo, page: safeLogsPagination.currentPage, limit: safeLogsPagination.itemsPerPage, search: logsSearch }));
       })
       .catch((error) => {
         console.error('Failed to start operation:', error);
@@ -737,8 +716,8 @@ export default function ProductionExecution() {
       .unwrap()
       .then(() => {
         // Refetch logs and quality checks to get updated data
-        dispatch(fetchLogs({ from: filterFrom, to: filterTo }));
-        dispatch(fetchQuality());
+        dispatch(fetchLogs({ from: filterFrom, to: filterTo, page: safeLogsPagination.currentPage, limit: safeLogsPagination.itemsPerPage, search: logsSearch }));
+        dispatch(fetchQuality({ page: safeQualityPagination.currentPage, limit: safeQualityPagination.itemsPerPage, search: qualitySearch }));
       })
       .catch((error) => {
         console.error('Failed to stop operation:', error);
@@ -763,8 +742,8 @@ export default function ProductionExecution() {
       .unwrap()
       .then(() => {
         // Refetch logs and quality checks to get updated data
-        dispatch(fetchLogs({ from: filterFrom, to: filterTo }));
-        dispatch(fetchQuality());
+        dispatch(fetchLogs({ from: filterFrom, to: filterTo, page: safeLogsPagination.currentPage, limit: safeLogsPagination.itemsPerPage, search: logsSearch }));
+        dispatch(fetchQuality({ page: safeQualityPagination.currentPage, limit: safeQualityPagination.itemsPerPage, search: qualitySearch }));
       })
       .catch((error) => {
         console.error('Failed to record production:', error);
@@ -787,8 +766,8 @@ export default function ProductionExecution() {
       .unwrap()
       .then(() => {
         // Refetch downtime and maintenance data
-        dispatch(fetchDowntime({ from: filterFrom, to: filterTo }));
-        dispatch(fetchMaintenance());
+        dispatch(fetchDowntime({ from: filterFrom, to: filterTo, page: safeDowntimePagination.currentPage, limit: safeDowntimePagination.itemsPerPage, search: downtimeSearch }));
+        dispatch(fetchMaintenance({ page: safeMaintenancePagination.currentPage, limit: safeMaintenancePagination.itemsPerPage, search: maintenanceSearch }));
       })
       .catch((error) => {
         console.error('Failed to create downtime:', error);
@@ -801,7 +780,7 @@ export default function ProductionExecution() {
       .unwrap()
       .then(() => {
         // Refetch downtime data
-        dispatch(fetchDowntime({ from: filterFrom, to: filterTo }));
+        dispatch(fetchDowntime({ from: filterFrom, to: filterTo, page: safeDowntimePagination.currentPage, limit: safeDowntimePagination.itemsPerPage, search: downtimeSearch }));
       })
       .catch((error) => {
         console.error('Failed to close downtime:', error);
@@ -814,7 +793,7 @@ export default function ProductionExecution() {
       .unwrap()
       .then(() => {
         // Refetch maintenance data
-        dispatch(fetchMaintenance());
+        dispatch(fetchMaintenance({ page: safeMaintenancePagination.currentPage, limit: safeMaintenancePagination.itemsPerPage, search: maintenanceSearch }));
       })
       .catch((error) => {
         console.error('Failed to close maintenance request:', error);
@@ -837,8 +816,8 @@ export default function ProductionExecution() {
       .unwrap()
       .then(() => {
         // Refetch quality and logs data
-        dispatch(fetchQuality());
-        dispatch(fetchLogs({ from: filterFrom, to: filterTo }));
+        dispatch(fetchQuality({ page: safeQualityPagination.currentPage, limit: safeQualityPagination.itemsPerPage, search: qualitySearch }));
+        dispatch(fetchLogs({ from: filterFrom, to: filterTo, page: safeLogsPagination.currentPage, limit: safeLogsPagination.itemsPerPage, search: logsSearch }));
         
         // if fail, create rework record
         if (!passed) {
@@ -855,7 +834,7 @@ export default function ProductionExecution() {
               .unwrap()
               .then(() => {
                 // Refetch logs after rework creation
-                dispatch(fetchLogs({ from: filterFrom, to: filterTo }));
+                dispatch(fetchLogs({ from: filterFrom, to: filterTo, page: safeLogsPagination.currentPage, limit: safeLogsPagination.itemsPerPage, search: logsSearch }));
               });
           }
         }
@@ -917,8 +896,8 @@ export default function ProductionExecution() {
       .unwrap()
       .then(() => {
         // Refetch logs and quality data
-        dispatch(fetchLogs({ from: filterFrom, to: filterTo }));
-        dispatch(fetchQuality());
+        dispatch(fetchLogs({ from: filterFrom, to: filterTo, page: safeLogsPagination.currentPage, limit: safeLogsPagination.itemsPerPage, search: logsSearch }));
+        dispatch(fetchQuality({ page: safeQualityPagination.currentPage, limit: safeQualityPagination.itemsPerPage, search: qualitySearch }));
         setLogDialogOpen(false);
       })
       .catch((error) => {
@@ -936,6 +915,102 @@ export default function ProductionExecution() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url; a.download = `worklogs_${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(url);
   }
+
+  /* ---------- pagination handlers ---------- */
+  const handleLogsPageChange = (page: number) => {
+    dispatch(fetchLogs({ 
+      from: filterFrom, 
+      to: filterTo, 
+      page, 
+      limit: safeLogsPagination.itemsPerPage, 
+      search: logsSearch 
+    }));
+  };
+
+  const handleLogsItemsPerPageChange = (itemsPerPage: number) => {
+    dispatch(fetchLogs({ 
+      from: filterFrom, 
+      to: filterTo, 
+      page: 1, 
+      limit: itemsPerPage, 
+      search: logsSearch 
+    }));
+  };
+
+  const handleDowntimePageChange = (page: number) => {
+    dispatch(fetchDowntime({ 
+      from: filterFrom, 
+      to: filterTo, 
+      page, 
+      limit: safeDowntimePagination.itemsPerPage, 
+      search: downtimeSearch 
+    }));
+  };
+
+  const handleDowntimeItemsPerPageChange = (itemsPerPage: number) => {
+    dispatch(fetchDowntime({ 
+      from: filterFrom, 
+      to: filterTo, 
+      page: 1, 
+      limit: itemsPerPage, 
+      search: downtimeSearch 
+    }));
+  };
+
+  const handleMaintenancePageChange = (page: number) => {
+    dispatch(fetchMaintenance({ 
+      page, 
+      limit: safeMaintenancePagination.itemsPerPage, 
+      search: maintenanceSearch 
+    }));
+  };
+
+  const handleMaintenanceItemsPerPageChange = (itemsPerPage: number) => {
+    dispatch(fetchMaintenance({ 
+      page: 1, 
+      limit: itemsPerPage, 
+      search: maintenanceSearch 
+    }));
+  };
+
+  const handleQualityPageChange = (page: number) => {
+    dispatch(fetchQuality({ 
+      page, 
+      limit: safeQualityPagination.itemsPerPage, 
+      search: qualitySearch 
+    }));
+  };
+
+  const handleQualityItemsPerPageChange = (itemsPerPage: number) => {
+    dispatch(fetchQuality({ 
+      page: 1, 
+      limit: itemsPerPage, 
+      search: qualitySearch 
+    }));
+  };
+
+  // Search handlers with debounce
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      dispatch(fetchMaintenance({ 
+        page: 1, 
+        limit: safeMaintenancePagination.itemsPerPage, 
+        search: maintenanceSearch 
+      }));
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [maintenanceSearch, safeMaintenancePagination.itemsPerPage, dispatch]);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      dispatch(fetchQuality({ 
+        page: 1, 
+        limit: safeQualityPagination.itemsPerPage, 
+        search: qualitySearch 
+      }));
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [qualitySearch, safeQualityPagination.itemsPerPage, dispatch]);
 
   /* ---------- UI ---------- */
   return (
@@ -1285,16 +1360,22 @@ export default function ProductionExecution() {
             <Label>To</Label>
             <Input type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} />
             <div className="flex-1" />
+            <Input
+              placeholder="Search logs..."
+              value={logsSearch}
+              onChange={(e) => setLogsSearch(e.target.value)}
+              className="w-48"
+            />
             <Button
               disabled={!canDelete}
               onClick={() => {
                 if (!canDelete) return;
                 // Refresh all data
                 console.log('Manual refresh triggered');
-                dispatch(fetchLogs({ from: filterFrom, to: filterTo }));
-                dispatch(fetchDowntime({ from: filterFrom, to: filterTo }));
-                dispatch(fetchMaintenance());
-                dispatch(fetchQuality());
+                dispatch(fetchLogs({ from: filterFrom, to: filterTo, page: safeLogsPagination.currentPage, limit: safeLogsPagination.itemsPerPage, search: logsSearch }));
+                dispatch(fetchDowntime({ from: filterFrom, to: filterTo, page: safeDowntimePagination.currentPage, limit: safeDowntimePagination.itemsPerPage, search: downtimeSearch }));
+                dispatch(fetchMaintenance({ page: safeMaintenancePagination.currentPage, limit: safeMaintenancePagination.itemsPerPage, search: maintenanceSearch }));
+                dispatch(fetchQuality({ page: safeQualityPagination.currentPage, limit: safeQualityPagination.itemsPerPage, search: qualitySearch }));
               }}
             >
               Refresh Logs
@@ -1458,15 +1539,14 @@ export default function ProductionExecution() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredLogs.length === 0 ? (
+              {workLogs.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-6 text-muted-foreground">
-                    No logs found for the selected date range. 
-                    {workLogs.length > 0 && ` (${workLogs.length} total logs available)`}
+                    {productionLoading ? "Loading logs..." : "No logs found for the selected criteria."}
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredLogs.map(l => {
+                workLogs.map(l => {
                   // Find work order name
                   const workOrder = workOrders.find((wo: any) => wo._id === l.workOrderId);
                   const workOrderName = workOrder?.productName || l.workOrderId;
@@ -1496,13 +1576,32 @@ export default function ProductionExecution() {
               )}
             </TableBody>
           </Table>
+          
+          <Pagination
+            currentPage={safeLogsPagination.currentPage}
+            totalPages={safeLogsPagination.totalPages}
+            totalItems={safeLogsPagination.totalItems}
+            itemsPerPage={safeLogsPagination.itemsPerPage}
+            onPageChange={handleLogsPageChange}
+            onItemsPerPageChange={handleLogsItemsPerPageChange}
+          />
         </CardContent>
       </Card>
 
       {/* downtime list & maintenance */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card>
-          <CardHeader><CardTitle>Downtime Events</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Downtime Events</CardTitle>
+            <div className="flex items-center gap-2">
+              <Input
+                placeholder="Search downtime..."
+                value={downtimeSearch}
+                onChange={(e) => setDowntimeSearch(e.target.value)}
+                className="w-48"
+              />
+            </div>
+          </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
@@ -1516,15 +1615,14 @@ export default function ProductionExecution() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredDowntimeEvents.length === 0 ? (
+                {downtimeEvents.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center py-6 text-muted-foreground">
-                      No downtime recorded for the selected date range.
-                      {downtimeEvents.length > 0 && ` (${downtimeEvents.length} total downtime events available)`}
+                      {productionLoading ? "Loading downtime events..." : "No downtime recorded for the selected criteria."}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredDowntimeEvents.map(d => {
+                  downtimeEvents.map(d => {
                     // Extract machine name from reason if it follows our format: "Machine: [Name] - [Reason]"
                     let machineName = "Unknown Machine";
                     let displayReason = d.reason;
@@ -1587,11 +1685,30 @@ export default function ProductionExecution() {
                 )}
               </TableBody>
             </Table>
+            
+            <Pagination
+              currentPage={safeDowntimePagination.currentPage}
+              totalPages={safeDowntimePagination.totalPages}
+              totalItems={safeDowntimePagination.totalItems}
+              itemsPerPage={safeDowntimePagination.itemsPerPage}
+              onPageChange={handleDowntimePageChange}
+              onItemsPerPageChange={handleDowntimeItemsPerPageChange}
+            />
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>Maintenance Requests</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Maintenance Requests</CardTitle>
+            <div className="flex items-center gap-2">
+              <Input
+                placeholder="Search maintenance..."
+                value={maintenanceSearch}
+                onChange={(e) => setMaintenanceSearch(e.target.value)}
+                className="w-48"
+              />
+            </div>
+          </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
@@ -1605,70 +1722,96 @@ export default function ProductionExecution() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {maintenanceRequests.map(m => {
-                  // First try to get machine name from machineId if available
-                  let machineName = "Unknown Machine";
-                  
-                  if (m.machineId) {
-                    // Find machine from all work centers
-                    const allMachines = workCenters.flatMap((wc: any) => 
-                      (wc.resources || [])
-                        .filter((r: any) => r.resourceType === 'machine')
-                        .map((machine: any) => ({
-                          id: machine.machineId || machine._id,
-                          name: machine.machineName || machine.name || 'Unnamed Machine',
-                          code: machine.machineCode || machine.code,
-                          workCenterId: wc._id
-                        }))
-                    );
+                {maintenanceRequests.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-6 text-muted-foreground">
+                      {productionLoading ? "Loading maintenance requests..." : "No maintenance requests."}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  maintenanceRequests.map(m => {
+                    // First try to get machine name from machineId if available
+                    let machineName = "Unknown Machine";
                     
-                    const machine = allMachines.find(machine => machine.id === m.machineId);
-                    if (machine) {
-                      machineName = `${machine.name}${machine.code ? ` (${machine.code})` : ''}`;
-                    } else {
-                      machineName = m.machineId;
-                    }
-                  } else if (m.description && m.description.startsWith("Machine: ")) {
-                    // Fallback: Extract machine name from description
-                    const machineMatch = m.description.match(/^Machine: (.+?) - (.+)$/);
-                    if (machineMatch) {
-                      machineName = machineMatch[1];
-                    } else {
-                      // Fallback: try to extract just the machine part
-                      const simpleMachineMatch = m.description.match(/^Machine: (.+)$/);
-                      if (simpleMachineMatch) {
-                        machineName = simpleMachineMatch[1];
+                    if (m.machineId) {
+                      // Find machine from all work centers
+                      const allMachines = workCenters.flatMap((wc: any) => 
+                        (wc.resources || [])
+                          .filter((r: any) => r.resourceType === 'machine')
+                          .map((machine: any) => ({
+                            id: machine.machineId || machine._id,
+                            name: machine.machineName || machine.name || 'Unnamed Machine',
+                            code: machine.machineCode || machine.code,
+                            workCenterId: wc._id
+                          }))
+                      );
+                      
+                      const machine = allMachines.find(machine => machine.id === m.machineId);
+                      if (machine) {
+                        machineName = `${machine.name}${machine.code ? ` (${machine.code})` : ''}`;
+                      } else {
+                        machineName = m.machineId;
                       }
+                    } else if (m.description && m.description.startsWith("Machine: ")) {
+                      // Fallback: Extract machine name from description
+                      const machineMatch = m.description.match(/^Machine: (.+?) - (.+)$/);
+                      if (machineMatch) {
+                        machineName = machineMatch[1];
+                      } else {
+                        // Fallback: try to extract just the machine part
+                        const simpleMachineMatch = m.description.match(/^Machine: (.+)$/);
+                        if (simpleMachineMatch) {
+                          machineName = simpleMachineMatch[1];
+                        }
+                      }
+                    } else {
+                      // Last fallback: show work center name
+                      const workCenter = workCenters.find((wc: any) => wc._id === m.workCenterId);
+                      machineName = workCenter?.name || m.workCenterId;
                     }
-                  } else {
-                    // Last fallback: show work center name
-                    const workCenter = workCenters.find((wc: any) => wc._id === m.workCenterId);
-                    machineName = workCenter?.name || m.workCenterId;
-                  }
-                  
-                  return (
-                    <TableRow key={m.id}>
-                      <TableCell>{m.id}</TableCell>
-                      <TableCell>{machineName}</TableCell>
-                      <TableCell>{new Date(m.reportedAt).toLocaleString()}</TableCell>
-                      <TableCell><Badge>{m.status}</Badge></TableCell>
-                      <TableCell>{m.description}</TableCell>
-                      <TableCell>
-                        {m.status !== "closed" ? <Button onClick={() => closeMaintenanceRequest(m._id || m.id)}>Close</Button> : <span>—</span>}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
+                    
+                    return (
+                      <TableRow key={m.id}>
+                        <TableCell>{m.id}</TableCell>
+                        <TableCell>{machineName}</TableCell>
+                        <TableCell>{new Date(m.reportedAt).toLocaleString()}</TableCell>
+                        <TableCell><Badge>{m.status}</Badge></TableCell>
+                        <TableCell>{m.description}</TableCell>
+                        <TableCell>
+                          {m.status !== "closed" ? <Button onClick={() => closeMaintenanceRequest(m._id || m.id)}>Close</Button> : <span>—</span>}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
               </TableBody>
             </Table>
-            {maintenanceRequests.length === 0 && <div className="text-center py-6 text-muted-foreground">No maintenance requests.</div>}
+            
+            <Pagination
+              currentPage={safeMaintenancePagination.currentPage}
+              totalPages={safeMaintenancePagination.totalPages}
+              totalItems={safeMaintenancePagination.totalItems}
+              itemsPerPage={safeMaintenancePagination.itemsPerPage}
+              onPageChange={handleMaintenancePageChange}
+              onItemsPerPageChange={handleMaintenanceItemsPerPageChange}
+            />
           </CardContent>
         </Card>
       </div>
 
       {/* QC list */}
       <Card>
-        <CardHeader><CardTitle>Quality Checks</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>Quality Checks</CardTitle>
+          <div className="flex items-center gap-2">
+            <Input
+              placeholder="Search quality checks..."
+              value={qualitySearch}
+              onChange={(e) => setQualitySearch(e.target.value)}
+              className="w-48"
+            />
+          </div>
+        </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
@@ -1683,51 +1826,67 @@ export default function ProductionExecution() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {qualityChecks.map(q => {
-                // Find work order name
-                const workOrder = workOrders.find((wo: any) => wo._id === q.workOrderId);
-                const workOrderName = workOrder?.productName || q.workOrderId;
-                
-                // Find operator name (assuming operatorId is stored in quality check)
-                const operator = availableOperators.find((op: any) => (op.id || op.resourceId) === q.operatorId) || 
-                               employees.find((e: any) => e.id === q.operatorId);
-                const operatorName = operator?.name || operator?.personalInfo?.name || q.operatorId || "-";
-                
-                return (
-                  <TableRow key={q.id}>
-                    <TableCell>{q.id}</TableCell>
-                    <TableCell>{workOrderName}</TableCell>
-                    <TableCell>{operatorName}</TableCell>
-                    <TableCell>{q.qty || 0}</TableCell>
-                    <TableCell>{new Date(q.requestedAt).toLocaleString()}</TableCell>
-                    <TableCell><Badge>{q.status}</Badge></TableCell>
-                    <TableCell>
-                      {q.status === "pending" ? (
-                        <>
-                          <Button
-                            disabled={!canEdit}
-                            onClick={() => canEdit && completeQualityCheck(q._id || q.id, true)}
-                          >
-                            Pass
-                          </Button>
+              {qualityChecks.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-6 text-muted-foreground">
+                    {productionLoading ? "Loading quality checks..." : "No quality checks."}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                qualityChecks.map(q => {
+                  // Find work order name
+                  const workOrder = workOrders.find((wo: any) => wo._id === q.workOrderId);
+                  const workOrderName = workOrder?.productName || q.workOrderId;
+                  
+                  // Find operator name (assuming operatorId is stored in quality check)
+                  const operator = availableOperators.find((op: any) => (op.id || op.resourceId) === q.operatorId) || 
+                                 employees.find((e: any) => e.id === q.operatorId);
+                  const operatorName = operator?.name || operator?.personalInfo?.name || q.operatorId || "-";
+                  
+                  return (
+                    <TableRow key={q.id}>
+                      <TableCell>{q.id}</TableCell>
+                      <TableCell>{workOrderName}</TableCell>
+                      <TableCell>{operatorName}</TableCell>
+                      <TableCell>{q.qty || 0}</TableCell>
+                      <TableCell>{new Date(q.requestedAt).toLocaleString()}</TableCell>
+                      <TableCell><Badge>{q.status}</Badge></TableCell>
+                      <TableCell>
+                        {q.status === "pending" ? (
+                          <>
+                            <Button
+                              disabled={!canEdit}
+                              onClick={() => canEdit && completeQualityCheck(q._id || q.id, true)}
+                            >
+                              Pass
+                            </Button>
 
-                          <Button
-                            variant="destructive"
-                            disabled={!canEdit}
-                            onClick={() => canEdit && completeQualityCheck(q._id || q.id, false)}
-                          >
-                            Fail
-                          </Button>
+                            <Button
+                              variant="destructive"
+                              disabled={!canEdit}
+                              onClick={() => canEdit && completeQualityCheck(q._id || q.id, false)}
+                            >
+                              Fail
+                            </Button>
 
-                        </>
-                      ) : <span>—</span>}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
+                          </>
+                        ) : <span>—</span>}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
             </TableBody>
           </Table>
-          {qualityChecks.length === 0 && <div className="text-center py-6 text-muted-foreground">No quality checks.</div>}
+          
+          <Pagination
+            currentPage={safeQualityPagination.currentPage}
+            totalPages={safeQualityPagination.totalPages}
+            totalItems={safeQualityPagination.totalItems}
+            itemsPerPage={safeQualityPagination.itemsPerPage}
+            onPageChange={handleQualityPageChange}
+            onItemsPerPageChange={handleQualityItemsPerPageChange}
+          />
         </CardContent>
       </Card>
 

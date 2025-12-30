@@ -5,6 +5,7 @@ import axios from "@/utils/axiosApi";
 /* ================= TYPES ================= */
 export interface WorkOrder {
   _id: string;
+  id?: string; // For compatibility
   orderNo: string;
   productId: string;
   productName?: string;
@@ -15,12 +16,23 @@ export interface WorkOrder {
   dueDate?: string;
   notes?: string;
   imageUrl?: string;
+  location?: string; // ✅ ADD LOCATION FIELD
+  plannedHours?: number; // ✅ ADD PLANNED HOURS
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 interface WorkOrderState {
   list: WorkOrder[];
   loading: boolean;
   error: string | null;
+  pagination: {
+    total: number;
+    page: number;
+    totalPages: number;
+    hasNext: boolean;
+    hasPrev: boolean;
+  };
 }
 
 /* ================= INITIAL STATE ================= */
@@ -28,15 +40,34 @@ const initialState: WorkOrderState = {
   list: [],
   loading: false,
   error: null,
+  pagination: {
+    total: 0,
+    page: 1,
+    totalPages: 0,
+    hasNext: false,
+    hasPrev: false,
+  },
 };
 
 /* ================= THUNKS ================= */
 export const fetchWorkOrders = createAsyncThunk(
   "workOrder/fetch",
-  async (_, { rejectWithValue }) => {
+  async (params?: { 
+    location?: string; 
+    page?: number; 
+    limit?: number; 
+    search?: string; 
+  }, { rejectWithValue }) => {
     try {
-      const res = await axios.get("/fetch/work-order");
-      return res.data.data;
+      const queryParams = {
+        ...(params?.location && params.location !== "all" && { location: params.location }),
+        ...(params?.page && { page: params.page }),
+        ...(params?.limit && { limit: params.limit }),
+        ...(params?.search && { search: params.search })
+      };
+      
+      const res = await axios.get("/fetch/work-order", { params: queryParams });
+      return res.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || "Fetch failed");
     }
@@ -92,7 +123,14 @@ const workOrderSlice = createSlice({
       })
       .addCase(fetchWorkOrders.fulfilled, (state, action) => {
         state.loading = false;
-        state.list = action.payload;
+        state.list = action.payload.data || [];
+        state.pagination = {
+          total: action.payload.total || 0,
+          page: action.payload.page || 1,
+          totalPages: action.payload.totalPages || 0,
+          hasNext: action.payload.hasNext || false,
+          hasPrev: action.payload.hasPrev || false,
+        };
       })
       .addCase(fetchWorkOrders.rejected, (state, action) => {
         state.loading = false;

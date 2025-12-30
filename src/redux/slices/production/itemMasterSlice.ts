@@ -112,7 +112,12 @@ const itemMasterSlice = createSlice({
       .addCase(fetchItems.fulfilled, (state, action) => {
         state.loading = false;
         state.list = action.payload?.data || [];
-        state.pagination = action.payload?.pagination || initialState.pagination;
+        state.pagination = {
+          total: action.payload?.pagination?.total || 0,
+          page: action.payload?.pagination?.page || 1,
+          limit: action.payload?.pagination?.limit || 10,
+          totalPages: action.payload?.pagination?.totalPages || 0,
+        };
       })
       .addCase(fetchItems.rejected, (state, action) => {
         state.loading = false;

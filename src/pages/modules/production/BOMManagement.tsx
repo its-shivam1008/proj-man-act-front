@@ -1,6 +1,7 @@
 import { usePermission } from "@/hooks/userPermission";
 import { fetchProducts } from "@/redux/slices/productSlice";
 import { fetchMaterials } from "@/redux/slices/rawmaterialSlice";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import React, { useState, useEffect, useMemo } from "react";
 import { Plus, Edit, Trash2, Search, Package, RefreshCcw, ShieldAlert } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -10,6 +11,22 @@ import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../components/ui/dialog";
 import { Label } from "../../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandInput,
+  CommandList,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+} from "@/components/ui/command";
+import { Check, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Pagination } from "../../../components/ui/pagination";
 import { storage, STORAGE_KEYS } from "../../../lib/storage";
 import { toast } from "sonner";
 import { useDispatch, useSelector } from "react-redux";
@@ -91,6 +108,7 @@ interface BOM {
   productName: string;
   version: string;
   status: "active" | "inactive" | "draft";
+  location?: string;
   items: BOMItem[];
   createdAt: string;
   updatedAt: string;
@@ -99,10 +117,14 @@ interface BOM {
 // --- Main Component ---
 export default function AdvancedBOMPage() {
   const { products } = useSelector((state: RootState) => state.products);
+  const { locations } = useSelector((state: RootState) => state.masterData);
+  const { userProfile } = useSelector((state: RootState) => state.auth);
+  
   const canView = usePermission("bomManagement", "view");
   const canCreate = usePermission("bomManagement", "create");
   const canEdit = usePermission("bomManagement", "edit");
   const canDelete = usePermission("bomManagement", "delete");
+  
   const { list: boms, loading, pagination } = useSelector(
     (state: RootState) => state.bom
   );
@@ -110,6 +132,15 @@ export default function AdvancedBOMPage() {
   const { materials, loading: materialLoading } = useSelector(
     (state: RootState) => state.rawMaterials
   );
+
+  // Location filter states
+  const [locationFilter, setLocationFilter] = useState("all");
+  const [locationOpen, setLocationOpen] = useState(false);
+  
+  // Location restriction logic (same as Projects page)
+  const isLocationRestricted = 
+    userProfile?.role !== 'admin' && 
+    !!userProfile?.location;
 
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -119,10 +150,13 @@ export default function AdvancedBOMPage() {
     productId: "",
     version: "1.0",
     status: "draft",
+    location: undefined,
     items: [],
   });
-  const [page, setPage] = useState(1);
-  const limit = 10; // you can change later
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(5); // 5 items per page as requested
 
   const organisationId = localStorage.getItem("organisationId");
   const dispatch = useDispatch<AppDispatch>();
@@ -138,6 +172,8 @@ export default function AdvancedBOMPage() {
     if (orgId) {
       dispatch(fetchMaterials(orgId));
     }
+    // Fetch master data for locations
+    dispatch(fetchMasterData("location") as any);
   }, [dispatch]);
 
   useEffect(() => {
@@ -150,24 +186,58 @@ export default function AdvancedBOMPage() {
     dispatch(
       fetchBOMs({
         organisationId,  
-        limit,
+        page: currentPage,
+        limit: itemsPerPage,
         search: searchTerm,
+        location: locationFilter,
       })
     );
-  }, [page, searchTerm, organisationId, dispatch]);
+  }, [currentPage, itemsPerPage, searchTerm, locationFilter, organisationId, dispatch]);
+
+  // Auto-set location filter for restricted users
+  useEffect(() => {
+    if (isLocationRestricted && userProfile?.location) {
+      setLocationFilter(userProfile.location);
+    }
+  }, [isLocationRestricted, userProfile]);
+
+  // Location filter change handler
+  const handleLocationFilterChange = (val: string) => {
+    setLocationFilter(val);
+    setCurrentPage(1); // Reset to first page when filter changes
+  };
+
+  // Pagination handlers
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+  };
+
+  const handleItemsPerPageChange = (newItemsPerPage: number) => {
+    setItemsPerPage(newItemsPerPage);
+    setCurrentPage(1); // Reset to first page when changing items per page
+  };
+
+  // Search handler
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value);
+    setCurrentPage(1); // Reset to first page when searching
+  };
 
 
   const handleReset = () => {
     setSearchTerm("");
-    setPage(1); // ✅ reset page
+    setLocationFilter("all");
+    setCurrentPage(1); // ✅ reset page
     setEditingBOM(null);
     resetForm();
 
     dispatch(
       fetchBOMs({
+        organisationId,
         page: 1,
-        limit,
+        limit: itemsPerPage,
         search: "",
+        location: "all",
       })
     );
 
@@ -482,6 +552,7 @@ export default function AdvancedBOMPage() {
       productId: bom.productId,
       version: bom.version,
       status: bom.status,
+      location: bom.location || (isLocationRestricted ? userProfile.location : undefined),
       items: bom.items,
     });
     setIsDialogOpen(true);
@@ -492,17 +563,19 @@ export default function AdvancedBOMPage() {
       await dispatch(deleteBOM(id)).unwrap();
       toast.success("BOM deleted");
 
-      const shouldReset = boms.length === 1 && page > 1;
+      const shouldReset = boms.length === 1 && currentPage > 1;
 
-      const nextPage = shouldReset ? page - 1 : page;
+      const nextPage = shouldReset ? currentPage - 1 : currentPage;
 
-      setPage(nextPage);
+      setCurrentPage(nextPage);
 
       dispatch(
         fetchBOMs({
+          organisationId,
           page: nextPage,
-          limit,
+          limit: itemsPerPage,
           search: searchTerm,
+          location: locationFilter,
         })
       );
     } catch {
@@ -562,7 +635,13 @@ export default function AdvancedBOMPage() {
 
   const resetForm = () => {
     setEditingBOM(null);
-    setFormData({ productId: "", version: "1.0", status: "draft", items: [] });
+    setFormData({ 
+      productId: "", 
+      version: "1.0", 
+      status: "draft", 
+      location: isLocationRestricted ? userProfile.location : undefined,
+      items: [] 
+    });
   };
 
 
@@ -623,16 +702,74 @@ export default function AdvancedBOMPage() {
                 </div>
               </div>
 
-              <div>
-                <Label>Status</Label>
-                <Select value={formData.status} onValueChange={(v: any) => setFormData({ ...formData, status: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="draft">Draft</SelectItem>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="inactive">Inactive</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <Label>Status</Label>
+                  <Select value={formData.status} onValueChange={(v: any) => setFormData({ ...formData, status: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="draft">Draft</SelectItem>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Location Field */}
+                <div>
+                  <Label>Location</Label>
+                  <Popover open={locationOpen} onOpenChange={setLocationOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        className="w-full justify-between disabled:opacity-75 disabled:cursor-not-allowed"
+                        disabled={isLocationRestricted}
+                      >
+                        {formData.location
+                          ? (locations || []).find((l: any) => l._id === formData.location)?.name
+                          : "Select Location"}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    
+                    {!isLocationRestricted && (
+                      <PopoverContent className="w-full p-0">
+                        <Command>
+                          <CommandInput placeholder="Search location..." />
+                          <CommandList>
+                            <CommandEmpty>No location found.</CommandEmpty>
+                            <CommandGroup>
+                              {(locations || []).map((l: any) => (
+                                <CommandItem
+                                  key={l._id}
+                                  value={l.name}
+                                  onSelect={() => {
+                                    setFormData({ ...formData, location: l._id });
+                                    setLocationOpen(false);
+                                  }}
+                                >
+                                  <Check
+                                    className={cn(
+                                      "mr-2 h-4 w-4",
+                                      formData.location === l._id ? "opacity-100" : "opacity-0"
+                                    )}
+                                  />
+                                  {l.name}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    )}
+                  </Popover>
+                  {isLocationRestricted && (
+                    <p className="text-[10px] text-muted-foreground">
+                      *Location is fixed based on your permissions.
+                    </p>
+                  )}
+                </div>
               </div>
 
               {/* Items */}
@@ -761,11 +898,27 @@ export default function AdvancedBOMPage() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
           <Input placeholder="Search BOMs..." className="pl-10" value={searchTerm} onChange={(e) => {
-            setSearchTerm(e.target.value);
-            setPage(1);
+            handleSearchChange(e.target.value);
           }}
           />
         </div>
+        <Select 
+          disabled={isLocationRestricted} 
+          value={locationFilter} 
+          onValueChange={handleLocationFilterChange}
+        >
+          <SelectTrigger className="w-48">
+            <SelectValue placeholder="Filter Location" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Locations</SelectItem>
+            {(locations || []).map((loc: any) => (
+              <SelectItem key={loc._id} value={loc._id}>
+                {loc.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Button
           variant="outline"
           onClick={handleReset}
@@ -773,7 +926,6 @@ export default function AdvancedBOMPage() {
           <RefreshCcw className="w-4 h-4 mr-2" />
           Reset
         </Button>
-
       </div>
 
       {/* Analytics */}
@@ -807,6 +959,11 @@ export default function AdvancedBOMPage() {
                       <p className="text-sm text-muted-foreground">
                         Version {b.version} • {b._id}
                       </p>
+                      {b.location && (
+                        <p className="text-xs text-blue-600 mt-1">
+                          📍 {(locations || []).find((l: any) => l._id === b.location)?.name || "Unknown Location"}
+                        </p>
+                      )}
                     </div>
 
                     <div className="flex gap-2 items-center">
@@ -867,31 +1024,16 @@ export default function AdvancedBOMPage() {
         )}
 
         {/* Pagination */}
-        {pagination?.totalPages > 1 && (
-          <div className="flex justify-between items-center mt-6">
-            <p className="text-sm text-muted-foreground">
-              Page {pagination.page} of {pagination.totalPages}
-            </p>
-
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page === 1}
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-              >
-                Previous
-              </Button>
-
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page === pagination.totalPages}
-                onClick={() => setPage(p => p + 1)}
-              >
-                Next
-              </Button>
-            </div>
+        {pagination && pagination.totalPages > 1 && (
+          <div className="mt-6">
+            <Pagination
+              currentPage={pagination.page}
+              totalPages={pagination.totalPages}
+              totalItems={pagination.total}
+              itemsPerPage={pagination.limit}
+              onPageChange={handlePageChange}
+              onItemsPerPageChange={handleItemsPerPageChange}
+            />
           </div>
         )}
       </AnimatePresence>

@@ -1,4 +1,6 @@
 import { usePermission } from "@/hooks/userPermission";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
+import { Pagination } from "@/components/ui/pagination";
 import {
   Select,
   SelectTrigger,
@@ -6,8 +8,23 @@ import {
   SelectContent,
   SelectItem,
 } from "../../../components/ui/select";
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandInput,
+  CommandList,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+} from "@/components/ui/command";
+import { Check, ChevronsUpDown, Search, MapPin } from "lucide-react";
+import { cn } from "@/lib/utils";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Card, CardHeader, CardTitle, CardContent,
 } from "../../../components/ui/card";
@@ -22,13 +39,9 @@ import {
 } from "../../../components/ui/table";
 import { Badge } from "../../../components/ui/badge";
 import {
-  Download, Plus, Trash2, Play, Pause, Printer,
+  Download, Plus, Trash2,
   ShieldAlert,
 } from "lucide-react";
-import {
-  ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid,
-} from "recharts";
 import { useDispatch, useSelector } from "react-redux";
 import type { RootState, AppDispatch } from "@/redux/store";
 import {
@@ -42,7 +55,8 @@ import { fetchProducts } from "@/redux/slices/productSlice";
    Type Definitions
 ----------------------------------- */
 type WorkOrder = {
-  id: string;
+  _id?: string;
+  id?: string;
   orderNo: string;
   productCode?: string;
   productName?: string;
@@ -57,6 +71,7 @@ type WorkOrder = {
   endDate?: string;
   dueDate?: string;
   status?: "planned" | "released" | "in-progress" | "paused" | "completed" | "cancelled";
+  location?: string;
   reservedMaterials?: { itemId: string; qty: number }[];
   attachments?: { id: string; name: string; dataUrl: string }[];
   plannedHours?: number;
@@ -70,25 +85,6 @@ type WorkOrder = {
   updatedAt?: string;
 };
 
-type Audit = {
-  id: string;
-  workOrderId?: string;
-  action: string;
-  timestamp: string;
-  details?: any;
-};
-
-type WorkLog = {
-  id: string;
-  workOrderId: string;
-  type: "start" | "stop" | "manual" | "note";
-  timestamp: string;
-  durationMinutes?: number;
-  notes?: string;
-  user?: string;
-};
-
-const genId = (pref = "id") => `${pref}_${Math.random().toString(36).slice(2, 9)}`;
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
 /* -----------------------------------
@@ -97,17 +93,32 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 export default function WorkOrdersAdvanced() {
   const dispatch = useDispatch<AppDispatch>();
 
-  const { list: orders, loading } = useSelector(
+  const { list: orders, pagination } = useSelector(
     (state: RootState) => state.workOrders
   );
 
   const { products } = useSelector((state: RootState) => state.products);
-
+  const { locations } = useSelector((state: RootState) => state.masterData);
+  const { userProfile } = useSelector((state: RootState) => state.auth);
 
   const canView = usePermission("productOrders", "view");
   const canCreate = usePermission("productOrders", "create");
   const canEdit = usePermission("productOrders", "edit");
   const canDelete = usePermission("productOrders", "delete");
+
+  // Location filter states
+  const [locationFilter, setLocationFilter] = useState("all");
+  const [locationOpen, setLocationOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  
+  // Location restriction logic
+  const isLocationRestricted = 
+    userProfile?.role !== 'admin' && 
+    !!userProfile?.location;
 
   if (!canView) {
     return (
@@ -139,6 +150,7 @@ export default function WorkOrdersAdvanced() {
     endDate: todayISO(),
     dueDate: todayISO(),
     status: "planned",
+    location: undefined,
     operators: [],
     attachments: [],
     notes: "",
@@ -152,22 +164,64 @@ export default function WorkOrdersAdvanced() {
   const orgID = localStorage.getItem('organisationId') || undefined;
   useEffect(() => {
     if (orgID) {
-      dispatch(fetchProducts(orgID));
+      (dispatch as any)(fetchProducts({ page: 1, limit: 100 }));
     }
-    dispatch(fetchWorkOrders());
-  }, [dispatch]);
+    // Fetch master data for locations
+    (dispatch as any)(fetchMasterData("location"));
+  }, [dispatch, orgID]);
+
+  // Auto-set location filter for restricted users
+  useEffect(() => {
+    if (isLocationRestricted && userProfile?.location) {
+      setLocationFilter(userProfile.location);
+    }
+  }, [isLocationRestricted, userProfile]);
+
+  // Load work orders when location filter or pagination changes
+  useEffect(() => {
+    const locationParam = locationFilter !== "all" ? locationFilter : undefined;
+    (dispatch as any)(fetchWorkOrders({
+      location: locationParam,
+      page: currentPage,
+      limit: itemsPerPage,
+      search: searchTerm,
+    }));
+  }, [dispatch, locationFilter, currentPage, itemsPerPage, searchTerm]);
+
+  // Location filter change handler
+  const handleLocationFilterChange = (val: string) => {
+    setLocationFilter(val);
+    setCurrentPage(1); // Reset to first page when changing location
+  };
+
+  // Helper to get location name
+  const getLocationName = (locData: string | { _id: string; name: string } | undefined) => {
+    if (!locData) return "No Location";
+    if (typeof locData === 'object' && locData.name) return locData.name;
+    const found = locations.find((l: any) => l._id === locData);
+    return found ? found.name : "Unknown Location";
+  };
+
+  // Pagination handlers
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+  };
+
+  const handleItemsPerPageChange = (limit: number) => {
+    setItemsPerPage(limit);
+    setCurrentPage(1); // Reset to first page when changing limit
+  };
+
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value);
+    setCurrentPage(1); // Reset to first page when searching
+  };
 
 
   /* -----------------------------------
      Derived Data
   ----------------------------------- */
-  const ordersByStatus = useMemo(() => {
-    const map: Record<string, number> = {};
-    orders.forEach((o) => {
-      map[o.status || "planned"] = (map[o.status || "planned"] || 0) + 1;
-    });
-    return Object.keys(map).map((k) => ({ name: k, value: map[k] }));
-  }, [orders]);
+  // Remove unused ordersByStatus for now since we're not displaying charts
 
   /* -----------------------------------
      CRUD Operations
@@ -185,6 +239,7 @@ export default function WorkOrdersAdvanced() {
       endDate: todayISO(),
       dueDate: todayISO(),
       status: "planned",
+      location: isLocationRestricted ? userProfile.location : undefined,
       operators: [],
       attachments: [],
       notes: "",
@@ -194,9 +249,12 @@ export default function WorkOrdersAdvanced() {
     setDialogOpen(true);
   };
 
-  const openEdit = (wo: WorkOrder) => {
+  const openEdit = (wo: any) => {
     setEditing(wo);
-    setForm({ ...wo });
+    setForm({ 
+      ...wo,
+      location: wo.location || (isLocationRestricted ? userProfile.location : undefined)
+    });
     setDialogOpen(true);
   };
 
@@ -215,13 +273,14 @@ export default function WorkOrdersAdvanced() {
       endDate: form.endDate,
       dueDate: form.dueDate,
       status: form.status || "planned",
+      location: form.location,
       notes: form.notes,
       imageUrl: form.imageUrl,
       plannedHours: Number(form.plannedHours) || 0,
     };
 
-    if (editing?._id) {
-      dispatch(updateWorkOrder({ id: editing._id, data: payload }));
+    if (editing?._id || editing?.id) {
+      dispatch(updateWorkOrder({ id: editing._id || editing.id || '', data: payload }));
     } else {
       dispatch(createWorkOrder(payload));
     }
@@ -324,6 +383,36 @@ export default function WorkOrdersAdvanced() {
         </div>
       </div>
 
+      {/* Search and Location Filter */}
+      <div className="flex flex-col md:flex-row items-center gap-4">
+        <div className="relative w-full md:flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <Input
+            placeholder="Search work orders..."
+            className="pl-10"
+            value={searchTerm}
+            onChange={(e) => handleSearchChange(e.target.value)}
+          />
+        </div>
+        <Select 
+          disabled={isLocationRestricted} 
+          value={locationFilter} 
+          onValueChange={handleLocationFilterChange}
+        >
+          <SelectTrigger className="w-full md:w-48">
+            <SelectValue placeholder="Filter Location" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Locations</SelectItem>
+            {(locations || []).map((loc: any) => (
+              <SelectItem key={loc._id} value={loc._id}>
+                {loc.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       {/* Inventory Snapshot */}
       <Card>
         <CardHeader><CardTitle>Inventory Snapshot</CardTitle></CardHeader>
@@ -334,13 +423,14 @@ export default function WorkOrdersAdvanced() {
 
       {/* Orders Table */}
       <Card>
-        <CardHeader><CardTitle>Work Orders ({orders.length})</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Work Orders ({pagination.total})</CardTitle></CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Order</TableHead>
                 <TableHead>Product</TableHead>
+                <TableHead>Location</TableHead>
                 <TableHead>Qty</TableHead>
                 {/* <TableHead>Work Center</TableHead> */}
                 <TableHead>Status</TableHead>
@@ -351,73 +441,100 @@ export default function WorkOrdersAdvanced() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {orders.map((wo) => (
-                <TableRow key={wo.id}>
-                  <TableCell>{wo.orderNo}</TableCell>
-                  <TableCell>{wo.productName}</TableCell>
-                  <TableCell>{wo.quantity}</TableCell>
-                  {/* <TableCell>{wo.workCenterId || "—"}</TableCell> */}
-                  <TableCell><Badge>{wo.status}</Badge></TableCell>
-                  <TableCell>{wo.plannedHours ?? "—"}</TableCell>
-
-                  {/* Image Column */}
-                  <TableCell>
-                    {wo.imageUrl ? (
-                      <img
-                        src={wo.imageUrl}
-                        alt="Work Order"
-                        className="w-12 h-12 object-cover rounded border cursor-pointer hover:scale-110 transition-transform"
-                        onClick={() => {
-                          // Open image in modal or new tab
-                          window.open(wo.imageUrl, '_blank');
-                        }}
-                      />
-                    ) : (
-                      <span className="text-gray-400 text-sm">No image</span>
-                    )}
-                  </TableCell>
-
-                  {/* Notes Column */}
-                  <TableCell>
-                    {wo.notes ? (
-                      <div
-                        className="max-w-32 truncate cursor-pointer hover:text-blue-600"
-                        title={wo.notes}
-                      >
-                        {wo.notes}
-                      </div>
-                    ) : (
-                      <span className="text-gray-400 text-sm">No notes</span>
-                    )}
-                  </TableCell>
-
-                  <TableCell>
-                    <div className="flex gap-2">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        disabled={!canEdit}
-                        onClick={() => canEdit && openEdit(wo)}
-                        className={!canEdit ? "opacity-50 cursor-not-allowed" : ""}
-                      >
-                        ✏️
-                      </Button>
-
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        disabled={!canDelete}
-                        onClick={() => canDelete && remove(wo._id || wo.id)}
-                        className={!canDelete ? "opacity-50 cursor-not-allowed" : ""}
-                      >
-                        <Trash2 />
-                      </Button>
-                    </div>
+              {orders.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="text-center py-6">
+                    {searchTerm || locationFilter !== "all" 
+                      ? "No work orders match your filters" 
+                      : "No work orders found"
+                    }
                   </TableCell>
                 </TableRow>
-              ))}
+              ) : (
+                orders.map((wo) => (
+                  <TableRow key={wo._id || wo.id}>
+                    <TableCell>{wo.orderNo}</TableCell>
+                    <TableCell>{wo.productName}</TableCell>
+                    <TableCell>
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
+                        <MapPin className="h-3 w-3" />
+                        {getLocationName(wo.location)}
+                      </span>
+                    </TableCell>
+                    <TableCell>{wo.quantity}</TableCell>
+                    {/* <TableCell>{wo.workCenterId || "—"}</TableCell> */}
+                    <TableCell><Badge>{wo.status}</Badge></TableCell>
+                    <TableCell>{wo.plannedHours ?? "—"}</TableCell>
+
+                    {/* Image Column */}
+                    <TableCell>
+                      {wo.imageUrl ? (
+                        <img
+                          src={wo.imageUrl}
+                          alt="Work Order"
+                          className="w-12 h-12 object-cover rounded border cursor-pointer hover:scale-110 transition-transform"
+                          onClick={() => {
+                            // Open image in modal or new tab
+                            window.open(wo.imageUrl, '_blank');
+                          }}
+                        />
+                      ) : (
+                        <span className="text-gray-400 text-sm">No image</span>
+                      )}
+                    </TableCell>
+
+                    {/* Notes Column */}
+                    <TableCell>
+                      {wo.notes ? (
+                        <div
+                          className="max-w-32 truncate cursor-pointer hover:text-blue-600"
+                          title={wo.notes}
+                        >
+                          {wo.notes}
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 text-sm">No notes</span>
+                      )}
+                    </TableCell>
+
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          disabled={!canEdit}
+                          onClick={() => canEdit && openEdit(wo)}
+                          className={!canEdit ? "opacity-50 cursor-not-allowed" : ""}
+                        >
+                          ✏️
+                        </Button>
+
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          disabled={!canDelete}
+                          onClick={() => canDelete && remove(wo._id || wo.id || '')}
+                          className={!canDelete ? "opacity-50 cursor-not-allowed" : ""}
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
+          
+          {/* Pagination */}
+          <Pagination
+            currentPage={pagination.page}
+            totalPages={pagination.totalPages}
+            totalItems={pagination.total}
+            itemsPerPage={itemsPerPage}
+            onPageChange={handlePageChange}
+            onItemsPerPageChange={handleItemsPerPageChange}
+          />
         </CardContent>
       </Card>
 
@@ -506,6 +623,62 @@ export default function WorkOrdersAdvanced() {
                   <SelectItem value="cancelled">Cancelled</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Location Field */}
+            <div>
+              <Label>Location</Label>
+              <Popover open={locationOpen} onOpenChange={setLocationOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    className="w-full justify-between disabled:opacity-75 disabled:cursor-not-allowed"
+                    disabled={isLocationRestricted}
+                  >
+                    {form.location
+                      ? (locations || []).find((l: any) => l._id === form.location)?.name
+                      : "Select Location"}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                
+                {!isLocationRestricted && (
+                  <PopoverContent className="w-full p-0">
+                    <Command>
+                      <CommandInput placeholder="Search location..." />
+                      <CommandList>
+                        <CommandEmpty>No location found.</CommandEmpty>
+                        <CommandGroup>
+                          {(locations || []).map((l: any) => (
+                            <CommandItem
+                              key={l._id}
+                              value={l.name}
+                              onSelect={() => {
+                                setForm({ ...form, location: l._id });
+                                setLocationOpen(false);
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  form.location === l._id ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              {l.name}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                )}
+              </Popover>
+              {isLocationRestricted && (
+                <p className="text-[10px] text-muted-foreground">
+                  *Location is fixed based on your permissions.
+                </p>
+              )}
             </div>
 
             <div>

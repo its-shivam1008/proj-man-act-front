@@ -2,7 +2,7 @@
 
 import { usePermission } from "@/hooks/userPermission";
 import { useDispatch, useSelector } from "react-redux";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   Card, CardHeader, CardTitle, CardContent,
 } from "@/components/ui/card";
@@ -22,13 +22,14 @@ import {
   LineChart, Line,
   CartesianGrid, XAxis, YAxis, Tooltip,
 } from "recharts";
-import { Plus, ShieldAlert, Calendar, TrendingUp, TrendingDown, Activity } from "lucide-react";
+import { Plus, ShieldAlert, Calendar, TrendingUp, TrendingDown, Activity, Search } from "lucide-react";
 import type { RootState, AppDispatch } from "@/redux/store";
 import {
   fetchDPRs,
   createDPR,
 } from "@/redux/slices/production/productionReportingSlice";
 import { Badge } from "@/components/ui/badge";
+import { Pagination } from "@/components/ui/pagination";
 
 /* ============================================================
    COMPONENT
@@ -38,11 +39,12 @@ export default function DailyProductionReport() {
   const canView = usePermission("dailyProductionReport", "view");
   const canCreate = usePermission("dailyProductionReport", "create");
 
-  const { dprs, loading, error } = useSelector(
+  const { dprs, dprsPagination, loading, error } = useSelector(
     (state: RootState) => state.productionReporting
   );
 
   const [open, setOpen] = useState(false);
+  const [dprSearch, setDprSearch] = useState("");
   const [form, setForm] = useState<any>({
     date: new Date().toISOString().slice(0, 10),
     totalProduced: 0,
@@ -50,6 +52,50 @@ export default function DailyProductionReport() {
     totalDowntimeMin: 0,
     remarks: "",
   });
+
+  // Debounced search function
+  const debounce = useCallback((func: Function, delay: number) => {
+    let timeoutId: NodeJS.Timeout;
+    return (...args: any[]) => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => func.apply(null, args), delay);
+    };
+  }, []);
+
+  // Debounced search handler
+  const debouncedDprSearch = useCallback(
+    debounce((searchTerm: string) => {
+      dispatch(fetchDPRs({
+        page: 1,
+        limit: dprsPagination?.itemsPerPage || 10,
+        search: searchTerm
+      }));
+    }, 300),
+    [dispatch, dprsPagination?.itemsPerPage]
+  );
+
+  // Search handler
+  const handleDprSearch = (value: string) => {
+    setDprSearch(value);
+    debouncedDprSearch(value);
+  };
+
+  // Pagination handlers
+  const handleDprPageChange = (page: number) => {
+    dispatch(fetchDPRs({
+      page,
+      limit: dprsPagination?.itemsPerPage || 10,
+      search: dprSearch
+    }));
+  };
+
+  const handleDprItemsPerPageChange = (itemsPerPage: number) => {
+    dispatch(fetchDPRs({
+      page: 1,
+      limit: itemsPerPage,
+      search: dprSearch
+    }));
+  };
 
   useEffect(() => {
     dispatch(fetchDPRs());
@@ -348,7 +394,20 @@ export default function DailyProductionReport() {
       {/* DPR TABLE */}
       <Card>
         <CardHeader>
-          <CardTitle>DPR History</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>DPR History ({dprsPagination?.totalItems || 0})</CardTitle>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search DPR records..."
+                  value={dprSearch}
+                  onChange={(e) => handleDprSearch(e.target.value)}
+                  className="pl-8 w-64"
+                />
+              </div>
+            </div>
+          </div>
           <p className="text-sm text-muted-foreground">
             Complete daily production report records
           </p>
@@ -366,61 +425,75 @@ export default function DailyProductionReport() {
               <p className="text-sm text-gray-400">Create your first daily production report</p>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Produced</TableHead>
-                  <TableHead>Rejected</TableHead>
-                  <TableHead>Efficiency</TableHead>
-                  <TableHead>Downtime (min)</TableHead>
-                  <TableHead>Remarks</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Produced</TableHead>
+                    <TableHead>Rejected</TableHead>
+                    <TableHead>Efficiency</TableHead>
+                    <TableHead>Downtime (min)</TableHead>
+                    <TableHead>Remarks</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
 
-              <TableBody>
-                {dprs.map((d: any) => {
-                  const efficiency = d.totalProduced > 0 ? 
-                    Math.round(((d.totalProduced - d.totalRejected) / d.totalProduced) * 100) : 0;
-                  
-                  const isToday = d.date === new Date().toISOString().slice(0, 10);
-                  
-                  return (
-                    <TableRow key={d._id} className={isToday ? 'bg-blue-50' : ''}>
-                      <TableCell className="font-medium">
-                        {new Date(d.date).toLocaleDateString('en-GB')}
-                        {isToday && <Badge variant="secondary" className="ml-2">Today</Badge>}
-                      </TableCell>
-                      <TableCell className="text-green-600 font-semibold">
-                        {d.totalProduced}
-                      </TableCell>
-                      <TableCell className="text-red-600 font-semibold">
-                        {d.totalRejected}
-                      </TableCell>
-                      <TableCell>
-                        <Badge 
-                          variant={efficiency >= 90 ? "success" : efficiency >= 70 ? "secondary" : "destructive"}
-                        >
-                          {efficiency}%
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-yellow-600">
-                        {d.totalDowntimeMin}
-                      </TableCell>
-                      <TableCell className="max-w-xs truncate">
-                        {d.remarks || "-"}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">
-                          {d.status || "Completed"}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                <TableBody>
+                  {dprs.map((d: any) => {
+                    const efficiency = d.totalProduced > 0 ? 
+                      Math.round(((d.totalProduced - d.totalRejected) / d.totalProduced) * 100) : 0;
+                    
+                    const isToday = d.date === new Date().toISOString().slice(0, 10);
+                    
+                    return (
+                      <TableRow key={d._id} className={isToday ? 'bg-blue-50' : ''}>
+                        <TableCell className="font-medium">
+                          {new Date(d.date).toLocaleDateString('en-GB')}
+                          {isToday && <Badge variant="secondary" className="ml-2">Today</Badge>}
+                        </TableCell>
+                        <TableCell className="text-green-600 font-semibold">
+                          {d.totalProduced}
+                        </TableCell>
+                        <TableCell className="text-red-600 font-semibold">
+                          {d.totalRejected}
+                        </TableCell>
+                        <TableCell>
+                          <Badge 
+                            variant={efficiency >= 90 ? "success" : efficiency >= 70 ? "secondary" : "destructive"}
+                          >
+                            {efficiency}%
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-yellow-600">
+                          {d.totalDowntimeMin}
+                        </TableCell>
+                        <TableCell className="max-w-xs truncate">
+                          {d.remarks || "-"}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">
+                            {d.status || "Completed"}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+
+              {/* Pagination for DPR */}
+              {dprsPagination && (
+                <Pagination
+                  currentPage={dprsPagination.currentPage}
+                  totalPages={dprsPagination.totalPages}
+                  totalItems={dprsPagination.totalItems}
+                  itemsPerPage={dprsPagination.itemsPerPage}
+                  onPageChange={handleDprPageChange}
+                  onItemsPerPageChange={handleDprItemsPerPageChange}
+                />
+              )}
+            </>
           )}
         </CardContent>
       </Card>

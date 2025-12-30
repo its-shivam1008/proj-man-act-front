@@ -1,5 +1,5 @@
 import { usePermission } from "@/hooks/userPermission";
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../../../components/ui/dialog";
 import { Badge } from "../../../components/ui/badge";
-import { Plus, Check, XCircle, ShieldAlert } from "lucide-react";
+import { Plus, Check, ShieldAlert, MapPin, Search } from "lucide-react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Area } from "recharts";
 import {
   fetchGRNs,
@@ -19,6 +19,23 @@ import {
   updateQC,
   fetchGRNTrend,
 } from "../../../redux/slices/production/grnSlice";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandInput,
+  CommandList,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+} from "@/components/ui/command";
+import { Check as CheckIcon, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Pagination } from "@/components/ui/pagination";
 import axios from "../../../utils/axiosApi";
 
 // Helper function to create movement entry
@@ -72,31 +89,77 @@ type GRNItem = {
   status?: "Pending QC" | "Accepted" | "Rejected";
 };
 
-type GRN = {
-  _id: string;
-  date: string;
-  workOrderId?: string;
-  items: GRNItem[];
-  remarks?: string;
-  acceptedBy?: string;
-  requireFinalQC: boolean;
-};
-
-const genId = (p = "id") => `${p}_${Math.random().toString(36).slice(2, 9)}`;
-
 export default function ReceiptOfFinishedGoods() {
   const dispatch = useDispatch();
   const grnState = useSelector((state: any) => state.grn || {});
-  const { grns = [], pendingQC = [], loading = false } = grnState;
+  const { pendingQC = [], pendingQCPagination, grnsPagination } = grnState;
 
   // Check authentication state
   const authState = useSelector((state: any) => state.auth || {});
   const { userProfile, organisationId, isAuthenticated } = authState;
 
+  // ✅ LOCATION FILTERING STATE
+  const { locations } = useSelector((state: any) => state.masterData);
+  const [locationFilter, setLocationFilter] = useState("all");
+  const [locationOpen, setLocationOpen] = useState(false);
+
+  const isLocationRestricted = 
+    userProfile?.role !== 'admin' && 
+    !!userProfile?.location;
+
   const canView = usePermission("receipt", "view");
   const canCreate = usePermission("receipt", "create");
   const canEdit = usePermission("receipt", "edit");
-  const canDelete = usePermission("receipt", "delete");
+
+  // Pagination states
+  const [pendingQCSearch, setPendingQCSearch] = useState("");
+
+  // Debounced search function
+  const debounce = useCallback((func: Function, delay: number) => {
+    let timeoutId: NodeJS.Timeout;
+    return (...args: any[]) => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => func.apply(null, args), delay);
+    };
+  }, []);
+
+  // Debounced search handlers
+  const debouncedPendingQCSearch = useCallback(
+    debounce((searchTerm: string) => {
+      (dispatch as any)(fetchPendingQC({
+        location: locationFilter !== "all" ? locationFilter : undefined,
+        page: 1,
+        limit: pendingQCPagination?.itemsPerPage || 10,
+        search: searchTerm
+      }));
+    }, 300),
+    [dispatch, locationFilter, pendingQCPagination?.itemsPerPage]
+  );
+
+  // Search handlers
+  const handlePendingQCSearch = (value: string) => {
+    setPendingQCSearch(value);
+    debouncedPendingQCSearch(value);
+  };
+
+  // Pagination handlers
+  const handlePendingQCPageChange = (page: number) => {
+    (dispatch as any)(fetchPendingQC({
+      location: locationFilter !== "all" ? locationFilter : undefined,
+      page,
+      limit: pendingQCPagination?.itemsPerPage || 10,
+      search: pendingQCSearch
+    }));
+  };
+
+  const handlePendingQCItemsPerPageChange = (itemsPerPage: number) => {
+    (dispatch as any)(fetchPendingQC({
+      location: locationFilter !== "all" ? locationFilter : undefined,
+      page: 1,
+      limit: itemsPerPage,
+      search: pendingQCSearch
+    }));
+  };
 
   // Stock management functions for products
   // Function to fetch current stock for a product
@@ -157,7 +220,6 @@ export default function ReceiptOfFinishedGoods() {
         });
 
         if (updateResponse.data.success) {
-          console.log(`✅ Successfully deducted ${quantityToDeduct} units from product ${productId}`);
           return true;
         }
       }
@@ -234,11 +296,66 @@ export default function ReceiptOfFinishedGoods() {
   // Load data on mount
   useEffect(() => {
     if (isAuthenticated && organisationId) {
-      console.log("GRN: Loading data...");
-      dispatch(fetchGRNs() as any);
-      dispatch(fetchPendingQC() as any);
+      (dispatch as any)(fetchMasterData("location"));
     }
   }, [dispatch, isAuthenticated, organisationId]);
+
+  // Auto-set location filter for restricted users
+  useEffect(() => {
+    if (isLocationRestricted && userProfile?.location) {
+      setLocationFilter(userProfile.location);
+      // Also set form location
+      setFormLocation(userProfile.location);
+    }
+  }, [isLocationRestricted, userProfile]);
+
+  // Load GRN data when location filter changes
+  useEffect(() => {
+    if (isAuthenticated && organisationId) {
+      const locationParam = locationFilter !== "all" ? locationFilter : undefined;
+      (dispatch as any)(fetchGRNs({
+        location: locationParam,
+        page: grnsPagination?.currentPage || 1,
+        limit: grnsPagination?.itemsPerPage || 10,
+        search: ""
+      }));
+      (dispatch as any)(fetchPendingQC({
+        location: locationParam,
+        page: pendingQCPagination?.currentPage || 1,
+        limit: pendingQCPagination?.itemsPerPage || 10,
+        search: pendingQCSearch
+      }));
+    }
+  }, [dispatch, isAuthenticated, organisationId, locationFilter]);
+
+  // Handle location filter change
+  const handleLocationFilterChange = (val: string) => {
+    setLocationFilter(val);
+    // Reset searches and fetch fresh data
+    setPendingQCSearch("");
+    
+    // Fetch data with new location filter
+    (dispatch as any)(fetchGRNs({
+      location: val !== "all" ? val : undefined,
+      page: 1,
+      limit: grnsPagination?.itemsPerPage || 10,
+      search: ""
+    }));
+    (dispatch as any)(fetchPendingQC({
+      location: val !== "all" ? val : undefined,
+      page: 1,
+      limit: pendingQCPagination?.itemsPerPage || 10,
+      search: ""
+    }));
+  };
+
+  // Helper to get location name
+  const getLocationName = (locData: string | { _id: string; name: string } | undefined) => {
+    if (!locData) return "No Location";
+    if (typeof locData === 'object' && locData.name) return locData.name;
+    const found = locations.find((l: any) => l._id === locData);
+    return found ? found.name : "Unknown Location";
+  };
 
   // State for form
   const [openDialog, setOpenDialog] = useState(false);
@@ -251,18 +368,14 @@ export default function ReceiptOfFinishedGoods() {
   const [products, setProducts] = useState<any[]>([]);
   const [currentStock, setCurrentStock] = useState<number>(0);
   const [selectedProductName, setSelectedProductName] = useState<string>("");
+  // ✅ ADD LOCATION FORM STATE
+  const [formLocation, setFormLocation] = useState(isLocationRestricted ? userProfile?.location : "");
 
-  // Debug: Log products data
-  useEffect(() => {
-    console.log("Products state updated:", products);
-  }, [products]);
   useEffect(() => {
     const loadProducts = async () => {
       if (isAuthenticated && organisationId) {
         try {
-          console.log("Loading products for organisationId:", organisationId);
           const res = await axios.get(`/inventory/product/all/${organisationId}`);
-          console.log("Products response:", res.data);
           setProducts(res.data.products || []);
         } catch (error) {
           console.error("Failed to load products:", error);
@@ -299,7 +412,7 @@ export default function ReceiptOfFinishedGoods() {
     return `${productId}-${datePart}-${suffix}`;
   };
 
-  const estimateValue = (productId: string) => {
+  const estimateValue = () => {
     // TODO: Get actual product cost from backend
     return 100; // fallback demo value
   };
@@ -308,6 +421,11 @@ export default function ReceiptOfFinishedGoods() {
   const createGRNRecord = async () => {
     if (formItems.length === 0) {
       toast.error("Add at least one item.");
+      return;
+    }
+
+    if (!formLocation) {
+      toast.error("Please select a location.");
       return;
     }
 
@@ -332,6 +450,7 @@ export default function ReceiptOfFinishedGoods() {
 
     try {
       const grnData = {
+        location: formLocation, // ✅ ADD LOCATION
         items: formItems.map((item) => ({
           ...item,
           status: requireFinalQC ? "Pending QC" : "Accepted"
@@ -341,7 +460,7 @@ export default function ReceiptOfFinishedGoods() {
         requireFinalQC,
       };
 
-      await dispatch(createGRN(grnData) as any);
+      await (dispatch as any)(createGRN(grnData));
 
       // After successfully creating GRN, deduct quantities from product stocks
       let allStockDeducted = true;
@@ -384,8 +503,19 @@ export default function ReceiptOfFinishedGoods() {
       }
 
       // Refresh data
-      dispatch(fetchGRNs() as any);
-      dispatch(fetchPendingQC() as any);
+      const locationParam = locationFilter !== "all" ? locationFilter : undefined;
+      (dispatch as any)(fetchGRNs({
+        location: locationParam,
+        page: grnsPagination?.currentPage || 1,
+        limit: grnsPagination?.itemsPerPage || 10,
+        search: ""
+      }));
+      (dispatch as any)(fetchPendingQC({
+        location: locationParam,
+        page: pendingQCPagination?.currentPage || 1,
+        limit: pendingQCPagination?.itemsPerPage || 10,
+        search: pendingQCSearch
+      }));
 
       // Reset form
       setFormItems([]);
@@ -395,6 +525,7 @@ export default function ReceiptOfFinishedGoods() {
       setAcceptedBy("");
       setCurrentStock(0);
       setSelectedProductName("");
+      setFormLocation(isLocationRestricted ? userProfile?.location : ""); // ✅ RESET LOCATION
       setOpenDialog(false);
 
       // Show appropriate success message
@@ -430,13 +561,24 @@ export default function ReceiptOfFinishedGoods() {
   };
 
   /** ---------------------- QC Accept/Reject ---------------------- */
-  const updateBatchQC = async (productId: string, batchNo: string, action: "Accepted" | "Rejected") => {
+  const updateBatchQC = async (batchNo: string, action: "Accepted" | "Rejected") => {
     try {
-      await dispatch(updateQC({ productId, batchNo, action }) as any);
+      await (dispatch as any)(updateQC({ productId: "", batchNo, action }));
 
-      // Refresh data
-      dispatch(fetchPendingQC() as any);
-      dispatch(fetchGRNs() as any);
+      // Refresh data with location filter
+      const locationParam = locationFilter !== "all" ? locationFilter : undefined;
+      (dispatch as any)(fetchPendingQC({
+        location: locationParam,
+        page: pendingQCPagination?.currentPage || 1,
+        limit: pendingQCPagination?.itemsPerPage || 10,
+        search: pendingQCSearch
+      }));
+      (dispatch as any)(fetchGRNs({
+        location: locationParam,
+        page: grnsPagination?.currentPage || 1,
+        limit: grnsPagination?.itemsPerPage || 10,
+        search: ""
+      }));
 
       toast.success(`Batch ${action.toLowerCase()} successfully`);
     } catch (error) {
@@ -450,8 +592,8 @@ export default function ReceiptOfFinishedGoods() {
   const [range, setRange] = useState<"daily" | "weekly" | "monthly">("daily");
 
   useEffect(() => {
-    dispatch(fetchGRNTrend(range));
-  }, [range]);
+    (dispatch as any)(fetchGRNTrend(range));
+  }, [range, dispatch]);
 
 
   /** ---------------------- UI ---------------------- */
@@ -468,7 +610,7 @@ export default function ReceiptOfFinishedGoods() {
     }
 
     const batch = generateBatch(manualProductId);
-    const unitValue = estimateValue(manualProductId);
+    const unitValue = estimateValue();
     const totalValue = unitValue * Number(manualQty);
     setFormItems((p) => [...p, {
       productId: manualProductId,
@@ -486,8 +628,33 @@ export default function ReceiptOfFinishedGoods() {
 
   return (
     <div className="space-y-6 p-6">
-      <h2 className="text-2xl font-bold">Receipt of Finished Goods (GRN)</h2>
-      <p className="text-muted-foreground">Transfer completed goods from WIP to Finished Goods inventory. Auto-generate batch and trigger QC.</p>
+      {/* Header with Location Filter */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-2xl font-bold">Receipt of Finished Goods (GRN)</h2>
+          <p className="text-muted-foreground">Transfer completed goods from WIP to Finished Goods inventory. Auto-generate batch and trigger QC.</p>
+        </div>
+        
+        {/* ✅ LOCATION FILTER */}
+        <Select 
+          disabled={isLocationRestricted} 
+          value={locationFilter} 
+          onValueChange={handleLocationFilterChange}
+        >
+          <SelectTrigger className="w-48">
+            <MapPin className="w-4 h-4 mr-2" />
+            <SelectValue placeholder="Filter Location" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Locations</SelectItem>
+            {locations.map((loc: any) => (
+              <SelectItem key={loc._id} value={loc._id}>
+                {loc.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
       <div className="flex items-center gap-3">
         <input type="checkbox" checked={requireFinalQC} onChange={(e) => setRequireFinalQC(e.target.checked)} />
@@ -516,6 +683,63 @@ export default function ReceiptOfFinishedGoods() {
               opacity: canCreate ? 1 : 0.6,
             }}
           >
+
+            {/* ✅ LOCATION FIELD */}
+            <div>
+              <Label>Location *</Label>
+              <Popover open={locationOpen} onOpenChange={setLocationOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className={`w-full px-4 py-3 border rounded-lg text-left flex justify-between items-center ${
+                      isLocationRestricted ? 'bg-gray-100 cursor-not-allowed' : 'hover:bg-gray-50'
+                    }`}
+                    disabled={isLocationRestricted}
+                  >
+                    {formLocation
+                      ? locations.find((l: any) => l._id === formLocation)?.name
+                      : "Select Location"}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                  </button>
+                </PopoverTrigger>
+                
+                {!isLocationRestricted && (
+                  <PopoverContent className="p-0">
+                    <Command>
+                      <CommandInput placeholder="Search location..." />
+                      <CommandList>
+                        <CommandEmpty>No location found.</CommandEmpty>
+                        <CommandGroup>
+                          {locations.map((l: any) => (
+                            <CommandItem
+                              key={l._id}
+                              value={l.name}
+                              onSelect={() => {
+                                setFormLocation(l._id);
+                                setLocationOpen(false);
+                              }}
+                            >
+                              <CheckIcon
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  formLocation === l._id ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              {l.name}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                )}
+              </Popover>
+              {isLocationRestricted && (
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  *Location is fixed based on your permissions.
+                </p>
+              )}
+            </div>
 
             <div className="grid md:grid-cols-2 gap-3">
               <div>
@@ -616,7 +840,22 @@ export default function ReceiptOfFinishedGoods() {
 
       {/* Pending QC Section */}
       <Card>
-        <CardHeader><CardTitle>Pending QC Batches</CardTitle></CardHeader>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>Pending QC Batches ({pendingQCPagination?.totalItems || 0})</CardTitle>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search batches, products..."
+                  value={pendingQCSearch}
+                  onChange={(e) => handlePendingQCSearch(e.target.value)}
+                  className="pl-8 w-64"
+                />
+              </div>
+            </div>
+          </div>
+        </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
@@ -624,6 +863,7 @@ export default function ReceiptOfFinishedGoods() {
                 <TableHead>Batch</TableHead>
                 <TableHead>Product</TableHead>
                 <TableHead>Qty</TableHead>
+                <TableHead>Location</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
@@ -631,8 +871,8 @@ export default function ReceiptOfFinishedGoods() {
             <TableBody>
               {pendingQC.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground">
-                    No Pending QC Batches
+                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                    {grnState.loading ? "Loading..." : "No Pending QC Batches"}
                   </TableCell>
                 </TableRow>
               )}
@@ -646,6 +886,12 @@ export default function ReceiptOfFinishedGoods() {
                     <TableCell>{product?.name || "Unknown Product"}</TableCell>
                     <TableCell>{item.qty}</TableCell>
                     <TableCell>
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
+                        <MapPin className="h-3 w-3" />
+                        {getLocationName(item.location)}
+                      </span>
+                    </TableCell>
+                    <TableCell>
                       <Badge variant="outline">{item.status}</Badge>
                     </TableCell>
                     <TableCell className="flex gap-2">
@@ -654,7 +900,7 @@ export default function ReceiptOfFinishedGoods() {
                         className="bg-green-600"
                         disabled={!canEdit}
                         onClick={() =>
-                          updateBatchQC(item.productId, item.batchNo, "Accepted")
+                          updateBatchQC(item.batchNo, "Accepted")
                         }
                       >
                         Accept
@@ -665,7 +911,7 @@ export default function ReceiptOfFinishedGoods() {
                         className="bg-red-600"
                         disabled={!canEdit}
                         onClick={() =>
-                          updateBatchQC(item.productId, item.batchNo, "Rejected")
+                          updateBatchQC(item.batchNo, "Rejected")
                         }
                       >
                         Reject
@@ -675,8 +921,19 @@ export default function ReceiptOfFinishedGoods() {
                 );
               })}
             </TableBody>
-
           </Table>
+
+          {/* Pagination for Pending QC */}
+          {pendingQCPagination && (
+            <Pagination
+              currentPage={pendingQCPagination.currentPage}
+              totalPages={pendingQCPagination.totalPages}
+              totalItems={pendingQCPagination.totalItems}
+              itemsPerPage={pendingQCPagination.itemsPerPage}
+              onPageChange={handlePendingQCPageChange}
+              onItemsPerPageChange={handlePendingQCItemsPerPageChange}
+            />
+          )}
         </CardContent>
       </Card>
 

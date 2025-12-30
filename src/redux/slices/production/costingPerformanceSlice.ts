@@ -57,7 +57,25 @@ interface CostingState {
   metrics: PerfMetric[];
   loading: boolean;
   error: string | null;
-  pagination: Pagination;
+  // Pagination states
+  standardsPagination: {
+    currentPage: number;
+    totalPages: number;
+    totalItems: number;
+    itemsPerPage: number;
+  };
+  actualsPagination: {
+    currentPage: number;
+    totalPages: number;
+    totalItems: number;
+    itemsPerPage: number;
+  };
+  metricsPagination: {
+    currentPage: number;
+    totalPages: number;
+    totalItems: number;
+    itemsPerPage: number;
+  };
 }
 
 /* =========================
@@ -70,12 +88,25 @@ const initialState: CostingState = {
   metrics: [],
   loading: false,
   error: null,
-  pagination: {
-    total: 0,
-    page: 1,
-    limit: 10,
-    totalPages: 0,
+  // Pagination states
+  standardsPagination: {
+    currentPage: 1,
+    totalPages: 1,
+    totalItems: 0,
+    itemsPerPage: 10
   },
+  actualsPagination: {
+    currentPage: 1,
+    totalPages: 1,
+    totalItems: 0,
+    itemsPerPage: 10
+  },
+  metricsPagination: {
+    currentPage: 1,
+    totalPages: 1,
+    totalItems: 0,
+    itemsPerPage: 10
+  }
 };
 
 /* =========================
@@ -84,9 +115,11 @@ const initialState: CostingState = {
 
 export const fetchStandards = createAsyncThunk(
   "costing/fetchStandards",
-  async (_, { rejectWithValue }) => {
+  async ({ location, page = 1, limit = 10, search = "" }: { location?: string; page?: number; limit?: number; search?: string } = {}, { rejectWithValue }) => {
     try {
-      const res = await axios.get("/api/costing/standards");
+      const params: any = { page, limit, search };
+      if (location) params.location = location;
+      const res = await axios.get("/api/costing/standards", { params });
       return res.data.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message);
@@ -139,9 +172,11 @@ export const deleteStandard = createAsyncThunk(
 
 export const fetchActuals = createAsyncThunk(
   "costing/fetchActuals",
-  async (_, { rejectWithValue }) => {
+  async ({ location, page = 1, limit = 10, search = "" }: { location?: string; page?: number; limit?: number; search?: string } = {}, { rejectWithValue }) => {
     try {
-      const res = await axios.get("/api/costing/actuals");
+      const params: any = { page, limit, search };
+      if (location) params.location = location;
+      const res = await axios.get("/api/costing/actuals", { params });
       return res.data.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message);
@@ -194,9 +229,11 @@ export const deleteActual = createAsyncThunk(
 
 export const fetchMetrics = createAsyncThunk(
   "costing/fetchMetrics",
-  async (_, { rejectWithValue }) => {
+  async ({ location, page = 1, limit = 10, search = "" }: { location?: string; page?: number; limit?: number; search?: string } = {}, { rejectWithValue }) => {
     try {
-      const res = await axios.get("/api/costing/metrics");
+      const params: any = { page, limit, search };
+      if (location) params.location = location;
+      const res = await axios.get("/api/costing/metrics", { params });
       return res.data.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message);
@@ -256,7 +293,10 @@ const costingSlice = createSlice({
       /* ===== STANDARDS ===== */
       .addCase(fetchStandards.fulfilled, (state, action) => {
         state.loading = false;
-        state.standards = action.payload;
+        state.standards = action.payload.data || action.payload;
+        if (action.payload.pagination) {
+          state.standardsPagination = action.payload.pagination;
+        }
       })
       .addCase(createStandard.fulfilled, (state, action) => {
         state.standards.unshift(action.payload);
@@ -271,7 +311,10 @@ const costingSlice = createSlice({
 
       /* ===== ACTUALS ===== */
       .addCase(fetchActuals.fulfilled, (state, action) => {
-        state.actuals = action.payload;
+        state.actuals = action.payload.data || action.payload;
+        if (action.payload.pagination) {
+          state.actualsPagination = action.payload.pagination;
+        }
         state.loading = false;
       })
       .addCase(createActual.fulfilled, (state, action) => {
@@ -287,7 +330,10 @@ const costingSlice = createSlice({
 
       /* ===== METRICS ===== */
       .addCase(fetchMetrics.fulfilled, (state, action) => {
-        state.metrics = action.payload;
+        state.metrics = action.payload.data || action.payload;
+        if (action.payload.pagination) {
+          state.metricsPagination = action.payload.pagination;
+        }
         state.loading = false;
       })
       .addCase(createMetric.fulfilled, (state, action) => {

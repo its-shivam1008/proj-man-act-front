@@ -4,12 +4,12 @@ import axios from "@/utils/axiosApi";
 /* LOGS */
 export const fetchLogs = createAsyncThunk(
     "production/logs/fetch",
-    async (params: { from?: string; to?: string }, { rejectWithValue }) => {
+    async (params: { from?: string; to?: string; page?: number; limit?: number; search?: string }, { rejectWithValue }) => {
         try {
             console.log('Fetching logs with params:', params);
             const res = await axios.get("/production-execution/logs", { params });
             console.log('Logs response:', res.data);
-            return res.data.data;
+            return res.data;
         } catch (error: any) {
             console.error('Error fetching logs:', error);
             return rejectWithValue(error.response?.data?.message || error.message);
@@ -35,12 +35,12 @@ export const createLog = createAsyncThunk(
 /* DOWNTIME */
 export const fetchDowntime = createAsyncThunk(
     "production/downtime/fetch",
-    async (params: { from?: string; to?: string }, { rejectWithValue }) => {
+    async (params: { from?: string; to?: string; page?: number; limit?: number; search?: string }, { rejectWithValue }) => {
         try {
             console.log('Fetching downtime with params:', params);
             const res = await axios.get("/production-execution/downtime", { params });
             console.log('Downtime response:', res.data);
-            return res.data.data;
+            return res.data;
         } catch (error: any) {
             console.error('Error fetching downtime:', error);
             return rejectWithValue(error.response?.data?.message || error.message);
@@ -74,9 +74,13 @@ export const closeDowntime = createAsyncThunk(
 /* MAINTENANCE */
 export const fetchMaintenance = createAsyncThunk(
     "production/maintenance/fetch",
-    async () => {
-        const res = await axios.get("/production-execution/maintenance");
-        return res.data.data;
+    async (params: { page?: number; limit?: number; search?: string } = {}, { rejectWithValue }) => {
+        try {
+            const res = await axios.get("/production-execution/maintenance", { params });
+            return res.data;
+        } catch (error: any) {
+            return rejectWithValue(error.response?.data?.message || error.message);
+        }
     }
 );
 
@@ -91,9 +95,13 @@ export const closeMaintenance = createAsyncThunk(
 /* QUALITY */
 export const fetchQuality = createAsyncThunk(
     "production/quality/fetch",
-    async () => {
-        const res = await axios.get("/production-execution/quality");
-        return res.data.data;
+    async (params: { page?: number; limit?: number; search?: string } = {}, { rejectWithValue }) => {
+        try {
+            const res = await axios.get("/production-execution/quality", { params });
+            return res.data;
+        } catch (error: any) {
+            return rejectWithValue(error.response?.data?.message || error.message);
+        }
     }
 );
 
@@ -126,6 +134,31 @@ const slice = createSlice({
         quality: [],
         loading: false,
         error: null,
+        // Pagination metadata
+        logsPagination: {
+            currentPage: 1,
+            totalPages: 1,
+            totalItems: 0,
+            itemsPerPage: 10
+        },
+        downtimePagination: {
+            currentPage: 1,
+            totalPages: 1,
+            totalItems: 0,
+            itemsPerPage: 10
+        },
+        maintenancePagination: {
+            currentPage: 1,
+            totalPages: 1,
+            totalItems: 0,
+            itemsPerPage: 10
+        },
+        qualityPagination: {
+            currentPage: 1,
+            totalPages: 1,
+            totalItems: 0,
+            itemsPerPage: 10
+        }
     },
     reducers: {
         clearError: (state) => {
@@ -134,21 +167,53 @@ const slice = createSlice({
     },
     extraReducers: (b) => {
         // Specific cases MUST come before addMatcher calls
-        b.addCase(fetchLogs.fulfilled, (s, a) => { s.logs = a.payload; });
+        b.addCase(fetchLogs.fulfilled, (s, a) => { 
+            s.logs = a.payload.data; 
+            s.logsPagination = {
+                currentPage: a.payload.currentPage,
+                totalPages: a.payload.totalPages,
+                totalItems: a.payload.totalItems,
+                itemsPerPage: a.payload.itemsPerPage
+            };
+        });
         b.addCase(createLog.fulfilled, (s, a) => { s.logs = [a.payload, ...s.logs]; });
         
-        b.addCase(fetchDowntime.fulfilled, (s, a) => { s.downtime = a.payload; });
+        b.addCase(fetchDowntime.fulfilled, (s, a) => { 
+            s.downtime = a.payload.data; 
+            s.downtimePagination = {
+                currentPage: a.payload.currentPage,
+                totalPages: a.payload.totalPages,
+                totalItems: a.payload.totalItems,
+                itemsPerPage: a.payload.itemsPerPage
+            };
+        });
         b.addCase(createDowntime.fulfilled, (s, a) => { s.downtime = [a.payload, ...s.downtime]; });
         b.addCase(closeDowntime.fulfilled, (s, a) => { 
             s.downtime = s.downtime.map((d: any) => d._id === a.payload._id ? a.payload : d);
         });
         
-        b.addCase(fetchMaintenance.fulfilled, (s, a) => { s.maintenance = a.payload; });
+        b.addCase(fetchMaintenance.fulfilled, (s, a) => { 
+            s.maintenance = a.payload.data; 
+            s.maintenancePagination = {
+                currentPage: a.payload.currentPage,
+                totalPages: a.payload.totalPages,
+                totalItems: a.payload.totalItems,
+                itemsPerPage: a.payload.itemsPerPage
+            };
+        });
         b.addCase(closeMaintenance.fulfilled, (s, a) => { 
             s.maintenance = s.maintenance.map((m: any) => m._id === a.payload._id ? a.payload : m);
         });
         
-        b.addCase(fetchQuality.fulfilled, (s, a) => { s.quality = a.payload; });
+        b.addCase(fetchQuality.fulfilled, (s, a) => { 
+            s.quality = a.payload.data; 
+            s.qualityPagination = {
+                currentPage: a.payload.currentPage,
+                totalPages: a.payload.totalPages,
+                totalItems: a.payload.totalItems,
+                itemsPerPage: a.payload.itemsPerPage
+            };
+        });
         b.addCase(completeQuality.fulfilled, (s, a) => { 
             s.quality = s.quality.map((q: any) => q._id === a.payload._id ? a.payload : q);
         });

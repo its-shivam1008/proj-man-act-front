@@ -1,6 +1,7 @@
 "use client";
 
 import { usePermission } from "@/hooks/userPermission";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import { useDispatch, useSelector } from "react-redux";
 import React, { useEffect, useState } from "react";
 import {
@@ -16,6 +17,13 @@ import {
   TabsContent,
 } from "../../../components/ui/tabs";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../../components/ui/select";
+import {
   ResponsiveContainer,
   CartesianGrid,
   XAxis,
@@ -24,7 +32,7 @@ import {
   BarChart,
   Bar,
 } from "recharts";
-import { ShieldAlert } from "lucide-react";
+import { ShieldAlert, MapPin } from "lucide-react";
 import { fetchWorkCenterPerformance } from "@/redux/slices/production/workCenterSlice";
 import type { RootState, AppDispatch } from "@/redux/store";
 import {
@@ -51,6 +59,15 @@ export default function ProductionReportingAnalytics() {
 
   const canView = usePermission("productionReportingAnalytics", "view");
 
+  // ✅ LOCATION FILTERING STATE
+  const { userProfile } = useSelector((state: RootState) => state.auth);
+  const { locations } = useSelector((state: RootState) => state.masterData);
+  const [locationFilter, setLocationFilter] = useState("all");
+
+  const isLocationRestricted = 
+    userProfile?.role !== 'admin' && 
+    !!userProfile?.location;
+
   const { performance, loading } = useSelector(
     (state: RootState) => state.workCenters
   );
@@ -58,7 +75,29 @@ export default function ProductionReportingAnalytics() {
   useEffect(() => {
     console.log("🚀 ProductionReportingAnalytics mounted, fetching performance...");
     dispatch(fetchWorkCenterPerformance());
+    // Fetch master data for locations
+    (dispatch as any)(fetchMasterData("location"));
   }, [dispatch]);
+
+  // Auto-set location filter for restricted users
+  useEffect(() => {
+    if (isLocationRestricted && userProfile?.location) {
+      setLocationFilter(userProfile.location);
+    }
+  }, [isLocationRestricted, userProfile]);
+
+  // Handle location filter change
+  const handleLocationFilterChange = (val: string) => {
+    setLocationFilter(val);
+  };
+
+  // Helper to get location name
+  const getLocationName = (locData: string | { _id: string; name: string } | undefined) => {
+    if (!locData) return "No Location";
+    if (typeof locData === 'object' && locData.name) return locData.name;
+    const found = locations.find((l: any) => l._id === locData);
+    return found ? found.name : "Unknown Location";
+  };
 
   // Debug performance data
   useEffect(() => {
@@ -80,11 +119,34 @@ export default function ProductionReportingAnalytics() {
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Production Reporting & Analytics</h1>
-        <p className="text-muted-foreground">
-          Work Center performance and efficiency analysis
-        </p>
+      {/* Header with Location Filter */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold">Production Reporting & Analytics</h1>
+          <p className="text-muted-foreground">
+            Work Center performance and efficiency analysis
+          </p>
+        </div>
+        
+        {/* ✅ LOCATION FILTER */}
+        <Select 
+          disabled={isLocationRestricted} 
+          value={locationFilter} 
+          onValueChange={handleLocationFilterChange}
+        >
+          <SelectTrigger className="w-48">
+            <MapPin className="w-4 h-4 mr-2" />
+            <SelectValue placeholder="Filter Location" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Locations</SelectItem>
+            {(locations || []).map((loc: any) => (
+              <SelectItem key={loc._id} value={loc._id}>
+                {loc.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
@@ -225,6 +287,7 @@ export default function ProductionReportingAnalytics() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Work Center</TableHead>
+                        <TableHead>Location</TableHead>
                         <TableHead>Run Time</TableHead>
                         <TableHead>Downtime</TableHead>
                         <TableHead>Produced</TableHead>
@@ -239,6 +302,12 @@ export default function ProductionReportingAnalytics() {
                       {performance.map((w) => (
                         <TableRow key={w.id}>
                           <TableCell>{w.workCenterName}</TableCell>
+                          <TableCell>
+                            <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
+                              <MapPin className="h-3 w-3" />
+                              {getLocationName(w.location)}
+                            </span>
+                          </TableCell>
                           <TableCell>{w.runTime}</TableCell>
                           <TableCell>{w.downtimeMin}</TableCell>
                           <TableCell>{w.produced}</TableCell>
@@ -260,31 +329,31 @@ export default function ProductionReportingAnalytics() {
           </div>
         </TabsContent>
         <TabsContent value="material-consumption">
-          <MaterialConsumptionReport />
+          <MaterialConsumptionReport locationFilter={locationFilter} />
         </TabsContent>
         <TabsContent value="quality-rejection">
-          <QualityRejectionReport />
+          <QualityRejectionReport locationFilter={locationFilter} />
         </TabsContent>
         <TabsContent value="equipment-utilisation">
-          <EquipmentUtilisationDashboard />
+          <EquipmentUtilisationDashboard locationFilter={locationFilter} />
         </TabsContent>
         <TabsContent value="wip">
-          <WipSummaryReport/>
+          <WipSummaryReport locationFilter={locationFilter} />
         </TabsContent>
         <TabsContent value="dpr">
-          <DailyProductionReport/>
+          <DailyProductionReport locationFilter={locationFilter} />
         </TabsContent>
         <TabsContent value="costvsoutput">
-          <CostVsOutputAnalysis/>
+          <CostVsOutputAnalysis locationFilter={locationFilter} />
         </TabsContent>
         <TabsContent value="downtime-analysis">
-          <DowntimeAnalysisReport/>
+          <DowntimeAnalysisReport locationFilter={locationFilter} />
         </TabsContent>
         <TabsContent value="production-efficiency">
-          <ProductionEfficiencyReport/>
+          <ProductionEfficiencyReport locationFilter={locationFilter} />
         </TabsContent>
         <TabsContent value="order-progress">
-          <OrderProgressTrackerReport/>
+          <OrderProgressTrackerReport locationFilter={locationFilter} />
         </TabsContent>
 
 

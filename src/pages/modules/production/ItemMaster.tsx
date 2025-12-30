@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { useDispatch, useSelector } from "react-redux";
 import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import type { RootState, AppDispatch } from "@/redux/store";
+import { Pagination } from "@/components/ui/pagination";
 
 import {
   fetchItems,
@@ -60,11 +61,15 @@ export default function ItemMaster() {
   const dispatch = useDispatch();
   const { locations = [] } = useSelector((state: any) => state.masterData);
 
-
-  const { list: items, loading } = useSelector(
+  const { list: items, loading, pagination } = useSelector(
     (state: RootState) => state.itemMaster
   );
   const organisationId = localStorage.getItem("organisationId");
+
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [searchTerm, setSearchTerm] = useState("");
 
   const canView = usePermission("itemMaster", "view");
   const canCreate = usePermission("itemMaster", "create");
@@ -85,7 +90,6 @@ export default function ItemMaster() {
   }
   const [showForm, setShowForm] = useState(false);
   const [editingItem, setEditingItem] = useState<ItemMaster | null>(null);
-  const [searchTerm, setSearchTerm] = useState("");
   const [formData, setFormData] = useState<Partial<ItemMaster>>({
     itemCode: "",
     itemName: "",
@@ -98,37 +102,53 @@ export default function ItemMaster() {
     location: "",
   });
 
-  // Load from localStorage
-
+  // Load data with pagination
   useEffect(() => {
     if (!organisationId) return;
 
     dispatch(
       fetchItems({
-        organisationId,      // ✅ REQUIRED
+        organisationId,
+        page: currentPage,
+        limit: itemsPerPage,
         search: searchTerm,
       })
     );
 
     dispatch(fetchMasterData("location"));
-  }, [dispatch, organisationId, searchTerm]);
+  }, [dispatch, organisationId, currentPage, itemsPerPage, searchTerm]);
 
 
   // Derived Stats
-  const totalItems = items?.length;
-  const lowStockCount = items?.filter((i) => i.stockQuantity <= i.reorderLevel).length;
+  const totalItems = pagination.total || 0;
+  const lowStockCount = items?.filter((i) => i.stockQuantity <= i.reorderLevel).length || 0;
   const totalInventoryValue = items
     ?.reduce((sum, i) => sum + i.stockQuantity * i.standardCost, 0)
-    ?.toFixed(2);
+    ?.toFixed(2) || "0.00";
 
-  // Filtered items
-  const filteredItems = useMemo(() => {
-    return items?.filter(
-      (i) =>
-        i.itemCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        i.itemName.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [searchTerm, items]);
+  // Pagination handlers
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+  };
+
+  const handleItemsPerPageChange = (limit: number) => {
+    setItemsPerPage(limit);
+    setCurrentPage(1); // Reset to first page when changing limit
+  };
+
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value);
+    setCurrentPage(1); // Reset to first page when searching
+  };
+
+  // Remove the filtered items logic since we're using server-side pagination
+  // const filteredItems = useMemo(() => {
+  //   return items?.filter(
+  //     (i) =>
+  //       i.itemCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
+  //       i.itemName.toLowerCase().includes(searchTerm.toLowerCase())
+  //   );
+  // }, [searchTerm, items]);
 
   // CRUD
   const handleSubmit = async (e: React.FormEvent) => {
@@ -169,9 +189,13 @@ export default function ItemMaster() {
       }
 
       resetForm();
+      // Refresh current page data
       dispatch(
         fetchItems({
           organisationId,
+          page: currentPage,
+          limit: itemsPerPage,
+          search: searchTerm,
         })
       );
 
@@ -236,7 +260,13 @@ export default function ItemMaster() {
 
   const resetAll = () => {
     setSearchTerm("");
-    dispatch(fetchItems({ organisationId }));
+    setCurrentPage(1);
+    dispatch(fetchItems({ 
+      organisationId, 
+      page: 1, 
+      limit: itemsPerPage, 
+      search: "" 
+    }));
   };
 
   const getLocationName = (id: string) => {
@@ -284,7 +314,7 @@ export default function ItemMaster() {
             placeholder="Search items..."
             className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500"
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
           />
         </div>
         <div className="bg-white p-3 rounded-lg border shadow-sm text-center">
@@ -315,7 +345,7 @@ export default function ItemMaster() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {filteredItems?.length === 0 ? (
+              {items?.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="text-center py-12 text-gray-400">
                     <Package className="mx-auto mb-2" size={42} />
@@ -323,9 +353,9 @@ export default function ItemMaster() {
                   </td>
                 </tr>
               ) : (
-                filteredItems?.map((item) => (
+                items?.map((item) => (
                   <motion.tr
-                    key={item.id}
+                    key={item._id}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     className="hover:bg-gray-50 transition-all"
@@ -356,7 +386,6 @@ export default function ItemMaster() {
                     </td>
                     <td className="px-6 py-3">{item.unit}</td>
                     <td className="px-6 py-3">${item.standardCost.toFixed(2)}</td>
-                    {/* <td className="px-6 py-3">{item.location}</td> */}
                     <td className="px-6 py-3">{getLocationName(item.location)}</td>
 
                     <td className="px-6 py-3">
@@ -383,6 +412,16 @@ export default function ItemMaster() {
             </tbody>
           </table>
         </div>
+        
+        {/* Pagination */}
+        <Pagination
+          currentPage={pagination.page}
+          totalPages={pagination.totalPages}
+          totalItems={pagination.total}
+          itemsPerPage={itemsPerPage}
+          onPageChange={handlePageChange}
+          onItemsPerPageChange={handleItemsPerPageChange}
+        />
       </div>
 
       {/* Modal Form */}

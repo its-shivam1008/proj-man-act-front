@@ -113,10 +113,10 @@ export interface WorkCenter {
 
 export const fetchWorkCenters = createAsyncThunk(
   "workCenters/fetch",
-  async (params: { search?: string; status?: string } = {}, { rejectWithValue }) => {
+  async (params: { search?: string; status?: string; page?: number; limit?: number } = {}, { rejectWithValue }) => {
     try {
       const res = await axios.get("/work-centers", { params });
-      return res.data.data;
+      return res.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || "Failed to fetch work centers");
     }
@@ -199,6 +199,13 @@ interface WorkCenterState {
   };
   loading: boolean;
   error: string | null;
+  // Pagination state
+  pagination: {
+    currentPage: number;
+    totalPages: number;
+    totalItems: number;
+    itemsPerPage: number;
+  };
 }
 export interface WorkCenterPerformance {
   id: string;
@@ -224,6 +231,12 @@ const initialState: WorkCenterState = {
   },
   loading: false,
   error: null,
+  pagination: {
+    currentPage: 1,
+    totalPages: 1,
+    totalItems: 0,
+    itemsPerPage: 5
+  }
 };
 
 /* =======================
@@ -243,10 +256,22 @@ const workCenterSlice = createSlice({
     /* ---------- FETCH ---------- */
     builder.addCase(fetchWorkCenters.fulfilled, (state, action) => {
       state.loading = false;
-      state.list = action.payload.map((w: any) => ({
+      state.list = action.payload.data?.map((w: any) => ({
         ...w,
         id: w._id, // ✅ normalize once
-      }));
+      })) || [];
+      // Update pagination state
+      if (action.payload.pagination) {
+        state.pagination = action.payload.pagination;
+      } else {
+        // Fallback for backward compatibility
+        state.pagination = {
+          currentPage: action.payload.page || 1,
+          totalPages: Math.ceil((action.payload.total || state.list.length) / (action.payload.limit || 5)),
+          totalItems: action.payload.total || state.list.length,
+          itemsPerPage: action.payload.limit || 5
+        };
+      }
     });
 
     /* ---------- CREATE ---------- */

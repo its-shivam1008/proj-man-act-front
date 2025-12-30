@@ -33,11 +33,12 @@ const initialState: ReceiptState = {
 
 export const fetchReceipts = createAsyncThunk(
   "receipts/fetchReceipts",
-  async () => {
+  async (location?: string) => {
     const orgId = localStorage.getItem("organisationId");
-    const res = await api.get(`/receipts/get/all`, {
-      params: { organisationId: orgId },
-    });
+    const params: any = { organisationId: orgId };
+    if (location) params.location = location;
+    
+    const res = await api.get(`/receipts/get/all`, { params });
     return res.data;
   }
 );

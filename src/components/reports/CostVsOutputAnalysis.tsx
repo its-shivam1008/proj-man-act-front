@@ -2,7 +2,7 @@
 
 import { usePermission } from "@/hooks/userPermission";
 import { useDispatch, useSelector } from "react-redux";
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
     Card, CardHeader, CardTitle, CardContent,
 } from "@/components/ui/card";
@@ -12,7 +12,7 @@ import {
     LineChart, Line,
     CartesianGrid, XAxis, YAxis, Tooltip,
 } from "recharts";
-import { ShieldAlert, TrendingDown, TrendingUp } from "lucide-react";
+import { ShieldAlert, TrendingDown, TrendingUp, Search } from "lucide-react";
 import type { RootState, AppDispatch } from "@/redux/store";
 import { updateCostOutput, fetchCostOutputs, deleteCostOutput, createCostOutput } from "@/redux/slices/production/productionReportingSlice";
 import {
@@ -21,6 +21,8 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { fetchProducts } from "@/redux/slices/productSlice";
+import { Input } from "@/components/ui/input";
+import { Pagination } from "@/components/ui/pagination";
 
 export default function CostVsOutputAnalysis() {
     const dispatch = useDispatch<AppDispatch>();
@@ -31,12 +33,41 @@ export default function CostVsOutputAnalysis() {
 
     const [dialogOpen, setDialogOpen] = React.useState(false);
     const [editing, setEditing] = React.useState<any>(null);
+    const [costSearch, setCostSearch] = React.useState("");
     const [form, setForm] = React.useState({
         productId: "",
         producedQty: 0,
         totalCost: 0,
         remarks: "",
     });
+
+    // Debounced search function
+    const debounce = useCallback((func: Function, delay: number) => {
+        let timeoutId: NodeJS.Timeout;
+        return (...args: any[]) => {
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => func.apply(null, args), delay);
+        };
+    }, []);
+
+    // Debounced search handler
+    const debouncedCostSearch = useCallback(
+        debounce((searchTerm: string) => {
+            dispatch(fetchCostOutputs({
+                page: 1,
+                limit: costsPagination?.itemsPerPage || 10,
+                search: searchTerm
+            }));
+        }, 300),
+        [dispatch]
+    );
+
+    // Search handler
+    const handleCostSearch = (value: string) => {
+        setCostSearch(value);
+        debouncedCostSearch(value);
+    };
+
     const openCreate = () => {
         setEditing(null);
         setForm({
@@ -48,6 +79,9 @@ export default function CostVsOutputAnalysis() {
         setDialogOpen(true);
     };
     const { products, page, limit } = useSelector((state: RootState) => state.products);
+    const { costs, costsPagination } = useSelector(
+        (state: RootState) => state.productionReporting
+    );
     const orgId = localStorage.getItem('organisationId')
     useEffect(() => {
         if (orgId) {
@@ -55,6 +89,23 @@ export default function CostVsOutputAnalysis() {
         }
 
     }, [dispatch, orgId, page, limit]);
+
+    // Pagination handlers
+    const handleCostPageChange = (page: number) => {
+        dispatch(fetchCostOutputs({
+            page,
+            limit: costsPagination?.itemsPerPage || 10,
+            search: costSearch
+        }));
+    };
+
+    const handleCostItemsPerPageChange = (itemsPerPage: number) => {
+        dispatch(fetchCostOutputs({
+            page: 1,
+            limit: itemsPerPage,
+            search: costSearch
+        }));
+    };
 
     const openEdit = (row: any) => {
         if (!row?.productId?._id) {
@@ -90,10 +141,6 @@ export default function CostVsOutputAnalysis() {
     };
 
 
-
-    const { costs } = useSelector(
-        (state: RootState) => state.productionReporting
-    );
 
     useEffect(() => {
         dispatch(fetchCostOutputs());
@@ -300,7 +347,20 @@ export default function CostVsOutputAnalysis() {
             {/* TABLE */}
             <Card>
                 <CardHeader>
-                    <CardTitle>Cost Efficiency Details</CardTitle>
+                    <div className="flex items-center justify-between">
+                        <CardTitle>Cost Efficiency Details ({costsPagination?.totalItems || 0})</CardTitle>
+                        <div className="flex items-center gap-2">
+                            <div className="relative">
+                                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                                <Input
+                                    placeholder="Search cost records..."
+                                    value={costSearch}
+                                    onChange={(e) => handleCostSearch(e.target.value)}
+                                    className="pl-8 w-64"
+                                />
+                            </div>
+                        </div>
+                    </div>
                 </CardHeader>
                 <CardContent>
                     <Table>
@@ -367,6 +427,18 @@ export default function CostVsOutputAnalysis() {
                         </TableBody>
 
                     </Table>
+
+                    {/* Pagination for Cost Records */}
+                    {costsPagination && (
+                        <Pagination
+                            currentPage={costsPagination.currentPage}
+                            totalPages={costsPagination.totalPages}
+                            totalItems={costsPagination.totalItems}
+                            itemsPerPage={costsPagination.itemsPerPage}
+                            onPageChange={handleCostPageChange}
+                            onItemsPerPageChange={handleCostItemsPerPageChange}
+                        />
+                    )}
                 </CardContent>
             </Card>
             {dialogOpen && (

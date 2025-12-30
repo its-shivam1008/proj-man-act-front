@@ -78,9 +78,10 @@ export interface DowntimeAnalytics {
 // CRUD Operations
 export const fetchDowntimeReports = createAsyncThunk(
   "downtimeAnalysis/fetchReports",
-  async (filters: any = {}, { rejectWithValue }) => {
+  async ({ page = 1, limit = 10, search = "", ...filters }: { page?: number; limit?: number; search?: string; [key: string]: any } = {}, { rejectWithValue }) => {
     try {
-      const res = await axios.get("/downtime-reports", { params: filters });
+      const params = { page, limit, search, ...filters };
+      const res = await axios.get("/downtime-reports", { params });
       return res.data.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || "Failed to fetch downtime reports");
@@ -157,6 +158,13 @@ interface DowntimeAnalysisState {
   analytics: DowntimeAnalytics | null;
   loading: boolean;
   error: string | null;
+  // Pagination state
+  reportsPagination: {
+    currentPage: number;
+    totalPages: number;
+    totalItems: number;
+    itemsPerPage: number;
+  };
 }
 
 const initialState: DowntimeAnalysisState = {
@@ -164,6 +172,12 @@ const initialState: DowntimeAnalysisState = {
   analytics: null,
   loading: false,
   error: null,
+  reportsPagination: {
+    currentPage: 1,
+    totalPages: 1,
+    totalItems: 0,
+    itemsPerPage: 10
+  }
 };
 
 const downtimeAnalysisSlice = createSlice({
@@ -181,7 +195,10 @@ const downtimeAnalysisSlice = createSlice({
     /* ===== FETCH REPORTS ===== */
     builder.addCase(fetchDowntimeReports.fulfilled, (state, action) => {
       state.loading = false;
-      state.reports = action.payload;
+      state.reports = action.payload.data || action.payload;
+      if (action.payload.pagination) {
+        state.reportsPagination = action.payload.pagination;
+      }
     });
 
     /* ===== CREATE REPORT ===== */

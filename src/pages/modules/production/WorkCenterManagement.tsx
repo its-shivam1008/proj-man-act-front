@@ -15,6 +15,7 @@ import { Checkbox } from "../../../components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui/tabs";
 import { toast } from "sonner";
 import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip } from "recharts";
+import { Pagination } from "../../../components/ui/pagination";
 import { fetchSpareParts } from "@/redux/slices/plantandmachinary/sparePartsSlice";
 import { fetchWbsByProject } from "@/redux/slices/wbsSlice";
 import { fetchProjects } from "@/redux/slices/projectSlice";
@@ -88,7 +89,7 @@ export default function WorkCentersPageAdvanced() {
   const canDelete = usePermission("workCenterMgt", "delete");
   
   // Redux selectors with proper fallbacks
-  const { list: workCenters = [], loading, error, analytics } = useSelector((state: RootState) => state.workCenters);
+  const { list: workCenters = [], loading, error, analytics, pagination } = useSelector((state: RootState) => state.workCenters);
   const { items: spareParts = [] } = useSelector((state: RootState) => state.spareParts);
   const { wbs: wbsTasks = [] } = useSelector((state: RootState) => state.wbs);
   const { projects = [] } = useSelector((state: RootState) => state.projects);
@@ -210,6 +211,10 @@ export default function WorkCentersPageAdvanced() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCenter, setEditingCenter] = useState<WorkCenter | null>(null);
   
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(5);
+  
   // Multi-select state for checkboxes
   const [selectedSpareParts, setSelectedSpareParts] = useState<Set<string>>(new Set());
   const [selectedProjects, setSelectedProjects] = useState<Set<string>>(new Set());
@@ -233,7 +238,6 @@ export default function WorkCentersPageAdvanced() {
     personHours: 0,
     output: null as any // Changed from outputs array to single output
   });
-  const [materialStocks, setMaterialStocks] = useState<Record<string, number>>({});
 
   const [formData, setFormData] = useState({
     code: "",
@@ -268,15 +272,20 @@ export default function WorkCentersPageAdvanced() {
     }
   }, [dispatch]);
 
-  // Fetch work centers data
+  // Fetch work centers data with pagination
   useEffect(() => {
     // Only fetch if user is authenticated
     const token = localStorage.getItem("token");
     if (token) {
-      dispatch(fetchWorkCenters());
+      dispatch(fetchWorkCenters({ 
+        search: searchTerm, 
+        status: filterStatus, 
+        page: currentPage, 
+        limit: itemsPerPage 
+      }));
       dispatch(fetchWorkCenterAnalytics());
     }
-  }, [dispatch]);
+  }, [dispatch, searchTerm, filterStatus, currentPage, itemsPerPage]);
 
   // Analytics - use Redux analytics data when available, fallback to calculated values
   const totalCenters = analytics?.total || workCenters.length;
@@ -291,13 +300,30 @@ const avgEfficiency = analytics?.avgEfficiency ?? calculatedAvgEfficiency;
 
   const activeCenters = analytics?.active || workCenters.filter((w) => w.status === "active").length;
 
-  // Filtering & search
-  const filtered = workCenters.filter(
-    (w) =>
-      (filterStatus === "all" || w.status === filterStatus) &&
-      (w.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        w.code.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  // Filtering & search - now handled by backend pagination
+  const filtered = workCenters; // No client-side filtering needed
+
+  // Pagination handlers
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+  };
+
+  const handleItemsPerPageChange = (newItemsPerPage: number) => {
+    setItemsPerPage(newItemsPerPage);
+    setCurrentPage(1); // Reset to first page when changing items per page
+  };
+
+  // Search handler with debounce
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value);
+    setCurrentPage(1); // Reset to first page when searching
+  };
+
+  // Status filter handler
+  const handleStatusFilterChange = (status: string) => {
+    setFilterStatus(status);
+    setCurrentPage(1); // Reset to first page when filtering
+  };
 
   // Simulate performance trend data
   const trendData = useMemo(
@@ -381,7 +407,12 @@ const avgEfficiency = analytics?.avgEfficiency ?? calculatedAvgEfficiency;
         await dispatch(createWorkCenter(data)).unwrap();
         toast.success("Work center created successfully");
         // Refresh the list to ensure new data is displayed
-        dispatch(fetchWorkCenters());
+        dispatch(fetchWorkCenters({ 
+          search: searchTerm, 
+          status: filterStatus, 
+          page: currentPage, 
+          limit: itemsPerPage 
+        }));
         dispatch(fetchWorkCenterAnalytics());
       }
       
@@ -1828,11 +1859,11 @@ const avgEfficiency = analytics?.avgEfficiency ?? calculatedAvgEfficiency;
           <Input
             placeholder="Search work centers..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             className="pl-10"
           />
         </div>
-        <Select value={filterStatus} onValueChange={setFilterStatus}>
+        <Select value={filterStatus} onValueChange={handleStatusFilterChange}>
           <SelectTrigger className="w-40">
             <SelectValue placeholder="Filter by Status" />
           </SelectTrigger>
@@ -2108,6 +2139,20 @@ const avgEfficiency = analytics?.avgEfficiency ?? calculatedAvgEfficiency;
           ))
         )}
       </AnimatePresence>
+
+      {/* Pagination */}
+      {pagination && pagination.totalItems > 0 && (
+        <div className="mt-6">
+          <Pagination
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            totalItems={pagination.totalItems}
+            itemsPerPage={pagination.itemsPerPage}
+            onPageChange={handlePageChange}
+            onItemsPerPageChange={handleItemsPerPageChange}
+          />
+        </div>
+      )}
     </div>
   );
 }
