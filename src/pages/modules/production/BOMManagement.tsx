@@ -2,8 +2,8 @@ import { usePermission } from "@/hooks/userPermission";
 import { fetchProducts } from "@/redux/slices/productSlice";
 import { fetchMaterials } from "@/redux/slices/rawmaterialSlice";
 import { fetchMasterData } from "@/redux/slices/masterDataSlice";
-import React, { useState, useEffect, useMemo } from "react";
-import { Plus, Edit, Trash2, Search, Package, RefreshCcw, ShieldAlert } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Plus, Edit, Trash2, Search, RefreshCcw, ShieldAlert, MapPin } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
@@ -11,23 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../components/ui/dialog";
 import { Label } from "../../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
-import {
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-} from "@/components/ui/popover";
-import {
-  Command,
-  CommandInput,
-  CommandList,
-  CommandEmpty,
-  CommandGroup,
-  CommandItem,
-} from "@/components/ui/command";
-import { Check, ChevronsUpDown } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { Pagination } from "../../../components/ui/pagination";
-import { storage, STORAGE_KEYS } from "../../../lib/storage";
 import { toast } from "sonner";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
@@ -80,17 +64,8 @@ const createMovementEntry = async (data: {
 interface Material {
   _id: string;
   name: string;
-  unitOfMeasure: string;
+  unitOfMeasure?: string;
   stocks?: { unitCost: number, quantity: number, }[];
-
-
-}
-
-
-interface Product {
-  id: string;
-  name: string;
-  category?: string;
 }
 
 interface BOMItem {
@@ -117,36 +92,35 @@ interface BOM {
 // --- Main Component ---
 export default function AdvancedBOMPage() {
   const { products } = useSelector((state: RootState) => state.products);
-  const { locations } = useSelector((state: RootState) => state.masterData);
-  const { userProfile } = useSelector((state: RootState) => state.auth);
+  const { locations = [] } = useSelector((state: RootState) => state.masterData);
   
   const canView = usePermission("bomManagement", "view");
   const canCreate = usePermission("bomManagement", "create");
   const canEdit = usePermission("bomManagement", "edit");
   const canDelete = usePermission("bomManagement", "delete");
   
-  const { list: boms, loading, pagination } = useSelector(
+  const { list: boms, pagination } = useSelector(
     (state: RootState) => state.bom
   );
 
-  const { materials, loading: materialLoading } = useSelector(
+  const { materials }: { materials: Material[] } = useSelector(
     (state: RootState) => state.rawMaterials
   );
 
-  // Location filter states
-  const [locationFilter, setLocationFilter] = useState("all");
-  const [locationOpen, setLocationOpen] = useState(false);
-  
-  // Location restriction logic (same as Projects page)
+  // ✅ LOCATION FILTERING STATE
+  const { userProfile } = useSelector((state: RootState) => state.auth);
+
   const isLocationRestricted = 
     userProfile?.role !== 'admin' && 
     !!userProfile?.location;
 
+  // Location filter states
+  const [locationFilter, setLocationFilter] = useState<string>("all");
+
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingBOM, setEditingBOM] = useState<BOM | null>(null);
-  const [autoSaved, setAutoSaved] = useState(false);
-  const [formData, setFormData] = useState<Omit<BOM, "id" | "createdAt" | "updatedAt" | "productName">>({
+  const [formData, setFormData] = useState<Partial<BOM>>({
     productId: "",
     version: "1.0",
     status: "draft",
@@ -170,14 +144,14 @@ export default function AdvancedBOMPage() {
   useEffect(() => {
     const orgId = localStorage.getItem("organisationId");
     if (orgId) {
-      dispatch(fetchMaterials(orgId));
+      dispatch(fetchMaterials({ page: 1, limit: 100, location: "", warehouse: "" }));
     }
     // Fetch master data for locations
     dispatch(fetchMasterData("location") as any);
   }, [dispatch]);
 
   useEffect(() => {
-    dispatch(fetchProducts(localStorage.getItem("organisationId")!));
+    dispatch(fetchProducts({ page: 1, limit: 100 }));
   }, []);
 
   useEffect(() => {
@@ -201,10 +175,10 @@ export default function AdvancedBOMPage() {
     }
   }, [isLocationRestricted, userProfile]);
 
-  // Location filter change handler
-  const handleLocationFilterChange = (val: string) => {
-    setLocationFilter(val);
-    setCurrentPage(1); // Reset to first page when filter changes
+  // Location filter handler
+  const handleLocationFilterChange = (location: string) => {
+    setLocationFilter(location);
+    setCurrentPage(1); // Reset to first page when filtering
   };
 
   // Pagination handlers
@@ -226,7 +200,9 @@ export default function AdvancedBOMPage() {
 
   const handleReset = () => {
     setSearchTerm("");
-    setLocationFilter("all");
+    if (!isLocationRestricted) {
+      setLocationFilter("all");
+    }
     setCurrentPage(1); // ✅ reset page
     setEditingBOM(null);
     resetForm();
@@ -237,7 +213,7 @@ export default function AdvancedBOMPage() {
         page: 1,
         limit: itemsPerPage,
         search: "",
-        location: "all",
+        location: isLocationRestricted ? userProfile?.location || "" : "all",
       })
     );
 
@@ -425,13 +401,13 @@ export default function AdvancedBOMPage() {
       return;
     }
 
-    if (!formData.productId || formData.items.length === 0) {
+    if (!formData.productId || !formData.items || formData.items.length === 0) {
       toast.error("Product & materials required");
       return;
     }
 
     // For new BOMs, validate stock availability before saving
-    if (!editingBOM && formData.items.length > 0) {
+    if (!editingBOM && formData.items && formData.items.length > 0) {
       try {
         const stockValidations = await validateBOMStockAvailability(formData.items);
         const insufficientItems = stockValidations.filter(v => !v.sufficient);
@@ -457,86 +433,84 @@ export default function AdvancedBOMPage() {
         await dispatch(
           updateBOM({
             id: editingBOM._id, // Ensure you use _id from MongoDB
-            data: {
-              ...formData,
-              organisationId
-            },
+            data: formData,
           })
         ).unwrap();
         toast.success("BOM updated successfully");
       } else {
         // ✅ If no editingBOM, call createBOM
         await dispatch(
-          createBOM({
-            organisationId,
-            ...formData,
-          })
+          createBOM(formData)
         ).unwrap();
         
         // After successfully creating BOM, deduct quantities from material stocks
-        let allStockDeducted = true;
-        const deductionResults = [];
-        const movementResults = [];
-        
-        for (const item of formData.items) {
-          if (item.quantity > 0) {
-            const stockDeducted = await deductMaterialStock(item.materialId, item.quantity);
-            deductionResults.push({
-              materialName: item.materialName,
-              quantity: item.quantity,
-              success: stockDeducted
-            });
-            
-            if (!stockDeducted) {
-              allStockDeducted = false;
-            } else {
-              // Create movement entry for the stock deduction
-              const movementCreated = await createMovementEntry({
-                materialId: item.materialId,
+        if (formData.items && formData.items.length > 0) {
+          let allStockDeducted = true;
+          const deductionResults = [];
+          const movementResults = [];
+          
+          for (const item of formData.items) {
+            if (item.quantity > 0) {
+              const stockDeducted = await deductMaterialStock(item.materialId, item.quantity);
+              deductionResults.push({
                 materialName: item.materialName,
                 quantity: item.quantity,
-                unit: item.unit,
-                source: "Raw Material Inventory",
-                destination: "BOM Production",
-                referenceNumber: `BOM-${Date.now()}`,
-                remarks: `Material consumed for BOM creation`,
-                itemType: "material",
-                unitCost: (item.cost || 0) / item.quantity
+                success: stockDeducted
               });
               
-              movementResults.push({
-                materialName: item.materialName,
-                movementCreated
-              });
+              if (!stockDeducted) {
+                allStockDeducted = false;
+              } else {
+                // Create movement entry for the stock deduction
+                const movementCreated = await createMovementEntry({
+                  materialId: item.materialId,
+                  materialName: item.materialName,
+                  quantity: item.quantity,
+                  unit: item.unit,
+                  source: "Raw Material Inventory",
+                  destination: "BOM Production",
+                  referenceNumber: `BOM-${Date.now()}`,
+                  remarks: `Material consumed for BOM creation`,
+                  itemType: "material",
+                  unitCost: (item.cost || 0) / item.quantity
+                });
+                
+                movementResults.push({
+                  materialName: item.materialName,
+                  movementCreated
+                });
+              }
             }
           }
-        }
-        
-        if (allStockDeducted) {
-          const totalItems = deductionResults.length;
-          const successfulMovements = movementResults.filter(r => r.movementCreated).length;
           
-          if (successfulMovements === totalItems) {
-            toast.success(`BOM created, stock deducted for ${totalItems} materials, and movement entries created`);
+          if (allStockDeducted) {
+            const totalItems = deductionResults.length;
+            const successfulMovements = movementResults.filter(r => r.movementCreated).length;
+            
+            if (successfulMovements === totalItems) {
+              toast.success(`BOM created, stock deducted for ${totalItems} materials, and movement entries created`);
+            } else {
+              toast.success(`BOM created and stock deducted for ${totalItems} materials`);
+              if (successfulMovements < totalItems) {
+                toast.warning(`Could not create movement entries for ${totalItems - successfulMovements} materials`);
+              }
+            }
           } else {
-            toast.success(`BOM created and stock deducted for ${totalItems} materials`);
-            if (successfulMovements < totalItems) {
-              toast.warning(`Could not create movement entries for ${totalItems - successfulMovements} materials`);
+            toast.success("BOM created successfully");
+            const failedDeductions = deductionResults.filter(r => !r.success);
+            if (failedDeductions.length > 0) {
+              toast.warning(`Could not deduct stock for ${failedDeductions.length} materials - please check manually`);
             }
           }
         } else {
           toast.success("BOM created successfully");
-          const failedDeductions = deductionResults.filter(r => !r.success);
-          if (failedDeductions.length > 0) {
-            toast.warning(`Could not deduct stock for ${failedDeductions.length} materials - please check manually`);
-          }
         }
       }
 
       // Refresh materials data to show updated stock
       const orgId = localStorage.getItem("organisationId");
       if (orgId) {
-        dispatch(fetchMaterials(orgId));
+        dispatch(fetchMaterials({ page: 1, limit: 100, location: "", warehouse: "" }));
       }
 
       setIsDialogOpen(false);
@@ -593,12 +567,12 @@ export default function AdvancedBOMPage() {
     setFormData({
       ...formData,
       items: [
-        ...formData.items,
+        ...(formData.items || []),
         {
           materialId: mat._id,
           materialName: mat.name,
           quantity: 1,
-          unit: mat.stocks[0]?.unitOfMeasure || "",
+          unit: mat.unitOfMeasure || "",
           cost: price, // Now uses correct data
           currentStock: currentStock,
         },
@@ -608,7 +582,7 @@ export default function AdvancedBOMPage() {
 
 
   const updateItem = async (index: number, field: keyof BOMItem, value: any) => {
-    const items = [...formData.items];
+    const items = [...(formData.items || [])];
     const mat = materials.find(m => m._id === (field === "materialId" ? value : items[index].materialId));
     const price = mat ? getPrice(mat) : 0;
 
@@ -620,7 +594,7 @@ export default function AdvancedBOMPage() {
         ...items[index],
         materialId: mat!._id,
         materialName: mat!.name,
-        unit: mat!.unitOfMeasure,
+        unit: mat!.unitOfMeasure || "",
         cost: price * items[index].quantity,
         currentStock: currentStock, // Add current stock info
       };
@@ -631,7 +605,7 @@ export default function AdvancedBOMPage() {
     setFormData({ ...formData, items });
   };
   const removeItem = (i: number) =>
-    setFormData({ ...formData, items: formData.items.filter((_, idx) => idx !== i) });
+    setFormData({ ...formData, items: (formData.items || []).filter((_, idx) => idx !== i) });
 
   const resetForm = () => {
     setEditingBOM(null);
@@ -639,7 +613,7 @@ export default function AdvancedBOMPage() {
       productId: "", 
       version: "1.0", 
       status: "draft", 
-      location: isLocationRestricted ? userProfile.location : undefined,
+      location: isLocationRestricted ? userProfile?.location : undefined,
       items: [] 
     });
   };
@@ -647,7 +621,7 @@ export default function AdvancedBOMPage() {
 
   // --- Totals ---
   const totalCost = (items: BOMItem[]) =>
-    items.reduce((sum, i) => sum + (i.cost || 0), 0).toFixed(2);
+    (items || []).reduce((sum, i) => sum + (i.cost || 0), 0).toFixed(2);
 
   // --- UI ---
   return (
@@ -718,55 +692,32 @@ export default function AdvancedBOMPage() {
                 {/* Location Field */}
                 <div>
                   <Label>Location</Label>
-                  <Popover open={locationOpen} onOpenChange={setLocationOpen}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        role="combobox"
-                        className="w-full justify-between disabled:opacity-75 disabled:cursor-not-allowed"
-                        disabled={isLocationRestricted}
-                      >
-                        {formData.location
-                          ? (locations || []).find((l: any) => l._id === formData.location)?.name
-                          : "Select Location"}
-                        <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
-                      </Button>
-                    </PopoverTrigger>
-                    
-                    {!isLocationRestricted && (
-                      <PopoverContent className="w-full p-0">
-                        <Command>
-                          <CommandInput placeholder="Search location..." />
-                          <CommandList>
-                            <CommandEmpty>No location found.</CommandEmpty>
-                            <CommandGroup>
-                              {(locations || []).map((l: any) => (
-                                <CommandItem
-                                  key={l._id}
-                                  value={l.name}
-                                  onSelect={() => {
-                                    setFormData({ ...formData, location: l._id });
-                                    setLocationOpen(false);
-                                  }}
-                                >
-                                  <Check
-                                    className={cn(
-                                      "mr-2 h-4 w-4",
-                                      formData.location === l._id ? "opacity-100" : "opacity-0"
-                                    )}
-                                  />
-                                  {l.name}
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
-                          </CommandList>
-                        </Command>
-                      </PopoverContent>
-                    )}
-                  </Popover>
+                  <Select
+                    value={formData.location}
+                    onValueChange={(value) => {
+                      setFormData({
+                        ...formData,
+                        location: value,
+                      });
+                    }}
+                    disabled={isLocationRestricted}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select location" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(locations || [])
+                        .filter(location => !isLocationRestricted || location._id === userProfile?.location)
+                        .map((location: any) => (
+                          <SelectItem key={location._id} value={location._id}>
+                            {location.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
                   {isLocationRestricted && (
-                    <p className="text-[10px] text-muted-foreground">
-                      *Location is fixed based on your permissions.
+                    <p className="text-xs text-muted-foreground mt-1">
+                      *Location is fixed based on your permissions
                     </p>
                   )}
                 </div>
@@ -789,7 +740,7 @@ export default function AdvancedBOMPage() {
 
                 </div>
                 <div className="space-y-2">
-                  {formData.items.map((it, i) => (
+                  {(formData.items || []).map((it, i) => (
                     <motion.div
                       key={i}
                       initial={{ opacity: 0, y: 10 }}
@@ -840,18 +791,17 @@ export default function AdvancedBOMPage() {
                     </motion.div>
                   ))}
                 </div>
-                {formData.items.length > 0 && (
+                {(formData.items || []).length > 0 && (
                   <div className="mt-2 space-y-2">
                     <div className="text-right text-sm font-semibold">
-                      Total Material Cost: ₹{totalCost(formData.items)}
+                      Total Material Cost: ₹{totalCost(formData.items || [])}
                     </div>
                     
                     {/* Overall stock status summary */}
-                    {formData.items.some(item => item.currentStock !== undefined) && (
+                    {(formData.items || []).some(item => item.currentStock !== undefined) && (
                       <div className="text-center">
                         {(() => {
-                          const itemsWithStock = formData.items.filter(item => item.currentStock !== undefined);
-                          const sufficientItems = itemsWithStock.filter(item => (item.currentStock || 0) >= item.quantity);
+                          const itemsWithStock = (formData.items || []).filter(item => item.currentStock !== undefined);
                           const insufficientItems = itemsWithStock.filter(item => (item.currentStock || 0) < item.quantity);
                           
                           if (insufficientItems.length === 0) {
@@ -903,20 +853,25 @@ export default function AdvancedBOMPage() {
           />
         </div>
         <Select 
-          disabled={isLocationRestricted} 
           value={locationFilter} 
           onValueChange={handleLocationFilterChange}
+          disabled={isLocationRestricted}
         >
           <SelectTrigger className="w-48">
-            <SelectValue placeholder="Filter Location" />
+            <SelectValue placeholder="Filter by Location" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Locations</SelectItem>
-            {(locations || []).map((loc: any) => (
-              <SelectItem key={loc._id} value={loc._id}>
-                {loc.name}
-              </SelectItem>
-            ))}
+            {!isLocationRestricted && <SelectItem value="all">All Locations</SelectItem>}
+            {(locations || [])
+              .filter(location => !isLocationRestricted || location._id === userProfile?.location)
+              .map((loc: any) => (
+                <SelectItem key={loc._id} value={loc._id}>
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-4 h-4" />
+                    {loc.name}
+                  </div>
+                </SelectItem>
+              ))}
           </SelectContent>
         </Select>
         <Button
@@ -960,9 +915,10 @@ export default function AdvancedBOMPage() {
                         Version {b.version} • {b._id}
                       </p>
                       {b.location && (
-                        <p className="text-xs text-blue-600 mt-1">
-                          📍 {(locations || []).find((l: any) => l._id === b.location)?.name || "Unknown Location"}
-                        </p>
+                        <div className="flex items-center gap-1 text-xs text-gray-500 mt-1">
+                          <MapPin className="w-3 h-3" />
+                          {(locations || []).find((l: any) => l._id === b.location)?.name || "Unknown Location"}
+                        </div>
                       )}
                     </div>
 
@@ -1037,13 +993,6 @@ export default function AdvancedBOMPage() {
           </div>
         )}
       </AnimatePresence>
-
-
-      {autoSaved && (
-        <div className="fixed bottom-4 right-4 bg-green-600 text-white px-4 py-2 rounded-md shadow">
-          Autosaved ✓
-        </div>
-      )}
     </div>
   );
 }

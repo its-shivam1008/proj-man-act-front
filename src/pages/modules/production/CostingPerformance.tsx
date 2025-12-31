@@ -80,10 +80,16 @@ export default function CostingPerformance() {
   const canEdit = usePermission("costingPerformance", "edit");
   const canDelete = usePermission("costingPerformance", "delete");
 
-  // ✅ LOCATION FILTERING STATE
+  // ✅ LOCATION FILTERING STATE - Initialize properly for restricted users
   const { userProfile } = useSelector((state: RootState) => state.auth);
   const { locations } = useSelector((state: RootState) => state.masterData);
-  const [locationFilter, setLocationFilter] = useState("all");
+  
+  // Initialize location filter based on user restrictions
+  const [locationFilter, setLocationFilter] = useState(() => {
+    const isRestricted = userProfile?.role !== 'admin' && !!userProfile?.location;
+    return isRestricted ? userProfile.location : "all";
+  });
+  
   const [locationOpen, setLocationOpen] = useState(false);
 
   const isLocationRestricted = 
@@ -234,20 +240,25 @@ export default function CostingPerformance() {
     dispatch(fetchMasterData("location"));
   }, [dispatch]);
 
-  // Auto-set location filter for restricted users
+  // Auto-set location filter for restricted users (backup in case initial state didn't work)
   useEffect(() => {
-    if (isLocationRestricted && userProfile?.location) {
+    if (isLocationRestricted && userProfile?.location && locationFilter === "all") {
+      console.log("Backup: Setting location filter for restricted user:", userProfile.location);
       setLocationFilter(userProfile.location);
       // Also set form locations
       setStdForm(prev => ({ ...prev, location: userProfile.location }));
       setActForm(prev => ({ ...prev, location: userProfile.location }));
       setMetricForm(prev => ({ ...prev, location: userProfile.location }));
     }
-  }, [isLocationRestricted, userProfile, locations]);
+  }, [isLocationRestricted, userProfile, locations, locationFilter]);
 
   // Load data on component mount and when location filter changes
+  // ✅ FIXED: Simplified logic since location filter is now properly initialized
   useEffect(() => {
     const locationParam = locationFilter !== "all" ? locationFilter : undefined;
+    
+    console.log("Loading costing data with location filter:", locationParam);
+    console.log("User restrictions:", { isLocationRestricted, userLocation: userProfile?.location });
     
     dispatch(fetchStandards({
       location: locationParam,
@@ -729,7 +740,7 @@ export default function CostingPerformance() {
 
           <Button
             className="w-full"
-            disabled={!canCreate && !canEdit} // or choose canEdit only
+            disabled={!canCreate && !canEdit}
             onClick={() => (canCreate || canEdit) && exportModule()}
           >
             <Download className="mr-2" />Export

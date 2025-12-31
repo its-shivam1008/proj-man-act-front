@@ -113,7 +113,7 @@ export interface WorkCenter {
 
 export const fetchWorkCenters = createAsyncThunk(
   "workCenters/fetch",
-  async (params: { search?: string; status?: string; page?: number; limit?: number } = {}, { rejectWithValue }) => {
+  async (params: { search?: string; status?: string; page?: number; limit?: number; location?: string } = {}, { rejectWithValue }) => {
     try {
       const res = await axios.get("/work-centers", { params });
       return res.data;
@@ -172,12 +172,18 @@ export const fetchWorkCenterAnalytics = createAsyncThunk(
 );
 export const fetchWorkCenterPerformance = createAsyncThunk(
   "workcenter/performance",
-  async (_, { rejectWithValue }) => {
+  async (params: { location?: string; page?: number; limit?: number; search?: string } = {}, { rejectWithValue }) => {
     try {
-      console.log("🔄 Fetching work center performance...");
-      const res = await axios.get("/work-centers/performance");
+      const { location, page = 1, limit = 10, search = '' } = params;
+      console.log("🔄 Fetching work center performance...", location ? `Location: ${location}` : "All locations", `Page: ${page}, Limit: ${limit}`);
+      
+      const queryParams: any = { page, limit };
+      if (location && location !== 'all') queryParams.location = location;
+      if (search) queryParams.search = search;
+      
+      const res = await axios.get("/work-centers/performance", { params: queryParams });
       console.log("✅ Performance data received:", res.data.data?.length, "work centers");
-      return res.data.data;
+      return res.data;
     } catch (err: any) {
       console.error("❌ Performance fetch error:", err.response?.data || err.message);
       return rejectWithValue(err.response?.data?.message || "Failed to fetch analytics");
@@ -206,11 +212,19 @@ interface WorkCenterState {
     totalItems: number;
     itemsPerPage: number;
   };
+  // Performance pagination state
+  performancePagination: {
+    currentPage: number;
+    totalPages: number;
+    totalItems: number;
+    itemsPerPage: number;
+  };
 }
 export interface WorkCenterPerformance {
   id: string;
   workCenterId: string;
   workCenterName: string;
+  location?: string | { _id: string; name: string }; // ✅ ADD LOCATION FIELD
   runTime: number;
   downtimeMin: number;
   produced: number;
@@ -236,6 +250,12 @@ const initialState: WorkCenterState = {
     totalPages: 1,
     totalItems: 0,
     itemsPerPage: 5
+  },
+  performancePagination: {
+    currentPage: 1,
+    totalPages: 1,
+    totalItems: 0,
+    itemsPerPage: 10
   }
 };
 
@@ -313,10 +333,15 @@ const workCenterSlice = createSlice({
 
     builder.addCase(fetchWorkCenterPerformance.fulfilled, (state, action) => {
       state.loading = false;
-      state.performance = action.payload.map((p: any) => ({
+      state.performance = action.payload.data?.map((p: any) => ({
         ...p,
         id: p.workCenterId,
-      }));
+      })) || [];
+      
+      // Update performance pagination state
+      if (action.payload.pagination) {
+        state.performancePagination = action.payload.pagination;
+      }
     });
 
     /* ---------- LOADING & ERROR HANDLING ---------- */

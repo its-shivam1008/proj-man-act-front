@@ -36,8 +36,8 @@ import { Pagination } from "@/components/ui/pagination";
 ============================================================ */
 export default function DailyProductionReport() {
   const dispatch = useDispatch<AppDispatch>();
-  const canView = usePermission("dailyProductionReport", "view");
-  const canCreate = usePermission("dailyProductionReport", "create");
+  const canView = usePermission("productionReportingAnalytics", "view");
+  const canCreate = usePermission("productionReportingAnalytics", "create");
 
   const { dprs, dprsPagination, loading, error } = useSelector(
     (state: RootState) => state.productionReporting

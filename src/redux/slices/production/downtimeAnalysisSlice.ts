@@ -78,9 +78,9 @@ export interface DowntimeAnalytics {
 // CRUD Operations
 export const fetchDowntimeReports = createAsyncThunk(
   "downtimeAnalysis/fetchReports",
-  async ({ page = 1, limit = 10, search = "", ...filters }: { page?: number; limit?: number; search?: string; [key: string]: any } = {}, { rejectWithValue }) => {
+  async ({ page = 1, limit = 10, search = "", location, ...filters }: { page?: number; limit?: number; search?: string; location?: string; [key: string]: any } = {}, { rejectWithValue }) => {
     try {
-      const params = { page, limit, search, ...filters };
+      const params = { page, limit, search, location, ...filters };
       const res = await axios.get("/downtime-reports", { params });
       return res.data.data;
     } catch (err: any) {

@@ -35,11 +35,13 @@ export const fetchItems = createAsyncThunk(
       page = 1,
       limit = 10,
       search = "",
+      location,
     }: {
       organisationId: string;
       page?: number;
       limit?: number;
       search?: string;
+      location?: string;
     },
     { rejectWithValue }
   ) => {
@@ -48,7 +50,7 @@ export const fetchItems = createAsyncThunk(
     }
 
     const res = await axios.get("/items/get/data", {
-      params: { organisationId, page, limit, search },
+      params: { organisationId, page, limit, search, location },
     });
 
     return res.data;

@@ -1,8 +1,6 @@
-"use client";
-
 import { usePermission } from "@/hooks/userPermission";
 import { useDispatch, useSelector } from "react-redux";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   Card, CardHeader, CardTitle, CardContent,
 } from "@/components/ui/card";
@@ -29,7 +27,7 @@ import {
 import { 
   ShieldAlert, TrendingUp, TrendingDown, Activity, 
   Target, Gauge, Clock, Zap, Award, AlertCircle,
-  Calendar, Filter, Download, RefreshCw
+  Calendar, Filter, Download, RefreshCw, Search
 } from "lucide-react";
 import type { RootState, AppDispatch } from "@/redux/store";
 import {
@@ -38,8 +36,20 @@ import {
   fetchProductivityTrends,
   clearError
 } from "@/redux/slices/production/productionEfficiencySlice";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { MapPin } from "lucide-react";
+import { Pagination } from "@/components/ui/pagination";
+
+// Debounce utility function
+const debounce = (func: Function, delay: number) => {
+  let timeoutId: NodeJS.Timeout;
+  return (...args: any[]) => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => func.apply(null, args), delay);
+  };
+};
 
 const EFFICIENCY_COLORS = {
   excellent: "#22c55e", // Green
@@ -60,17 +70,20 @@ const getEfficiencyColor = (value: number) => {
   return EFFICIENCY_COLORS[level.level as keyof typeof EFFICIENCY_COLORS];
 };
 
-export default function ProductionEfficiencyReport() {
+export default function ProductionEfficiencyReport({ locationFilter }: { locationFilter?: string }) {
   const dispatch = useDispatch<AppDispatch>();
-  const canView = usePermission("productionEfficiency", "view");
+  const canView = usePermission("productionReportingAnalytics", "view");
 
   const { 
     efficiencyData, 
     oeeMetrics, 
     productivityTrends, 
     loading, 
-    error 
+    error,
+    pagination
   } = useSelector((state: RootState) => state.productionEfficiency);
+
+  const { masterData } = useSelector((state: RootState) => state.masterData);
 
   const [dateRange, setDateRange] = useState({
     startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
@@ -78,14 +91,75 @@ export default function ProductionEfficiencyReport() {
   });
 
   const [selectedMetric, setSelectedMetric] = useState<"oee" | "availability" | "performance" | "quality">("oee");
+  const [searchTerm, setSearchTerm] = useState("");
+
+  // Debounced search handler
+  const debouncedSearch = useCallback(
+    debounce((searchValue: string) => {
+      const params = { 
+        ...dateRange, 
+        page: 1,
+        limit: pagination.itemsPerPage,
+        search: searchValue,
+        ...(locationFilter && locationFilter !== 'all' && { location: locationFilter })
+      };
+      dispatch(fetchProductionEfficiencyData(params));
+    }, 300),
+    [dispatch, dateRange, locationFilter, pagination.itemsPerPage]
+  );
+
+  // Handle search input change
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value);
+    debouncedSearch(value);
+  };
+
+  // Pagination handlers
+  const handlePageChange = (page: number) => {
+    const params = { 
+      ...dateRange, 
+      page,
+      limit: pagination.itemsPerPage,
+      search: searchTerm,
+      ...(locationFilter && locationFilter !== 'all' && { location: locationFilter })
+    };
+    dispatch(fetchProductionEfficiencyData(params));
+  };
+
+  const handleItemsPerPageChange = (itemsPerPage: number) => {
+    const params = { 
+      ...dateRange, 
+      page: 1,
+      limit: itemsPerPage,
+      search: searchTerm,
+      ...(locationFilter && locationFilter !== 'all' && { location: locationFilter })
+    };
+    dispatch(fetchProductionEfficiencyData(params));
+  };
+
+  // Helper function to get location name
+  const getLocationName = (locationId: string) => {
+    if (!locationId || !masterData?.locations) return 'N/A';
+    const location = masterData.locations.find(loc => loc._id === locationId);
+    return location?.name || 'Unknown Location';
+  };
 
   useEffect(() => {
     if (canView) {
-      dispatch(fetchProductionEfficiencyData(dateRange));
+      const params = { 
+        ...dateRange, 
+        page: pagination.currentPage,
+        limit: pagination.itemsPerPage,
+        search: searchTerm,
+        ...(locationFilter && locationFilter !== 'all' && { location: locationFilter })
+      };
+      dispatch(fetchProductionEfficiencyData(params));
       dispatch(fetchOEEMetrics(dateRange));
       dispatch(fetchProductivityTrends(dateRange));
+      // Fetch master data for locations
+      dispatch(fetchMasterData("location"));
     }
-  }, [dispatch, canView, dateRange]);
+  }, [dispatch, canView, locationFilter]);
 
   if (!canView) {
     return (
@@ -150,7 +224,14 @@ export default function ProductionEfficiencyReport() {
   }, [productivityTrends]);
 
   const handleRefresh = () => {
-    dispatch(fetchProductionEfficiencyData(dateRange));
+    const params = { 
+      ...dateRange, 
+      page: pagination.currentPage,
+      limit: pagination.itemsPerPage,
+      search: searchTerm,
+      ...(locationFilter && locationFilter !== 'all' && { location: locationFilter })
+    };
+    dispatch(fetchProductionEfficiencyData(params));
     dispatch(fetchOEEMetrics(dateRange));
     dispatch(fetchProductivityTrends(dateRange));
   };
@@ -452,16 +533,32 @@ export default function ProductionEfficiencyReport() {
       {chartData.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Detailed Efficiency Metrics</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Complete breakdown of all efficiency parameters
-            </p>
+            <div className="flex justify-between items-center">
+              <div>
+                <CardTitle>Detailed Efficiency Metrics</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Complete breakdown of all efficiency parameters
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <Input
+                    placeholder="Search work centers..."
+                    value={searchTerm}
+                    onChange={(e) => handleSearchChange(e.target.value)}
+                    className="pl-10 w-64"
+                  />
+                </div>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Work Center</TableHead>
+                  <TableHead>Location</TableHead>
                   <TableHead>OEE %</TableHead>
                   <TableHead>Availability %</TableHead>
                   <TableHead>Performance %</TableHead>
@@ -477,6 +574,12 @@ export default function ProductionEfficiencyReport() {
                   <TableRow key={wc.workCenterId}>
                     <TableCell className="font-medium">
                       {wc.workCenterName}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="flex items-center gap-1 w-fit">
+                        <MapPin className="w-3 h-3" />
+                        {wc.location && wc.location.name ? wc.location.name : 'N/A'}
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
@@ -521,6 +624,18 @@ export default function ProductionEfficiencyReport() {
                 ))}
               </TableBody>
             </Table>
+            
+            {/* Pagination */}
+            <Pagination
+              currentPage={pagination.currentPage}
+              totalPages={pagination.totalPages}
+              totalItems={pagination.totalItems}
+              itemsPerPage={pagination.itemsPerPage}
+              onPageChange={handlePageChange}
+              onItemsPerPageChange={handleItemsPerPageChange}
+              showItemsPerPage={true}
+              itemsPerPageOptions={[5, 10, 20, 50]}
+            />
           </CardContent>
         </Card>
       )}
@@ -530,12 +645,25 @@ export default function ProductionEfficiencyReport() {
         <Card>
           <CardContent className="text-center py-12">
             <Gauge className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              No Efficiency Data Available
-            </h3>
-            <p className="text-gray-600 mb-4">
-              No production efficiency data found for the selected date range.
-            </p>
+            {searchTerm ? (
+              <>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  No Work Centers Found
+                </h3>
+                <p className="text-gray-600 mb-4">
+                  No work centers found matching "{searchTerm}". Try adjusting your search terms.
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  No Efficiency Data Available
+                </h3>
+                <p className="text-gray-600 mb-4">
+                  No production efficiency data found for the selected date range.
+                </p>
+              </>
+            )}
             <Button onClick={handleRefresh} disabled={loading}>
               <RefreshCw className="w-4 h-4 mr-2" />
               Refresh Data

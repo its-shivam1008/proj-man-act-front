@@ -1,8 +1,6 @@
-"use client";
-
 import { usePermission } from "@/hooks/userPermission";
 import { useDispatch, useSelector } from "react-redux";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   Card, CardHeader, CardTitle, CardContent,
 } from "@/components/ui/card";
@@ -28,19 +26,30 @@ import {
 import { 
   ShieldAlert, Package, Clock, CheckCircle, AlertTriangle,
   TrendingUp, Calendar, Filter, Search, Eye, 
-  PlayCircle, PauseCircle, XCircle, Target, Truck
+  PlayCircle, PauseCircle, XCircle, Target, Truck, MapPin
 } from "lucide-react";
 import type { RootState, AppDispatch } from "@/redux/store";
 import {
   fetchWorkOrders,
   updateWorkOrder,
 } from "@/redux/slices/production/workOrderSlice";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Pagination } from "@/components/ui/pagination";
 import {
   Dialog, DialogContent, DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+
+// Debounce utility function
+const debounce = (func: Function, delay: number) => {
+  let timeoutId: NodeJS.Timeout;
+  return (...args: any[]) => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => func.apply(null, args), delay);
+  };
+};
 
 const ORDER_STATUS_COLORS = {
   planned: "bg-gray-100 text-gray-700",
@@ -60,16 +69,19 @@ const PRIORITY_COLORS = {
 
 const CHART_COLORS = ["#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"];
 
-export default function OrderProgressTrackerReport() {
+export default function OrderProgressTrackerReport({ locationFilter }: { locationFilter?: string }) {
   const dispatch = useDispatch<AppDispatch>();
-  const canView = usePermission("orderProgressTracker", "view");
-  const canEdit = usePermission("orderProgressTracker", "edit");
+  const canView = usePermission("productionReportingAnalytics", "view");
+  const canEdit = usePermission("productionReportingAnalytics", "edit");
 
   const { 
     list: workOrders, 
     loading, 
-    error 
+    error,
+    pagination
   } = useSelector((state: RootState) => state.workOrders);
+
+  const { locations } = useSelector((state: RootState) => state.masterData);
 
   const [filters, setFilters] = useState({
     status: "all",
@@ -80,12 +92,74 @@ export default function OrderProgressTrackerReport() {
 
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [itemsPerPage, setItemsPerPage] = useState(10); // Add state for items per page
+
+  // Debounced search handler
+  const debouncedSearch = useCallback(
+    debounce((searchValue: string) => {
+      dispatch(fetchWorkOrders({
+        location: locationFilter !== "all" ? locationFilter : undefined,
+        page: 1,
+        limit: itemsPerPage,
+        search: searchValue
+      }));
+    }, 300),
+    [dispatch, locationFilter, itemsPerPage]
+  );
+
+  // Handle search input change
+  const handleSearchChange = (value: string) => {
+    setFilters(prev => ({ ...prev, searchTerm: value }));
+    debouncedSearch(value);
+  };
+
+  // Pagination handlers
+  const handlePageChange = (page: number) => {
+    console.log('🔄 Changing to page:', page, 'with limit:', itemsPerPage);
+    dispatch(fetchWorkOrders({
+      location: locationFilter !== "all" ? locationFilter : undefined,
+      page,
+      limit: itemsPerPage,
+      search: filters.searchTerm
+    }));
+  };
+
+  const handleItemsPerPageChange = (newItemsPerPage: number) => {
+    setItemsPerPage(newItemsPerPage);
+    dispatch(fetchWorkOrders({
+      location: locationFilter !== "all" ? locationFilter : undefined,
+      page: 1,
+      limit: newItemsPerPage,
+      search: filters.searchTerm
+    }));
+  };
+
+  // Helper function to get location name
+  const getLocationName = (locationId: string) => {
+    if (!locationId) return 'N/A';
+    
+    // If locations are not loaded yet, return the ID temporarily
+    if (!locations || locations.length === 0) {
+      return locationId;
+    }
+    
+    const location = locations.find(loc => loc._id === locationId);
+    return location?.name || locationId;
+  };
 
   useEffect(() => {
     if (canView) {
-      dispatch(fetchWorkOrders());
+      console.log('🚀 Initial load - locationFilter:', locationFilter, 'itemsPerPage:', itemsPerPage);
+      dispatch(fetchWorkOrders({
+        location: locationFilter !== "all" ? locationFilter : undefined,
+        page: 1,
+        limit: itemsPerPage,
+        search: filters.searchTerm
+      }));
+      // Fetch master data for locations
+      dispatch(fetchMasterData("location"));
     }
-  }, [dispatch, canView]);
+  }, [dispatch, canView, locationFilter]);
 
   if (!canView) {
     return (
@@ -103,15 +177,14 @@ export default function OrderProgressTrackerReport() {
   const filteredOrders = useMemo(() => {
     if (!workOrders) return [];
     
+    console.log('📊 Work orders received:', workOrders.length, 'Pagination:', pagination);
+    
     return workOrders.filter(order => {
       const matchesStatus = filters.status === "all" || order.status === filters.status;
-      const matchesSearch = !filters.searchTerm || 
-        order.orderNo?.toLowerCase().includes(filters.searchTerm.toLowerCase()) ||
-        order.productName?.toLowerCase().includes(filters.searchTerm.toLowerCase());
-      
-      return matchesStatus && matchesSearch;
+      // Note: Search is now handled by backend, so we don't need to filter by searchTerm here
+      return matchesStatus;
     });
-  }, [workOrders, filters]);
+  }, [workOrders, filters.status, pagination]); // Added pagination dependency for debugging
 
   const summaryStats = useMemo(() => {
     if (!workOrders || workOrders.length === 0) {
@@ -194,6 +267,16 @@ export default function OrderProgressTrackerReport() {
   /* ================= HANDLERS ================= */
   const handleFilterChange = (key: string, value: string) => {
     setFilters(prev => ({ ...prev, [key]: value }));
+    
+    // If status filter changes, refetch data
+    if (key === 'status') {
+      dispatch(fetchWorkOrders({
+        location: locationFilter !== "all" ? locationFilter : undefined,
+        page: 1,
+        limit: itemsPerPage,
+        search: filters.searchTerm
+      }));
+    }
   };
 
   const handleViewDetails = (order: any) => {
@@ -208,7 +291,13 @@ export default function OrderProgressTrackerReport() {
           id: orderId, 
           data: { status: newStatus } 
         })).unwrap();
-        dispatch(fetchWorkOrders()); // Refresh data
+        // Refresh current page data
+        dispatch(fetchWorkOrders({
+          location: locationFilter !== "all" ? locationFilter : undefined,
+          page: pagination.page || 1,
+          limit: itemsPerPage,
+          search: filters.searchTerm
+        }));
       } catch (error) {
         console.error("Failed to update order status:", error);
       }
@@ -271,7 +360,7 @@ export default function OrderProgressTrackerReport() {
                 <Input
                   placeholder="Order number, product..."
                   value={filters.searchTerm}
-                  onChange={(e) => handleFilterChange("searchTerm", e.target.value)}
+                  onChange={(e) => handleSearchChange(e.target.value)}
                   className="pl-10"
                 />
               </div>
@@ -312,7 +401,14 @@ export default function OrderProgressTrackerReport() {
 
             <div className="flex items-end">
               <Button 
-                onClick={() => dispatch(fetchWorkOrders())}
+                onClick={() => {
+                  dispatch(fetchWorkOrders({
+                    location: locationFilter !== "all" ? locationFilter : undefined,
+                    page: pagination.page || 1,
+                    limit: itemsPerPage,
+                    search: filters.searchTerm
+                  }));
+                }}
                 disabled={loading}
                 className="w-full"
               >
@@ -500,100 +596,133 @@ export default function OrderProgressTrackerReport() {
       {/* ORDERS TABLE */}
       <Card>
         <CardHeader>
-          <CardTitle>Work Orders ({filteredOrders.length})</CardTitle>
+          <CardTitle>Work Orders ({pagination.total || 0})</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Showing {Math.min((pagination.page - 1) * 10 + 1, pagination.total)} to {Math.min(pagination.page * 10, pagination.total)} of {pagination.total} orders
+          </p>
         </CardHeader>
         <CardContent>
           {filteredOrders.length === 0 ? (
             <div className="text-center py-8">
               <Package className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-              <p className="text-gray-500">No orders found</p>
-              <p className="text-sm text-gray-400">Try adjusting your filters</p>
+              {filters.searchTerm ? (
+                <>
+                  <p className="text-gray-500">No orders found matching "{filters.searchTerm}"</p>
+                  <p className="text-sm text-gray-400">Try adjusting your search terms</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-gray-500">No orders found</p>
+                  <p className="text-sm text-gray-400">Try adjusting your filters</p>
+                </>
+              )}
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Order #</TableHead>
-                  <TableHead>Product</TableHead>
-                  <TableHead>Quantity</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Progress</TableHead>
-                  <TableHead>Due Date</TableHead>
-                  <TableHead>Planned Hours</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredOrders.map((order) => {
-                  const progress = getProgressPercentage(order);
-                  const isDelayed = new Date(order.dueDate) < new Date() && order.status !== "completed";
-                  
-                  return (
-                    <TableRow key={order._id} className={isDelayed ? "bg-red-50" : ""}>
-                      <TableCell className="font-medium">
-                        {order.orderNo}
-                        {isDelayed && (
-                          <AlertTriangle className="w-4 h-4 text-red-500 inline ml-2" />
-                        )}
-                      </TableCell>
-                      <TableCell>{order.productName || "Unknown Product"}</TableCell>
-                      <TableCell>{order.quantity} pcs</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          {getStatusIcon(order.status)}
-                          <Badge className={ORDER_STATUS_COLORS[order.status as keyof typeof ORDER_STATUS_COLORS]}>
-                            {order.status.replace("-", " ")}
-                          </Badge>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="space-y-1">
-                          <Progress value={progress} className="h-2" />
-                          <span className="text-xs text-muted-foreground">{progress}%</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className={isDelayed ? "text-red-600 font-medium" : ""}>
-                          {order.dueDate ? new Date(order.dueDate).toLocaleDateString('en-GB') : "Not set"}
-                        </div>
-                        {isDelayed && (
-                          <div className="text-xs text-red-500">Overdue</div>
-                        )}
-                      </TableCell>
-                      <TableCell>{order.plannedHours || "Not set"}</TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleViewDetails(order)}
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                          {canEdit && order.status !== "completed" && (
-                            <Select
-                              value={order.status}
-                              onValueChange={(value) => handleStatusUpdate(order._id, value)}
-                            >
-                              <SelectTrigger className="w-32 h-8">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="planned">Planned</SelectItem>
-                                <SelectItem value="released">Released</SelectItem>
-                                <SelectItem value="in-progress">In Progress</SelectItem>
-                                <SelectItem value="paused">Paused</SelectItem>
-                                <SelectItem value="completed">Completed</SelectItem>
-                              </SelectContent>
-                            </Select>
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Order #</TableHead>
+                    <TableHead>Product</TableHead>
+                    <TableHead>Location</TableHead>
+                    <TableHead>Quantity</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Progress</TableHead>
+                    <TableHead>Due Date</TableHead>
+                    <TableHead>Planned Hours</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredOrders.map((order) => {
+                    const progress = getProgressPercentage(order);
+                    const isDelayed = new Date(order.dueDate) < new Date() && order.status !== "completed";
+                    
+                    return (
+                      <TableRow key={order._id} className={isDelayed ? "bg-red-50" : ""}>
+                        <TableCell className="font-medium">
+                          {order.orderNo}
+                          {isDelayed && (
+                            <AlertTriangle className="w-4 h-4 text-red-500 inline ml-2" />
                           )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                        </TableCell>
+                        <TableCell>{order.productName || "Unknown Product"}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="flex items-center gap-1 w-fit">
+                            <MapPin className="w-3 h-3" />
+                            {getLocationName(order.location)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{order.quantity} pcs</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            {getStatusIcon(order.status)}
+                            <Badge className={ORDER_STATUS_COLORS[order.status as keyof typeof ORDER_STATUS_COLORS]}>
+                              {order.status.replace("-", " ")}
+                            </Badge>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <Progress value={progress} className="h-2" />
+                            <span className="text-xs text-muted-foreground">{progress}%</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className={isDelayed ? "text-red-600 font-medium" : ""}>
+                            {order.dueDate ? new Date(order.dueDate).toLocaleDateString('en-GB') : "Not set"}
+                          </div>
+                          {isDelayed && (
+                            <div className="text-xs text-red-500">Overdue</div>
+                          )}
+                        </TableCell>
+                        <TableCell>{order.plannedHours || "Not set"}</TableCell>
+                        <TableCell>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleViewDetails(order)}
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                            {canEdit && order.status !== "completed" && (
+                              <Select
+                                value={order.status}
+                                onValueChange={(value) => handleStatusUpdate(order._id, value)}
+                              >
+                                <SelectTrigger className="w-32 h-8">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="planned">Planned</SelectItem>
+                                  <SelectItem value="released">Released</SelectItem>
+                                  <SelectItem value="in-progress">In Progress</SelectItem>
+                                  <SelectItem value="paused">Paused</SelectItem>
+                                  <SelectItem value="completed">Completed</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+              
+              {/* Pagination */}
+              <Pagination
+                currentPage={pagination.page}
+                totalPages={pagination.totalPages}
+                totalItems={pagination.total}
+                itemsPerPage={itemsPerPage}
+                onPageChange={handlePageChange}
+                onItemsPerPageChange={handleItemsPerPageChange}
+                showItemsPerPage={true}
+                itemsPerPageOptions={[5, 10, 20, 50]}
+              />
+            </>
           )}
         </CardContent>
       </Card>
@@ -633,6 +762,13 @@ export default function OrderProgressTrackerReport() {
                 <div>
                   <Label className="text-sm font-medium">Planned Hours</Label>
                   <p className="text-sm">{selectedOrder.plannedHours || "Not set"}</p>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium">Location</Label>
+                  <div className="flex items-center gap-1">
+                    <MapPin className="w-3 h-3" />
+                    <span className="text-sm">{getLocationName(selectedOrder.location)}</span>
+                  </div>
                 </div>
                 <div>
                   <Label className="text-sm font-medium">Status</Label>

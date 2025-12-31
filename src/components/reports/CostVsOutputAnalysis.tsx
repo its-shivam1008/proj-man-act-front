@@ -22,18 +22,30 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { fetchProducts } from "@/redux/slices/productSlice";
 import { Input } from "@/components/ui/input";
-import { Pagination } from "@/components/ui/pagination";
+import { Button } from "@/components/ui/button";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
 
 export default function CostVsOutputAnalysis() {
     const dispatch = useDispatch<AppDispatch>();
-    const canView = usePermission("costVsOutputReport", "view");
-    const canCreate = usePermission("costVsOutputReport", "create");
-    const canEdit = usePermission("costVsOutputReport", "edit");
-    const canDelete = usePermission("costVsOutputReport", "delete");
+    const canView = usePermission("productionReportingAnalytics", "view");
+    const canCreate = usePermission("productionReportingAnalytics", "create");
+    const canEdit = usePermission("productionReportingAnalytics", "edit");
+    const canDelete = usePermission("productionReportingAnalytics", "delete");
 
     const [dialogOpen, setDialogOpen] = React.useState(false);
     const [editing, setEditing] = React.useState<any>(null);
     const [costSearch, setCostSearch] = React.useState("");
+    
+    // Frontend pagination states
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(10);
+    
     const [form, setForm] = React.useState({
         productId: "",
         producedQty: 0,
@@ -41,31 +53,10 @@ export default function CostVsOutputAnalysis() {
         remarks: "",
     });
 
-    // Debounced search function
-    const debounce = useCallback((func: Function, delay: number) => {
-        let timeoutId: NodeJS.Timeout;
-        return (...args: any[]) => {
-            clearTimeout(timeoutId);
-            timeoutId = setTimeout(() => func.apply(null, args), delay);
-        };
-    }, []);
-
-    // Debounced search handler
-    const debouncedCostSearch = useCallback(
-        debounce((searchTerm: string) => {
-            dispatch(fetchCostOutputs({
-                page: 1,
-                limit: costsPagination?.itemsPerPage || 10,
-                search: searchTerm
-            }));
-        }, 300),
-        [dispatch]
-    );
-
-    // Search handler
+    // Remove debounced search since we're doing frontend filtering
     const handleCostSearch = (value: string) => {
         setCostSearch(value);
-        debouncedCostSearch(value);
+        setCurrentPage(1); // Reset to first page when searching
     };
 
     const openCreate = () => {
@@ -79,7 +70,7 @@ export default function CostVsOutputAnalysis() {
         setDialogOpen(true);
     };
     const { products, page, limit } = useSelector((state: RootState) => state.products);
-    const { costs, costsPagination } = useSelector(
+    const { costs, loading } = useSelector(
         (state: RootState) => state.productionReporting
     );
     const orgId = localStorage.getItem('organisationId')
@@ -87,25 +78,17 @@ export default function CostVsOutputAnalysis() {
         if (orgId) {
             dispatch(fetchProducts(page, limit));
         }
-
     }, [dispatch, orgId, page, limit]);
 
-    // Pagination handlers
-    const handleCostPageChange = (page: number) => {
-        dispatch(fetchCostOutputs({
-            page,
-            limit: costsPagination?.itemsPerPage || 10,
-            search: costSearch
-        }));
-    };
+    // Frontend pagination handlers
+    const handleCostPageChange = useCallback((page: number) => {
+        setCurrentPage(page);
+    }, []);
 
-    const handleCostItemsPerPageChange = (itemsPerPage: number) => {
-        dispatch(fetchCostOutputs({
-            page: 1,
-            limit: itemsPerPage,
-            search: costSearch
-        }));
-    };
+    const handleCostItemsPerPageChange = useCallback((newItemsPerPage: string) => {
+        setItemsPerPage(parseInt(newItemsPerPage));
+        setCurrentPage(1); // Reset to first page
+    }, []);
 
     const openEdit = (row: any) => {
         if (!row?.productId?._id) {
@@ -143,7 +126,7 @@ export default function CostVsOutputAnalysis() {
 
 
     useEffect(() => {
-        dispatch(fetchCostOutputs());
+        dispatch(fetchCostOutputs({ page: 1, limit: 1000 })); // Fetch all data for frontend pagination
     }, [dispatch]);
 
     if (!canView) {
@@ -172,6 +155,25 @@ export default function CostVsOutputAnalysis() {
         }));
     }, [costs]);
 
+    // Filter data based on search term
+    const filteredAnalysis = useMemo(() => {
+        if (!costSearch) return analysis;
+        
+        return analysis.filter((item) =>
+            item.productName.toLowerCase().includes(costSearch.toLowerCase())
+        );
+    }, [analysis, costSearch]);
+
+    // Paginate filtered data
+    const paginatedAnalysis = useMemo(() => {
+        const startIndex = (currentPage - 1) * itemsPerPage;
+        const endIndex = startIndex + itemsPerPage;
+        return filteredAnalysis.slice(startIndex, endIndex);
+    }, [filteredAnalysis, currentPage, itemsPerPage]);
+
+    // Pagination calculations
+    const totalPages = Math.ceil(filteredAnalysis.length / itemsPerPage);
+    const totalItems = filteredAnalysis.length;
 
     const totals = useMemo(() => {
         const totalCost = analysis.reduce((s, r) => s + r.totalCost, 0);
@@ -197,12 +199,12 @@ export default function CostVsOutputAnalysis() {
                     </p>
                 </div>
                 {canCreate && (
-                    <button
+                    <Button
                         onClick={openCreate}
-                        className="px-4 py-2 bg-indigo-600 text-white rounded-md"
+                        className="bg-indigo-600 hover:bg-indigo-700"
                     >
                         + Add Cost Record
-                    </button>
+                    </Button>
                 )}
 
 
@@ -347,97 +349,171 @@ export default function CostVsOutputAnalysis() {
             {/* TABLE */}
             <Card>
                 <CardHeader>
-                    <div className="flex items-center justify-between">
-                        <CardTitle>Cost Efficiency Details ({costsPagination?.totalItems || 0})</CardTitle>
-                        <div className="flex items-center gap-2">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <CardTitle>Cost Efficiency Details ({totalItems})</CardTitle>
+                        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                             <div className="relative">
-                                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                                 <Input
                                     placeholder="Search cost records..."
                                     value={costSearch}
                                     onChange={(e) => handleCostSearch(e.target.value)}
-                                    className="pl-8 w-64"
+                                    className="pl-10 w-full sm:w-64"
                                 />
                             </div>
+                            <Select value={itemsPerPage.toString()} onValueChange={handleCostItemsPerPageChange}>
+                                <SelectTrigger className="w-full sm:w-32">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="5">5 per page</SelectItem>
+                                    <SelectItem value="10">10 per page</SelectItem>
+                                    <SelectItem value="20">20 per page</SelectItem>
+                                    <SelectItem value="50">50 per page</SelectItem>
+                                </SelectContent>
+                            </Select>
                         </div>
                     </div>
                 </CardHeader>
                 <CardContent>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Product</TableHead>
-                                <TableHead>Output</TableHead>
-                                <TableHead>Total Cost</TableHead>
-                                <TableHead>Cost / Unit</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead>Actions</TableHead>
-
-                            </TableRow>
-                        </TableHeader>
-
-                        <TableBody>
-                            {analysis.map((r) => {
-                                const efficient = r.costPerUnit <= totals.avgCostPerUnit;
-
-                                return (
-                                    <TableRow key={r._id}>
-                                        <TableCell className="font-medium">
-                                            {r.productName}
-                                        </TableCell>
-
-                                        <TableCell>{r.producedQty}</TableCell>
-                                        <TableCell>₹ {r.totalCost.toFixed(2)}</TableCell>
-                                        <TableCell>₹ {r.costPerUnit.toFixed(2)}</TableCell>
-
-                                        <TableCell>
-                                            <Badge
-                                                className={
-                                                    efficient
-                                                        ? "bg-green-100 text-green-700"
-                                                        : "bg-red-100 text-red-700"
-                                                }
-                                            >
-                                                {efficient ? "Efficient" : "High Cost"}
-                                            </Badge>
-                                        </TableCell>
-
-                                        <TableCell className="flex gap-2">
-                                            {canEdit && (
-                                                <button
-                                                    onClick={() => openEdit(r)}
-                                                    className="text-blue-600"
-                                                >
-                                                    Edit
-                                                </button>
-                                            )}
-
-                                            {canDelete && (
-                                                <button
-                                                    onClick={() => handleDelete(r._id)}
-                                                    className="text-red-600"
-                                                >
-                                                    Delete
-                                                </button>
-                                            )}
-                                        </TableCell>
+                    {loading ? (
+                        <div className="text-center py-8">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
+                            <p className="mt-2 text-sm text-gray-500">Loading cost data...</p>
+                        </div>
+                    ) : paginatedAnalysis.length === 0 ? (
+                        <div className="text-center py-8">
+                            <p className="text-gray-500">
+                                {costSearch ? `No cost records found matching "${costSearch}"` : "No cost records available"}
+                            </p>
+                            <p className="text-sm text-gray-400">
+                                {costSearch ? "Try adjusting your search terms" : "Create your first cost record to see analysis"}
+                            </p>
+                        </div>
+                    ) : (
+                        <>
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Product</TableHead>
+                                        <TableHead>Output</TableHead>
+                                        <TableHead>Total Cost</TableHead>
+                                        <TableHead>Cost / Unit</TableHead>
+                                        <TableHead>Status</TableHead>
+                                        <TableHead>Actions</TableHead>
                                     </TableRow>
-                                );
-                            })}
-                        </TableBody>
+                                </TableHeader>
 
-                    </Table>
+                                <TableBody>
+                                    {paginatedAnalysis.map((r) => {
+                                        const efficient = r.costPerUnit <= totals.avgCostPerUnit;
 
-                    {/* Pagination for Cost Records */}
-                    {costsPagination && (
-                        <Pagination
-                            currentPage={costsPagination.currentPage}
-                            totalPages={costsPagination.totalPages}
-                            totalItems={costsPagination.totalItems}
-                            itemsPerPage={costsPagination.itemsPerPage}
-                            onPageChange={handleCostPageChange}
-                            onItemsPerPageChange={handleCostItemsPerPageChange}
-                        />
+                                        return (
+                                            <TableRow key={r._id}>
+                                                <TableCell className="font-medium">
+                                                    {r.productName}
+                                                </TableCell>
+
+                                                <TableCell>{r.producedQty}</TableCell>
+                                                <TableCell>₹ {r.totalCost.toFixed(2)}</TableCell>
+                                                <TableCell>₹ {r.costPerUnit.toFixed(2)}</TableCell>
+
+                                                <TableCell>
+                                                    <Badge
+                                                        className={
+                                                            efficient
+                                                                ? "bg-green-100 text-green-700"
+                                                                : "bg-red-100 text-red-700"
+                                                        }
+                                                    >
+                                                        {efficient ? "Efficient" : "High Cost"}
+                                                    </Badge>
+                                                </TableCell>
+
+                                                <TableCell className="flex gap-2">
+                                                    {canEdit && (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => openEdit(r)}
+                                                            className="text-blue-600 hover:text-blue-800"
+                                                        >
+                                                            Edit
+                                                        </Button>
+                                                    )}
+
+                                                    {canDelete && (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => handleDelete(r._id)}
+                                                            className="text-red-600 hover:text-red-800"
+                                                        >
+                                                            Delete
+                                                        </Button>
+                                                    )}
+                                                </TableCell>
+                                            </TableRow>
+                                        );
+                                    })}
+                                </TableBody>
+                            </Table>
+
+                            {/* Frontend Pagination */}
+                            {totalPages > 1 && (
+                                <div className="flex flex-col sm:flex-row justify-between items-center mt-4 gap-4">
+                                    <div className="text-sm text-gray-500">
+                                        Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalItems)} of {totalItems} entries
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => handleCostPageChange(currentPage - 1)}
+                                            disabled={currentPage <= 1}
+                                        >
+                                            Previous
+                                        </Button>
+                                        
+                                        <div className="flex items-center gap-1">
+                                            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                                let pageNum;
+                                                if (totalPages <= 5) {
+                                                    pageNum = i + 1;
+                                                } else if (currentPage <= 3) {
+                                                    pageNum = i + 1;
+                                                } else if (currentPage >= totalPages - 2) {
+                                                    pageNum = totalPages - 4 + i;
+                                                } else {
+                                                    pageNum = currentPage - 2 + i;
+                                                }
+                                                
+                                                return (
+                                                    <Button
+                                                        key={pageNum}
+                                                        variant={currentPage === pageNum ? "default" : "outline"}
+                                                        size="sm"
+                                                        onClick={() => handleCostPageChange(pageNum)}
+                                                        className="w-8 h-8 p-0"
+                                                    >
+                                                        {pageNum}
+                                                    </Button>
+                                                );
+                                            })}
+                                        </div>
+
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => handleCostPageChange(currentPage + 1)}
+                                            disabled={currentPage >= totalPages}
+                                        >
+                                            Next
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
+                        </>
                     )}
                 </CardContent>
             </Card>

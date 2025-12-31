@@ -1,6 +1,6 @@
 import { usePermission } from "@/hooks/userPermission";
 import React, { useState, useEffect, useMemo } from "react";
-import { Plus, Edit2, Trash2, Package, Search, TrendingUp, RefreshCcw, ShieldAlert } from "lucide-react";
+import { Plus, Edit2, Trash2, Package, Search, TrendingUp, RefreshCcw, ShieldAlert, MapPin } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { useDispatch, useSelector } from "react-redux";
@@ -60,6 +60,13 @@ export default function ItemMaster() {
 
   const dispatch = useDispatch();
   const { locations = [] } = useSelector((state: any) => state.masterData);
+  
+  // ✅ LOCATION FILTERING STATE
+  const { userProfile } = useSelector((state: RootState) => state.auth);
+
+  const isLocationRestricted = 
+    userProfile?.role !== 'admin' && 
+    !!userProfile?.location;
 
   const { list: items, loading, pagination } = useSelector(
     (state: RootState) => state.itemMaster
@@ -70,6 +77,11 @@ export default function ItemMaster() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [searchTerm, setSearchTerm] = useState("");
+  // ✅ LOCATION FILTERING STATE - Initialize properly for restricted users
+  const [locationFilter, setLocationFilter] = useState<string>(() => {
+    const isRestricted = userProfile?.role !== 'admin' && !!userProfile?.location;
+    return isRestricted ? userProfile.location : "all";
+  });
 
   const canView = usePermission("itemMaster", "view");
   const canCreate = usePermission("itemMaster", "create");
@@ -112,11 +124,20 @@ export default function ItemMaster() {
         page: currentPage,
         limit: itemsPerPage,
         search: searchTerm,
+        location: locationFilter !== "all" ? locationFilter : undefined,
       })
     );
 
     dispatch(fetchMasterData("location"));
-  }, [dispatch, organisationId, currentPage, itemsPerPage, searchTerm]);
+  }, [dispatch, organisationId, currentPage, itemsPerPage, searchTerm, locationFilter]);
+
+  // Auto-set location filter for restricted users (backup in case initial state didn't work)
+  useEffect(() => {
+    if (isLocationRestricted && userProfile?.location && locationFilter === "all") {
+      console.log("ItemMaster: Setting location filter for restricted user:", userProfile.location);
+      setLocationFilter(userProfile.location);
+    }
+  }, [isLocationRestricted, userProfile, locationFilter]);
 
 
   // Derived Stats
@@ -139,6 +160,12 @@ export default function ItemMaster() {
   const handleSearchChange = (value: string) => {
     setSearchTerm(value);
     setCurrentPage(1); // Reset to first page when searching
+  };
+
+  // Location filter handler
+  const handleLocationFilterChange = (location: string) => {
+    setLocationFilter(location);
+    setCurrentPage(1); // Reset to first page when filtering
   };
 
   // Remove the filtered items logic since we're using server-side pagination
@@ -196,6 +223,7 @@ export default function ItemMaster() {
           page: currentPage,
           limit: itemsPerPage,
           search: searchTerm,
+          location: locationFilter !== "all" ? locationFilter : undefined,
         })
       );
 
@@ -260,17 +288,21 @@ export default function ItemMaster() {
 
   const resetAll = () => {
     setSearchTerm("");
+    setLocationFilter("all");
     setCurrentPage(1);
     dispatch(fetchItems({ 
       organisationId, 
       page: 1, 
       limit: itemsPerPage, 
-      search: "" 
+      search: "",
+      location: undefined
     }));
   };
 
-  const getLocationName = (id: string) => {
-    const loc = locations.find((l: any) => l._id === id);
+  const getLocationName = (locationData: string | { _id: string; name: string } | undefined) => {
+    if (!locationData) return "No Location";
+    if (typeof locationData === 'object' && locationData.name) return locationData.name;
+    const loc = locations.find((l: any) => l._id === locationData);
     return loc ? loc.name : "N/A";
   };
 
@@ -305,8 +337,8 @@ export default function ItemMaster() {
         </div>
       </div>
 
-      {/* Search & Stats */}
-      <div className="grid sm:grid-cols-4 gap-4">
+      {/* Search & Filters */}
+      <div className="grid sm:grid-cols-5 gap-4">
         <div className="col-span-2 flex items-center gap-3">
           <Search className="text-gray-400" />
           <input
@@ -317,6 +349,30 @@ export default function ItemMaster() {
             onChange={(e) => handleSearchChange(e.target.value)}
           />
         </div>
+        <div className="flex items-center">
+          <Select 
+            value={locationFilter} 
+            onValueChange={handleLocationFilterChange}
+            disabled={isLocationRestricted}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Filter by Location" />
+            </SelectTrigger>
+            <SelectContent>
+              {!isLocationRestricted && <SelectItem value="all">All Locations</SelectItem>}
+              {locations
+                .filter(location => !isLocationRestricted || location._id === userProfile?.location)
+                .map((location) => (
+                  <SelectItem key={location._id} value={location._id}>
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4" />
+                      {location.name}
+                    </div>
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="bg-white p-3 rounded-lg border shadow-sm text-center">
           <p className="text-gray-500 text-sm">Total Items</p>
           <p className="text-2xl font-bold">{totalItems}</p>
@@ -325,9 +381,17 @@ export default function ItemMaster() {
           <p className="text-gray-500 text-sm">Low Stock</p>
           <p className="text-2xl font-bold text-red-500">{lowStockCount}</p>
         </div>
+      </div>
+      
+      {/* Additional Stats Row */}
+      <div className="grid sm:grid-cols-2 gap-4">
         <div className="bg-white p-3 rounded-lg border shadow-sm text-center">
           <p className="text-gray-500 text-sm">Inventory Value</p>
           <p className="text-2xl font-bold text-green-600">${totalInventoryValue}</p>
+        </div>
+        <div className="bg-white p-3 rounded-lg border shadow-sm text-center">
+          <p className="text-gray-500 text-sm">Active Items</p>
+          <p className="text-2xl font-bold text-blue-600">{items?.length || 0}</p>
         </div>
       </div>
 
@@ -386,7 +450,12 @@ export default function ItemMaster() {
                     </td>
                     <td className="px-6 py-3">{item.unit}</td>
                     <td className="px-6 py-3">${item.standardCost.toFixed(2)}</td>
-                    <td className="px-6 py-3">{getLocationName(item.location)}</td>
+                    <td className="px-6 py-3">
+                      <div className="flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-gray-500" />
+                        <span>{getLocationName(item.location)}</span>
+                      </div>
+                    </td>
 
                     <td className="px-6 py-3">
                       <div className="flex gap-3">

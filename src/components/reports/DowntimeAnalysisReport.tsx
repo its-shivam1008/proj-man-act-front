@@ -2,7 +2,7 @@
 
 import { usePermission } from "@/hooks/userPermission";
 import { useDispatch, useSelector } from "react-redux";
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import {
   Card, CardHeader, CardTitle, CardContent,
 } from "@/components/ui/card";
@@ -33,7 +33,7 @@ import {
 import { 
   ShieldAlert, AlertTriangle, Clock, 
   Activity, DollarSign,
-  Filter, Edit, Trash2, Search
+  Filter, Edit, Trash2, Search, MapPin
 } from "lucide-react";
 import type { RootState, AppDispatch } from "@/redux/store";
 import {
@@ -45,6 +45,7 @@ import {
   generateSampleData,
   type DowntimeReport
 } from "@/redux/slices/production/downtimeAnalysisSlice";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Pagination } from "@/components/ui/pagination";
@@ -77,16 +78,22 @@ const STATUS_COLORS = {
   closed: "bg-gray-100 text-gray-700"
 };
 
-export default function DowntimeAnalysisReport() {
+interface DowntimeAnalysisReportProps {
+  locationFilter?: string;
+}
+
+export default function DowntimeAnalysisReport({ locationFilter = "all" }: DowntimeAnalysisReportProps) {
   const dispatch = useDispatch<AppDispatch>();
-  const canView = usePermission("downtimeAnalysis", "view");
-  const canCreate = usePermission("downtimeAnalysis", "create");
-  const canEdit = usePermission("downtimeAnalysis", "edit");
-  const canDelete = usePermission("downtimeAnalysis", "delete");
+  const canView = usePermission("productionReportingAnalytics", "view");
+  const canCreate = usePermission("productionReportingAnalytics", "create");
+  const canEdit = usePermission("productionReportingAnalytics", "edit");
+  const canDelete = usePermission("productionReportingAnalytics", "delete");
 
   const { reports, reportsPagination, analytics, loading, error } = useSelector(
     (state: RootState) => state.downtimeAnalysis
   );
+
+  const { locations } = useSelector((state: RootState) => state.masterData);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingReport, setEditingReport] = useState<DowntimeReport | null>(null);
@@ -115,6 +122,16 @@ export default function DowntimeAnalysisReport() {
     productionLoss: 0,
   });
 
+  // ✅ HELPER TO GET LOCATION NAME
+  const getLocationName = (workCenter: any) => {
+    if (!workCenter || !workCenter.location) return "No Location";
+    if (typeof workCenter.location === 'object' && workCenter.location.name) {
+      return workCenter.location.name;
+    }
+    const location = locations.find((loc: any) => loc._id === workCenter.location);
+    return location ? location.name : "Unknown Location";
+  };
+
   // Debounced search function
   const debounce = useCallback((func: Function, delay: number) => {
     let timeoutId: NodeJS.Timeout;
@@ -131,11 +148,12 @@ export default function DowntimeAnalysisReport() {
         page: 1,
         limit: reportsPagination?.itemsPerPage || 10,
         search: searchTerm,
+        location: locationFilter !== "all" ? locationFilter : undefined,
         startDate: dateRange.startDate,
         endDate: dateRange.endDate
       }));
     }, 300),
-    [dispatch, reportsPagination?.itemsPerPage, dateRange]
+    [dispatch, reportsPagination?.itemsPerPage, locationFilter, dateRange]
   );
 
   // Search handler
@@ -150,6 +168,7 @@ export default function DowntimeAnalysisReport() {
       page,
       limit: reportsPagination?.itemsPerPage || 10,
       search: reportsSearch,
+      location: locationFilter !== "all" ? locationFilter : undefined,
       startDate: dateRange.startDate,
       endDate: dateRange.endDate
     }));
@@ -160,6 +179,7 @@ export default function DowntimeAnalysisReport() {
       page: 1,
       limit: itemsPerPage,
       search: reportsSearch,
+      location: locationFilter !== "all" ? locationFilter : undefined,
       startDate: dateRange.startDate,
       endDate: dateRange.endDate
     }));
@@ -167,10 +187,13 @@ export default function DowntimeAnalysisReport() {
 
   useEffect(() => {
     if (canView) {
-      dispatch(fetchDowntimeReports({}));
+      dispatch(fetchDowntimeReports({
+        location: locationFilter !== "all" ? locationFilter : undefined
+      }));
       dispatch(fetchDowntimeAnalytics(dateRange));
+      dispatch(fetchMasterData("location"));
     }
-  }, [dispatch, canView, dateRange]);
+  }, [dispatch, canView, dateRange, locationFilter]);
 
   if (!canView) {
     return (
@@ -542,6 +565,7 @@ export default function DowntimeAnalysisReport() {
                   <TableRow>
                     <TableHead>Date</TableHead>
                     <TableHead>Work Center</TableHead>
+                    <TableHead>Location</TableHead>
                     <TableHead>Duration</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Category</TableHead>
@@ -561,6 +585,12 @@ export default function DowntimeAnalysisReport() {
                         </div>
                       </TableCell>
                       <TableCell>{report.workCenterName}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="flex items-center gap-1">
+                          <MapPin className="w-3 h-3" />
+                          {getLocationName((report as any).workCenterId)}
+                        </Badge>
+                      </TableCell>
                       <TableCell>
                         <div className="font-medium">
                           {Math.round(report.durationMinutes / 60 * 10) / 10}h

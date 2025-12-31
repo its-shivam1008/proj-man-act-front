@@ -120,7 +120,8 @@ export const fetchStandards = createAsyncThunk(
       const params: any = { page, limit, search };
       if (location) params.location = location;
       const res = await axios.get("/api/costing/standards", { params });
-      return res.data.data;
+      // ✅ FIXED: Return full response structure
+      return res.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message);
     }
@@ -177,7 +178,8 @@ export const fetchActuals = createAsyncThunk(
       const params: any = { page, limit, search };
       if (location) params.location = location;
       const res = await axios.get("/api/costing/actuals", { params });
-      return res.data.data;
+      // ✅ FIXED: Return full response structure
+      return res.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message);
     }
@@ -234,7 +236,8 @@ export const fetchMetrics = createAsyncThunk(
       const params: any = { page, limit, search };
       if (location) params.location = location;
       const res = await axios.get("/api/costing/metrics", { params });
-      return res.data.data;
+      // ✅ FIXED: Return full response structure
+      return res.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message);
     }
@@ -293,9 +296,15 @@ const costingSlice = createSlice({
       /* ===== STANDARDS ===== */
       .addCase(fetchStandards.fulfilled, (state, action) => {
         state.loading = false;
-        state.standards = action.payload.data || action.payload;
+        // ✅ FIXED: Properly handle backend response structure
+        state.standards = action.payload.data || [];
         if (action.payload.pagination) {
-          state.standardsPagination = action.payload.pagination;
+          state.standardsPagination = {
+            currentPage: action.payload.pagination.currentPage,
+            totalPages: action.payload.pagination.totalPages,
+            totalItems: action.payload.pagination.totalItems,
+            itemsPerPage: action.payload.pagination.itemsPerPage
+          };
         }
       })
       .addCase(createStandard.fulfilled, (state, action) => {
@@ -311,11 +320,17 @@ const costingSlice = createSlice({
 
       /* ===== ACTUALS ===== */
       .addCase(fetchActuals.fulfilled, (state, action) => {
-        state.actuals = action.payload.data || action.payload;
-        if (action.payload.pagination) {
-          state.actualsPagination = action.payload.pagination;
-        }
         state.loading = false;
+        // ✅ FIXED: Properly handle backend response structure
+        state.actuals = action.payload.data || [];
+        if (action.payload.pagination) {
+          state.actualsPagination = {
+            currentPage: action.payload.pagination.currentPage,
+            totalPages: action.payload.pagination.totalPages,
+            totalItems: action.payload.pagination.totalItems,
+            itemsPerPage: action.payload.pagination.itemsPerPage
+          };
+        }
       })
       .addCase(createActual.fulfilled, (state, action) => {
         state.actuals.unshift(action.payload);
@@ -330,11 +345,17 @@ const costingSlice = createSlice({
 
       /* ===== METRICS ===== */
       .addCase(fetchMetrics.fulfilled, (state, action) => {
-        state.metrics = action.payload.data || action.payload;
-        if (action.payload.pagination) {
-          state.metricsPagination = action.payload.pagination;
-        }
         state.loading = false;
+        // ✅ FIXED: Properly handle backend response structure
+        state.metrics = action.payload.data || [];
+        if (action.payload.pagination) {
+          state.metricsPagination = {
+            currentPage: action.payload.pagination.currentPage,
+            totalPages: action.payload.pagination.totalPages,
+            totalItems: action.payload.pagination.totalItems,
+            itemsPerPage: action.payload.pagination.itemsPerPage
+          };
+        }
       })
       .addCase(createMetric.fulfilled, (state, action) => {
         state.metrics.unshift(action.payload);

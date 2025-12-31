@@ -111,10 +111,22 @@ export interface ProductivityTrends {
 
 export const fetchProductionEfficiencyData = createAsyncThunk(
   "productionEfficiency/fetchData",
-  async (dateRange: { startDate: string; endDate: string }, { rejectWithValue }) => {
+  async (params: { 
+    startDate: string; 
+    endDate: string; 
+    location?: string; 
+    page?: number; 
+    limit?: number; 
+    search?: string 
+  }, { rejectWithValue }) => {
     try {
-      const res = await axios.get("/production-efficiency", { params: dateRange });
-      return res.data.data;
+      const { startDate, endDate, location, page = 1, limit = 10, search = '' } = params;
+      const queryParams: any = { startDate, endDate, page, limit };
+      if (location && location !== 'all') queryParams.location = location;
+      if (search) queryParams.search = search;
+      
+      const res = await axios.get("/production-efficiency", { params: queryParams });
+      return res.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || "Failed to fetch production efficiency data");
     }
@@ -173,6 +185,13 @@ interface ProductionEfficiencyState {
   loading: boolean;
   error: string | null;
   lastUpdated: string | null;
+  // Pagination state
+  pagination: {
+    currentPage: number;
+    totalPages: number;
+    totalItems: number;
+    itemsPerPage: number;
+  };
 }
 
 const initialState: ProductionEfficiencyState = {
@@ -182,6 +201,12 @@ const initialState: ProductionEfficiencyState = {
   loading: false,
   error: null,
   lastUpdated: null,
+  pagination: {
+    currentPage: 1,
+    totalPages: 1,
+    totalItems: 0,
+    itemsPerPage: 10
+  }
 };
 
 const productionEfficiencySlice = createSlice({
@@ -205,8 +230,13 @@ const productionEfficiencySlice = createSlice({
     /* ===== FETCH EFFICIENCY DATA ===== */
     builder.addCase(fetchProductionEfficiencyData.fulfilled, (state, action) => {
       state.loading = false;
-      state.efficiencyData = action.payload;
+      state.efficiencyData = action.payload.data;
       state.lastUpdated = new Date().toISOString();
+      
+      // Update pagination state
+      if (action.payload.pagination) {
+        state.pagination = action.payload.pagination;
+      }
     });
 
     /* ===== FETCH OEE METRICS ===== */

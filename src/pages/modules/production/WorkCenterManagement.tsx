@@ -1,7 +1,7 @@
 import { usePermission } from "@/hooks/userPermission";
 import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Edit, Trash2, Search, Download, Upload, BarChart3, ShieldAlert, X, Loader2 } from "lucide-react";
+import { Plus, Edit, Trash2, Search, Download, Upload, BarChart3, ShieldAlert, X, Loader2, MapPin } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import type { RootState, AppDispatch } from "@/redux/store";
 import { Button } from "../../../components/ui/button";
@@ -99,6 +99,13 @@ export default function WorkCentersPageAdvanced() {
   const { machineries = [] } = useSelector((state: RootState) => state.machinery);
   const { materials: rawMaterials = [] } = useSelector((state: RootState) => state.rawMaterials);
   const { products = [] } = useSelector((state: RootState) => state.products);
+  
+  // ✅ LOCATION FILTERING STATE
+  const { userProfile } = useSelector((state: RootState) => state.auth);
+
+  const isLocationRestricted = 
+    userProfile?.role !== 'admin' && 
+    !!userProfile?.location;
 
   // Stock management functions for raw materials
   // Function to fetch current stock for a raw material
@@ -208,6 +215,7 @@ export default function WorkCentersPageAdvanced() {
   // All state hooks must be declared before any early returns
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [locationFilter, setLocationFilter] = useState<string>("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCenter, setEditingCenter] = useState<WorkCenter | null>(null);
   
@@ -280,12 +288,20 @@ export default function WorkCentersPageAdvanced() {
       dispatch(fetchWorkCenters({ 
         search: searchTerm, 
         status: filterStatus, 
+        location: locationFilter,
         page: currentPage, 
         limit: itemsPerPage 
       }));
       dispatch(fetchWorkCenterAnalytics());
     }
-  }, [dispatch, searchTerm, filterStatus, currentPage, itemsPerPage]);
+  }, [dispatch, searchTerm, filterStatus, locationFilter, currentPage, itemsPerPage]);
+
+  // Auto-set location filter for restricted users
+  useEffect(() => {
+    if (isLocationRestricted && userProfile?.location) {
+      setLocationFilter(userProfile.location);
+    }
+  }, [isLocationRestricted, userProfile]);
 
   // Analytics - use Redux analytics data when available, fallback to calculated values
   const totalCenters = analytics?.total || workCenters.length;
@@ -322,6 +338,12 @@ const avgEfficiency = analytics?.avgEfficiency ?? calculatedAvgEfficiency;
   // Status filter handler
   const handleStatusFilterChange = (status: string) => {
     setFilterStatus(status);
+    setCurrentPage(1); // Reset to first page when filtering
+  };
+
+  // Location filter handler
+  const handleLocationFilterChange = (location: string) => {
+    setLocationFilter(location);
     setCurrentPage(1); // Reset to first page when filtering
   };
 
@@ -410,6 +432,7 @@ const avgEfficiency = analytics?.avgEfficiency ?? calculatedAvgEfficiency;
         dispatch(fetchWorkCenters({ 
           search: searchTerm, 
           status: filterStatus, 
+          location: locationFilter,
           page: currentPage, 
           limit: itemsPerPage 
         }));
@@ -1874,6 +1897,28 @@ const avgEfficiency = analytics?.avgEfficiency ?? calculatedAvgEfficiency;
             <SelectItem value="inactive">Inactive</SelectItem>
           </SelectContent>
         </Select>
+        <Select 
+          value={locationFilter} 
+          onValueChange={handleLocationFilterChange}
+          disabled={isLocationRestricted}
+        >
+          <SelectTrigger className="w-48">
+            <SelectValue placeholder="Filter by Location" />
+          </SelectTrigger>
+          <SelectContent>
+            {!isLocationRestricted && <SelectItem value="all">All Locations</SelectItem>}
+            {locations
+              .filter(location => !isLocationRestricted || location._id === userProfile?.location)
+              .map((location) => (
+                <SelectItem key={location._id} value={location._id}>
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-4 h-4" />
+                    {location.name}
+                  </div>
+                </SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
         <Button
           disabled={!canView}
           onClick={() => canView && handleExport()}
@@ -2130,7 +2175,10 @@ const avgEfficiency = analytics?.avgEfficiency ?? calculatedAvgEfficiency;
                     <p>Efficiency: <strong>{c.efficiency}%</strong></p>
                     <p>Daily Cost: <strong>₹{totalCostPerDay(c).toLocaleString()}</strong></p>
                     {(c.locationName || (c as any).location?.name) && (
-                      <p className="col-span-2">Location: <strong>{c.locationName || (c as any).location?.name}</strong></p>
+                      <div className="col-span-2 flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-gray-500" />
+                        <span>Location: <strong>{c.locationName || (c as any).location?.name}</strong></span>
+                      </div>
                     )}
                   </div>
                 </CardContent>

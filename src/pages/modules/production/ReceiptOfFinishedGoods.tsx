@@ -1,5 +1,5 @@
 import { usePermission } from "@/hooks/userPermission";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
@@ -10,11 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../../../components/ui/dialog";
 import { Badge } from "../../../components/ui/badge";
-import { Plus, Check, ShieldAlert, MapPin, Search } from "lucide-react";
+import { Plus, Check, ShieldAlert, MapPin, Search, XCircle } from "lucide-react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Area } from "recharts";
 import {
   fetchGRNs,
-  fetchPendingQC,
   createGRN,
   updateQC,
   fetchGRNTrend,
@@ -92,7 +91,15 @@ type GRNItem = {
 export default function ReceiptOfFinishedGoods() {
   const dispatch = useDispatch();
   const grnState = useSelector((state: any) => state.grn || {});
-  const { pendingQC = [], pendingQCPagination, grnsPagination } = grnState;
+  const { grns = [], grnsPagination } = grnState;
+
+  // ✅ DEBUG: Log GRN state
+  console.log('=== GRN STATE DEBUG ===');
+  console.log('Full grnState:', grnState);
+  console.log('grns array:', grns);
+  console.log('grns length:', grns?.length || 0);
+  console.log('grnsPagination:', grnsPagination);
+  console.log('=== END STATE DEBUG ===');
 
   // Check authentication state
   const authState = useSelector((state: any) => state.auth || {});
@@ -111,55 +118,10 @@ export default function ReceiptOfFinishedGoods() {
   const canCreate = usePermission("receipt", "create");
   const canEdit = usePermission("receipt", "edit");
 
-  // Pagination states
-  const [pendingQCSearch, setPendingQCSearch] = useState("");
+  // Pagination states - keeping only what's needed for GRN Records
+  // Removed pendingQCSearch and related functions since Pending QC table is commented out
 
-  // Debounced search function
-  const debounce = useCallback((func: Function, delay: number) => {
-    let timeoutId: NodeJS.Timeout;
-    return (...args: any[]) => {
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => func.apply(null, args), delay);
-    };
-  }, []);
-
-  // Debounced search handlers
-  const debouncedPendingQCSearch = useCallback(
-    debounce((searchTerm: string) => {
-      (dispatch as any)(fetchPendingQC({
-        location: locationFilter !== "all" ? locationFilter : undefined,
-        page: 1,
-        limit: pendingQCPagination?.itemsPerPage || 10,
-        search: searchTerm
-      }));
-    }, 300),
-    [dispatch, locationFilter, pendingQCPagination?.itemsPerPage]
-  );
-
-  // Search handlers
-  const handlePendingQCSearch = (value: string) => {
-    setPendingQCSearch(value);
-    debouncedPendingQCSearch(value);
-  };
-
-  // Pagination handlers
-  const handlePendingQCPageChange = (page: number) => {
-    (dispatch as any)(fetchPendingQC({
-      location: locationFilter !== "all" ? locationFilter : undefined,
-      page,
-      limit: pendingQCPagination?.itemsPerPage || 10,
-      search: pendingQCSearch
-    }));
-  };
-
-  const handlePendingQCItemsPerPageChange = (itemsPerPage: number) => {
-    (dispatch as any)(fetchPendingQC({
-      location: locationFilter !== "all" ? locationFilter : undefined,
-      page: 1,
-      limit: itemsPerPage,
-      search: pendingQCSearch
-    }));
-  };
+  // Removed debounce function since it's no longer needed after commenting out Pending QC table
 
   // Stock management functions for products
   // Function to fetch current stock for a product
@@ -313,40 +275,44 @@ export default function ReceiptOfFinishedGoods() {
   useEffect(() => {
     if (isAuthenticated && organisationId) {
       const locationParam = locationFilter !== "all" ? locationFilter : undefined;
+      
+      console.log('=== FRONTEND GRN FETCH DEBUG ===');
+      console.log('isAuthenticated:', isAuthenticated);
+      console.log('organisationId:', organisationId);
+      console.log('locationFilter:', locationFilter);
+      console.log('locationParam:', locationParam);
+      console.log('userProfile:', userProfile);
+      
       (dispatch as any)(fetchGRNs({
         location: locationParam,
         page: grnsPagination?.currentPage || 1,
         limit: grnsPagination?.itemsPerPage || 10,
         search: ""
-      }));
-      (dispatch as any)(fetchPendingQC({
-        location: locationParam,
-        page: pendingQCPagination?.currentPage || 1,
-        limit: pendingQCPagination?.itemsPerPage || 10,
-        search: pendingQCSearch
-      }));
+      })).then((result: any) => {
+        console.log('fetchGRNs result:', result);
+      }).catch((error: any) => {
+        console.error('fetchGRNs error:', error);
+      });
+
+      // Removed fetchPendingQC since that table is commented out
+      
+      console.log('=== END FRONTEND DEBUG ===');
     }
   }, [dispatch, isAuthenticated, organisationId, locationFilter]);
 
   // Handle location filter change
   const handleLocationFilterChange = (val: string) => {
     setLocationFilter(val);
-    // Reset searches and fetch fresh data
-    setPendingQCSearch("");
     
-    // Fetch data with new location filter
+    // Fetch GRN data with new location filter
     (dispatch as any)(fetchGRNs({
       location: val !== "all" ? val : undefined,
       page: 1,
       limit: grnsPagination?.itemsPerPage || 10,
       search: ""
     }));
-    (dispatch as any)(fetchPendingQC({
-      location: val !== "all" ? val : undefined,
-      page: 1,
-      limit: pendingQCPagination?.itemsPerPage || 10,
-      search: ""
-    }));
+    
+    // Removed fetchPendingQC since that table is commented out
   };
 
   // Helper to get location name
@@ -502,7 +468,7 @@ export default function ReceiptOfFinishedGoods() {
         }
       }
 
-      // Refresh data
+      // Refresh GRN data
       const locationParam = locationFilter !== "all" ? locationFilter : undefined;
       (dispatch as any)(fetchGRNs({
         location: locationParam,
@@ -510,12 +476,8 @@ export default function ReceiptOfFinishedGoods() {
         limit: grnsPagination?.itemsPerPage || 10,
         search: ""
       }));
-      (dispatch as any)(fetchPendingQC({
-        location: locationParam,
-        page: pendingQCPagination?.currentPage || 1,
-        limit: pendingQCPagination?.itemsPerPage || 10,
-        search: pendingQCSearch
-      }));
+      
+      // Removed fetchPendingQC since that table is commented out
 
       // Reset form
       setFormItems([]);
@@ -565,20 +527,16 @@ export default function ReceiptOfFinishedGoods() {
     try {
       await (dispatch as any)(updateQC({ productId: "", batchNo, action }));
 
-      // Refresh data with location filter
+      // Refresh GRN data with location filter
       const locationParam = locationFilter !== "all" ? locationFilter : undefined;
-      (dispatch as any)(fetchPendingQC({
-        location: locationParam,
-        page: pendingQCPagination?.currentPage || 1,
-        limit: pendingQCPagination?.itemsPerPage || 10,
-        search: pendingQCSearch
-      }));
       (dispatch as any)(fetchGRNs({
         location: locationParam,
         page: grnsPagination?.currentPage || 1,
         limit: grnsPagination?.itemsPerPage || 10,
         search: ""
       }));
+      
+      // Removed fetchPendingQC since that table is commented out
 
       toast.success(`Batch ${action.toLowerCase()} successfully`);
     } catch (error) {
@@ -838,7 +796,160 @@ export default function ReceiptOfFinishedGoods() {
         </DialogContent>
       </Dialog>
 
-      {/* Pending QC Section */}
+      {/* ✅ GRN RECORDS SECTION */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>Recent GRN Records ({grnsPagination?.totalItems || 0})</CardTitle>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search GRNs..."
+                  className="pl-8 w-64"
+                />
+              </div>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Items</TableHead>
+                <TableHead>Batches</TableHead>
+                <TableHead>Location</TableHead>
+                <TableHead>Accepted By</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Remarks</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {grns.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                    {grnState.loading ? "Loading GRN records..." : "No GRN records found"}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                grns.map((grn: any) => (
+                  <TableRow key={grn._id}>
+                    <TableCell>{new Date(grn.createdAt).toLocaleDateString()}</TableCell>
+                    <TableCell>{grn.items?.length || 0} items</TableCell>
+                    <TableCell>
+                      <div className="space-y-1 max-w-xs">
+                        {grn.items?.map((item: any, idx: number) => {
+                          const product = products.find(p => p._id === item.productId);
+                          return (
+                            <div key={idx} className="text-xs border-l-2 border-blue-200 pl-2">
+                              <div className="flex items-center gap-1">
+                                <Badge variant="outline" className="text-xs px-1 py-0">
+                                  {item.batchNo}
+                                </Badge>
+                                <span className="text-muted-foreground">
+                                  (Qty: {item.qty})
+                                </span>
+                              </div>
+                              {product && (
+                                <div className="text-muted-foreground mt-1">
+                                  {product.name}
+                                </div>
+                              )}
+                              
+                            </div>
+                          );
+                        }) || <span className="text-muted-foreground text-xs">No batches</span>}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="flex items-center gap-1">
+                        <MapPin className="w-3 h-3" />
+                        {getLocationName(grn.location)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{grn.acceptedByName || "—"}</TableCell>
+                    <TableCell>
+                      <Badge variant={grn.requireFinalQC ? "secondary" : "outline"}>
+                        {grn.requireFinalQC ? "Pending QC" : "Completed"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{grn.remarks || "—"}</TableCell>
+                    <TableCell>
+                      {grn.requireFinalQC && grn.items?.some((item: any) => item.status === "Pending QC") ? (
+                        <div className="flex gap-2">
+                          {grn.items
+                            .filter((item: any) => item.status === "Pending QC")
+                            .map((item: any, idx: number) => (
+                              <div key={idx} className="flex gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
+                                  disabled={!canEdit}
+                                  onClick={() => canEdit && updateBatchQC(item.batchNo, "Accepted")}
+                                >
+                                  <Check className="w-3 h-3 mr-1" />
+                                  Accept
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="bg-red-50 text-red-700 border-red-200 hover:bg-red-100"
+                                  disabled={!canEdit}
+                                  onClick={() => canEdit && updateBatchQC(item.batchNo, "Rejected")}
+                                >
+                                  <XCircle className="w-3 h-3 mr-1" />
+                                  Reject
+                                </Button>
+                              </div>
+                            ))}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">No actions needed</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+          
+          {/* ✅ ADD PAGINATION FOR GRN RECORDS */}
+          {grnsPagination && grnsPagination.totalPages > 1 && (
+            <div className="mt-4">
+              <Pagination
+                currentPage={grnsPagination.currentPage}
+                totalPages={grnsPagination.totalPages}
+                totalItems={grnsPagination.totalItems}
+                itemsPerPage={grnsPagination.itemsPerPage}
+                onPageChange={(page) => {
+                  const locationParam = locationFilter !== "all" ? locationFilter : undefined;
+                  (dispatch as any)(fetchGRNs({
+                    location: locationParam,
+                    page,
+                    limit: grnsPagination.itemsPerPage,
+                    search: ""
+                  }));
+                }}
+                onItemsPerPageChange={(itemsPerPage) => {
+                  const locationParam = locationFilter !== "all" ? locationFilter : undefined;
+                  (dispatch as any)(fetchGRNs({
+                    location: locationParam,
+                    page: 1,
+                    limit: itemsPerPage,
+                    search: ""
+                  }));
+                }}
+              />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Pending QC Section - COMMENTED OUT as requested by user */}
+      {/* 
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -924,7 +1035,7 @@ export default function ReceiptOfFinishedGoods() {
           </Table>
 
           {/* Pagination for Pending QC */}
-          {pendingQCPagination && (
+          {/* {pendingQCPagination && (
             <Pagination
               currentPage={pendingQCPagination.currentPage}
               totalPages={pendingQCPagination.totalPages}
@@ -933,9 +1044,9 @@ export default function ReceiptOfFinishedGoods() {
               onPageChange={handlePendingQCPageChange}
               onItemsPerPageChange={handlePendingQCItemsPerPageChange}
             />
-          )}
-        </CardContent>
-      </Card>
+          )} */}
+        {/* </CardContent>
+      </Card> */}
 
       {/* GRN Trend */}
       <Card>

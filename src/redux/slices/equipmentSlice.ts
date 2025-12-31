@@ -43,6 +43,7 @@ interface EquipmentState {
   total: number;
   page: number;
   limit: number;
+  search: string;
 }
 
 const initialState: EquipmentState = {
@@ -52,6 +53,7 @@ const initialState: EquipmentState = {
   total: 0,
   page: 1,
   limit: 10,
+  search: "",
 };
 
 /* API CALLS */
@@ -65,12 +67,14 @@ export const fetchEquipments = createAsyncThunk(
       search?: string;
       category?: string;
       location?: string;
-      organisationId: string;
-    },
+    } = {},
     thunkAPI
   ) => {
     try {
-      const res = await api.get("/equipment", { params });
+      const organisationId = localStorage.getItem("organisationId");
+      const res = await api.get("/equipment", { 
+        params: { ...params, organisationId } 
+      });
       return res.data;
     } catch (err: any) {
       return thunkAPI.rejectWithValue(err.response?.data || "Failed to fetch equipment");
@@ -133,6 +137,10 @@ const equipmentSlice = createSlice({
     setLimit(state, action) {
       state.limit = action.payload;
     },
+    setSearch(state, action) {
+      state.search = action.payload;
+      state.page = 1; // Reset to first page when searching
+    },
   },
 
   extraReducers: (builder) => {
@@ -179,5 +187,5 @@ const equipmentSlice = createSlice({
 });
 
 /* EXPORTS */
-export const { setPage, setLimit } = equipmentSlice.actions;
+export const { setPage, setLimit, setSearch } = equipmentSlice.actions;
 export default equipmentSlice.reducer;

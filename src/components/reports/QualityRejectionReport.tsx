@@ -1,49 +1,110 @@
-"use client";
-
 import { usePermission } from "@/hooks/userPermission";
 import { useDispatch, useSelector } from "react-redux";
-import React, { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import {
     Card, CardHeader, CardTitle, CardContent,
 } from "@/components/ui/card";
-import { fetchProducts } from "@/redux/slices/productSlice";
-
+import { Input } from "@/components/ui/input";
 import {
     ResponsiveContainer,
     BarChart, Bar,
     LineChart, Line,
     CartesianGrid, XAxis, YAxis, Tooltip,
 } from "recharts";
-import { ShieldAlert, XCircle } from "lucide-react";
+import { ShieldAlert, XCircle, MapPin, Search } from "lucide-react";
 import type { RootState, AppDispatch } from "@/redux/store";
 import { fetchInspections } from "@/redux/slices/production/qualitySlice";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import {
     Table, TableHeader, TableRow,
     TableHead, TableBody, TableCell,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Pagination } from "@/components/ui/pagination";
 
-export default function QualityRejectionReport() {
+// Debounce utility function
+const debounce = (func: Function, delay: number) => {
+    let timeoutId: NodeJS.Timeout;
+    return (...args: any[]) => {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => func.apply(null, args), delay);
+    };
+};
 
-    const { products } = useSelector((state: RootState) => state.products);
+interface QualityRejectionReportProps {
+    locationFilter?: string;
+}
+
+export default function QualityRejectionReport({ locationFilter = "all" }: QualityRejectionReportProps) {
+
     const dispatch = useDispatch<AppDispatch>();
-    const canView = usePermission("qualityRejectionReport", "view");
+    const canView = usePermission("productionReportingAnalytics", "view");
 
-    const { inspections, loading } = useSelector(
+    const { inspections, inspectionsPagination } = useSelector(
         (state: RootState) => state.quality
     );
 
+    const { locations } = useSelector((state: RootState) => state.masterData);
+
+    const [searchTerm, setSearchTerm] = useState("");
+    const [itemsPerPage, setItemsPerPage] = useState(10);
+
+    // Debounced search handler
+    const debouncedSearch = useCallback(
+        debounce((searchValue: string) => {
+            dispatch(fetchInspections({
+                location: locationFilter !== "all" ? locationFilter : undefined,
+                page: 1,
+                limit: itemsPerPage,
+                search: searchValue
+            }));
+        }, 300),
+        [dispatch, locationFilter, itemsPerPage]
+    );
+
+    // Handle search input change
+    const handleSearchChange = (value: string) => {
+        setSearchTerm(value);
+        debouncedSearch(value);
+    };
+
+    // Pagination handlers
+    const handlePageChange = (newPage: number) => {
+        dispatch(fetchInspections({
+            location: locationFilter !== "all" ? locationFilter : undefined,
+            page: newPage,
+            limit: itemsPerPage,
+            search: searchTerm
+        }));
+    };
+
+    const handleItemsPerPageChange = (newItemsPerPage: number) => {
+        setItemsPerPage(newItemsPerPage);
+        dispatch(fetchInspections({
+            location: locationFilter !== "all" ? locationFilter : undefined,
+            page: 1,
+            limit: newItemsPerPage,
+            search: searchTerm
+        }));
+    };
+
+    // ✅ FETCH INSPECTIONS WITH LOCATION FILTER AND MASTER DATA
     useEffect(() => {
-        dispatch(fetchInspections());
-        dispatch(fetchProducts({ page: 1, limit: 1000 }));
-    }, [dispatch]);
-    const productMap = useMemo(() => {
-        const map: Record<string, string> = {};
-        products.forEach((p: any) => {
-            map[p._id] = p.name;
-        });
-        return map;
-    }, [products]);
+        dispatch(fetchInspections({ 
+            location: locationFilter !== "all" ? locationFilter : undefined,
+            page: 1, 
+            limit: itemsPerPage,
+            search: searchTerm
+        }));
+        dispatch(fetchMasterData("location"));
+    }, [dispatch, locationFilter]);
+
+    // ✅ HELPER TO GET LOCATION NAME
+    const getLocationName = (locationId: string) => {
+        if (!locationId) return "No Location";
+        const location = locations.find((loc: any) => loc._id === locationId);
+        return location ? location.name : locationId;
+    };
 
     if (!canView) {
         return (
@@ -60,7 +121,7 @@ export default function QualityRejectionReport() {
     /* ================= DERIVED DATA ================= */
 
     const totalInspections = inspections.length;
-    const rejected = inspections.filter(i => i.result === "Fail");
+    const rejected = inspections.filter((i: any) => i.result === "Fail");
     const rejectionRate =
         totalInspections > 0
             ? ((rejected.length / totalInspections) * 100).toFixed(2)
@@ -68,7 +129,7 @@ export default function QualityRejectionReport() {
 
     const byProduct = useMemo(() => {
         const map: any = {};
-        rejected.forEach(r => {
+        rejected.forEach((r: any) => {
             const key = r.productId || "Unknown";
             map[key] = (map[key] || 0) + 1;
         });
@@ -80,7 +141,7 @@ export default function QualityRejectionReport() {
 
     const byInspector = useMemo(() => {
         const map: any = {};
-        rejected.forEach(r => {
+        rejected.forEach((r: any) => {
             const key = r.inspector || "Unknown";
             map[key] = (map[key] || 0) + 1;
         });
@@ -92,7 +153,7 @@ export default function QualityRejectionReport() {
 
     const dailyTrend = useMemo(() => {
         const map: any = {};
-        rejected.forEach(r => {
+        rejected.forEach((r: any) => {
             const day = new Date(r.createdAt).toISOString().slice(0, 10);
             map[day] = (map[day] || 0) + 1;
         });
@@ -111,6 +172,7 @@ export default function QualityRejectionReport() {
                 <h2 className="text-2xl font-bold">Quality Rejection Report</h2>
                 <p className="text-muted-foreground">
                     Defect analysis, inspector performance & rejection trends
+                    {locationFilter !== "all" && " (Filtered by location)"}
                 </p>
             </div>
 
@@ -208,41 +270,95 @@ export default function QualityRejectionReport() {
             {/* TABLE */}
             <Card>
                 <CardHeader>
-                    <CardTitle>Inspection Details</CardTitle>
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <CardTitle>Inspection Details</CardTitle>
+                            <p className="text-sm text-muted-foreground mt-1">
+                                Showing {Math.min((inspectionsPagination.currentPage - 1) * inspectionsPagination.itemsPerPage + 1, inspectionsPagination.totalItems)} to {Math.min(inspectionsPagination.currentPage * inspectionsPagination.itemsPerPage, inspectionsPagination.totalItems)} of {inspectionsPagination.totalItems} inspections
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                                <Input
+                                    placeholder="Search inspections..."
+                                    value={searchTerm}
+                                    onChange={(e) => handleSearchChange(e.target.value)}
+                                    className="pl-10 w-64"
+                                />
+                            </div>
+                        </div>
+                    </div>
                 </CardHeader>
                 <CardContent>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Date</TableHead>
-                                {/* <TableHead>Product</TableHead> */}
-                                {/* <TableHead>Batch</TableHead> */}
-                                <TableHead>Inspector</TableHead>
-                                <TableHead>Result</TableHead>
-                                <TableHead>Remarks</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {inspections.map((i: any) => (
-                                <TableRow key={i._id}>
-                                    <TableCell>
-                                        {new Date(i.createdAt).toLocaleDateString()}
-                                    </TableCell>
-                                    {/* <TableCell> {productMap[i.productId] || "-"} </TableCell> */}
-                                    {/* <TableCell>{i.batchNo || "-"}</TableCell> */}
-                                    <TableCell>{i.inspector || "-"}</TableCell>
-                                    <TableCell>
-                                        {i.result === "Fail" ? (
-                                            <Badge variant="destructive">Fail</Badge>
-                                        ) : (
-                                            <Badge variant="success">Pass</Badge>
-                                        )}
-                                    </TableCell>
-                                    <TableCell>{i.remarks || "-"}</TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
+                    {inspections.length === 0 ? (
+                        <div className="text-center py-8">
+                            <XCircle className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                            {searchTerm ? (
+                                <>
+                                    <p className="text-gray-500">No inspections found matching "{searchTerm}"</p>
+                                    <p className="text-sm text-gray-400">Try adjusting your search terms</p>
+                                </>
+                            ) : (
+                                <>
+                                    <p className="text-gray-500">No inspections found</p>
+                                    <p className="text-sm text-gray-400">No quality inspection data available</p>
+                                </>
+                            )}
+                        </div>
+                    ) : (
+                        <>
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Date</TableHead>
+                                        <TableHead>Location</TableHead>
+                                        <TableHead>Inspector</TableHead>
+                                        <TableHead>Result</TableHead>
+                                        <TableHead>Remarks</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {inspections.map((i: any) => (
+                                        <TableRow key={i._id}>
+                                            <TableCell>
+                                                {new Date(i.createdAt).toLocaleDateString()}
+                                            </TableCell>
+                                            <TableCell>
+                                                <Badge variant="outline" className="flex items-center gap-1">
+                                                    <MapPin className="w-3 h-3" />
+                                                    {getLocationName(i.location)}
+                                                </Badge>
+                                            </TableCell>
+                                            <TableCell>{i.inspector || "-"}</TableCell>
+                                            <TableCell>
+                                                {i.result === "Fail" ? (
+                                                    <Badge variant="destructive">Fail</Badge>
+                                                ) : i.result === "Pass" ? (
+                                                    <Badge variant="outline">Pass</Badge>
+                                                ) : (
+                                                    <Badge variant="secondary">Unknown</Badge>
+                                                )}
+                                            </TableCell>
+                                            <TableCell>{i.remarks || "-"}</TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                            
+                            {/* Pagination */}
+                            <Pagination
+                                currentPage={inspectionsPagination.currentPage}
+                                totalPages={inspectionsPagination.totalPages}
+                                totalItems={inspectionsPagination.totalItems}
+                                itemsPerPage={itemsPerPage}
+                                onPageChange={handlePageChange}
+                                onItemsPerPageChange={handleItemsPerPageChange}
+                                showItemsPerPage={true}
+                                itemsPerPageOptions={[5, 10, 20, 50]}
+                            />
+                        </>
+                    )}
                 </CardContent>
             </Card>
 

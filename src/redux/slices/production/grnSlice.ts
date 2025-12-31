@@ -9,7 +9,8 @@ export const fetchGRNs = createAsyncThunk("grn/fetchAll", async ({ location, pag
   if (location) params.location = location;
   
   const res = await axios.get("/grn", { params });
-  return res.data.data;
+  // ✅ FIXED: Return full response structure
+  return res.data;
 });
 
 export const fetchPendingQC = createAsyncThunk("grn/fetchPendingQC", async ({ location, page = 1, limit = 10, search = "" }: { location?: string; page?: number; limit?: number; search?: string } = {}) => {
@@ -17,12 +18,23 @@ export const fetchPendingQC = createAsyncThunk("grn/fetchPendingQC", async ({ lo
   if (location) params.location = location;
   
   const res = await axios.get("/grn/pending-qc", { params });
-  return res.data.data;
+  // ✅ FIXED: Return full response structure
+  return res.data;
 });
 
 export const createGRN = createAsyncThunk("grn/create", async (data: any) => {
-  const res = await axios.post("/grn", data);
-  return res.data.data;
+  console.log('=== REDUX CREATE GRN DEBUG ===');
+  console.log('Data being sent:', JSON.stringify(data, null, 2));
+  
+  try {
+    const res = await axios.post("/grn", data);
+    console.log('Response received:', res.data);
+    console.log('=== END REDUX DEBUG ===');
+    return res.data.data;
+  } catch (error: any) {
+    console.error('Redux createGRN error:', error.response?.data || error.message);
+    throw error;
+  }
 });
 
 export const updateQC = createAsyncThunk(
@@ -80,17 +92,29 @@ const slice = createSlice({
       })
       .addCase(fetchGRNs.fulfilled, (state, action) => {
         state.loading = false;
-        state.grns = action.payload.data || action.payload;
+        // ✅ FIXED: Properly handle backend response structure
+        state.grns = action.payload.data || [];
         if (action.payload.pagination) {
-          state.grnsPagination = action.payload.pagination;
+          state.grnsPagination = {
+            currentPage: action.payload.pagination.currentPage,
+            totalPages: action.payload.pagination.totalPages,
+            totalItems: action.payload.pagination.totalItems,
+            itemsPerPage: action.payload.pagination.itemsPerPage
+          };
         }
       })
 
       /* Pending QC */
       .addCase(fetchPendingQC.fulfilled, (state, action) => {
-        state.pendingQC = action.payload.data || action.payload;
+        // ✅ FIXED: Properly handle backend response structure
+        state.pendingQC = action.payload.data || [];
         if (action.payload.pagination) {
-          state.pendingQCPagination = action.payload.pagination;
+          state.pendingQCPagination = {
+            currentPage: action.payload.pagination.currentPage,
+            totalPages: action.payload.pagination.totalPages,
+            totalItems: action.payload.pagination.totalItems,
+            itemsPerPage: action.payload.pagination.itemsPerPage
+          };
         }
       })
 
