@@ -1,6 +1,9 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { useSelector, useDispatch } from "react-redux";
+import { RootState, AppDispatch } from "@/redux/store";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import { v4 as uuidv4 } from "uuid";
 import {
   AlertCircle,
@@ -9,17 +12,17 @@ import {
   Edit2,
   Trash2,
   FileText,
-  Clock,
-  CheckCircle,
-  BarChart3,
-  DownloadCloud,
-  UploadCloud,
   FilePlus,
   Eye,
   Download,
+  DownloadCloud,
+  UploadCloud,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  Search,
+  MapPin,
+  ShieldAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,8 +43,17 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
-import { storage, STORAGE_KEYS } from "@/lib/storage";
+import { usePermission } from "@/hooks/userPermission";
+import { useDebounce } from "@/hooks/useDebounce";
+import { ClipLoader } from "react-spinners";
 import {
   ResponsiveContainer,
   BarChart,
@@ -66,7 +78,6 @@ import {
   isSameMonth,
   isSameDay,
   parseISO,
-  isBefore,
   differenceInDays,
 } from "date-fns";
 
@@ -84,7 +95,7 @@ interface Attachment {
 }
 
 interface Breakdown {
-  id: string;
+  _id: string;
   equipmentCode: string;
   reportedBy: string;
   reportDate: string; // ISO
@@ -99,8 +110,22 @@ interface Breakdown {
   rca?: string;
   attachments?: Attachment[];
   status: Status;
+  location: string | { _id: string; name: string };
+  organisationId: string;
   createdAt: string;
+  updatedAt: string;
 }
+
+interface BreakdownStats {
+  totalBreakdowns: number;
+  openBreakdowns: number;
+  completedBreakdowns: number;
+  mttr: number;
+  totalDowntimeHours: number;
+  totalCost: number;
+}
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000";
 
 interface MaintenanceWorkOrder {
   id: string;
@@ -119,18 +144,41 @@ interface MaintenanceWorkOrder {
 /* -----------------------
    Keys
    ----------------------- */
-const LS_KEY = STORAGE_KEYS.BREAKDOWN_MAINTENANCE_V1 || "breakdown_maintenance_v1"; // if you added constant
-const FALLBACK_LS_KEY = "breakdown_maintenance_v1";
-const MWO_KEY = STORAGE_KEYS.MAINTENANCE_WORK_ORDERS_V1 || "maintenance_work_orders_v1";
+// const LS_KEY = "breakdown_maintenance_backup"; // For backup/export only
 
 /* -----------------------
    Component
    ----------------------- */
 export default function BreakdownCalendarWithMWO() {
+  const dispatch = useDispatch<AppDispatch>();
+  const { userProfile } = useSelector((state: RootState) => state.auth);
+  const { locations } = useSelector((state: RootState) => state.masterData);
+  
+  // Permissions
+  const canView = usePermission('breakdownMgt', 'view');
+  const canCreate = usePermission('breakdownMgt', 'create');
+  const canEdit = usePermission('breakdownMgt', 'edit');
+  const canDelete = usePermission('breakdownMgt', 'delete');
+
   const [records, setRecords] = useState<Breakdown[]>([]);
   const [mwos, setMwos] = useState<MaintenanceWorkOrder[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const [stats, setStats] = useState<BreakdownStats>({
+    totalBreakdowns: 0,
+    openBreakdowns: 0,
+    completedBreakdowns: 0,
+    mttr: 0,
+    totalDowntimeHours: 0,
+    totalCost: 0
+  });
+  const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
+  const [locationFilter, setLocationFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [priorityFilter, setPriorityFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalBreakdowns, setTotalBreakdowns] = useState(0);
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Breakdown | null>(null);
   const [form, setForm] = useState<Partial<Breakdown>>({
@@ -144,44 +192,102 @@ export default function BreakdownCalendarWithMWO() {
   const [viewMode, setViewMode] = useState<"table" | "calendar">("table");
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
-  // --- load data once
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const saved = storage.get<Breakdown[]>(LS_KEY, storage.get(FALLBACK_LS_KEY, []));
-    if (Array.isArray(saved) && saved.length > 0) setRecords(saved);
-    const savedMwo = storage.get<MaintenanceWorkOrder[]>(MWO_KEY, []);
-    if (Array.isArray(savedMwo) && savedMwo.length > 0) setMwos(savedMwo);
-    setLoaded(true);
-  }, []);
+  const debouncedSearch = useDebounce(query, 500);
+  const organisationId = localStorage.getItem('organisationId');
 
-  // --- save when changed and loaded
-  useEffect(() => {
-    if (!loaded) return;
-    storage.set(LS_KEY, records);
-  }, [records, loaded]);
+  // Location restriction check
+  const isLocationRestricted = 
+    userProfile?.role !== 'admin' && 
+    !!userProfile?.location;
 
+  // Fetch master data on mount
   useEffect(() => {
-    if (!loaded) return;
-    storage.set(MWO_KEY, mwos);
-  }, [mwos, loaded]);
+    dispatch(fetchMasterData("location"));
+  }, [dispatch]);
 
-  // cross-tab sync
+  // Set location filter for restricted users
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const handler = (e: StorageEvent) => {
-      if (!e.key) return;
-      if (e.key === LS_KEY || e.key === FALLBACK_LS_KEY) {
-        const remote = storage.get<Breakdown[]>(LS_KEY, storage.get(FALLBACK_LS_KEY, []));
-        setRecords(remote || []);
+    if (isLocationRestricted && userProfile?.location) {
+      setLocationFilter(userProfile.location);
+    }
+  }, [isLocationRestricted, userProfile]);
+
+  // Fetch breakdowns
+  useEffect(() => {
+    if (organisationId) {
+      fetchBreakdowns();
+    }
+  }, [organisationId, page, debouncedSearch, locationFilter, statusFilter, priorityFilter]);
+
+  // Fetch stats
+  useEffect(() => {
+    if (organisationId) {
+      fetchStats();
+    }
+  }, [organisationId, locationFilter]);
+
+  const fetchBreakdowns = async () => {
+    if (!canView) return;
+    
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        organisationId: organisationId!,
+        page: page.toString(),
+        limit: "10",
+      });
+
+      if (debouncedSearch) params.append('search', debouncedSearch);
+      if (locationFilter !== 'all') params.append('location', locationFilter);
+      if (statusFilter !== 'all') params.append('status', statusFilter);
+      if (priorityFilter !== 'all') params.append('priority', priorityFilter);
+
+      const response = await fetch(`${API_BASE_URL}/breakdown-maintenance?${params}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch breakdowns');
+
+      const data = await response.json();
+      if (data.success) {
+        setRecords(data.data.breakdowns);
+        setTotalPages(data.data.totalPages);
+        setTotalBreakdowns(data.data.totalBreakdowns);
       }
-      if (e.key === MWO_KEY) {
-        const remoteM = storage.get<MaintenanceWorkOrder[]>(MWO_KEY, []);
-        setMwos(remoteM || []);
+    } catch (error) {
+      console.error('Error fetching breakdowns:', error);
+      toast.error('Failed to fetch breakdowns');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchStats = async () => {
+    try {
+      const params = new URLSearchParams({
+        organisationId: organisationId!,
+      });
+
+      const response = await fetch(`${API_BASE_URL}/breakdown-maintenance/stats?${params}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch stats');
+
+      const data = await response.json();
+      if (data.success) {
+        setStats(data.data);
       }
-    };
-    window.addEventListener("storage", handler);
-    return () => window.removeEventListener("storage", handler);
-  }, []);
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    }
+  };
 
   /* -----------------------
      CRUD & Workflow
@@ -193,13 +299,17 @@ export default function BreakdownCalendarWithMWO() {
       reportDate: new Date().toISOString().slice(0, 16),
       repairCost: 0,
       attachments: [],
+      location: isLocationRestricted ? userProfile?.location : undefined,
     });
     setIsDialogOpen(true);
   }
 
   function openEdit(b: Breakdown) {
     setEditing(b);
-    setForm({ ...b });
+    setForm({ 
+      ...b,
+      location: typeof b.location === 'object' ? b.location._id : b.location,
+    });
     setIsDialogOpen(true);
   }
 
@@ -231,116 +341,209 @@ export default function BreakdownCalendarWithMWO() {
     setForm((p) => ({ ...p, attachments: (p?.attachments || []).filter((a) => a.id !== id) }));
   }
 
-  function saveForm() {
-    if (!form.equipmentCode || !form.reportedBy || !form.failureDescription) {
-      toast.error("Equipment, reporter and failure description are required.");
+  async function saveForm() {
+    if (!form.equipmentCode || !form.reportedBy || !form.failureDescription || !form.location) {
+      toast.error("Equipment, reporter, failure description, and location are required.");
       return;
     }
 
-    if (editing) {
-      const updated = records.map((r) => (r.id === editing.id ? { ...r, ...form } as Breakdown : r));
-      setRecords(updated);
-      toast.success("Breakdown updated");
-    } else {
-      const newRec: Breakdown = {
-        id: uuidv4(),
-        equipmentCode: form.equipmentCode!,
-        reportedBy: form.reportedBy!,
-        reportDate: form.reportDate || new Date().toISOString(),
-        failureDescription: form.failureDescription!,
-        priority: (form.priority as any) || "Medium",
-        assignedTo: form.assignedTo,
-        assignDate: form.assignDate,
-        status: "Reported",
-        attachments: form.attachments || [],
-        repairCost: form.repairCost || 0,
-        downtimeMinutes: form.downtimeMinutes || 0,
-        rca: form.rca || "",
-        createdAt: new Date().toISOString(),
+    try {
+      const breakdownData = {
+        ...form,
+        location: isLocationRestricted ? userProfile?.location : form.location,
       };
-      setRecords((p) => [newRec, ...p]);
-      toast.success("Breakdown reported");
+
+      console.log("=== FRONTEND DEBUG ===");
+      console.log("Form data being sent:", JSON.stringify(breakdownData, null, 2));
+      console.log("======================");
+
+      const url = editing 
+        ? `${API_BASE_URL}/breakdown-maintenance/${editing._id}`
+        : `${API_BASE_URL}/breakdown-maintenance`;
+      
+      const method = editing ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(breakdownData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("Backend error response:", errorData);
+        throw new Error('Failed to save breakdown');
+      }
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success(editing ? 'Breakdown updated successfully' : 'Breakdown reported successfully');
+        setIsDialogOpen(false);
+        setEditing(null);
+        fetchBreakdowns();
+        fetchStats();
+      }
+    } catch (error) {
+      console.error('Error saving breakdown:', error);
+      toast.error('Failed to save breakdown');
     }
-    setIsDialogOpen(false);
   }
 
-  function removeRecord(id: string) {
+  async function removeRecord(id: string) {
     if (!confirm("Delete this breakdown record?")) return;
-    setRecords((p) => p.filter((r) => r.id !== id));
-    toast.error("Deleted");
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/breakdown-maintenance/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+      });
+
+      if (!response.ok) throw new Error('Failed to delete breakdown');
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success('Breakdown deleted successfully');
+        fetchBreakdowns();
+        fetchStats();
+      }
+    } catch (error) {
+      console.error('Error deleting breakdown:', error);
+      toast.error('Failed to delete breakdown');
+    }
   }
 
-  function assignTo(id: string, tech: string) {
-    const now = new Date().toISOString();
-    setRecords((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, assignedTo: tech, assignDate: now, status: "Assigned" } : r))
-    );
-    toast.success("Assigned");
+  async function assignTo(id: string, tech: string) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/breakdown-maintenance/${id}/assign`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ assignedTo: tech }),
+      });
+
+      if (!response.ok) throw new Error('Failed to assign breakdown');
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success('Breakdown assigned successfully');
+        fetchBreakdowns();
+        fetchStats();
+      }
+    } catch (error) {
+      console.error('Error assigning breakdown:', error);
+      toast.error('Failed to assign breakdown');
+    }
   }
 
-  function startRepair(id: string) {
-    const now = new Date().toISOString();
-    setRecords((prev) => prev.map((r) => (r.id === id ? { ...r, startRepair: now, status: "In Progress" } : r)));
-    toast.success("Repair started");
+  async function startRepair(id: string) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/breakdown-maintenance/${id}/start-repair`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+      });
+
+      if (!response.ok) throw new Error('Failed to start repair');
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success('Repair started successfully');
+        fetchBreakdowns();
+        fetchStats();
+      }
+    } catch (error) {
+      console.error('Error starting repair:', error);
+      toast.error('Failed to start repair');
+    }
   }
 
-  function completeRepair(id: string, additionalCost = 0, rca = "") {
-    setRecords((prev) =>
-      prev.map((r) => {
-        if (r.id !== id) return r;
-        const end = new Date().toISOString();
-        const start = r.startRepair ? new Date(r.startRepair) : new Date(r.assignDate || r.reportDate);
-        const downtimeMinutes = Math.max(
-          0,
-          Math.round((new Date(end).getTime() - new Date(start).getTime()) / (1000 * 60))
-        );
-        const updated: Breakdown = {
-          ...r,
-          endRepair: end,
-          downtimeMinutes: downtimeMinutes > 0 ? downtimeMinutes : (r.downtimeMinutes || 0),
-          repairCost: (r.repairCost || 0) + additionalCost,
-          rca: rca || r.rca,
-          status: "Completed",
-        };
+  async function completeRepair(id: string, additionalCost = 0, rca = "") {
+    try {
+      const response = await fetch(`${API_BASE_URL}/breakdown-maintenance/${id}/complete-repair`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ additionalCost, rca }),
+      });
 
-        // create MWO
-        const mwo: MaintenanceWorkOrder = {
-          id: uuidv4(),
-          breakdownId: r.id,
-          equipmentCode: r.equipmentCode,
-          technician: r.assignedTo,
-          startDate: r.startRepair || r.assignDate || r.reportDate,
-          endDate: end,
-          totalDowntimeMinutes: updated.downtimeMinutes,
-          totalRepairCost: updated.repairCost,
-          rca: updated.rca,
-          status: "Closed",
-          createdAt: new Date().toISOString(),
-        };
+      if (!response.ok) throw new Error('Failed to complete repair');
 
-        setMwos((prevMwos) => {
-          const next = [mwo, ...prevMwos];
-          storage.set(MWO_KEY, next);
+      const data = await response.json();
+      if (data.success) {
+        toast.success('Repair completed successfully');
+        fetchBreakdowns();
+        fetchStats();
+        
+        // Create MWO locally for display
+        const breakdown = records.find(r => r._id === id);
+        if (breakdown) {
+          const mwo: MaintenanceWorkOrder = {
+            id: uuidv4(),
+            breakdownId: id,
+            equipmentCode: breakdown.equipmentCode,
+            technician: breakdown.assignedTo,
+            startDate: breakdown.startRepair || breakdown.assignDate || breakdown.reportDate,
+            endDate: new Date().toISOString(),
+            totalDowntimeMinutes: breakdown.downtimeMinutes,
+            totalRepairCost: breakdown.repairCost,
+            rca: breakdown.rca,
+            status: "Closed",
+            createdAt: new Date().toISOString(),
+          };
+          setMwos((prevMwos) => [mwo, ...prevMwos]);
           toast.success("Work Order created");
-          return next;
-        });
-
-        return updated;
-      })
-    );
-    toast.success("Marked Completed & MWO created");
+        }
+      }
+    } catch (error) {
+      console.error('Error completing repair:', error);
+      toast.error('Failed to complete repair');
+    }
   }
+
+  /* -----------------------
+     Helper Functions
+  ----------------------- */
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setQuery(e.target.value);
+    setPage(1);
+  };
+
+  const handleLocationFilterChange = (val: string) => {
+    setLocationFilter(val);
+    setPage(1);
+  };
+
+  const handleStatusFilterChange = (val: string) => {
+    setStatusFilter(val);
+    setPage(1);
+  };
+
+  const handlePriorityFilterChange = (val: string) => {
+    setPriorityFilter(val);
+    setPage(1);
+  };
+
+  const getLocationName = (locData: string | { _id: string; name: string } | undefined) => {
+    if (!locData) return "N/A";
+    if (typeof locData === 'object' && locData.name) return locData.name;
+    const found = locations.find((l) => l._id === locData);
+    return found ? found.name : "Unknown Location";
+  };
 
   /* -----------------------
      Metrics & charts
   ----------------------- */
-  const mttr = useMemo(() => {
-    const done = records.filter((r) => r.status === "Completed" && r.startRepair && r.endRepair);
-    if (done.length === 0) return 0;
-    const total = done.reduce((s, r) => s + (r.downtimeMinutes || 0), 0);
-    return +(total / done.length).toFixed(1);
-  }, [records]);
-
+  const mttr = stats.mttr;
   const mtbf = useMemo(() => {
     const byEquip: Record<string, string[]> = {};
     records.forEach((r) => {
@@ -402,14 +605,23 @@ export default function BreakdownCalendarWithMWO() {
       try {
         const data = JSON.parse(reader.result as string);
         if (!Array.isArray(data)) throw new Error("Invalid file");
-        const normalized = data.map((d) => ({ id: d.id || uuidv4(), ...d }));
-        setRecords(normalized);
-        toast.success("Imported successfully");
+        // Note: This is just for backup display, actual import would need API integration
+        toast.success("Import preview loaded (display only)");
       } catch (err) {
         toast.error("Import failed: invalid file");
       }
     };
     reader.readAsText(file);
+  }
+
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
+        <p className="text-gray-600">You do not have the necessary permissions to view this page.</p>
+      </div>
+    );
   }
 
   /* -----------------------
@@ -495,7 +707,7 @@ export default function BreakdownCalendarWithMWO() {
     if (r.status === "Completed") return "bg-green-100 text-green-800";
     const reportDate = r.reportDate ? parseISO(r.reportDate) : parseISO(r.createdAt);
     const daysOld = differenceInDays(new Date(), reportDate);
-    if (daysOld > 7 && r.status !== "Completed") return "bg-red-100 text-red-800"; // overdue heuristic
+    if (daysOld > 7 && !["Completed", "Cancelled"].includes(r.status)) return "bg-red-100 text-red-800"; // overdue heuristic
     return "bg-blue-100 text-blue-800";
   }
 
@@ -529,19 +741,21 @@ export default function BreakdownCalendarWithMWO() {
             <CalendarDays className="mr-2 h-4 w-4" /> {viewMode === "table" ? "Calendar View" : "Table View"}
           </Button>
 
-          <Button onClick={openAdd}>
-            <Plus className="mr-2 h-4 w-4" /> New Report
-          </Button>
+          {canCreate && (
+            <Button onClick={openAdd}>
+              <Plus className="mr-2 h-4 w-4" /> New Report
+            </Button>
+          )}
         </div>
       </div>
 
       {/* top KPIs + last MWOs */}
       <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        <Card><CardContent className="py-4 text-center"><h3 className="text-sm text-gray-500">Total Breakdowns</h3><div className="text-2xl font-bold">{records.length}</div></CardContent></Card>
-        <Card><CardContent className="py-4 text-center"><h3 className="text-sm text-gray-500">Open / In Progress</h3><div className="text-2xl font-bold">{records.filter((r)=> r.status !== "Completed" && r.status !== "Cancelled").length}</div></CardContent></Card>
+        <Card><CardContent className="py-4 text-center"><h3 className="text-sm text-gray-500">Total Breakdowns</h3><div className="text-2xl font-bold">{stats.totalBreakdowns}</div></CardContent></Card>
+        <Card><CardContent className="py-4 text-center"><h3 className="text-sm text-gray-500">Open / In Progress</h3><div className="text-2xl font-bold">{stats.openBreakdowns}</div></CardContent></Card>
         <Card><CardContent className="py-4 text-center"><h3 className="text-sm text-gray-500">MTTR (mins)</h3><div className="text-2xl font-bold">{mttr}</div></CardContent></Card>
         <Card><CardContent className="py-4 text-center"><h3 className="text-sm text-gray-500">MTBF (days)</h3><div className="text-2xl font-bold">{mtbf}</div></CardContent></Card>
-        <Card><CardContent className="py-4 text-center"><h3 className="text-sm text-gray-500">Total Downtime (hrs)</h3><div className="text-2xl font-bold">{((records.reduce((s, r) => s + (r.downtimeMinutes || 0), 0) || 0) / 60).toFixed(1)}</div></CardContent></Card>
+        <Card><CardContent className="py-4 text-center"><h3 className="text-sm text-gray-500">Total Downtime (hrs)</h3><div className="text-2xl font-bold">{stats.totalDowntimeHours}</div></CardContent></Card>
         <Card>
           <CardHeader><CardTitle>Last 5 MWOs</CardTitle></CardHeader>
           <CardContent>
@@ -603,12 +817,63 @@ export default function BreakdownCalendarWithMWO() {
       {/* main content: table or calendar */}
       {viewMode === "table" ? (
         <>
-          <div className="flex items-center gap-2 max-w-md">
-            <Input placeholder="Search equipment, reporter, tech..." value={query} onChange={(e) => setQuery(e.target.value)} />
+          {/* Search + Filter */}
+          <div className="flex flex-col md:flex-row items-center gap-4">
+            <div className="relative w-full md:flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Input
+                placeholder="Search equipment, reporter, technician..."
+                className="pl-10"
+                value={query}
+                onChange={handleSearchChange}
+              />
+            </div>
+            <Select 
+              disabled={isLocationRestricted} 
+              value={locationFilter} 
+              onValueChange={handleLocationFilterChange}
+            >
+              <SelectTrigger className="w-full md:w-48">
+                <SelectValue placeholder="Filter Location" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Locations</SelectItem>
+                {locations.map((loc) => (
+                  <SelectItem key={loc._id} value={loc._id}>
+                    {loc.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={statusFilter} onValueChange={handleStatusFilterChange}>
+              <SelectTrigger className="w-full md:w-48">
+                <SelectValue placeholder="Filter Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="Reported">Reported</SelectItem>
+                <SelectItem value="Assigned">Assigned</SelectItem>
+                <SelectItem value="In Progress">In Progress</SelectItem>
+                <SelectItem value="Completed">Completed</SelectItem>
+                <SelectItem value="Cancelled">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={priorityFilter} onValueChange={handlePriorityFilterChange}>
+              <SelectTrigger className="w-full md:w-48">
+                <SelectValue placeholder="Filter Priority" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Priority</SelectItem>
+                <SelectItem value="Low">Low</SelectItem>
+                <SelectItem value="Medium">Medium</SelectItem>
+                <SelectItem value="High">High</SelectItem>
+                <SelectItem value="Critical">Critical</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <Card>
-            <CardHeader><CardTitle>Breakdown Records</CardTitle></CardHeader>
+            <CardHeader><CardTitle>Breakdown Records ({totalBreakdowns})</CardTitle></CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
                 <Table>
@@ -616,6 +881,7 @@ export default function BreakdownCalendarWithMWO() {
                     <TableRow>
                       <TableHead>Reported</TableHead>
                       <TableHead>Equipment</TableHead>
+                      <TableHead>Location</TableHead>
                       <TableHead>Priority</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Downtime</TableHead>
@@ -624,36 +890,112 @@ export default function BreakdownCalendarWithMWO() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {records.filter((r) =>
-                      [r.equipmentCode, r.reportedBy, r.assignedTo, r.failureDescription].join(" ").toLowerCase().includes(query.toLowerCase())
-                    ).map((r) => (
-                      <TableRow key={r.id}>
-                        <TableCell>{new Date(r.reportDate).toLocaleString()}</TableCell>
-                        <TableCell>{r.equipmentCode}</TableCell>
-                        <TableCell>{r.priority}</TableCell>
-                        <TableCell>{r.status}</TableCell>
-                        <TableCell>{formatMinutes(r.downtimeMinutes)}</TableCell>
-                        <TableCell>₹{(r.repairCost||0).toFixed(0)}</TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button size="sm" variant="ghost" onClick={() => openEdit(r)}><Edit2 className="w-4 h-4" /></Button>
-                            <Button size="sm" variant="ghost" onClick={() => {
-                              if (r.status === "Assigned") startRepair(r.id);
-                              else if (r.status === "In Progress") completeRepair(r.id, 0, r.rca || "");
-                              else if (r.status === "Reported") assignTo(r.id, "TechName");
-                              else openEdit(r);
-                            }}>
-                              <Wrench className="w-4 h-4" />
-                            </Button>
-                            <Button size="sm" variant="ghost" onClick={() => removeRecord(r.id)}><Trash2 className="w-4 h-4 text-red-500" /></Button>
-                          </div>
+                    {loading ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center py-3">
+                          <ClipLoader
+                            color="#212121"
+                            loading={loading}
+                            size={15}
+                            aria-label="Loading Spinner"
+                            data-testid="loader"
+                          />
                         </TableCell>
                       </TableRow>
-                    ))}
+                    ) : records.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center py-6">
+                          No breakdown records found.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      records.map((r) => (
+                        <TableRow key={r._id}>
+                          <TableCell>{new Date(r.reportDate).toLocaleString()}</TableCell>
+                          <TableCell>{r.equipmentCode}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center">
+                              <MapPin className="h-4 w-4 mr-2" />
+                              {getLocationName(r.location)}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <span className={`px-2 py-1 text-xs rounded-full ${
+                              r.priority === "Critical" ? "bg-red-100 text-red-800" :
+                              r.priority === "High" ? "bg-orange-100 text-orange-800" :
+                              r.priority === "Medium" ? "bg-yellow-100 text-yellow-800" :
+                              "bg-green-100 text-green-800"
+                            }`}>
+                              {r.priority}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <span className={`px-2 py-1 text-xs rounded-full ${
+                              r.status === "Completed" ? "bg-green-100 text-green-800" :
+                              r.status === "In Progress" ? "bg-blue-100 text-blue-800" :
+                              r.status === "Assigned" ? "bg-yellow-100 text-yellow-800" :
+                              r.status === "Cancelled" ? "bg-red-100 text-red-800" :
+                              "bg-gray-100 text-gray-800"
+                            }`}>
+                              {r.status}
+                            </span>
+                          </TableCell>
+                          <TableCell>{formatMinutes(r.downtimeMinutes)}</TableCell>
+                          <TableCell>₹{(r.repairCost||0).toFixed(0)}</TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              {canEdit && (
+                                <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>
+                                  <Edit2 className="w-4 h-4" />
+                                </Button>
+                              )}
+                              <Button size="sm" variant="ghost" onClick={() => {
+                                if (r.status === "Assigned") startRepair(r._id);
+                                else if (r.status === "In Progress") completeRepair(r._id, 0, r.rca || "");
+                                else if (r.status === "Reported") assignTo(r._id, "TechName");
+                                else openEdit(r);
+                              }}>
+                                <Wrench className="w-4 h-4" />
+                              </Button>
+                              {canDelete && (
+                                <Button size="sm" variant="ghost" onClick={() => removeRecord(r._id)}>
+                                  <Trash2 className="w-4 h-4 text-red-500" />
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </div>
             </CardContent>
+
+            {/* Pagination */}
+            <div className="flex items-center justify-between space-x-2 p-4 border-t">
+              <span className="text-sm text-muted-foreground">
+                Page {page} of {totalPages} (Total: {totalBreakdowns})
+              </span>
+              <div className="flex space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                >
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
           </Card>
         </>
       ) : (
@@ -693,7 +1035,7 @@ export default function BreakdownCalendarWithMWO() {
                       <div className="mt-2 space-y-1 overflow-hidden">
                         {items.slice(0, 4).map((r) => (
                           <button
-                            key={r.id}
+                            key={r._id}
                             onClick={() => openEdit(r)}
                             className={`w-full text-left truncate px-1 py-0.5 rounded ${statusColorClass(r)}`}
                             title={`${r.equipmentCode} — ${r.failureDescription}`}
@@ -747,6 +1089,30 @@ export default function BreakdownCalendarWithMWO() {
             <div className="col-span-2 space-y-2">
               <Label>Failure Description *</Label>
               <Input value={form.failureDescription || ""} onChange={(e) => setForm({ ...form, failureDescription: e.target.value })} />
+            </div>
+
+            {/* Location Selection */}
+            <div className="space-y-2">
+              <Label>Location *</Label>
+              <select
+                className="mt-1 block w-full rounded-md border border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm p-2 disabled:opacity-75 disabled:cursor-not-allowed"
+                value={typeof form.location === 'object' ? form.location._id : (form.location || "")}
+                onChange={(e) => setForm({ ...form, location: e.target.value })}
+                disabled={isLocationRestricted}
+                required
+              >
+                {!isLocationRestricted && <option value="">Select Location</option>}
+                {locations.map((loc) => (
+                  <option key={loc._id} value={loc._id}>
+                    {loc.name}
+                  </option>
+                ))}
+              </select>
+              {isLocationRestricted && (
+                <p className="mt-1 text-xs text-gray-500">
+                  *Location is fixed based on your permissions.
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">

@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { v4 as uuidv4 } from "uuid";
+import { usePermission } from "@/hooks/userPermission";
+import { useDispatch, useSelector } from "react-redux";
+import { RootState, AppDispatch } from "@/redux/store";
 import {
   CalendarDays,
   Wrench,
@@ -14,6 +16,9 @@ import {
   Save,
   Search,
   Users,
+  MapPin,
+  Filter,
+  ShieldAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,62 +39,205 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
-import { storage, STORAGE_KEYS } from "@/lib/storage";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from "recharts";
-
-const LS_KEY = STORAGE_KEYS.PREVENTIVE_MAINTENANCE_V1;
-
-interface MaintenancePlan {
-  id: string;
-  equipmentCode: string;
-  planType: "Time-based" | "Usage-based" | "Condition-based";
-  intervalValue: number;
-  intervalUnit: string;
-  lastServiceDate: string;
-  nextServiceDate: string;
-  assignedTechnician: string;
-  estimatedHours: number;
-  estimatedCost: number;
-  status: "Scheduled" | "Completed" | "Overdue";
-  remarks?: string;
-  createdAt: string;
-}
+import {
+  fetchPreventiveMaintenancePlans,
+  fetchPreventiveMaintenanceStats,
+  createPreventiveMaintenancePlan,
+  updatePreventiveMaintenancePlan,
+  markPreventiveMaintenanceCompleted,
+  deletePreventiveMaintenancePlan,
+  setPage,
+  setLimit,
+  clearError,
+  PreventiveMaintenancePlan,
+} from "@/redux/slices/plantandmachinary/preventiveMaintenanceSlice";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
+import { fetchEquipments } from "@/redux/slices/equipmentSlice";
+import api from "@/utils/axiosApi";
 
 export default function PreventiveMaintenanceDashboard() {
-  const [plans, setPlans] = useState<MaintenancePlan[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const canView = usePermission("preventiveMaint", "view");
+  const canCreate = usePermission("preventiveMaint", "create");
+  const canEdit = usePermission("preventiveMaint", "edit");
+  const canDelete = usePermission("preventiveMaint", "delete");
+  const dispatch = useDispatch<AppDispatch>();
+  
+  
+  const {
+    plans,
+    stats,
+    loading,
+    error,
+    total,
+    page,
+    limit,
+  } = useSelector((state: RootState) => state.preventiveMaintenance);
+  if (!canView) {
+      return (
+        <div className="text-center py-12 px-4">
+          <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-gray-900 mb-2">
+            Access Denied
+          </h3>
+          <p className="text-gray-600">
+            You do not have the necessary permissions to view this page.
+          </p>
+        </div>
+      );
+    }
+  
+  const { locations } = useSelector((state: RootState) => state.masterData);
+  const { equipments } = useSelector((state: RootState) => state.equipment);
+
+  // Debug locations
+  useEffect(() => {
+    console.log("Locations loaded:", locations);
+  }, [locations]);
+  
+  // Debug equipments
+  useEffect(() => {
+    console.log("Equipments loaded:", equipments);
+  }, [equipments]);
+  
+  // Function to create sample locations
+  const createSampleLocations = async () => {
+    try {
+      const response = await api.post('/master/location/sample');
+      console.log("Sample locations created:", response.data);
+      dispatch(fetchMasterData("location")); // Refresh locations
+      toast.success("Sample locations created successfully");
+    } catch (error: any) {
+      console.error("Error creating sample locations:", error);
+      toast.error(error.response?.data?.message || "Error creating sample locations");
+    }
+  };
+  
+  // Function to create sample equipments
+  const createSampleEquipments = async () => {
+    try {
+      const organisationId = localStorage.getItem("organisationId");
+      const sampleEquipments = [
+        {
+          code: "EQ001",
+          name: "CNC Machine A",
+          model: "CNC-2024",
+          manufacturer: "TechCorp",
+          category: "heavy-machinery",
+          organisationId
+        },
+        {
+          code: "EQ002", 
+          name: "Hydraulic Press",
+          model: "HP-500",
+          manufacturer: "PowerTech",
+          category: "heavy-machinery",
+          organisationId
+        },
+        {
+          code: "EQ003",
+          name: "Forklift",
+          model: "FL-200",
+          manufacturer: "LiftCorp",
+          category: "vehicles",
+          organisationId
+        }
+      ];
+      
+      for (const equipment of sampleEquipments) {
+        await api.post('/equipment/create', equipment);
+      }
+      
+      dispatch(fetchEquipments({ page: 1, limit: 100 })); // Refresh equipments
+      toast.success("Sample equipments created successfully");
+    } catch (error: any) {
+      console.error("Error creating sample equipments:", error);
+      toast.error(error.response?.data?.message || "Error creating sample equipments");
+    }
+  };
+  
   const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [locationFilter, setLocationFilter] = useState("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editing, setEditing] = useState<MaintenancePlan | null>(null);
-  const [form, setForm] = useState<Partial<MaintenancePlan>>({
+  const [editing, setEditing] = useState<PreventiveMaintenancePlan | null>(null);
+  const [form, setForm] = useState<Partial<PreventiveMaintenancePlan>>({
     planType: "Time-based",
     intervalUnit: "Days",
     status: "Scheduled",
   });
   const [viewMode, setViewMode] = useState<"table" | "calendar">("table");
-
-  // ✅ Load saved data once
+  
+  // Load data on component mount
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const saved = storage.get<MaintenancePlan[]>(LS_KEY, []);
-    if (Array.isArray(saved) && saved.length > 0) {
-      console.log("📦 Loaded plans from storage", saved);
-      setPlans(saved);
+    dispatch(fetchMasterData("location")); // Specify location type
+    dispatch(fetchEquipments({ page: 1, limit: 100 })); // Fetch equipments
+    dispatch(fetchPreventiveMaintenanceStats());
+    loadPlans();
+  }, [dispatch]);
+  
+  // Load locations if empty
+  useEffect(() => {
+    if (locations.length === 0) {
+      console.log("Locations empty, fetching...");
+      dispatch(fetchMasterData("location"))
+      .unwrap()
+      .then((result) => {
+        console.log("Locations fetched successfully:", result);
+      })
+      .catch((error) => {
+          console.error("Error fetching locations:", error);
+        });
     }
-    setLoaded(true);
-  }, []);
-
-  // ✅ Save data only after first load and when plans change
+  }, [locations, dispatch]);
+  
+  // Load equipmeny
   useEffect(() => {
-    if (!loaded) return;
-    if (!Array.isArray(plans)) return;
+    if (equipments.length === 0) {
+      console.log("Equipments empty, fetching...");
+      dispatch(fetchEquipments({ page: 1, limit: 100 }))
+      .unwrap()
+      .then((result) => {
+        console.log("Equipments fetched successfully:", result);
+        })
+        .catch((error) => {
+          console.error("Error fetching equipments:", error);
+        });
+      }
+    }, [equipments, dispatch]);
+    
+  // Load plans when filters change
+  useEffect(() => {
+    loadPlans();
+  }, [page, limit, query, statusFilter, locationFilter]);
+  
+  // Show error toast
+  useEffect(() => {
+    if (error) {
+      toast.error(error);
+      dispatch(clearError());
+    }
+  }, [error, dispatch]);
+  
+  const loadPlans = () => {
+    dispatch(fetchPreventiveMaintenancePlans({
+      page,
+      limit,
+      search: query,
+      status: statusFilter !== "all" ? statusFilter : undefined,
+      location: locationFilter !== "all" ? locationFilter : undefined,
+    }));
+  };
 
-    console.log("💾 Saving plans to localStorage", plans);
-    storage.set(LS_KEY, plans);
-  }, [plans, loaded]);
-
-  const calculateNextDate = (plan: Partial<MaintenancePlan>) => {
+  const calculateNextDate = (plan: Partial<PreventiveMaintenancePlan>) => {
     if (!plan.lastServiceDate || !plan.intervalValue) return "";
     const date = new Date(plan.lastServiceDate);
     const val = plan.intervalValue;
@@ -98,101 +246,100 @@ export default function PreventiveMaintenanceDashboard() {
       case "days":
         date.setDate(date.getDate() + val);
         break;
-      case "months":
-        date.setMonth(date.getMonth() + val);
-        break;
-      case "hours":
-        date.setDate(date.getDate() + Math.floor(val / 24));
-        break;
+        case "months":
+          date.setMonth(date.getMonth() + val);
+          break;
+          case "hours":
+            date.setDate(date.getDate() + Math.floor(val / 24));
+            break;
     }
     return date.toISOString().split("T")[0];
   };
-
+  
   const openAdd = () => {
     setEditing(null);
-    setForm({ planType: "Time-based", intervalUnit: "Days", status: "Scheduled" });
+    setForm({ 
+      planType: "Time-based", 
+      intervalUnit: "Days", 
+      status: "Scheduled",
+      estimatedHours: 0,
+      estimatedCost: 0,
+    });
     setIsDialogOpen(true);
   };
-
-  const openEdit = (plan: MaintenancePlan) => {
+  
+  const openEdit = (plan: PreventiveMaintenancePlan) => {
     setEditing(plan);
-    setForm(plan);
+    setForm({
+      ...plan,
+      location: plan.location?._id,
+      lastServiceDate: plan.lastServiceDate?.split('T')[0],
+      nextServiceDate: plan.nextServiceDate?.split('T')[0],
+    });
     setIsDialogOpen(true);
   };
-
-  const saveForm = () => {
-    if (!form.equipmentCode || !form.lastServiceDate || !form.intervalValue) {
-      toast.error("Equipment, interval, and last service date are required.");
+  
+  const saveForm = async () => {
+    if (!form.equipmentName || !form.lastServiceDate || !form.intervalValue) {
+      toast.error("Equipment name, interval, and last service date are required.");
       return;
     }
-
+    
     const nextDate = calculateNextDate(form);
-    if (editing) {
-      const updated = plans.map((p) =>
-        p.id === editing.id
-          ? { ...p, ...form, nextServiceDate: nextDate } as MaintenancePlan
-          : p
-      );
-      setPlans(updated);
-      toast.success("Plan updated successfully");
-    } else {
-      const newPlan: MaintenancePlan = {
-        id: uuidv4(),
-        equipmentCode: form.equipmentCode!,
-        planType: form.planType!,
-        intervalValue: Number(form.intervalValue),
-        intervalUnit: form.intervalUnit!,
-        lastServiceDate: form.lastServiceDate!,
-        nextServiceDate: nextDate,
-        assignedTechnician: form.assignedTechnician || "",
-        estimatedHours: Number(form.estimatedHours) || 0,
-        estimatedCost: Number(form.estimatedCost) || 0,
-        status: "Scheduled",
-        createdAt: new Date().toISOString(),
-      };
-      setPlans((prev) => [newPlan, ...prev]);
-      toast.success("Plan added successfully");
-    }
-    setIsDialogOpen(false);
-  };
+    const formData = {
+      ...form,
+      nextServiceDate: nextDate,
+      intervalValue: Number(form.intervalValue),
+      estimatedHours: Number(form.estimatedHours) || 0,
+      estimatedCost: Number(form.estimatedCost) || 0,
+    };
 
-  const deletePlan = (id: string) => {
+    try {
+      if (editing) {
+        await dispatch(updatePreventiveMaintenancePlan({ 
+          id: editing._id!, 
+          data: formData 
+        })).unwrap();
+        toast.success("Plan updated successfully");
+      } else {
+        await dispatch(createPreventiveMaintenancePlan(formData)).unwrap();
+        toast.success("Plan created successfully");
+      }
+      
+      setIsDialogOpen(false);
+      dispatch(fetchPreventiveMaintenanceStats());
+    } catch (error: any) {
+      toast.error(error || "Operation failed");
+    }
+  };
+  
+  const deletePlan = async (id: string) => {
     if (confirm("Delete this maintenance plan?")) {
-      setPlans((prev) => prev.filter((p) => p.id !== id));
-      toast.error("Plan deleted");
+      try {
+        await dispatch(deletePreventiveMaintenancePlan(id)).unwrap();
+        toast.success("Plan deleted successfully");
+        dispatch(fetchPreventiveMaintenanceStats());
+      } catch (error: any) {
+        toast.error(error || "Delete failed");
+      }
     }
   };
-
-  // ✅ Filtering and derived data
-  const filtered = useMemo(() => {
-    const q = query.toLowerCase();
-    return plans.filter((p) =>
-      [p.equipmentCode, p.assignedTechnician].some((v) =>
-        v?.toLowerCase().includes(q)
-      )
-    );
-  }, [plans, query]);
-
-  const today = new Date();
-  const overdueCount = plans.filter((p) => p.status === "Overdue").length;
-  const upcomingCount = plans.filter(
-    (p) => new Date(p.nextServiceDate) >= today && p.status === "Scheduled"
-  ).length;
-  const completedCount = plans.filter((p) => p.status === "Completed").length;
-  const totalCost = plans.reduce((sum, p) => sum + (p.estimatedCost || 0), 0);
-
-  // ✅ Auto mark overdue
-  useEffect(() => {
-    if (!loaded) return;
-    const updated = plans.map((p) => {
-      if (p.status === "Completed") return p;
-      const next = new Date(p.nextServiceDate);
-      return next < today ? { ...p, status: "Overdue" } : p;
-    });
-    setPlans(updated);
-  }, [loaded]);
-
-  // Technician workload
+  
+  const markCompleted = async (plan: PreventiveMaintenancePlan) => {
+    try {
+      await dispatch(markPreventiveMaintenanceCompleted({ 
+        id: plan._id!,
+        actualHours: plan.estimatedHours,
+        actualCost: plan.estimatedCost,
+      })).unwrap();
+      toast.success("Plan marked as completed");
+      dispatch(fetchPreventiveMaintenanceStats());
+    } catch (error: any) {
+      toast.error(error || "Operation failed");
+    }
+  };
+  
+  // Technician workload data
   const technicianData = useMemo(() => {
     const map: Record<string, number> = {};
     plans.forEach((p) => {
@@ -204,7 +351,11 @@ export default function PreventiveMaintenanceDashboard() {
       tasks: count,
     }));
   }, [plans]);
-
+  
+  const handlePageChange = (newPage: number) => {
+    dispatch(setPage(newPage));
+  };
+  
   return (
     <div className="p-6 space-y-8">
       <div className="flex justify-between items-center">
@@ -212,46 +363,122 @@ export default function PreventiveMaintenanceDashboard() {
           <Wrench className="h-6 w-6" /> Preventive Maintenance Dashboard
         </h1>
         <div className="flex gap-2">
+          {locations.length === 0 && (
+            <Button variant="outline" onClick={createSampleLocations}>
+              Create Sample Locations
+            </Button>
+          )}
+          {equipments.length === 0 && (
+            <Button variant="outline" onClick={createSampleEquipments}>
+              Create Sample Equipments
+            </Button>
+          )}
           <Button variant="outline" onClick={() => setViewMode(viewMode === "table" ? "calendar" : "table")}>
             <CalendarDays className="mr-2 h-4 w-4" /> {viewMode === "table" ? "Calendar View" : "Table View"}
           </Button>
-          <Button onClick={openAdd}>
+          {canCreate && <Button onClick={openAdd}>
             <Plus className="mr-2 h-4 w-4" /> Add Plan
-          </Button>
+          </Button>}
         </div>
       </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card><CardContent className="py-4 text-center"><h2 className="text-xl font-bold">{overdueCount}</h2><p className="text-sm text-red-600">Overdue</p></CardContent></Card>
-        <Card><CardContent className="py-4 text-center"><h2 className="text-xl font-bold">{upcomingCount}</h2><p className="text-sm text-blue-600">Upcoming</p></CardContent></Card>
-        <Card><CardContent className="py-4 text-center"><h2 className="text-xl font-bold">{completedCount}</h2><p className="text-sm text-green-600">Completed</p></CardContent></Card>
-        <Card><CardContent className="py-4 text-center"><h2 className="text-xl font-bold">₹{totalCost.toFixed(0)}</h2><p className="text-sm text-gray-500">Est. Total Cost</p></CardContent></Card>
+        <Card>
+          <CardContent className="py-4 text-center">
+            <h2 className="text-xl font-bold">{stats?.overdue || 0}</h2>
+            <p className="text-sm text-red-600">Overdue</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-4 text-center">
+            <h2 className="text-xl font-bold">{stats?.scheduled || 0}</h2>
+            <p className="text-sm text-blue-600">Scheduled</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-4 text-center">
+            <h2 className="text-xl font-bold">{stats?.completed || 0}</h2>
+            <p className="text-sm text-green-600">Completed</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-4 text-center">
+            <h2 className="text-xl font-bold">₹{stats?.totalEstimatedCost?.toFixed(0) || 0}</h2>
+            <p className="text-sm text-gray-500">Est. Total Cost</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Technician Workload Chart */}
-      <Card>
-        <CardHeader><CardTitle><Users className="h-5 w-5 inline-block mr-2" /> Technician Workload</CardTitle></CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={technicianData}>
-              <XAxis dataKey="technician" />
-              <YAxis />
-              <Tooltip />
-              <Bar dataKey="tasks" fill="#3b82f6" />
-            </BarChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
+      {technicianData.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              <Users className="h-5 w-5 inline-block mr-2" /> Technician Workload
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={250}>
+              <BarChart data={technicianData}>
+                <XAxis dataKey="technician" />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="tasks" fill="#3b82f6" />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
 
-      {/* Table View */}
+      {/* Filters and Table */}
       <Card>
-        <CardHeader><CardTitle>Maintenance Plans</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>Maintenance Plans</CardTitle>
+        </CardHeader>
         <CardContent>
-          <div className="mb-3 flex items-center gap-2 max-w-md">
-            <Search className="h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Search equipment, technician..." value={query} onChange={(e) => setQuery(e.target.value)} />
+          <div className="mb-4 flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2 max-w-md">
+              <Search className="h-4 w-4 text-muted-foreground" />
+              <Input 
+                placeholder="Search equipment, technician..." 
+                value={query} 
+                onChange={(e) => setQuery(e.target.value)} 
+              />
+            </div>
+            
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="Scheduled">Scheduled</SelectItem>
+                <SelectItem value="In-Progress">In Progress</SelectItem>
+                <SelectItem value="Completed">Completed</SelectItem>
+                <SelectItem value="Overdue">Overdue</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={locationFilter} onValueChange={setLocationFilter}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="Location" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Locations</SelectItem>
+                {locations.length === 0 ? (
+                  <SelectItem value="" disabled>Loading locations...</SelectItem>
+                ) : (
+                  locations.map((location) => (
+                    <SelectItem key={location._id} value={location._id}>
+                      {location.name}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
           </div>
+
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -260,70 +487,259 @@ export default function PreventiveMaintenanceDashboard() {
                   <TableHead>Type</TableHead>
                   <TableHead>Next Service</TableHead>
                   <TableHead>Technician</TableHead>
+                  <TableHead>Location</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((p) => (
-                  <TableRow key={p.id}>
-                    <TableCell>{p.equipmentCode}</TableCell>
-                    <TableCell>{p.planType}</TableCell>
-                    <TableCell>{p.nextServiceDate}</TableCell>
-                    <TableCell>{p.assignedTechnician}</TableCell>
-                    <TableCell>
-                      {p.status === "Overdue" ? (
-                        <span className="text-red-600 flex items-center gap-1">
-                          <AlertTriangle className="w-4 h-4" /> Overdue
-                        </span>
-                      ) : p.status === "Completed" ? (
-                        <span className="text-green-600 flex items-center gap-1">
-                          <CheckCircle2 className="w-4 h-4" /> Done
-                        </span>
-                      ) : (
-                        <span className="text-blue-600 flex items-center gap-1">
-                          <Clock className="w-4 h-4" /> Scheduled
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="ghost" onClick={() => openEdit(p)}>
-                          <Edit2 className="w-4 h-4" />
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => deletePlan(p.id)}>
-                          <Trash2 className="w-4 h-4 text-red-500" />
-                        </Button>
-                      </div>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8">
+                      Loading...
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : plans.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8">
+                      No maintenance plans found
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  plans.map((plan) => (
+                    <TableRow key={plan._id}>
+                      <TableCell className="font-medium">{plan.equipmentName}</TableCell>
+                      <TableCell>{plan.planType}</TableCell>
+                      <TableCell>{new Date(plan.nextServiceDate).toLocaleDateString()}</TableCell>
+                      <TableCell>{plan.assignedTechnician}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <MapPin className="w-3 h-3 text-gray-400" />
+                          {plan.location?.name || "N/A"}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {plan.status === "Overdue" ? (
+                          <span className="text-red-600 flex items-center gap-1">
+                            <AlertTriangle className="w-4 h-4" /> Overdue
+                          </span>
+                        ) : plan.status === "Completed" ? (
+                          <span className="text-green-600 flex items-center gap-1">
+                            <CheckCircle2 className="w-4 h-4" /> Done
+                          </span>
+                        ) : plan.status === "In-Progress" ? (
+                          <span className="text-orange-600 flex items-center gap-1">
+                            <Clock className="w-4 h-4" /> In Progress
+                          </span>
+                        ) : (
+                          <span className="text-blue-600 flex items-center gap-1">
+                            <Clock className="w-4 h-4" /> Scheduled
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          {plan.status !== "Completed" && (
+                            <Button 
+                              size="sm" 
+                              variant="ghost" 
+                              onClick={() => markCompleted(plan)}
+                              title="Mark as completed"
+                            >
+                              <CheckCircle2 className="w-4 h-4 text-green-600" />
+                            </Button>
+                          )}
+                          {canEdit && <Button size="sm" variant="ghost" onClick={() => openEdit(plan)}>
+                            <Edit2 className="w-4 h-4" />
+                          </Button>}
+                          {canDelete && <Button size="sm" variant="ghost" onClick={() => deletePlan(plan._id!)}>
+                            <Trash2 className="w-4 h-4 text-red-500" />
+                          </Button>}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </div>
+
+          {/* Pagination */}
+          {total > limit && (
+            <div className="flex items-center justify-between mt-4">
+              <p className="text-sm text-gray-500">
+                Showing {((page - 1) * limit) + 1} to {Math.min(page * limit, total)} of {total} results
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(page - 1)}
+                  disabled={page === 1}
+                >
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(page + 1)}
+                  disabled={page * limit >= total}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
       {/* Dialog Form */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-3xl">
-          <DialogHeader><DialogTitle>{editing ? "Edit Plan" : "Add Plan"}</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>{editing ? "Edit Plan" : "Add Plan"}</DialogTitle>
+          </DialogHeader>
           <div className="grid grid-cols-2 gap-4">
-            <div><Label>Equipment</Label><Input value={form.equipmentCode || ""} onChange={(e) => setForm({ ...form, equipmentCode: e.target.value })} /></div>
-            <div><Label>Plan Type</Label>
-              <select className="border rounded px-2 py-2 w-full" value={form.planType} onChange={(e) => setForm({ ...form, planType: e.target.value as any })}>
-                <option>Time-based</option><option>Usage-based</option><option>Condition-based</option>
-              </select></div>
-            <div><Label>Interval Value</Label><Input type="number" value={form.intervalValue || ""} onChange={(e) => setForm({ ...form, intervalValue: Number(e.target.value) })} /></div>
-            <div><Label>Interval Unit</Label><Input value={form.intervalUnit || "Days"} onChange={(e) => setForm({ ...form, intervalUnit: e.target.value })} /></div>
-            <div><Label>Last Service Date</Label><Input type="date" value={form.lastServiceDate || ""} onChange={(e) => setForm({ ...form, lastServiceDate: e.target.value })} /></div>
-            <div><Label>Technician</Label><Input value={form.assignedTechnician || ""} onChange={(e) => setForm({ ...form, assignedTechnician: e.target.value })} /></div>
-            <div><Label>Est. Hours</Label><Input type="number" value={form.estimatedHours || ""} onChange={(e) => setForm({ ...form, estimatedHours: Number(e.target.value) })} /></div>
-            <div><Label>Est. Cost</Label><Input type="number" value={form.estimatedCost || ""} onChange={(e) => setForm({ ...form, estimatedCost: Number(e.target.value) })} /></div>
+            <div>
+              <Label>Equipment Code *</Label>
+              <Input 
+                value={form.equipmentCode || ""} 
+                onChange={(e) => setForm({ ...form, equipmentCode: e.target.value })} 
+                placeholder="Auto-filled from equipment selection"
+                readOnly
+                className="bg-gray-50"
+              />
+            </div>
+            <div>
+              <Label>Equipment Name *</Label>
+              <Select 
+                value={form.equipmentName || ""} 
+                onValueChange={(value) => {
+                  const selectedEquipment = equipments.find(eq => eq.name === value);
+                  setForm({ 
+                    ...form, 
+                    equipmentName: value,
+                    equipmentCode: selectedEquipment?.code || form.equipmentCode || ""
+                  });
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select equipment" />
+                </SelectTrigger>
+                <SelectContent>
+                  {equipments.length === 0 ? (
+                    <SelectItem value="" disabled>Loading equipments...</SelectItem>
+                  ) : (
+                    equipments.map((equipment) => (
+                      <SelectItem key={equipment._id || equipment.id} value={equipment.name}>
+                        {equipment.name} ({equipment.code})
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Plan Type</Label>
+              <Select 
+                value={form.planType} 
+                onValueChange={(value: any) => setForm({ ...form, planType: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Time-based">Time-based</SelectItem>
+                  <SelectItem value="Usage-based">Usage-based</SelectItem>
+                  <SelectItem value="Condition-based">Condition-based</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Location</Label>
+              <Select 
+                value={form.location as string} 
+                onValueChange={(value) => setForm({ ...form, location: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select location" />
+                </SelectTrigger>
+                <SelectContent>
+                  {locations.length === 0 ? (
+                    <SelectItem value="" disabled>Loading locations...</SelectItem>
+                  ) : (
+                    locations.map((location) => (
+                      <SelectItem key={location._id} value={location._id}>
+                        {location.name}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Interval Value *</Label>
+              <Input 
+                type="number" 
+                value={form.intervalValue || ""} 
+                onChange={(e) => setForm({ ...form, intervalValue: Number(e.target.value) })} 
+              />
+            </div>
+            <div>
+              <Label>Interval Unit</Label>
+              <Input 
+                value={form.intervalUnit || "Days"} 
+                onChange={(e) => setForm({ ...form, intervalUnit: e.target.value })} 
+              />
+            </div>
+            <div>
+              <Label>Last Service Date *</Label>
+              <Input 
+                type="date" 
+                value={form.lastServiceDate || ""} 
+                onChange={(e) => setForm({ ...form, lastServiceDate: e.target.value })} 
+              />
+            </div>
+            <div>
+              <Label>Assigned Technician *</Label>
+              <Input 
+                value={form.assignedTechnician || ""} 
+                onChange={(e) => setForm({ ...form, assignedTechnician: e.target.value })} 
+              />
+            </div>
+            <div>
+              <Label>Estimated Hours</Label>
+              <Input 
+                type="number" 
+                value={form.estimatedHours || ""} 
+                onChange={(e) => setForm({ ...form, estimatedHours: Number(e.target.value) })} 
+              />
+            </div>
+            <div>
+              <Label>Estimated Cost</Label>
+              <Input 
+                type="number" 
+                value={form.estimatedCost || ""} 
+                onChange={(e) => setForm({ ...form, estimatedCost: Number(e.target.value) })} 
+              />
+            </div>
+            <div className="col-span-2">
+              <Label>Remarks</Label>
+              <Input 
+                value={form.remarks || ""} 
+                onChange={(e) => setForm({ ...form, remarks: e.target.value })} 
+                placeholder="Additional notes"
+              />
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-            <Button onClick={saveForm}><Save className="mr-2 h-4 w-4" /> Save</Button>
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={saveForm} disabled={loading}>
+              <Save className="mr-2 h-4 w-4" /> 
+              {loading ? "Saving..." : "Save"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

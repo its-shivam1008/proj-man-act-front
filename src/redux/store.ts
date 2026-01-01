@@ -32,6 +32,9 @@ import masterDataReducer from "./slices/masterDataSlice";
 import equipmentReducer from "./slices/equipmentSlice";
 import activityCostReducer from "./slices/activityCostSlice";
 import machineryReducer from "./slices/plantandmachinary/machinerySlice";
+import preventiveMaintenanceReducer from "./slices/plantandmachinary/preventiveMaintenanceSlice";
+import calibrationSafetyReducer from "./slices/plantandmachinary/calibrationSafetySlice";
+import equipmentAllocationReducer from "./slices/plantandmachinary/equipmentAllocationSlice";
 import inventoryMasterReducer from "./slices/inventoryMasterSlice";
 import materialMovementReducer from "./slices/materialMovementSlice";
 import materialRequestReducer from "./slices/materialRequestSlice";
@@ -89,6 +92,9 @@ export const store = configureStore({
     equipment: equipmentReducer,
     activityCost: activityCostReducer,
     machinery: machineryReducer,
+    preventiveMaintenance: preventiveMaintenanceReducer,
+    calibrationSafety: calibrationSafetyReducer,
+    equipmentAllocation: equipmentAllocationReducer,
     inventoryMaster: inventoryMasterReducer,
     materialMovement: materialMovementReducer,
     materialRequests: materialRequestReducer,

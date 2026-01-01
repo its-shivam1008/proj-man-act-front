@@ -1,8 +1,8 @@
-
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { v4 as uuidv4 } from "uuid";
+import { useEffect, useState, useMemo } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { AppDispatch, RootState } from "@/redux/store";
 import {
   Plus,
   Edit2,
@@ -14,7 +14,8 @@ import {
   Fuel,
   Clock,
   Wrench,
-  Calendar,
+  MapPin,
+  ShieldAlert,
 } from "lucide-react";
 import {
   BarChart,
@@ -47,79 +48,164 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { storage } from "@/lib/storage";
+import { usePermission } from "@/hooks/userPermission";
+import {
+  fetchEquipmentAllocations,
+  createEquipmentAllocation,
+  updateEquipmentAllocation,
+  deleteEquipmentAllocation,
+  createSampleData,
+  clearError,
+  EquipmentAllocation,
+} from "@/redux/slices/plantandmachinary/equipmentAllocationSlice";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
+import { fetchEquipments } from "@/redux/slices/equipmentSlice";
 
-const LS_KEY = "equipment_allocation_v4";
-
-interface EquipmentAllocation {
-  id: string;
-  equipmentCode: string;
-  projectOrDept: string;
-  operator: string;
-  workingHours: number;
-  idleHours: number;
-  fuelConsumption: number;
-  performanceRating: number;
-  date: string;
-  createdAt: string;
+interface EquipmentAllocationForm {
+  _id?: string;
+  equipmentCode?: string;
+  equipmentName?: string;
+  projectOrDept?: string;
+  operator?: string;
+  workingHours?: number;
+  idleHours?: number;
+  fuelConsumption?: number;
+  performanceRating?: number;
+  date?: string;
+  shift?: string;
+  allocationType?: string;
+  startDate?: string;
+  endDate?: string;
+  powerConsumption?: number;
+  meterReading?: number;
+  status?: 'Active' | 'Completed' | 'Cancelled';
+  location?: string;
+  remarks?: string;
 }
 
 export default function EquipmentAllocationDashboard() {
-  const [allocations, setAllocations] = useState<EquipmentAllocation[]>([]);
+  const canView = usePermission("equipmentAllocation", "view");
+  const canCreate = usePermission("equipmentAllocation", "create");
+  const canEdit = usePermission("equipmentAllocation", "edit");
+  const canDelete = usePermission("equipmentAllocation", "delete");
+  const dispatch = useDispatch<AppDispatch>();
+  
+  const {
+    allocations,
+    loading,
+    error,
+    pagination,
+  } = useSelector((state: RootState) => state.equipmentAllocation);
+
+  if (!canView) {
+        return (
+          <div className="text-center py-12 px-4">
+            <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+              Access Denied
+            </h3>
+            <p className="text-gray-600">
+              You do not have the necessary permissions to view this page.
+            </p>
+          </div>
+        );
+      }
+  
+  const { locations } = useSelector((state: RootState) => state.masterData);
+  const { equipments } = useSelector((state: RootState) => state.equipment);
+  const { userProfile } = useSelector((state: RootState) => state.auth);
+
+  // Location-based access control
+  const isLocationRestricted = 
+    userProfile?.role !== 'admin' && 
+    !!userProfile?.location;
+
   const [query, setQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editing, setEditing] = useState<EquipmentAllocation | null>(null);
-  const [form, setForm] = useState<Partial<EquipmentAllocation>>({
+  const [selectedLocation, setSelectedLocation] = useState<string>("All");
+  const [selectedStatus, setSelectedStatus] = useState<string>("all");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  
+  const [form, setForm] = useState<EquipmentAllocationForm>({
     date: new Date().toISOString().split("T")[0],
     workingHours: 0,
     idleHours: 0,
     fuelConsumption: 0,
     performanceRating: 3,
+    status: "Active",
+    shift: "Day",
+    allocationType: "Project",
   });
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
 
-  // Load from localStorage
+  // Load data on component mount
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const saved = storage.get(LS_KEY);
-    if (saved && Array.isArray(saved)) setAllocations(saved);
-  }, []);
+    dispatch(fetchMasterData("location"));
+    dispatch(fetchEquipments({}));
+    loadData();
+  }, [dispatch]);
 
-  // Save to localStorage
- useEffect(() => {
-  if (typeof window === "undefined") return;
-  const saved = storage.get(LS_KEY);
-  if (saved && Array.isArray(saved)) {
-    setAllocations(saved);
-  }
-}, []);
+  // Load data when filters change
+  useEffect(() => {
+    loadData();
+  }, [selectedLocation, selectedStatus, fromDate, toDate, query]);
 
-useEffect(() => {
-  if (typeof window === "undefined") return;
-  if (allocations.length > 0) {
-    storage.set(LS_KEY, allocations);
-  }
-}, [allocations]);
+  // Set location filter for restricted users
+  useEffect(() => {
+    if (isLocationRestricted && userProfile?.location) {
+      setSelectedLocation(userProfile.location);
+    }
+  }, [isLocationRestricted, userProfile]);
 
+  // Load chart data - no longer needed since we calculate from table data
+  // useEffect(() => {
+  //   dispatch(fetchUtilizationData());
+  //   dispatch(fetchFuelData());
+  //   dispatch(fetchTrendData());
+  // }, [dispatch]);
 
-  // Filter results by search and date range
-  const filtered = useMemo(() => {
-    const q = query.toLowerCase();
-    return allocations.filter((a) => {
-      const matchQuery = [a.equipmentCode, a.projectOrDept, a.operator].some((f) =>
-        f.toLowerCase().includes(q)
-      );
-      const dateOK =
-        (!fromDate || new Date(a.date) >= new Date(fromDate)) &&
-        (!toDate || new Date(a.date) <= new Date(toDate));
-      return matchQuery && dateOK;
-    });
-  }, [allocations, query, fromDate, toDate]);
+  const loadData = () => {
+    const params: any = {};
+    if (query) params.search = query;
+    if (selectedLocation !== "All") params.location = selectedLocation;
+    if (selectedStatus !== "all") params.status = selectedStatus;
+    if (fromDate) params.fromDate = fromDate;
+    if (toDate) params.toDate = toDate;
+    
+    dispatch(fetchEquipmentAllocations(params));
+  };
+
+  // Clear error when component unmounts
+  useEffect(() => {
+    return () => {
+      dispatch(clearError());
+    };
+  }, [dispatch]);
+
+  // Show error toast
+  useEffect(() => {
+    if (error) {
+      toast.error(error);
+      dispatch(clearError());
+    }
+  }, [error, dispatch]);
 
   // Add / Edit
   const openAdd = () => {
+    if (!canCreate) {
+      toast.error("You don't have permission to create equipment allocations");
+      return;
+    }
     setEditing(null);
     setForm({
       date: new Date().toISOString().split("T")[0],
@@ -127,114 +213,151 @@ useEffect(() => {
       idleHours: 0,
       fuelConsumption: 0,
       performanceRating: 3,
+      status: "Active",
+      shift: "Day",
+      allocationType: "Project",
+      location: isLocationRestricted ? userProfile?.location : "",
     });
     setIsDialogOpen(true);
   };
 
   const openEdit = (alloc: EquipmentAllocation) => {
+    if (!canEdit) {
+      toast.error("You don't have permission to edit equipment allocations");
+      return;
+    }
     setEditing(alloc);
-    setForm(alloc);
+    setForm({
+      ...alloc,
+      date: alloc.date.split("T")[0],
+      location: typeof alloc.location === 'object' && alloc.location ? alloc.location._id : "",
+    });
     setIsDialogOpen(true);
   };
 
-  const saveForm = () => {
-    if (!form.equipmentCode || !form.operator) {
-      toast.error("Equipment code and operator are required.");
+  const saveForm = async () => {
+    if (!form.equipmentCode || !form.operator || !form.projectOrDept) {
+      toast.error("Equipment code, operator, and project/department are required.");
       return;
     }
 
-    if (editing) {
-      const updated = allocations.map((a) =>
-        a.id === editing.id ? { ...a, ...form } : a
-      );
-      setAllocations(updated);
-      toast.success("Updated successfully");
-    } else {
-      const newAlloc: EquipmentAllocation = {
-        id: uuidv4(),
-        equipmentCode: form.equipmentCode!,
-        projectOrDept: form.projectOrDept || "General",
-        operator: form.operator!,
-        workingHours: Number(form.workingHours),
-        idleHours: Number(form.idleHours),
-        fuelConsumption: Number(form.fuelConsumption),
-        performanceRating: Number(form.performanceRating),
-        date: form.date || new Date().toISOString().split("T")[0],
-        createdAt: new Date().toISOString(),
-      };
-      setAllocations((prev) => [newAlloc, ...prev]);
-      toast.success("New allocation added");
-    }
-    setIsDialogOpen(false);
-  };
-
-  const deleteAlloc = (id: string) => {
-    if (confirm("Delete this record?")) {
-      setAllocations((p) => p.filter((a) => a.id !== id));
-      toast.error("Deleted");
+    try {
+      // Prepare data for submission
+      const submitData: any = { ...form };
+      
+      if (editing) {
+        await dispatch(updateEquipmentAllocation({ 
+          id: editing._id, 
+          data: submitData 
+        })).unwrap();
+        toast.success("Equipment allocation updated successfully");
+      } else {
+        await dispatch(createEquipmentAllocation(submitData)).unwrap();
+        toast.success("Equipment allocation created successfully");
+      }
+      setIsDialogOpen(false);
+      loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to save equipment allocation");
     }
   };
 
-  // ----- ANALYTICS -----
-  const totalEquipment = new Set(filtered.map((a) => a.equipmentCode)).size;
-  const totalWorkHours = filtered.reduce((sum, a) => sum + a.workingHours, 0);
-  const totalIdleHours = filtered.reduce((sum, a) => sum + a.idleHours, 0);
-  const totalFuel = filtered.reduce((sum, a) => sum + a.fuelConsumption, 0);
-  const performanceAvg =
-    filtered.length > 0
-      ? (
-          filtered.reduce((sum, a) => sum + a.performanceRating, 0) /
-          filtered.length
-        ).toFixed(2)
-      : "0";
-  const avgUtilization =
-    totalWorkHours + totalIdleHours > 0
-      ? ((totalWorkHours / (totalWorkHours + totalIdleHours)) * 100).toFixed(1)
-      : "0";
+  const deleteAlloc = async (id: string) => {
+    if (!canDelete) {
+      toast.error("You don't have permission to delete equipment allocations");
+      return;
+    }
+    
+    if (confirm("Are you sure you want to delete this equipment allocation?")) {
+      try {
+        await dispatch(deleteEquipmentAllocation(id)).unwrap();
+        toast.success("Equipment allocation deleted successfully");
+        loadData();
+      } catch (error: any) {
+        toast.error(error.message || "Failed to delete equipment allocation");
+      }
+    }
+  };
 
-  // Utilization chart
-  const utilizationData = useMemo(() => {
-    const groups: Record<string, { work: number; idle: number }> = {};
-    filtered.forEach((a) => {
-      if (!groups[a.equipmentCode]) groups[a.equipmentCode] = { work: 0, idle: 0 };
-      groups[a.equipmentCode].work += a.workingHours;
-      groups[a.equipmentCode].idle += a.idleHours;
+  const handleCreateSampleData = async () => {
+    if (!canCreate) {
+      toast.error("You don't have permission to create sample data");
+      return;
+    }
+
+    if (locations.length === 0) {
+      toast.error("Please create locations first");
+      return;
+    }
+
+    try {
+      await dispatch(createSampleData(locations[0]._id)).unwrap();
+      toast.success("Sample data created successfully");
+      loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to create sample data");
+    }
+  };
+
+  // Analytics calculations from table data
+  const totalEquipment = new Set(allocations.map(alloc => alloc.equipmentCode)).size;
+  const totalWorkHours = allocations.reduce((sum, alloc) => sum + (alloc.workingHours || 0), 0);
+  const totalIdleHours = allocations.reduce((sum, alloc) => sum + (alloc.idleHours || 0), 0);
+  const totalFuel = allocations.reduce((sum, alloc) => sum + (alloc.fuelConsumption || 0), 0);
+  const avgUtilization = totalWorkHours + totalIdleHours > 0 
+    ? ((totalWorkHours / (totalWorkHours + totalIdleHours)) * 100).toFixed(1) 
+    : "0";
+
+  // Chart data calculations from table data
+  const utilizationChartData = useMemo(() => {
+    const equipmentMap: Record<string, { work: number; idle: number }> = {};
+    
+    allocations.forEach(alloc => {
+      if (!equipmentMap[alloc.equipmentCode]) {
+        equipmentMap[alloc.equipmentCode] = { work: 0, idle: 0 };
+      }
+      equipmentMap[alloc.equipmentCode].work += alloc.workingHours || 0;
+      equipmentMap[alloc.equipmentCode].idle += alloc.idleHours || 0;
     });
-    return Object.entries(groups).map(([code, data]) => ({
-      equipment: code,
-      utilization:
-        data.work + data.idle > 0
-          ? ((data.work / (data.work + data.idle)) * 100).toFixed(1)
-          : "0",
+
+    return Object.entries(equipmentMap).map(([equipment, data]) => ({
+      equipment,
+      utilization: data.work + data.idle > 0 
+        ? Number(((data.work / (data.work + data.idle)) * 100).toFixed(1))
+        : 0
     }));
-  }, [filtered]);
+  }, [allocations]);
 
-  // Fuel chart
-  const fuelData = useMemo(() => {
-    const map: Record<string, number> = {};
-    filtered.forEach((a) => {
-      map[a.equipmentCode] = (map[a.equipmentCode] || 0) + a.fuelConsumption;
+  const fuelChartData = useMemo(() => {
+    const fuelMap: Record<string, number> = {};
+    
+    allocations.forEach(alloc => {
+      fuelMap[alloc.equipmentCode] = (fuelMap[alloc.equipmentCode] || 0) + (alloc.fuelConsumption || 0);
     });
-    return Object.entries(map).map(([code, value]) => ({
-      equipment: code,
-      fuel: value,
+
+    return Object.entries(fuelMap).map(([equipment, fuel]) => ({
+      equipment,
+      fuel
     }));
-  }, [filtered]);
+  }, [allocations]);
 
-  // Trend chart (by date)
-  const trendData = useMemo(() => {
-    const map: Record<string, { work: number; fuel: number }> = {};
-    filtered.forEach((a) => {
-      if (!map[a.date]) map[a.date] = { work: 0, fuel: 0 };
-      map[a.date].work += a.workingHours;
-      map[a.date].fuel += a.fuelConsumption;
+  const trendChartData = useMemo(() => {
+    const dateMap: Record<string, { work: number; fuel: number }> = {};
+    
+    allocations.forEach(alloc => {
+      const date = new Date(alloc.date).toISOString().split('T')[0];
+      if (!dateMap[date]) {
+        dateMap[date] = { work: 0, fuel: 0 };
+      }
+      dateMap[date].work += alloc.workingHours || 0;
+      dateMap[date].fuel += alloc.fuelConsumption || 0;
     });
-    return Object.entries(map)
+
+    return Object.entries(dateMap)
       .map(([date, data]) => ({ date, ...data }))
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  }, [filtered]);
+  }, [allocations]);
 
-  // ----- RENDER -----
   return (
     <div className="p-6 space-y-8">
       {/* Header */}
@@ -242,14 +365,57 @@ useEffect(() => {
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <BarChart3 className="h-6 w-6" /> Equipment Allocation & Utilisation Dashboard
         </h1>
-        <Button onClick={openAdd}>
-          <Plus className="mr-2 h-4 w-4" /> Add Record
-        </Button>
+        <div className="flex gap-2">
+          {canCreate && (
+            <>
+              <Button variant="outline" onClick={handleCreateSampleData}>
+                Create Sample Data
+              </Button>
+              <Button onClick={openAdd}>
+                <Plus className="mr-2 h-4 w-4" /> Add Record
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
-      {/* Date Range Filter */}
+      {/* Filters */}
       <Card>
         <CardContent className="flex flex-wrap gap-4 items-end p-4">
+          <div className="space-y-1">
+            <Label>Location</Label>
+            <Select 
+              value={selectedLocation} 
+              onValueChange={setSelectedLocation}
+              disabled={isLocationRestricted}
+            >
+              <SelectTrigger className="w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All">All Locations</SelectItem>
+                {locations.map((location) => (
+                  <SelectItem key={location._id} value={location._id}>
+                    {location.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label>Status</Label>
+            <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="Active">Active</SelectItem>
+                <SelectItem value="Completed">Completed</SelectItem>
+                <SelectItem value="Cancelled">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div className="space-y-1">
             <Label>From Date</Label>
             <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
@@ -312,7 +478,7 @@ useEffect(() => {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={utilizationData}>
+              <BarChart data={utilizationChartData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="equipment" />
                 <YAxis />
@@ -329,7 +495,7 @@ useEffect(() => {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={fuelData}>
+              <BarChart data={fuelChartData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="equipment" />
                 <YAxis />
@@ -348,7 +514,7 @@ useEffect(() => {
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
-            <ReLineChart data={trendData}>
+            <ReLineChart data={trendChartData}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="date" />
               <YAxis />
@@ -364,7 +530,7 @@ useEffect(() => {
       {/* Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Allocation Records</CardTitle>
+          <CardTitle>Allocation Records ({pagination.total})</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
@@ -375,36 +541,72 @@ useEffect(() => {
                   <TableHead>Equipment</TableHead>
                   <TableHead>Project</TableHead>
                   <TableHead>Operator</TableHead>
+                  <TableHead>Location</TableHead>
                   <TableHead>Work (hrs)</TableHead>
                   <TableHead>Idle (hrs)</TableHead>
                   <TableHead>Fuel (L)</TableHead>
                   <TableHead>Performance</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((a) => (
-                  <TableRow key={a.id}>
-                    <TableCell>{a.date}</TableCell>
-                    <TableCell>{a.equipmentCode}</TableCell>
-                    <TableCell>{a.projectOrDept}</TableCell>
-                    <TableCell>{a.operator}</TableCell>
-                    <TableCell>{a.workingHours}</TableCell>
-                    <TableCell>{a.idleHours}</TableCell>
-                    <TableCell>{a.fuelConsumption}</TableCell>
-                    <TableCell>{a.performanceRating}/5</TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => openEdit(a)}>
-                          <Edit2 className="w-4 h-4" />
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => deleteAlloc(a.id)}>
-                          <Trash2 className="w-4 h-4 text-red-500" />
-                        </Button>
-                      </div>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={11} className="text-center py-8">
+                      Loading...
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : allocations.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
+                      No equipment allocations found
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  allocations.map((alloc) => (
+                    <TableRow key={alloc._id}>
+                      <TableCell>{new Date(alloc.date).toLocaleDateString()}</TableCell>
+                      <TableCell className="font-medium">{alloc.equipmentCode}</TableCell>
+                      <TableCell>{alloc.projectOrDept}</TableCell>
+                      <TableCell>{alloc.operator}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <MapPin className="h-3 w-3 text-muted-foreground" />
+                          {alloc.location?.name || "N/A"}
+                        </div>
+                      </TableCell>
+                      <TableCell>{alloc.workingHours}</TableCell>
+                      <TableCell>{alloc.idleHours}</TableCell>
+                      <TableCell>{alloc.fuelConsumption}</TableCell>
+                      <TableCell>{alloc.performanceRating}/5</TableCell>
+                      <TableCell>
+                        <Badge 
+                          variant={
+                            alloc.status === 'Active' ? 'default' : 
+                            alloc.status === 'Completed' ? 'secondary' : 'destructive'
+                          }
+                        >
+                          {alloc.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          {canEdit && (
+                            <Button variant="ghost" size="sm" onClick={() => openEdit(alloc)}>
+                              <Edit2 className="w-4 h-4" />
+                            </Button>
+                          )}
+                          {canDelete && (
+                            <Button variant="ghost" size="sm" onClick={() => deleteAlloc(alloc._id)}>
+                              <Trash2 className="w-4 h-4 text-red-500" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </div>
@@ -420,7 +622,7 @@ useEffect(() => {
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Date</Label>
+              <Label>Date *</Label>
               <Input
                 type="date"
                 value={form.date || ""}
@@ -429,13 +631,31 @@ useEffect(() => {
             </div>
             <div className="space-y-2">
               <Label>Equipment Code *</Label>
-              <Input
+              <Select
                 value={form.equipmentCode || ""}
-                onChange={(e) => setForm({ ...form, equipmentCode: e.target.value })}
-              />
+                onValueChange={(value) => {
+                  const equipment = equipments.find(eq => eq.code === value);
+                  setForm({ 
+                    ...form, 
+                    equipmentCode: value,
+                    equipmentName: equipment?.name || ""
+                  });
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select equipment" />
+                </SelectTrigger>
+                <SelectContent>
+                  {equipments.map((equipment) => (
+                    <SelectItem key={equipment._id} value={equipment.code}>
+                      {equipment.code} - {equipment.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
-              <Label>Project / Department</Label>
+              <Label>Project / Department *</Label>
               <Input
                 value={form.projectOrDept || ""}
                 onChange={(e) => setForm({ ...form, projectOrDept: e.target.value })}
@@ -447,6 +667,41 @@ useEffect(() => {
                 value={form.operator || ""}
                 onChange={(e) => setForm({ ...form, operator: e.target.value })}
               />
+            </div>
+            <div className="space-y-2">
+              <Label>Location</Label>
+              <Select
+                value={form.location || ""}
+                onValueChange={(value) => setForm({ ...form, location: value })}
+                disabled={isLocationRestricted}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select location" />
+                </SelectTrigger>
+                <SelectContent>
+                  {locations.map((location) => (
+                    <SelectItem key={location._id} value={location._id}>
+                      {location.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Shift</Label>
+              <Select
+                value={form.shift || "Day"}
+                onValueChange={(value) => setForm({ ...form, shift: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Day">Day</SelectItem>
+                  <SelectItem value="Night">Night</SelectItem>
+                  <SelectItem value="Rotating">Rotating</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>Working Hours</Label>
@@ -482,13 +737,37 @@ useEffect(() => {
                 onChange={(e) => setForm({ ...form, performanceRating: Number(e.target.value) })}
               />
             </div>
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select
+                value={form.status || "Active"}
+                onValueChange={(value) => setForm({ ...form, status: value as any })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Active">Active</SelectItem>
+                  <SelectItem value="Completed">Completed</SelectItem>
+                  <SelectItem value="Cancelled">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2 col-span-2">
+              <Label>Remarks</Label>
+              <Input
+                value={form.remarks || ""}
+                onChange={(e) => setForm({ ...form, remarks: e.target.value })}
+                placeholder="Optional remarks"
+              />
+            </div>
           </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={saveForm}>
+            <Button onClick={saveForm} disabled={loading}>
               <Save className="mr-2 h-4 w-4" /> Save
             </Button>
           </DialogFooter>
@@ -497,388 +776,3 @@ useEffect(() => {
     </div>
   );
 }
-
-
-
-// import React, { useState, useEffect } from 'react';
-// import { Plus, Search, Edit, Trash2 } from 'lucide-react';
-// import { Button } from '../../../components/ui/button';
-// import { Input } from '../../../components/ui/input';
-// import { Card, CardContent, CardHeader } from '../../../components/ui/card';
-// import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../../../components/ui/dialog';
-// import { Label } from '../../../components/ui/label';
-// import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select';
-// import { Textarea } from '../../../components/ui/textarea';
-// import { Badge } from '../../../components/ui/badge';
-// import { useToast } from '../../../hooks/use-toast';
-// import { getFromStorage, saveToStorage, PM_STORAGE_KEYS, generateId } from '../../../utils/plantMachineryStorage';
-// import type { EquipmentAllocation, Equipment } from '../../../types/plantMachinery';
-
-// const EquipmentAllocationPage: React.FC = () => {
-//   const [allocations, setAllocations] = useState<EquipmentAllocation[]>([]);
-//   const [equipment, setEquipment] = useState<Equipment[]>([]);
-//   const [searchTerm, setSearchTerm] = useState('');
-//   const [isDialogOpen, setIsDialogOpen] = useState(false);
-//   const [editingAllocation, setEditingAllocation] = useState<EquipmentAllocation | null>(null);
-//   const { toast } = useToast();
-
-//   const [formData, setFormData] = useState<Partial<EquipmentAllocation>>({
-//     equipmentId: '',
-//     equipmentName: '',
-//     allocationType: 'project',
-//     allocatedTo: '',
-//     operator: '',
-//     shift: 'day',
-//     startDate: '',
-//     endDate: '',
-//     workingHours: 0,
-//     idleHours: 0,
-//     fuelConsumption: 0,
-//     powerConsumption: 0,
-//     meterReading: 0,
-//     status: 'active',
-//     remarks: '',
-//   });
-
-//   useEffect(() => {
-//     loadAllocations();
-//     loadEquipment();
-//   }, []);
-
-//   const loadAllocations = () => {
-//     const data = getFromStorage<EquipmentAllocation>(PM_STORAGE_KEYS.ALLOCATIONS);
-//     setAllocations(data);
-//   };
-
-//   const loadEquipment = () => {
-//     const data = getFromStorage<Equipment>(PM_STORAGE_KEYS.EQUIPMENT);
-//     setEquipment(data.filter(e => e.status === 'operational' || e.status === 'idle'));
-//   };
-
-//   const handleSubmit = (e: React.FormEvent) => {
-//     e.preventDefault();
-
-//     const selectedEquipment = equipment.find(eq => eq.id === formData.equipmentId);
-    
-//     const allocationData: EquipmentAllocation = {
-//       ...formData,
-//       id: editingAllocation?.id || generateId(),
-//       equipmentId: formData.equipmentId!,
-//       equipmentName: selectedEquipment?.name || formData.equipmentName!,
-//       allocationType: formData.allocationType!,
-//       allocatedTo: formData.allocatedTo!,
-//       operator: formData.operator!,
-//       shift: formData.shift!,
-//       startDate: formData.startDate!,
-//       workingHours: formData.workingHours!,
-//       idleHours: formData.idleHours!,
-//       fuelConsumption: formData.fuelConsumption!,
-//       powerConsumption: formData.powerConsumption!,
-//       meterReading: formData.meterReading!,
-//       status: formData.status!,
-//       remarks: formData.remarks!,
-//       createdAt: editingAllocation?.createdAt || new Date().toISOString(),
-//     } as EquipmentAllocation;
-
-//     if (editingAllocation) {
-//       const updated = allocations.map(a => a.id === editingAllocation.id ? allocationData : a);
-//       setAllocations(updated);
-//       saveToStorage(PM_STORAGE_KEYS.ALLOCATIONS, updated);
-//       toast({ title: 'Allocation updated successfully' });
-//     } else {
-//       const updated = [...allocations, allocationData];
-//       setAllocations(updated);
-//       saveToStorage(PM_STORAGE_KEYS.ALLOCATIONS, updated);
-//       toast({ title: 'Equipment allocated successfully' });
-//     }
-
-//     setIsDialogOpen(false);
-//     resetForm();
-//   };
-
-//   const handleEdit = (allocation: EquipmentAllocation) => {
-//     setEditingAllocation(allocation);
-//     setFormData(allocation);
-//     setIsDialogOpen(true);
-//   };
-
-//   const handleDelete = (id: string) => {
-//     if (confirm('Are you sure you want to delete this allocation?')) {
-//       const updated = allocations.filter(a => a.id !== id);
-//       setAllocations(updated);
-//       saveToStorage(PM_STORAGE_KEYS.ALLOCATIONS, updated);
-//       toast({ title: 'Allocation deleted successfully' });
-//     }
-//   };
-
-//   const resetForm = () => {
-//     setEditingAllocation(null);
-//     setFormData({
-//       equipmentId: '',
-//       equipmentName: '',
-//       allocationType: 'project',
-//       allocatedTo: '',
-//       operator: '',
-//       shift: 'day',
-//       startDate: '',
-//       endDate: '',
-//       workingHours: 0,
-//       idleHours: 0,
-//       fuelConsumption: 0,
-//       powerConsumption: 0,
-//       meterReading: 0,
-//       status: 'active',
-//       remarks: '',
-//     });
-//   };
-
-//   const filteredAllocations = allocations.filter(allocation =>
-//     allocation.equipmentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-//     allocation.allocatedTo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-//     allocation.operator.toLowerCase().includes(searchTerm.toLowerCase())
-//   );
-
-//   return (
-//     <div className="p-6 space-y-6">
-//       <div className="flex justify-between items-center">
-//         <div>
-//           <h1 className="text-3xl font-bold">Equipment Allocation</h1>
-//           <p className="text-muted-foreground">Track equipment usage and allocation</p>
-//         </div>
-//         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-//           <DialogTrigger asChild>
-//             <Button onClick={resetForm}>
-//               <Plus className="mr-2 h-4 w-4" />
-//               Allocate Equipment
-//             </Button>
-//           </DialogTrigger>
-//           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-//             <DialogHeader>
-//               <DialogTitle>{editingAllocation ? 'Edit Allocation' : 'Allocate Equipment'}</DialogTitle>
-//             </DialogHeader>
-//             <form onSubmit={handleSubmit} className="space-y-4">
-//               <div className="grid grid-cols-2 gap-4">
-//                 <div className="col-span-2">
-//                   <Label>Equipment *</Label>
-//                   <Select value={formData.equipmentId} onValueChange={(value) => setFormData({ ...formData, equipmentId: value })}>
-//                     <SelectTrigger>
-//                       <SelectValue placeholder="Select equipment" />
-//                     </SelectTrigger>
-//                     <SelectContent>
-//                       {equipment.map(eq => (
-//                         <SelectItem key={eq.id} value={eq.id}>
-//                           {eq.equipmentCode} - {eq.name} ({eq.location})
-//                         </SelectItem>
-//                       ))}
-//                     </SelectContent>
-//                   </Select>
-//                 </div>
-//                 <div>
-//                   <Label>Allocation Type *</Label>
-//                   <Select value={formData.allocationType} onValueChange={(value: any) => setFormData({ ...formData, allocationType: value })}>
-//                     <SelectTrigger>
-//                       <SelectValue />
-//                     </SelectTrigger>
-//                     <SelectContent>
-//                       <SelectItem value="project">Project</SelectItem>
-//                       <SelectItem value="department">Department</SelectItem>
-//                       <SelectItem value="production-line">Production Line</SelectItem>
-//                     </SelectContent>
-//                   </Select>
-//                 </div>
-//                 <div>
-//                   <Label>Allocated To *</Label>
-//                   <Input
-//                     value={formData.allocatedTo}
-//                     onChange={(e) => setFormData({ ...formData, allocatedTo: e.target.value })}
-//                     placeholder="Project/Department name"
-//                     required
-//                   />
-//                 </div>
-//                 <div>
-//                   <Label>Operator *</Label>
-//                   <Input
-//                     value={formData.operator}
-//                     onChange={(e) => setFormData({ ...formData, operator: e.target.value })}
-//                     required
-//                   />
-//                 </div>
-//                 <div>
-//                   <Label>Shift *</Label>
-//                   <Select value={formData.shift} onValueChange={(value: any) => setFormData({ ...formData, shift: value })}>
-//                     <SelectTrigger>
-//                       <SelectValue />
-//                     </SelectTrigger>
-//                     <SelectContent>
-//                       <SelectItem value="day">Day</SelectItem>
-//                       <SelectItem value="night">Night</SelectItem>
-//                       <SelectItem value="rotating">Rotating</SelectItem>
-//                     </SelectContent>
-//                   </Select>
-//                 </div>
-//                 <div>
-//                   <Label>Start Date *</Label>
-//                   <Input
-//                     type="date"
-//                     value={formData.startDate}
-//                     onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-//                     required
-//                   />
-//                 </div>
-//                 <div>
-//                   <Label>End Date</Label>
-//                   <Input
-//                     type="date"
-//                     value={formData.endDate}
-//                     onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-//                   />
-//                 </div>
-//                 <div>
-//                   <Label>Working Hours</Label>
-//                   <Input
-//                     type="number"
-//                     value={formData.workingHours}
-//                     onChange={(e) => setFormData({ ...formData, workingHours: parseFloat(e.target.value) })}
-//                   />
-//                 </div>
-//                 <div>
-//                   <Label>Idle Hours</Label>
-//                   <Input
-//                     type="number"
-//                     value={formData.idleHours}
-//                     onChange={(e) => setFormData({ ...formData, idleHours: parseFloat(e.target.value) })}
-//                   />
-//                 </div>
-//                 <div>
-//                   <Label>Fuel Consumption (L)</Label>
-//                   <Input
-//                     type="number"
-//                     step="0.01"
-//                     value={formData.fuelConsumption}
-//                     onChange={(e) => setFormData({ ...formData, fuelConsumption: parseFloat(e.target.value) })}
-//                   />
-//                 </div>
-//                 <div>
-//                   <Label>Power Consumption (kWh)</Label>
-//                   <Input
-//                     type="number"
-//                     step="0.01"
-//                     value={formData.powerConsumption}
-//                     onChange={(e) => setFormData({ ...formData, powerConsumption: parseFloat(e.target.value) })}
-//                   />
-//                 </div>
-//                 <div>
-//                   <Label>Meter Reading</Label>
-//                   <Input
-//                     type="number"
-//                     value={formData.meterReading}
-//                     onChange={(e) => setFormData({ ...formData, meterReading: parseFloat(e.target.value) })}
-//                   />
-//                 </div>
-//                 <div>
-//                   <Label>Status</Label>
-//                   <Select value={formData.status} onValueChange={(value: any) => setFormData({ ...formData, status: value })}>
-//                     <SelectTrigger>
-//                       <SelectValue />
-//                     </SelectTrigger>
-//                     <SelectContent>
-//                       <SelectItem value="active">Active</SelectItem>
-//                       <SelectItem value="completed">Completed</SelectItem>
-//                       <SelectItem value="cancelled">Cancelled</SelectItem>
-//                     </SelectContent>
-//                   </Select>
-//                 </div>
-//                 <div className="col-span-2">
-//                   <Label>Remarks</Label>
-//                   <Textarea
-//                     value={formData.remarks}
-//                     onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
-//                     rows={3}
-//                   />
-//                 </div>
-//               </div>
-//               <div className="flex justify-end gap-2">
-//                 <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
-//                   Cancel
-//                 </Button>
-//                 <Button type="submit">
-//                   {editingAllocation ? 'Update' : 'Allocate'}
-//                 </Button>
-//               </div>
-//             </form>
-//           </DialogContent>
-//         </Dialog>
-//       </div>
-
-//       <Card>
-//         <CardHeader>
-//           <div className="relative">
-//             <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-//             <Input
-//               placeholder="Search allocations..."
-//               value={searchTerm}
-//               onChange={(e) => setSearchTerm(e.target.value)}
-//               className="pl-10"
-//             />
-//           </div>
-//         </CardHeader>
-//         <CardContent>
-//           <div className="overflow-x-auto">
-//             <table className="w-full">
-//               <thead>
-//                 <tr className="border-b">
-//                   <th className="text-left p-3">Equipment</th>
-//                   <th className="text-left p-3">Type</th>
-//                   <th className="text-left p-3">Allocated To</th>
-//                   <th className="text-left p-3">Operator</th>
-//                   <th className="text-left p-3">Shift</th>
-//                   <th className="text-left p-3">Start Date</th>
-//                   <th className="text-left p-3">Working Hours</th>
-//                   <th className="text-left p-3">Status</th>
-//                   <th className="text-left p-3">Actions</th>
-//                 </tr>
-//               </thead>
-//               <tbody>
-//                 {filteredAllocations.map((allocation) => (
-//                   <tr key={allocation.id} className="border-b hover:bg-muted/50">
-//                     <td className="p-3 font-medium">{allocation.equipmentName}</td>
-//                     <td className="p-3 capitalize">{allocation.allocationType.replace('-', ' ')}</td>
-//                     <td className="p-3">{allocation.allocatedTo}</td>
-//                     <td className="p-3">{allocation.operator}</td>
-//                     <td className="p-3 capitalize">{allocation.shift}</td>
-//                     <td className="p-3">{new Date(allocation.startDate).toLocaleDateString()}</td>
-//                     <td className="p-3">{allocation.workingHours}h</td>
-//                     <td className="p-3">
-//                       <Badge variant={allocation.status === 'active' ? 'default' : 'secondary'}>
-//                         {allocation.status}
-//                       </Badge>
-//                     </td>
-//                     <td className="p-3">
-//                       <div className="flex gap-2">
-//                         <Button size="sm" variant="ghost" onClick={() => handleEdit(allocation)}>
-//                           <Edit className="h-4 w-4" />
-//                         </Button>
-//                         <Button size="sm" variant="ghost" onClick={() => handleDelete(allocation.id)}>
-//                           <Trash2 className="h-4 w-4 text-destructive" />
-//                         </Button>
-//                       </div>
-//                     </td>
-//                   </tr>
-//                 ))}
-//                 {filteredAllocations.length === 0 && (
-//                   <tr>
-//                     <td colSpan={9} className="p-8 text-center text-muted-foreground">
-//                       No allocations found
-//                     </td>
-//                   </tr>
-//                 )}
-//               </tbody>
-//             </table>
-//           </div>
-//         </CardContent>
-//       </Card>
-//     </div>
-//   );
-// };
-
-// export default EquipmentAllocationPage;

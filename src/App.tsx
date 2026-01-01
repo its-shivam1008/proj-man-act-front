@@ -302,7 +302,7 @@ function App() {
                 element={<EquipmentAllocationPage />}
               />
               <Route
-                path="/plant-machinery/Safety"
+                path="/plant-machinery/safety"
                 element={<CalibrationSafetyPage />}
               />
               <Route
