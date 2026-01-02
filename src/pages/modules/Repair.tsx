@@ -1,25 +1,598 @@
-import React, { useState, useEffect } from 'react';
-import { storage, STORAGE_KEYS, ensureInitialized } from '@/lib/storage'; // Adjust path to your storage.ts file
-import Layout from '../../components/Layout';
-import { Wrench, Plus, Clock, CheckCircle, AlertTriangle, XCircle, Search, Filter, Calendar, User, Package, DollarSign, FileText, Settings, Users, BarChart3, Edit, Eye, Trash2, Play, Pause, MapPin, Phone, Mail, Upload, Download, Clipboard, PenTool as Tool, Star, TrendingUp, Activity, X, ShieldAlert } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import { Wrench, Plus, Clock, CheckCircle, XCircle, Search, User, Package, DollarSign, FileText, Settings, Users, BarChart3, Edit, Eye, Trash2, Play, MapPin, Phone, Mail, Download, Clipboard, PenTool as Tool, Star, TrendingUp, Activity, X, ShieldAlert } from 'lucide-react';
 import { usePermission } from '@/hooks/userPermission';
+import { fetchRepairTeams, createRepairTeam, deleteRepairTeam } from '@/redux/slices/repairTeamSlice';
+import { fetchRepairOrders, createRepairOrder, updateRepairOrder, deleteRepairOrder } from '@/redux/slices/repairOrderSlice';
+import { fetchMasterData } from '@/redux/slices/masterDataSlice';
+import { RepairTeam } from '@/types/repair.types';
+import api from '@/utils/axiosApi';
+
+// Function to create sample locations if none exist
+const createSampleLocations = async (dispatch: any) => {
+  try {
+    await api.post('/master/location/sample');
+    // Refresh master data
+    dispatch(fetchMasterData('location') as any);
+  } catch (error) {
+    console.error('Error creating sample locations:', error);
+  }
+};
+
+// RepairOrderForm component moved outside to prevent re-creation on every render
+interface RepairOrderFormProps {
+  isUpdate?: boolean;
+  formData: any;
+  setFormData: React.Dispatch<React.SetStateAction<any>>;
+  onSubmit: (e: React.FormEvent) => void;
+  onCancel: () => void;
+  inventory: any[];
+  filteredRepairTeams: RepairTeam[];
+  allLocations: string[];
+  hasLocations: boolean;
+  dispatch: any;
+}
+
+const RepairOrderForm: React.FC<RepairOrderFormProps> = ({ 
+  isUpdate = false, 
+  formData, 
+  setFormData, 
+  onSubmit, 
+  onCancel,
+  inventory,
+  filteredRepairTeams,
+  allLocations,
+  hasLocations,
+  dispatch
+}) => (
+  <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+    <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 shadow-lg rounded-md bg-white">
+      <div className="mt-3">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-medium text-gray-900">
+            {isUpdate ? 'Update Repair Order' : 'Create New Repair Order'}
+          </h3>
+          <button
+            onClick={onCancel}
+            className="text-gray-400 hover:text-gray-600"
+          >
+            <XCircle className="h-6 w-6" />
+          </button>
+        </div>
+     
+        <form onSubmit={onSubmit} className="space-y-6">
+          {/* Basic Information */}
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <h4 className="text-md font-medium text-gray-900 mb-3">Basic Information</h4>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Product to Repair *
+                </label>
+                <select
+                  value={formData.productId}
+                  onChange={(e) => setFormData(prev => ({ ...prev, productId: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                >
+                  <option value="">Select Product</option>
+                  {inventory.map(item => (
+                    <option key={item.id} value={item.id}>{item.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Quantity *
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={formData.quantity}
+                  onChange={(e) => setFormData(prev => ({ ...prev, quantity: Number(e.target.value) }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Enter quantity"
+                  required
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 mt-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Serial/Lot Number
+                </label>
+                <input
+                  type="text"
+                  value={formData.serialLotNumber}
+                  onChange={(e) => setFormData(prev => ({ ...prev, serialLotNumber: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Enter serial or lot number"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Customer/Department *
+                </label>
+                <input
+                  type="text"
+                  value={formData.customerName}
+                  onChange={(e) => setFormData(prev => ({ ...prev, customerName: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Customer name or internal department"
+                  required
+                />
+              </div>
+            </div>
+          </div>
+          {/* Repair Details */}
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <h4 className="text-md font-medium text-gray-900 mb-3">Repair Details</h4>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Repair Type *
+                </label>
+                <select
+                  value={formData.repairType}
+                  onChange={(e) => setFormData(prev => ({ ...prev, repairType: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                >
+                  <option value="">Select Type</option>
+                  <option value="warranty">In-Warranty</option>
+                  <option value="paid">Out-of-Warranty (Paid)</option>
+                  <option value="internal">Internal</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Priority *
+                </label>
+                <select
+                  value={formData.priority}
+                  onChange={(e) => setFormData(prev => ({ ...prev, priority: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                >
+                  <option value="">Select Priority</option>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Root Cause *
+                </label>
+                <select
+                  value={formData.rootCause}
+                  onChange={(e) => setFormData(prev => ({ ...prev, rootCause: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                >
+                  <option value="">Select Cause</option>
+                  <option value="damage">Physical Damage</option>
+                  <option value="defect">Manufacturing Defect</option>
+                  <option value="misuse">Misuse/Abuse</option>
+                  <option value="unknown">Unknown</option>
+                </select>
+              </div>
+            </div>
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Issue Description *
+              </label>
+              <textarea
+                rows={3}
+                value={formData.issueDescription}
+                onChange={(e) => setFormData(prev => ({ ...prev, issueDescription: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Detailed description of the issue..."
+                required
+              />
+            </div>
+          </div>
+          {/* Assignment & Timeline */}
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <h4 className="text-md font-medium text-gray-900 mb-3">Assignment & Timeline</h4>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Responsible Team *
+                </label>
+                <select
+                  value={formData.teamId}
+                  onChange={(e) => setFormData(prev => ({ ...prev, teamId: e.target.value, technicianId: '' }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                >
+                  <option value="">Select Team</option>
+                  {filteredRepairTeams.map((team: RepairTeam) => (
+                    <option key={team._id} value={team._id}>{team.teamName}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Assigned Technician *
+                </label>
+                <select
+                  value={formData.technicianId}
+                  onChange={(e) => setFormData(prev => ({ ...prev, technicianId: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                >
+                  <option value="">Select Technician</option>
+                  {filteredRepairTeams.flatMap((team: RepairTeam) => team.members).map((member: any) => (
+                    <option key={member.technicianId} value={member.technicianId}>{member.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 mt-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Requested Date *
+                </label>
+                <input
+                  type="date"
+                  value={formData.requestedDate}
+                  onChange={(e) => setFormData(prev => ({ ...prev, requestedDate: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Expected Completion *
+                </label>
+                <input
+                  type="date"
+                  value={formData.expectedCompletion}
+                  onChange={(e) => setFormData(prev => ({ ...prev, expectedCompletion: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Location *
+                </label>
+                <select
+                  value={formData.location}
+                  onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                >
+                  <option value="">Select Location</option>
+                  {hasLocations ? (
+                    allLocations.map(location => (
+                      <option key={location} value={location}>{location}</option>
+                    ))
+                  ) : (
+                    <option value="" disabled>No locations available - Please add locations in Master Data</option>
+                  )}
+                </select>
+                {!hasLocations && (
+                  <div className="mt-2">
+                    <p className="text-sm text-gray-600 mb-2">
+                      No locations found. You can create sample locations to get started.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={createSampleLocations}
+                      className="text-sm bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
+                    >
+                      Create Sample Locations
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          {/* Additional Information */}
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <h4 className="text-md font-medium text-gray-900 mb-3">Additional Information</h4>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Source Document
+                </label>
+                <input
+                  type="text"
+                  value={formData.sourceDocument}
+                  onChange={(e) => setFormData(prev => ({ ...prev, sourceDocument: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Sale order, MO, or PO reference"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Warranty Type
+                </label>
+                <select
+                  value={formData.warrantyType}
+                  onChange={(e) => setFormData(prev => ({ ...prev, warrantyType: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="in-warranty">In-Warranty</option>
+                  <option value="extended">Extended Warranty</option>
+                  <option value="expired">Expired</option>
+                </select>
+              </div>
+            </div>
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Attachments
+              </label>
+              <input
+                type="file"
+                multiple
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+              />
+              <p className="text-xs text-gray-500 mt-1">Upload photos, reports, or documentation</p>
+            </div>
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Notes
+              </label>
+              <textarea
+                rows={2}
+                value={formData.notes}
+                onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Additional notes or special instructions..."
+              />
+            </div>
+            <div className="mt-4 flex items-center">
+              <input
+                type="checkbox"
+                id="chargeable"
+                checked={formData.isChargeable}
+                onChange={(e) => setFormData(prev => ({ ...prev, isChargeable: e.target.checked }))}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <label htmlFor="chargeable" className="ml-2 block text-sm text-gray-700">
+                This repair is chargeable to customer
+              </label>
+            </div>
+          </div>
+          <div className="flex justify-end space-x-3 pt-4">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              {isUpdate ? 'Update Repair Order' : 'Create Repair Order'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+);
+
+// TeamForm component moved outside to prevent re-creation on every render
+interface TeamMember {
+  technicianId: string;
+  name: string;
+  hourlyRate?: number;
+  availability?: 'available' | 'busy' | 'unavailable';
+}
+
+interface TeamFormProps {
+  teamFormData: {
+    teamName: string;
+    teamLead: string;
+    location: string;
+    contactInfo: { email: string; phone: string };
+    members: TeamMember[];
+  };
+  setTeamFormData: React.Dispatch<React.SetStateAction<{
+    teamName: string;
+    teamLead: string;
+    location: string;
+    contactInfo: { email: string; phone: string };
+    members: TeamMember[];
+  }>>;
+  onSubmit: (e: React.FormEvent) => void;
+  onCancel: () => void;
+  allLocations: string[];
+  hasLocations: boolean;
+  dispatch: any;
+}
+
+const TeamForm: React.FC<TeamFormProps> = ({ 
+  teamFormData, 
+  setTeamFormData, 
+  onSubmit, 
+  onCancel, 
+  allLocations, 
+  hasLocations,
+  dispatch
+}) => (
+  <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+    <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 shadow-lg rounded-md bg-white">
+      <div className="mt-3">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-medium text-gray-900">Add New Repair Team</h3>
+          <button
+            onClick={onCancel}
+            className="text-gray-400 hover:text-gray-600"
+          >
+            <X className="h-6 w-6" />
+          </button>
+        </div>
+     
+        <form onSubmit={onSubmit} className="space-y-6">
+          {/* Basic Information */}
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <h4 className="text-md font-medium text-gray-900 mb-3">Basic Information</h4>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Team Name *
+                </label>
+                <input
+                  type="text"
+                  value={teamFormData.teamName}
+                  onChange={(e) => setTeamFormData(prev => ({ ...prev, teamName: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Enter team name"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Team Lead *
+                </label>
+                <input
+                  type="text"
+                  value={teamFormData.teamLead}
+                  onChange={(e) => setTeamFormData(prev => ({ ...prev, teamLead: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Enter team lead name"
+                  required
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 mt-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Location *
+                </label>
+                <select
+                  value={teamFormData.location}
+                  onChange={(e) => setTeamFormData(prev => ({ ...prev, location: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                >
+                  <option value="">Select Location</option>
+                  {hasLocations ? (
+                    allLocations.map(location => (
+                      <option key={location} value={location}>{location}</option>
+                    ))
+                  ) : (
+                    <option value="" disabled>No locations available - Please add locations in Master Data</option>
+                  )}
+                </select>
+                {!hasLocations && (
+                  <div className="mt-2">
+                    <p className="text-sm text-gray-600 mb-2">
+                      No locations found. You can create sample locations to get started.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={createSampleLocations}
+                      className="text-sm bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
+                    >
+                      Create Sample Locations
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email *
+                </label>
+                <input
+                  type="email"
+                  value={teamFormData.contactInfo.email}
+                  onChange={(e) => setTeamFormData(prev => ({ ...prev, contactInfo: { ...prev.contactInfo, email: e.target.value } }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Enter email"
+                  required
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 mt-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Phone
+                </label>
+                <input
+                  type="tel"
+                  value={teamFormData.contactInfo.phone}
+                  onChange={(e) => setTeamFormData(prev => ({ ...prev, contactInfo: { ...prev.contactInfo, phone: e.target.value } }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Enter phone number"
+                />
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end space-x-3 pt-4">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Add Team
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+);
 
 const Repair: React.FC = () => {
-  // Local state for data, loaded from storage
-  const [repairOrdersDetailed, setRepairOrdersDetailed] = useState([]);
-  const [repairTeams, setRepairTeams] = useState([]);
-  const [repairTemplates, setRepairTemplates] = useState([]);
-  const [inventory, setInventory] = useState([]);
+  const dispatch = useDispatch();
+  const { userProfile } = useSelector((state: any) => state.auth);
+  const { data: repairTeams, loading: teamsLoading } = useSelector((state: any) => state.repairTeams);
+  const { data: repairOrders, loading: ordersLoading } = useSelector((state: any) => state.repairOrders);
+  const { locations } = useSelector((state: any) => state.masterData);
+  
+  // Local state for data (keeping existing structure for templates, inventory until migrated)
+  const [repairTemplates, setRepairTemplates] = useState<any[]>([]);
+  const [inventory] = useState<any[]>([]);
 
   const canView = usePermission('repair', 'view');
+  const canCreate = usePermission('repair', 'create');
+  const canDelete = usePermission('repair', 'delete');
 
-  // Form states (unchanged)
+  // Get user's location restriction if any
+  const userLocation = userProfile?.location || userProfile?.allowedLocations?.[0];
+  
+  // Get locations from master data instead of hardcoded values
+  const masterDataLocations = React.useMemo(() => {
+    return locations?.map((loc: any) => loc.name) || [];
+  }, [locations]);
+  
+  // Get unique locations from existing teams and merge with master data
+  const allLocations = React.useMemo(() => {
+    const teamLocations = repairTeams.map((team: RepairTeam) => team.location).filter(Boolean);
+    const combined = [...new Set([...masterDataLocations, ...teamLocations])];
+    return combined;
+  }, [masterDataLocations, repairTeams]);
+
+  // If no locations available, show a fallback message
+  const hasLocations = allLocations.length > 0;
+
+  // Filter teams based on user location restriction
+  const filteredRepairTeams = userLocation 
+    ? repairTeams.filter((team: RepairTeam) => team.location === userLocation)
+    : repairTeams;
+
+  // Form states (updated for location dropdown)
   const [teamFormData, setTeamFormData] = useState({
     teamName: '',
     teamLead: '',
     location: '',
-    workingHours: { start: '09:00', end: '17:00' },
     contactInfo: { email: '', phone: '' },
+    members: [] as TeamMember[],
   });
   const [activeTab, setActiveTab] = useState('dashboard');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -73,54 +646,79 @@ const Repair: React.FC = () => {
   // Template states
   const [showTemplateViewModal, setShowTemplateViewModal] = useState(false);
   const [showTemplateUpdateModal, setShowTemplateUpdateModal] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] = useState(null);
-  const [templateFormData, setTemplateFormData] = useState({
-    templateName: '',
-    productCategory: '',
-    commonIssue: '',
-    estimatedDuration: '',
-    defaultParts: '',
-    isActive: false,
-  });
+  const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
 
-  // Initialize storage and load data on mount
+  // Initialize data on mount
   useEffect(() => {
-    ensureInitialized();
-    setRepairOrdersDetailed(storage.get(STORAGE_KEYS.REPAIR_ORDERS_DETAILED, []));
-    setRepairTeams(storage.get(STORAGE_KEYS.REPAIR_TEAMS, []));
-    setRepairTemplates(storage.get(STORAGE_KEYS.REPAIR_TEMPLATES, []));
-    setInventory(storage.get(STORAGE_KEYS.INVENTORY, [])); // Assuming INVENTORY key; adjust if needed
-  }, []);
+    const initializeData = async () => {
+      try {
+        // Fetch master data locations
+        await dispatch(fetchMasterData('location') as any);
+        
+        // Fetch repair teams from API with location filter if user has restriction
+        await dispatch(fetchRepairTeams(userLocation) as any);
+        
+        // Fetch repair orders from API with location filter if user has restriction
+        await dispatch(fetchRepairOrders({ location: userLocation }) as any);
+      } catch (error) {
+        console.error('Error initializing data:', error);
+      }
+    };
 
-  // Local add/update functions (sync to storage)
-  const addRepairOrderDetailed = (newOrder: any) => {
-    setRepairOrdersDetailed(prev => {
-      const updated = [...prev, newOrder];
-      storage.set(STORAGE_KEYS.REPAIR_ORDERS_DETAILED, updated);
-      return updated;
-    });
-  };
+    initializeData();
+    
+    // Keep existing local storage for other data until they're migrated
+    // setRepairTemplates(storage.get(STORAGE_KEYS.REPAIR_TEMPLATES, []));
+    // setInventory(storage.get(STORAGE_KEYS.INVENTORY, []));
+  }, [dispatch, userLocation]);
 
-  const updateRepairOrderDetailed = (updatedOrder: any) => {
-    setRepairOrdersDetailed(prev => {
-      const updated = prev.map(order => order.id === updatedOrder.id ? updatedOrder : order);
-      storage.set(STORAGE_KEYS.REPAIR_ORDERS_DETAILED, updated);
-      return updated;
-    });
-  };
+  const handleCreateRepairOrder = useCallback(async (orderData: any) => {
+    try {
+      await dispatch(createRepairOrder(orderData) as any);
+    } catch (error) {
+      console.error('Failed to create repair order:', error);
+    }
+  }, [dispatch]);
 
-  const addRepairTeam = (newTeam: any) => {
-    setRepairTeams(prev => {
-      const updated = [...prev, newTeam];
-      storage.set(STORAGE_KEYS.REPAIR_TEAMS, updated);
-      return updated;
-    });
+  const handleUpdateRepairOrder = useCallback(async (id: string, orderData: any) => {
+    try {
+      await dispatch(updateRepairOrder({ id, data: orderData }) as any);
+    } catch (error) {
+      console.error('Failed to update repair order:', error);
+    }
+  }, [dispatch]);
+
+  const handleDeleteRepairOrder = useCallback(async (id: string) => {
+    try {
+      await dispatch(deleteRepairOrder(id) as any);
+    } catch (error) {
+      console.error('Failed to delete repair order:', error);
+    }
+  }, [dispatch]);
+
+  // Repair team functions now use Redux actions
+  const handleCreateTeam = useCallback(async (teamData: Partial<RepairTeam>) => {
+    try {
+      await dispatch(createRepairTeam(teamData) as any);
+      // Refresh teams list with location filter
+      dispatch(fetchRepairTeams(userLocation) as any);
+    } catch (error) {
+      console.error('Failed to create team:', error);
+    }
+  }, [dispatch, userLocation]);
+
+  const handleDeleteTeam = async (id: string) => {
+    try {
+      await dispatch(deleteRepairTeam(id) as any);
+    } catch (error) {
+      console.error('Failed to delete team:', error);
+    }
   };
 
   const addRepairTemplate = (newTemplate: any) => {
     setRepairTemplates(prev => {
       const updated = [...prev, newTemplate];
-      storage.set(STORAGE_KEYS.REPAIR_TEMPLATES, updated);
+      // storage.set(STORAGE_KEYS.REPAIR_TEMPLATES, updated);
       return updated;
     });
   };
@@ -131,7 +729,7 @@ const Repair: React.FC = () => {
 
   useEffect(() => {
     if (selectedOrder && showUpdateForm) {
-      const order = repairOrdersDetailed.find(o => o.id === selectedOrder);
+      const order = repairOrders.find((o: any) => o._id === selectedOrder);
       if (order) {
         setUpdateFormData({
           productId: order.productId || '',
@@ -154,67 +752,77 @@ const Repair: React.FC = () => {
         });
       }
     }
-  }, [selectedOrder, showUpdateForm, repairOrdersDetailed]);
+  }, [selectedOrder, showUpdateForm, repairOrders]);
 
-  const handleCreateSubmit = (e: React.FormEvent) => {
+  const handleCreateSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    const selectedTeam = repairTeams.find(t => t.id === createFormData.teamId);
-    const selectedTechnician = selectedTeam?.members.find(m => m.technicianId === createFormData.technicianId);
+    const selectedTeam = filteredRepairTeams.find((t: RepairTeam) => t._id === createFormData.teamId);
+    const selectedTechnician = selectedTeam?.members.find((m: any) => m.technicianId === createFormData.technicianId);
+    
     const newOrder = {
       ...createFormData,
-      id: `RO-${Date.now()}`,
       status: 'draft' as const,
-      createdDate: new Date().toISOString().split('T')[0],
       assignedTechnician: selectedTechnician?.name || '',
-      teamId: createFormData.teamId,
-      technicianId: createFormData.technicianId,
-      totalCost: 0,
-      partsCost: 0,
-      laborCost: 0,
+      // Remove local ID generation - let backend handle it
     };
-    addRepairOrderDetailed(newOrder);
-    setShowCreateForm(false);
-    setCreateFormData({
-      productId: '',
-      quantity: 1,
-      serialLotNumber: '',
-      customerName: '',
-      repairType: '',
-      priority: '',
-      rootCause: '',
-      issueDescription: '',
-      teamId: '',
-      technicianId: '',
-      requestedDate: '',
-      expectedCompletion: '',
-      location: '',
-      sourceDocument: '',
-      warrantyType: 'in-warranty',
-      notes: '',
-      isChargeable: false,
-    });
-  };
+    
+    try {
+      await handleCreateRepairOrder(newOrder);
+      setShowCreateForm(false);
+      setCreateFormData({
+        productId: '',
+        quantity: 1,
+        serialLotNumber: '',
+        customerName: '',
+        repairType: '',
+        priority: '',
+        rootCause: '',
+        issueDescription: '',
+        teamId: '',
+        technicianId: '',
+        requestedDate: '',
+        expectedCompletion: '',
+        location: '',
+        sourceDocument: '',
+        warrantyType: 'in-warranty',
+        notes: '',
+        isChargeable: false,
+      });
+    } catch (error) {
+      console.error('Failed to create repair order:', error);
+    }
+  }, [createFormData, filteredRepairTeams, handleCreateRepairOrder]);
 
-  const handleUpdateSubmit = (e: React.FormEvent) => {
+  const handleUpdateSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedOrder) return;
-    const selectedTeam = repairTeams.find(t => t.id === updateFormData.teamId);
-    const selectedTechnician = selectedTeam?.members.find(m => m.technicianId === updateFormData.technicianId);
+    
+    const selectedTeam = filteredRepairTeams.find((t: RepairTeam) => t._id === updateFormData.teamId);
+    const selectedTechnician = selectedTeam?.members.find((m: any) => m.technicianId === updateFormData.technicianId);
+    
     const updatedOrder = {
       ...updateFormData,
-      id: selectedOrder,
-      assignedTechnician: selectedTechnician?.name || updateFormData.assignedTechnician || '',
+      assignedTechnician: selectedTechnician?.name || (updateFormData as any).assignedTechnician || '',
     };
-    updateRepairOrderDetailed(updatedOrder);
+    
+    try {
+      await handleUpdateRepairOrder(selectedOrder, updatedOrder);
+      setShowUpdateForm(false);
+      setSelectedOrder(null);
+    } catch (error) {
+      console.error('Failed to update repair order:', error);
+    }
+  }, [selectedOrder, updateFormData, filteredRepairTeams, handleUpdateRepairOrder]);
+
+  const handleCancelCreateForm = useCallback(() => {
+    setShowCreateForm(false);
+  }, []);
+
+  const handleCancelUpdateForm = useCallback(() => {
     setShowUpdateForm(false);
     setSelectedOrder(null);
-  };
+  }, []);
 
-  const handleTechnicianChange = (value: string, formSetter: React.Dispatch<React.SetStateAction<any>>) => {
-    const selectedTeam = repairTeams.find(t => t.id === formSetter.teamId || createFormData.teamId); // Approximate, better to pass current
-    const selectedTechnician = selectedTeam?.members.find(m => m.technicianId === value);
-    formSetter(prev => ({ ...prev, technicianId: value, assignedTechnician: selectedTechnician?.name || '' }));
-  };
   // Note: For simplicity, handleTechnicianChange is approximate; in real, use callback or separate handlers
   // Template handlers
   const handleCreateTemplate = (e: React.FormEvent) => {
@@ -231,14 +839,6 @@ const Repair: React.FC = () => {
     };
     addRepairTemplate(newTemplate);
     setShowTemplateForm(false);
-    setTemplateFormData({
-      templateName: '',
-      productCategory: '',
-      commonIssue: '',
-      estimatedDuration: '',
-      defaultParts: '',
-      isActive: false,
-    });
   };
   const handleUpdateTemplate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -254,9 +854,9 @@ const Repair: React.FC = () => {
       isActive: (formData.get('isActive') as string) === 'on',
     };
     // Use storage.push for upsert (update if ID exists)
-    storage.push(STORAGE_KEYS.REPAIR_TEMPLATES, updatedTemplate);
+    // storage.push(STORAGE_KEYS.REPAIR_TEMPLATES, updatedTemplate);
     // Reload templates to reflect update
-    setRepairTemplates(storage.get(STORAGE_KEYS.REPAIR_TEMPLATES, []));
+    setRepairTemplates(prev => prev.map(t => t.id === updatedTemplate.id ? updatedTemplate : t));
     setShowTemplateUpdateModal(false);
     setSelectedTemplate(null);
   };
@@ -266,14 +866,6 @@ const Repair: React.FC = () => {
   };
   const openTemplateUpdateModal = (template: any) => {
     setSelectedTemplate(template);
-    setTemplateFormData({
-      templateName: template.templateName || '',
-      productCategory: template.productCategory || '',
-      commonIssue: template.commonIssue || '',
-      estimatedDuration: template.estimatedDuration?.toString() || '',
-      defaultParts: template.defaultParts?.join(', ') || '',
-      isActive: template.isActive || false,
-    });
     setShowTemplateUpdateModal(true);
   };
   const closeTemplateModal = (setter: React.Dispatch<React.SetStateAction<boolean>>) => {
@@ -290,11 +882,11 @@ const Repair: React.FC = () => {
     { id: 'reports', name: 'Reports & Analytics', icon: TrendingUp },
     { id: 'settings', name: 'Settings', icon: Settings }
   ];
-  const filteredOrders = repairOrdersDetailed.filter(order => {
+  const filteredOrders = repairOrders.filter((order: any) => {
     const product = inventory.find(item => item.id === order.productId);
     const matchesSearch = product?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          order.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         order.id.toLowerCase().includes(searchTerm.toLowerCase());
+                         order._id.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
     const matchesType = typeFilter === 'all' || order.repairType === typeFilter;
     const matchesPriority = priorityFilter === 'all' || order.priority === priorityFilter;
@@ -360,328 +952,7 @@ const Repair: React.FC = () => {
         return null;
     }
   };
-  const RepairOrderForm = ({ isUpdate = false, formData, setFormData, onSubmit, onCancel }: {
-    isUpdate?: boolean;
-    formData: any;
-    setFormData: React.Dispatch<React.SetStateAction<any>>;
-    onSubmit: (e: React.FormEvent) => void;
-    onCancel: () => void;
-  }) => (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 shadow-lg rounded-md bg-white">
-        <div className="mt-3">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-medium text-gray-900">
-              {isUpdate ? 'Update Repair Order' : 'Create New Repair Order'}
-            </h3>
-            <button
-              onClick={onCancel}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              <XCircle className="h-6 w-6" />
-            </button>
-          </div>
-       
-          <form onSubmit={onSubmit} className="space-y-6">
-            {/* Basic Information */}
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h4 className="text-md font-medium text-gray-900 mb-3">Basic Information</h4>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Product to Repair *
-                  </label>
-                  <select
-                    value={formData.productId}
-                    onChange={(e) => setFormData(prev => ({ ...prev, productId: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
-                  >
-                    <option value="">Select Product</option>
-                    {inventory.map(item => (
-                      <option key={item.id} value={item.id}>{item.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Quantity *
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={formData.quantity}
-                    onChange={(e) => setFormData(prev => ({ ...prev, quantity: Number(e.target.value) }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Enter quantity"
-                    required
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 mt-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Serial/Lot Number
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.serialLotNumber}
-                    onChange={(e) => setFormData(prev => ({ ...prev, serialLotNumber: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Enter serial or lot number"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Customer/Department *
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.customerName}
-                    onChange={(e) => setFormData(prev => ({ ...prev, customerName: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Customer name or internal department"
-                    required
-                  />
-                </div>
-              </div>
-            </div>
-            {/* Repair Details */}
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h4 className="text-md font-medium text-gray-900 mb-3">Repair Details</h4>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Repair Type *
-                  </label>
-                  <select
-                    value={formData.repairType}
-                    onChange={(e) => setFormData(prev => ({ ...prev, repairType: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
-                  >
-                    <option value="">Select Type</option>
-                    <option value="warranty">In-Warranty</option>
-                    <option value="paid">Out-of-Warranty (Paid)</option>
-                    <option value="internal">Internal</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Priority *
-                  </label>
-                  <select
-                    value={formData.priority}
-                    onChange={(e) => setFormData(prev => ({ ...prev, priority: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
-                  >
-                    <option value="">Select Priority</option>
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Root Cause *
-                  </label>
-                  <select
-                    value={formData.rootCause}
-                    onChange={(e) => setFormData(prev => ({ ...prev, rootCause: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
-                  >
-                    <option value="">Select Cause</option>
-                    <option value="damage">Physical Damage</option>
-                    <option value="defect">Manufacturing Defect</option>
-                    <option value="misuse">Misuse/Abuse</option>
-                    <option value="unknown">Unknown</option>
-                  </select>
-                </div>
-              </div>
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Issue Description *
-                </label>
-                <textarea
-                  rows={3}
-                  value={formData.issueDescription}
-                  onChange={(e) => setFormData(prev => ({ ...prev, issueDescription: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Detailed description of the issue..."
-                  required
-                />
-              </div>
-            </div>
-            {/* Assignment & Timeline */}
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h4 className="text-md font-medium text-gray-900 mb-3">Assignment & Timeline</h4>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Responsible Team *
-                  </label>
-                  <select
-                    value={formData.teamId}
-                    onChange={(e) => setFormData(prev => ({ ...prev, teamId: e.target.value, technicianId: '' }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
-                  >
-                    <option value="">Select Team</option>
-                    {repairTeams.map(team => (
-                      <option key={team.id} value={team.id}>{team.teamName}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Assigned Technician *
-                  </label>
-                  <select
-                    value={formData.technicianId}
-                    onChange={(e) => setFormData(prev => ({ ...prev, technicianId: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
-                  >
-                    <option value="">Select Technician</option>
-                    {repairTeams.flatMap(team => team.members).map(member => (
-                      <option key={member.technicianId} value={member.technicianId}>{member.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 mt-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Requested Date *
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.requestedDate}
-                    onChange={(e) => setFormData(prev => ({ ...prev, requestedDate: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Expected Completion *
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.expectedCompletion}
-                    onChange={(e) => setFormData(prev => ({ ...prev, expectedCompletion: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Location *
-                  </label>
-                  <select
-                    value={formData.location}
-                    onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
-                  >
-                    <option value="">Select Location</option>
-                    <option value="Repair Center A">Repair Center A</option>
-                    <option value="Repair Center B">Repair Center B</option>
-                    <option value="Customer Site">Customer Site</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-            {/* Additional Information */}
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h4 className="text-md font-medium text-gray-900 mb-3">Additional Information</h4>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Source Document
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.sourceDocument}
-                    onChange={(e) => setFormData(prev => ({ ...prev, sourceDocument: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Sale order, MO, or PO reference"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Warranty Type
-                  </label>
-                  <select
-                    value={formData.warrantyType}
-                    onChange={(e) => setFormData(prev => ({ ...prev, warrantyType: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="in-warranty">In-Warranty</option>
-                    <option value="extended">Extended Warranty</option>
-                    <option value="expired">Expired</option>
-                  </select>
-                </div>
-              </div>
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Attachments
-                </label>
-                <input
-                  type="file"
-                  multiple
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                />
-                <p className="text-xs text-gray-500 mt-1">Upload photos, reports, or documentation</p>
-              </div>
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Notes
-                </label>
-                <textarea
-                  rows={2}
-                  value={formData.notes}
-                  onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Additional notes or special instructions..."
-                />
-              </div>
-              <div className="mt-4 flex items-center">
-                <input
-                  type="checkbox"
-                  id="chargeable"
-                  checked={formData.isChargeable}
-                  onChange={(e) => setFormData(prev => ({ ...prev, isChargeable: e.target.checked }))}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <label htmlFor="chargeable" className="ml-2 text-sm text-gray-700">
-                  This repair is chargeable to customer
-                </label>
-              </div>
-            </div>
-            <div className="flex justify-end space-x-3 pt-4">
-              <button
-                type="button"
-                onClick={onCancel}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                {isUpdate ? 'Update Repair Order' : 'Create Repair Order'}
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-  );
+
   const renderDashboard = () => (
     <div className="space-y-6">
       {/* Stats Cards */}
@@ -694,7 +965,7 @@ const Repair: React.FC = () => {
               </div>
               <div className="ml-5">
                 <p className="text-sm font-medium text-gray-500">Total Orders</p>
-                <p className="text-2xl font-semibold text-gray-900">{repairOrdersDetailed.length}</p>
+                <p className="text-2xl font-semibold text-gray-900">{repairOrders.length}</p>
               </div>
             </div>
           </div>
@@ -708,7 +979,7 @@ const Repair: React.FC = () => {
               <div className="ml-5">
                 <p className="text-sm font-medium text-gray-500">Under Repair</p>
                 <p className="text-2xl font-semibold text-gray-900">
-                  {repairOrdersDetailed.filter(order => order.status === 'under-repair').length}
+                  {repairOrders.filter((order: any) => order.status === 'under-repair').length}
                 </p>
               </div>
             </div>
@@ -723,7 +994,7 @@ const Repair: React.FC = () => {
               <div className="ml-5">
                 <p className="text-sm font-medium text-gray-500">Completed</p>
                 <p className="text-2xl font-semibold text-gray-900">
-                  {repairOrdersDetailed.filter(order => order.status === 'done').length}
+                  {repairOrders.filter((order: any) => order.status === 'done').length}
                 </p>
               </div>
             </div>
@@ -738,7 +1009,7 @@ const Repair: React.FC = () => {
               <div className="ml-5">
                 <p className="text-sm font-medium text-gray-500">Total Revenue</p>
                 <p className="text-2xl font-semibold text-gray-900">
-                  ${repairOrdersDetailed.reduce((sum, order) => sum + order.totalCost, 0).toLocaleString()}
+                  ${repairOrders.reduce((sum: number, order: any) => sum + (order.totalCost || 0), 0).toLocaleString()}
                 </p>
               </div>
             </div>
@@ -785,7 +1056,7 @@ const Repair: React.FC = () => {
           <h3 className="text-lg font-medium text-gray-900">Recent Repair Activity</h3>
         </div>
         <div className="divide-y divide-gray-200">
-          {repairOrdersDetailed.slice(0, 5).map((order) => {
+          {repairOrders.slice(0, 5).map((order: any) => {
             const product = inventory.find(item => item.id === order.productId);
             return (
               <div key={order.id} className="px-6 py-4 flex items-center justify-between">
@@ -815,8 +1086,7 @@ const Repair: React.FC = () => {
   );
   const ViewRepairOrderModal = ({ order, onClose }: { order: any; onClose: () => void }) => {
     const product = inventory.find((item) => item.id === order.productId);
-    const team = repairTeams.find((t) => t.id === order.teamId);
-    const technician = team?.members.find((m) => m.technicianId === order.technicianId);
+    const team = filteredRepairTeams.find((t: RepairTeam) => t._id === order.teamId);
     if (!order) return null;
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
@@ -1193,7 +1463,7 @@ const Repair: React.FC = () => {
       {/* View Modal */}
       {showViewModal && selectedOrder && (
         <ViewRepairOrderModal
-          order={repairOrdersDetailed.find((o) => o.id === selectedOrder)}
+          order={repairOrders.find((o: any) => o._id === selectedOrder)}
           onClose={() => {
             setShowViewModal(false);
             setSelectedOrder(null);
@@ -1202,231 +1472,155 @@ const Repair: React.FC = () => {
       )}
     </div>
   );
-  const handleAddTeamSubmit = (e: React.FormEvent) => {
+  const handleCancelTeamForm = useCallback(() => {
+    setShowTeamForm(false);
+  }, []);
+
+  const handleAddTeamSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (teamFormData.teamName.trim()) {
       const newTeam = {
-        id: `TEAM-${Date.now()}`,
         teamName: teamFormData.teamName,
         teamLead: teamFormData.teamLead,
         location: teamFormData.location,
-        workingHours: teamFormData.workingHours,
         contactInfo: teamFormData.contactInfo,
         members: [],
       };
-      addRepairTeam(newTeam);
-      setShowTeamForm(false);
-      setTeamFormData({
-        teamName: '',
-        teamLead: '',
-        location: '',
-        workingHours: { start: '09:00', end: '17:00' },
-        contactInfo: { email: '', phone: '' },
-      });
+      
+      try {
+        await handleCreateTeam(newTeam);
+        setShowTeamForm(false);
+        setTeamFormData({
+          teamName: '',
+          teamLead: '',
+          location: '',
+          contactInfo: { email: '', phone: '' },
+          members: [],
+        });
+      } catch (error) {
+        console.error('Failed to create team:', error);
+      }
     }
-  };
-  const TeamForm = () => (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 shadow-lg rounded-md bg-white">
-        <div className="mt-3">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-medium text-gray-900">Add New Repair Team</h3>
-            <button
-              onClick={() => setShowTeamForm(false)}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              <X className="h-6 w-6" />
-            </button>
-          </div>
-       
-          <form onSubmit={handleAddTeamSubmit} className="space-y-6">
-            {/* Basic Information */}
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h4 className="text-md font-medium text-gray-900 mb-3">Basic Information</h4>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Team Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={teamFormData.teamName}
-                    onChange={(e) => setTeamFormData(prev => ({ ...prev, teamName: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Enter team name"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Team Lead *
-                  </label>
-                  <input
-                    type="text"
-                    value={teamFormData.teamLead}
-                    onChange={(e) => setTeamFormData(prev => ({ ...prev, teamLead: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Enter team lead name"
-                    required
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 mt-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Location *
-                  </label>
-                  <input
-                    type="text"
-                    value={teamFormData.location}
-                    onChange={(e) => setTeamFormData(prev => ({ ...prev, location: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Enter location"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Email *
-                  </label>
-                  <input
-                    type="email"
-                    value={teamFormData.contactInfo.email}
-                    onChange={(e) => setTeamFormData(prev => ({ ...prev, contactInfo: { ...prev.contactInfo, email: e.target.value } }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Enter email"
-                    required
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 mt-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Phone
-                  </label>
-                  <input
-                    type="tel"
-                    value={teamFormData.contactInfo.phone}
-                    onChange={(e) => setTeamFormData(prev => ({ ...prev, contactInfo: { ...prev.contactInfo, phone: e.target.value } }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Enter phone number"
-                  />
-                </div>
-              </div>
-            </div>
-            {/* Working Hours */}
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h4 className="text-md font-medium text-gray-900 mb-3">Working Hours</h4>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Start Time
-                  </label>
-                  <input
-                    type="time"
-                    value={teamFormData.workingHours.start}
-                    onChange={(e) => setTeamFormData(prev => ({ ...prev, workingHours: { ...prev.workingHours, start: e.target.value } }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    End Time
-                  </label>
-                  <input
-                    type="time"
-                    value={teamFormData.workingHours.end}
-                    onChange={(e) => setTeamFormData(prev => ({ ...prev, workingHours: { ...prev.workingHours, end: e.target.value } }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="flex justify-end space-x-3 pt-4">
-              <button
-                type="button"
-                onClick={() => setShowTeamForm(false)}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Add Team
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-  );
+  }, [teamFormData, handleCreateTeam]);
+
   const renderTeams = () => (
     <div className="space-y-6">
       {/* Teams Overview */}
       <div className="bg-white shadow rounded-lg">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <h3 className="text-lg font-medium text-gray-900">Repair Teams</h3>
-          <button
-            onClick={() => setShowTeamForm(true)}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Add Team
-          </button>
+          {canCreate && (
+            <button
+              onClick={() => setShowTeamForm(true)}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add Team
+            </button>
+          )}
         </div>
         <div className="grid grid-cols-1 gap-6 p-6 sm:grid-cols-2 lg:grid-cols-3">
-          {repairTeams.map((team) => (
-            <div key={team.id} className="border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="text-lg font-medium text-gray-900">{team.teamName}</h4>
-                <span className="text-sm text-gray-500">{team.members.length} members</span>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center text-sm text-gray-600">
-                  <User className="h-4 w-4 mr-2" />
-                  Lead: {team.teamLead}
-                </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <MapPin className="h-4 w-4 mr-2" />
-                  Location: {team.location}
-                </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <Clock className="h-4 w-4 mr-2" />
-                  Hours: {team.workingHours.start} - {team.workingHours.end}
-                </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <Mail className="h-4 w-4 mr-2" />
-                  {team.contactInfo.email}
-                </div>
-              </div>
-              <div className="mt-4">
-                <h5 className="text-sm font-medium text-gray-700 mb-2">Team Members:</h5>
-                <div className="space-y-1">
-                  {team.members.map((member) => (
-                    <div key={member.technicianId} className="flex items-center justify-between text-sm">
-                      <div>
-                        <span className="text-gray-900">{member.name}</span>
-                        <div className="text-xs text-gray-500">${member.hourlyRate}/hr</div>
-                      </div>
-                      <span className={`px-2 py-1 text-xs rounded-full ${
-                        member.availability === 'available' ? 'bg-green-100 text-green-800' :
-                        member.availability === 'busy' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-red-100 text-red-800'
-                      }`}>
-                        {member.availability}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+          {teamsLoading ? (
+            <div className="col-span-full text-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+              <p className="mt-2 text-gray-500">Loading teams...</p>
             </div>
-          ))}
+          ) : filteredRepairTeams.length === 0 ? (
+            <div className="col-span-full text-center py-8">
+              <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-500">No repair teams found</p>
+              {canCreate && (
+                <button
+                  onClick={() => setShowTeamForm(true)}
+                  className="mt-2 text-blue-600 hover:text-blue-800"
+                >
+                  Create your first team
+                </button>
+              )}
+            </div>
+          ) : (
+            filteredRepairTeams.map((team: RepairTeam) => (
+              <div key={team._id} className="border border-gray-200 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-lg font-medium text-gray-900">{team.teamName}</h4>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm text-gray-500">{team.members?.length || 0} members</span>
+                    {canDelete && (
+                      <button
+                        onClick={() => handleDeleteTeam(team._id)}
+                        className="text-red-600 hover:text-red-900"
+                        title="Delete Team"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center text-sm text-gray-600">
+                    <User className="h-4 w-4 mr-2" />
+                    Lead: {team.teamLead}
+                  </div>
+                  <div className="flex items-center text-sm text-gray-600">
+                    <MapPin className="h-4 w-4 mr-2" />
+                    Location: {team.location}
+                  </div>
+                  <div className="flex items-center text-sm text-gray-600">
+                    <Mail className="h-4 w-4 mr-2" />
+                    {team.contactInfo.email}
+                  </div>
+                  {team.contactInfo.phone && (
+                    <div className="flex items-center text-sm text-gray-600">
+                      <Phone className="h-4 w-4 mr-2" />
+                      {team.contactInfo.phone}
+                    </div>
+                  )}
+                </div>
+                <div className="mt-4">
+                  <h5 className="text-sm font-medium text-gray-700 mb-2">Team Members:</h5>
+                  <div className="space-y-1">
+                    {team.members && team.members.length > 0 ? (
+                      team.members.map((member) => (
+                        <div key={member.technicianId} className="flex items-center justify-between text-sm">
+                          <div>
+                            <span className="text-gray-900">{member.name}</span>
+                            {member.hourlyRate && (
+                              <div className="text-xs text-gray-500">${member.hourlyRate}/hr</div>
+                            )}
+                          </div>
+                          {member.availability && (
+                            <span className={`px-2 py-1 text-xs rounded-full ${
+                              member.availability === 'available' ? 'bg-green-100 text-green-800' :
+                              member.availability === 'busy' ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-red-100 text-red-800'
+                            }`}>
+                              {member.availability}
+                            </span>
+                          )}
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-xs text-gray-500">No members assigned</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
       {/* Team Form Modal */}
-      {showTeamForm && <TeamForm />}
+      {showTeamForm && (
+        <TeamForm 
+          teamFormData={teamFormData}
+          setTeamFormData={setTeamFormData}
+          onSubmit={handleAddTeamSubmit}
+          onCancel={handleCancelTeamForm}
+          allLocations={allLocations}
+          hasLocations={hasLocations}
+          dispatch={dispatch}
+        />
+      )}
     </div>
   );
   // Template Modal Components
@@ -1448,7 +1642,7 @@ const Repair: React.FC = () => {
         </div>
       </div>
     ) : null;
-  const TemplateForm = ({ initialData = {}, isView = false, onSubmit , onClose}: { initialData?: any; isView?: boolean; onSubmit: (e: React.FormEvent) => void }) => (
+  const TemplateForm = ({ initialData = {}, isView = false, onSubmit, onClose }: { initialData?: any; isView?: boolean; onSubmit: (e: React.FormEvent) => void; onClose: () => void }) => (
     <form onSubmit={onSubmit} className="space-y-4">
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Template Name</label>
@@ -1651,21 +1845,21 @@ const Repair: React.FC = () => {
         onClose={() => closeTemplateModal(setShowTemplateForm)}
         title="Create Repair Template"
       >
-        <TemplateForm onSubmit={handleCreateTemplate} />
+        <TemplateForm onSubmit={handleCreateTemplate} onClose={() => closeTemplateModal(setShowTemplateForm)} />
       </TemplateModal>
       <TemplateModal
         isOpen={showTemplateViewModal}
         onClose={() => closeTemplateModal(setShowTemplateViewModal)}
         title={`View Template: ${selectedTemplate?.templateName || ''}`}
       >
-        <TemplateForm initialData={selectedTemplate || {}} isView={true} />
+        <TemplateForm initialData={selectedTemplate || {}} isView={true} onSubmit={() => {}} onClose={() => closeTemplateModal(setShowTemplateViewModal)} />
       </TemplateModal>
       <TemplateModal
         isOpen={showTemplateUpdateModal}
         onClose={() => closeTemplateModal(setShowTemplateUpdateModal)}
         title={`Update Template: ${selectedTemplate?.templateName || ''}`}
       >
-        <TemplateForm initialData={selectedTemplate || {}} onSubmit={handleUpdateTemplate} />
+        <TemplateForm initialData={selectedTemplate || {}} onSubmit={handleUpdateTemplate} onClose={() => closeTemplateModal(setShowTemplateUpdateModal)} />
       </TemplateModal>
     </div>
   );
@@ -1731,19 +1925,19 @@ const Repair: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">Warranty</span>
                   <span className="text-sm font-medium text-gray-900">
-                    {repairOrdersDetailed.filter(r => r.repairType === 'warranty').length}
+                    {repairOrders.filter((r: any) => r.repairType === 'warranty').length}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">Paid</span>
                   <span className="text-sm font-medium text-gray-900">
-                    {repairOrdersDetailed.filter(r => r.repairType === 'paid').length}
+                    {repairOrders.filter((r: any) => r.repairType === 'paid').length}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">Internal</span>
                   <span className="text-sm font-medium text-gray-900">
-                    {repairOrdersDetailed.filter(r => r.repairType === 'internal').length}
+                    {repairOrders.filter((r: any) => r.repairType === 'internal').length}
                   </span>
                 </div>
               </div>
@@ -1754,19 +1948,19 @@ const Repair: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">Total Parts Cost</span>
                   <span className="text-sm font-medium text-gray-900">
-                    ${repairOrdersDetailed.reduce((sum, r) => sum + r.partsCost, 0).toFixed(2)}
+                    ${repairOrders.reduce((sum: number, r: any) => sum + (r.partsCost || 0), 0).toFixed(2)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">Total Labor Cost</span>
                   <span className="text-sm font-medium text-gray-900">
-                    ${repairOrdersDetailed.reduce((sum, r) => sum + r.laborCost, 0).toFixed(2)}
+                    ${repairOrders.reduce((sum: number, r: any) => sum + (r.laborCost || 0), 0).toFixed(2)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">Average Repair Cost</span>
                   <span className="text-sm font-medium text-gray-900">
-                    ${(repairOrdersDetailed.reduce((sum, r) => sum + r.totalCost, 0) / repairOrdersDetailed.length || 0).toFixed(2)}
+                    ${(repairOrders.reduce((sum: number, r: any) => sum + (r.totalCost || 0), 0) / repairOrders.length || 0).toFixed(2)}
                   </span>
                 </div>
               </div>
@@ -1952,7 +2146,12 @@ const Repair: React.FC = () => {
             formData={createFormData}
             setFormData={setCreateFormData}
             onSubmit={handleCreateSubmit}
-            onCancel={() => setShowCreateForm(false)}
+            onCancel={handleCancelCreateForm}
+            inventory={inventory}
+            filteredRepairTeams={filteredRepairTeams}
+            allLocations={allLocations}
+            hasLocations={hasLocations}
+            dispatch={dispatch}
           />
         )}
         {showUpdateForm && (
@@ -1961,10 +2160,12 @@ const Repair: React.FC = () => {
             formData={updateFormData}
             setFormData={setUpdateFormData}
             onSubmit={handleUpdateSubmit}
-            onCancel={() => {
-              setShowUpdateForm(false);
-              setSelectedOrder(null);
-            }}
+            onCancel={handleCancelUpdateForm}
+            inventory={inventory}
+            filteredRepairTeams={filteredRepairTeams}
+            allLocations={allLocations}
+            hasLocations={hasLocations}
+            dispatch={dispatch}
           />
         )}
       </div>

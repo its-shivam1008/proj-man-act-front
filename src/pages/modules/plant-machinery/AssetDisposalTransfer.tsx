@@ -1,17 +1,22 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { v4 as uuidv4 } from "uuid";
+import { useEffect, useMemo, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { AppDispatch, RootState } from "@/redux/store";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
+import { useDebounce } from "@/hooks/useDebounce";
+import { usePermission } from "@/hooks/userPermission";
+import { BASE_URL } from "@/utils/constants";
+
 import {
-    ArrowRightCircle,
     Trash2,
     Save,
     Edit2,
     DownloadCloud,
-    UploadCloud,
     Archive,
-   MousePointerClick  ,
-    FileText,
+    MousePointerClick,
+    ChevronLeft,
+    ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,206 +37,305 @@ import {
     TableBody,
     TableCell,
 } from "@/components/ui/table";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
-import { storage, STORAGE_KEYS } from "@/lib/storage";
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from "recharts";
 
 /* -------------------------
    Types
 --------------------------*/
-type ActionType = "TRANSFER" | "DISPOSAL" | "WRITE_OFF" | "ARCHIVE";
-type DisposalMethod = "Scrap" | "Resale" | "Donation" | "Other";
+type ActionType = "Transfer" | "Disposal";
 
 interface AssetDisposalRecord {
-    id: string;
-    assetId: string; // equipment_master code or id
+    _id: string;
+    organisationId: string;
+    assetId: string;
     assetName?: string;
     action: ActionType;
-    fromLocation?: string;
-    toLocation?: string; // for transfer
-    disposalMethod?: DisposalMethod;
-    disposalDate: string;
-    scrapValue?: number;
-    resaleValue?: number;
-    financialRef?: string;
+    date: string;
+    fromLocation: { _id: string; name: string } | string;
+    toLocation?: { _id: string; name: string } | string;
+    disposalMethod?: string;
+    scrapValue: number;
+    resaleValue: number;
+    financialReference?: string;
     reason?: string;
-    archived?: boolean;
+    archiveImmediately: boolean;
+    isDeleted: boolean;
+    totalValue?: number;
     createdAt: string;
-    updatedAt?: string;
+    updatedAt: string;
 }
 
-interface AuditEntry {
-    id: string;
-    recordId: string;
-    action: string;
-    by?: string;
-    timestamp: string;
-    details?: string;
+interface AssetDisposalForm {
+    assetId: string;
+    assetName?: string;
+    action: ActionType;
+    date: string;
+    fromLocation: string;
+    toLocation?: string;
+    disposalMethod?: string;
+    scrapValue: number;
+    resaleValue: number;
+    financialReference?: string;
+    reason?: string;
+    archiveImmediately: boolean;
 }
-
-/* -------------------------
-   Constants
---------------------------*/
-const LS_KEY =
-    (STORAGE_KEYS && STORAGE_KEYS.ASSET_DISPOSAL_V1) || "asset_disposal_v1";
-const AUDIT_KEY =
-    (STORAGE_KEYS && STORAGE_KEYS.ASSET_DISPOSAL_AUDIT_V1) || "asset_disposal_audit_v1";
 
 /* -------------------------
    Component
 --------------------------*/
 export default function AssetDisposalTransferPage() {
-    // state
+    const dispatch = useDispatch<AppDispatch>();
+    const { userProfile } = useSelector((state: RootState) => state.auth);
+    const { locations } = useSelector((state: RootState) => state.masterData);
+    
+    const canView = usePermission('assetsDisposalTransfer', 'view');
+    const canCreate = usePermission('assetsDisposalTransfer', 'create');
+    const canEdit = usePermission('assetsDisposalTransfer', 'edit');
+    const canDelete = usePermission('assetsDisposalTransfer', 'delete');
+
+    // State
     const [records, setRecords] = useState<AssetDisposalRecord[]>([]);
-    const [audit, setAudit] = useState<AuditEntry[]>([]);
-    const [loaded, setLoaded] = useState(false);
-
+    const [loading, setLoading] = useState(false);
     const [query, setQuery] = useState("");
-    const [filterAction, setFilterAction] = useState<"ALL" | ActionType>("ALL");
+    const [locationFilter, setLocationFilter] = useState("all");
+    const [actionFilter, setActionFilter] = useState("all");
+    const [page, setPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const [totalRecords, setTotalRecords] = useState(0);
+    const [limit] = useState(10);
 
-    // dialog/form
-    const [open, setOpen] = useState(false);
+    const debouncedSearch = useDebounce(query, 500);
+    const organisationId = localStorage.getItem('organisationId');
+
+    const isLocationRestricted = 
+        userProfile?.role !== 'admin' && 
+        !!userProfile?.location;
+
+    // Dialog/form state
+    const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editing, setEditing] = useState<AssetDisposalRecord | null>(null);
-    const [form, setForm] = useState<Partial<AssetDisposalRecord>>({
-        action: "TRANSFER",
-        disposalDate: new Date().toISOString().slice(0, 10),
+    const [form, setForm] = useState<AssetDisposalForm>({
+        assetId: "",
+        action: "Transfer",
+        date: new Date().toISOString().slice(0, 10),
+        fromLocation: isLocationRestricted ? userProfile?.location || "" : "",
+        scrapValue: 0,
+        resaleValue: 0,
+        archiveImmediately: false,
     });
 
     /* -------------------------
-       Load on mount (safe)
+       Load data and locations
     --------------------------*/
     useEffect(() => {
-        if (typeof window === "undefined") return;
+        dispatch(fetchMasterData("location"));
+    }, [dispatch]);
 
-        const saved = storage.get<AssetDisposalRecord[]>(LS_KEY, []);
-        if (Array.isArray(saved) && saved.length > 0) setRecords(saved);
+    useEffect(() => {
+        if (isLocationRestricted && userProfile?.location) {
+            setLocationFilter(userProfile.location);
+        }
+    }, [isLocationRestricted, userProfile]);
 
-        const savedAudit = storage.get<AuditEntry[]>(AUDIT_KEY, []);
-        if (Array.isArray(savedAudit) && savedAudit.length > 0) setAudit(savedAudit);
-
-        setLoaded(true);
-    }, []);
+    useEffect(() => {
+        if (organisationId) {
+            fetchRecords();
+        }
+    }, [organisationId, page, limit, actionFilter, debouncedSearch, locationFilter]);
 
     /* -------------------------
-       Save when changed (after load)
+       API Functions
     --------------------------*/
-    useEffect(() => {
-        if (!loaded) return;
-        storage.set(LS_KEY, records);
-    }, [records, loaded]);
+    const fetchRecords = async () => {
+        try {
+            setLoading(true);
+            const params = new URLSearchParams({
+                organisationId: organisationId!,
+                page: page.toString(),
+                limit: limit.toString(),
+                search: debouncedSearch,
+                location: locationFilter,
+                action: actionFilter,
+            });
 
-    useEffect(() => {
-        if (!loaded) return;
-        storage.set(AUDIT_KEY, audit);
-    }, [audit, loaded]);
+            const response = await fetch(`${BASE_URL}/asset-disposal-transfer?${params}`, {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                    'Content-Type': 'application/json',
+                },
+            });
 
-    /* -------------------------
-       Cross-tab sync
-    --------------------------*/
-    useEffect(() => {
-        if (typeof window === "undefined") return;
-        const handler = (e: StorageEvent) => {
-            if (!e.key) return;
-            if (e.key === LS_KEY) {
-                const remote = storage.get<AssetDisposalRecord[]>(LS_KEY, []);
-                setRecords(remote || []);
+            const data = await response.json();
+
+            if (data.success) {
+                setRecords(data.data);
+                setTotalPages(data.pagination.pages);
+                setTotalRecords(data.pagination.total);
+            } else {
+                toast.error(data.message || "Failed to fetch records");
             }
-            if (e.key === AUDIT_KEY) {
-                const remoteAudit = storage.get<AuditEntry[]>(AUDIT_KEY, []);
-                setAudit(remoteAudit || []);
-            }
-        };
-        window.addEventListener("storage", handler);
-        return () => window.removeEventListener("storage", handler);
-    }, []);
+        } catch (error) {
+            console.error("Error fetching records:", error);
+            toast.error("Failed to fetch records");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleLocationFilterChange = (val: string) => {
+        setLocationFilter(val);
+        setPage(1);
+    };
+
+    const handleActionFilterChange = (val: string) => {
+        setActionFilter(val);
+        setPage(1);
+    };
+
+    const handleNextPage = () => {
+        if (page < totalPages) {
+            setPage(page + 1);
+        }
+    };
+
+    const handlePrevPage = () => {
+        if (page > 1) {
+            setPage(page - 1);
+        }
+    };
+
+    const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setQuery(e.target.value);
+        setPage(1);
+    };
 
     /* -------------------------
-       CRUD
+       CRUD Functions
     --------------------------*/
     function openAdd() {
         setEditing(null);
         setForm({
-            action: "TRANSFER",
-            disposalDate: new Date().toISOString().slice(0, 10),
+            assetId: "",
+            action: "Transfer",
+            date: new Date().toISOString().slice(0, 10),
+            fromLocation: isLocationRestricted ? userProfile?.location || "" : "",
             scrapValue: 0,
             resaleValue: 0,
+            archiveImmediately: false,
         });
-        setOpen(true);
+        setIsDialogOpen(true);
     }
 
     function openEdit(rec: AssetDisposalRecord) {
         setEditing(rec);
-        setForm({ ...rec });
-        setOpen(true);
+        setForm({
+            assetId: rec.assetId,
+            assetName: rec.assetName,
+            action: rec.action,
+            date: rec.date,
+            fromLocation: typeof rec.fromLocation === 'string' ? rec.fromLocation : rec.fromLocation._id,
+            toLocation: rec.toLocation ? (typeof rec.toLocation === 'string' ? rec.toLocation : rec.toLocation._id) : undefined,
+            disposalMethod: rec.disposalMethod,
+            scrapValue: rec.scrapValue,
+            resaleValue: rec.resaleValue,
+            financialReference: rec.financialReference,
+            reason: rec.reason,
+            archiveImmediately: rec.archiveImmediately,
+        });
+        setIsDialogOpen(true);
     }
 
-    function commitAudit(recordId: string, action: string, details?: string) {
-        const entry: AuditEntry = {
-            id: uuidv4(),
-            recordId,
-            action,
-            by: "system", // you can replace with user context
-            timestamp: new Date().toISOString(),
-            details,
-        };
-        setAudit((p) => [entry, ...p]);
-    }
-
-    function saveForm() {
-        if (!form.assetId || !form.action || !form.disposalDate) {
-            toast.error("Asset ID, action and date are required");
+    const saveForm = async () => {
+        if (!form.assetId || !form.action || !form.date || !form.fromLocation) {
+            toast.error("Asset ID, action, date and from location are required");
             return;
         }
 
-        const rec: AssetDisposalRecord = {
-            id: editing ? editing.id : uuidv4(),
-            assetId: form.assetId!,
-            assetName: form.assetName || "",
-            action: form.action as ActionType,
-            fromLocation: form.fromLocation,
-            toLocation: form.toLocation,
-            disposalMethod: form.disposalMethod,
-            disposalDate: form.disposalDate!,
-            scrapValue: Number(form.scrapValue || 0),
-            resaleValue: Number(form.resaleValue || 0),
-            financialRef: form.financialRef,
-            reason: form.reason,
-            archived: Boolean(form.archived || false),
-            createdAt: editing ? editing.createdAt : new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-        };
-
-        if (editing) {
-            setRecords((p) => p.map((x) => (x.id === editing.id ? rec : x)));
-            commitAudit(rec.id, "UPDATED", `Updated ${rec.action} for ${rec.assetId}`);
-            toast.success("Record updated");
-        } else {
-            setRecords((p) => [rec, ...p]);
-            commitAudit(rec.id, "CREATED", `${rec.action} created for ${rec.assetId}`);
-            toast.success("Record created");
+        if (form.action === "Transfer" && !form.toLocation) {
+            toast.error("To location is required for transfer");
+            return;
         }
 
-        setOpen(false);
-    }
+        if (form.action === "Disposal" && !form.disposalMethod) {
+            toast.error("Disposal method is required for disposal");
+            return;
+        }
 
-    function deleteRecord(id: string) {
+        try {
+            const payload = {
+                ...form,
+                organisationId,
+            };
+
+            const url = editing 
+                ? `${BASE_URL}/asset-disposal-transfer/${editing._id}` 
+                : `${BASE_URL}/asset-disposal-transfer/create`;
+            
+            const method = editing ? 'PUT' : 'POST';
+
+            const response = await fetch(url, {
+                method,
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(payload),
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                toast.success(editing ? "Record updated successfully" : "Record created successfully");
+                setIsDialogOpen(false);
+                fetchRecords();
+            } else {
+                toast.error(data.message || "Failed to save record");
+            }
+        } catch (error: any) {
+            console.error("Error saving record:", error);
+            toast.error("Failed to save record");
+        }
+    };
+
+    const deleteRecord = async (id: string) => {
         if (!confirm("Delete this record?")) return;
-        setRecords((p) => p.filter((r) => r.id !== id));
-        commitAudit(id, "DELETED", "Record deleted");
-        toast.error("Deleted");
-    }
 
-    function markArchived(id: string, value = true) {
-        setRecords((p) => p.map((r) => (r.id === id ? { ...r, archived: value, updatedAt: new Date().toISOString() } : r)));
-        commitAudit(id, value ? "ARCHIVED" : "UNARCHIVED", value ? "Archived" : "Unarchived");
-        toast.success(value ? "Archived" : "Restored");
-    }
+        try {
+            const response = await fetch(`${BASE_URL}/asset-disposal-transfer/${id}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                toast.success("Record deleted successfully");
+                fetchRecords();
+            } else {
+                toast.error(data.message || "Failed to delete record");
+            }
+        } catch (error: any) {
+            console.error("Error deleting record:", error);
+            toast.error("Failed to delete record");
+        }
+    };
 
     /* -------------------------
-       Import / Export
+       Import / Export (simplified)
     --------------------------*/
     function exportAll() {
-        const payload = { records, audit, exportedAt: new Date().toISOString() };
+        const payload = { records, exportedAt: new Date().toISOString() };
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -242,43 +346,9 @@ export default function AssetDisposalTransferPage() {
         toast.success("Exported");
     }
 
-    function importAll(file: File | null) {
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => {
-            try {
-                const data = JSON.parse(reader.result as string);
-                if (!data || !Array.isArray(data.records)) throw new Error("Invalid file");
-                const recs: AssetDisposalRecord[] = data.records.map((r: any) => ({ id: r.id || uuidv4(), ...r }));
-                const aud: AuditEntry[] = Array.isArray(data.audit) ? data.audit.map((a: any) => ({ id: a.id || uuidv4(), ...a })) : [];
-                setRecords(recs);
-                setAudit(aud);
-                toast.success("Imported");
-            } catch (err) {
-                toast.error("Import failed");
-            }
-        };
-        reader.readAsText(file);
-    }
-
     /* -------------------------
-       Derived / UI helpers
+       Derived data
     --------------------------*/
-    const filtered = useMemo(() => {
-        let list = [...records];
-        if (filterAction !== "ALL") list = list.filter((r) => r.action === filterAction);
-        if (query.trim()) {
-            const q = query.toLowerCase();
-            list = list.filter((r) =>
-                [r.assetId, r.assetName, r.fromLocation, r.toLocation, r.reason, r.financialRef]
-                    .filter(Boolean)
-                    .some((f) => f!.toLowerCase().includes(q))
-            );
-        }
-        return list.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-    }, [records, query, filterAction]);
-
-    const totalRecords = filtered.length;
     const disposalCounts = useMemo(() => {
         const map: Record<string, number> = {};
         records.forEach((r) => {
@@ -294,6 +364,10 @@ export default function AssetDisposalTransferPage() {
     /* -------------------------
        Render
     --------------------------*/
+    if (!canView) {
+        return <div className="p-6">You don't have permission to view this page.</div>;
+    }
+
     return (
         <div className="p-6 space-y-6">
             <div className="flex justify-between items-center">
@@ -302,28 +376,36 @@ export default function AssetDisposalTransferPage() {
                 </h1>
 
                 <div className="flex items-center gap-2">
-                    <input id="imp-asset-disposal" type="file" accept="application/json" className="hidden" onChange={(e) => importAll(e.target.files?.[0] || null)} />
-                    <Button variant="outline" onClick={() => document.getElementById("imp-asset-disposal")?.click()}><UploadCloud className="mr-2 h-4 w-4" />Import</Button>
-                    <Button variant="outline" onClick={exportAll}><DownloadCloud className="mr-2 h-4 w-4" />Export</Button>
-                    <Button onClick={openAdd}><MousePointerClick size={20}  className="mr-2 h-4 w-4" />New</Button>
+                    <Button variant="outline" onClick={exportAll}>
+                        <DownloadCloud className="mr-2 h-4 w-4" />Export
+                    </Button>
+                    {canCreate && (
+                        <Button onClick={openAdd}>
+                            <MousePointerClick className="mr-2 h-4 w-4" />New
+                        </Button>
+                    )}
                 </div>
             </div>
 
             {/* KPIs and pie */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <Card>
                     <CardHeader><CardTitle>Total Records</CardTitle></CardHeader>
-                    <CardContent><div className="text-3xl font-bold">{records.length}</div></CardContent>
+                    <CardContent><div className="text-3xl font-bold">{totalRecords}</div></CardContent>
                 </Card>
 
                 <Card>
                     <CardHeader><CardTitle>Actions Breakdown</CardTitle></CardHeader>
                     <CardContent className="h-56">
-                        {pieData.length === 0 ? <div className="text-sm text-muted-foreground">No data</div> : (
+                        {pieData.length === 0 ? (
+                            <div className="text-sm text-muted-foreground">No data</div>
+                        ) : (
                             <ResponsiveContainer width="100%" height="100%">
                                 <PieChart>
                                     <Pie data={pieData} dataKey="value" nameKey="name" outerRadius={80} label>
-                                        {pieData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                                        {pieData.map((_, i) => (
+                                            <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                                        ))}
                                     </Pie>
                                     <Tooltip />
                                     <Legend />
@@ -332,39 +414,50 @@ export default function AssetDisposalTransferPage() {
                         )}
                     </CardContent>
                 </Card>
-
-                <Card>
-                    <CardHeader><CardTitle>Recent Activity</CardTitle></CardHeader>
-                    <CardContent>
-                        {audit.length === 0 ? <div className="text-sm text-muted-foreground">No activity</div> : (
-                            <ul className="space-y-2 text-sm">
-                                {audit.slice(0, 8).map(a => (
-                                    <li key={a.id} className="text-xs">
-                                        <div className="font-medium">{a.action}</div>
-                                        <div className="text-muted-foreground">{new Date(a.timestamp).toLocaleString()} — {a.details}</div>
-                                    </li>
-                                ))}
-                            </ul>
-                        )}
-                    </CardContent>
-                </Card>
             </div>
 
-            {/* filters */}
-            <div className="flex gap-2 items-center">
-                <Input placeholder="Search asset, location, ref..." value={query} onChange={(e) => setQuery(e.target.value)} />
-                <select value={filterAction} onChange={(e) => setFilterAction(e.target.value as any)} className="border rounded px-2 py-1">
-                    <option value="ALL">All Actions</option>
-                    <option value="TRANSFER">Transfer</option>
-                    <option value="DISPOSAL">Disposal</option>
-                    <option value="WRITE_OFF">Write-off</option>
-                    <option value="ARCHIVE">Archive</option>
-                </select>
+            {/* Filters */}
+            <div className="flex flex-wrap gap-4 items-center">
+                <Input 
+                    placeholder="Search asset, location, reference..." 
+                    value={query} 
+                    onChange={handleSearchChange}
+                    className="w-full md:w-64"
+                />
+                
+                <Select 
+                    disabled={isLocationRestricted} 
+                    value={locationFilter} 
+                    onValueChange={handleLocationFilterChange}
+                >
+                    <SelectTrigger className="w-full md:w-48">
+                        <SelectValue placeholder="Filter Location" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All Locations</SelectItem>
+                        {locations.map((loc) => (
+                            <SelectItem key={loc._id} value={loc._id}>
+                                {loc.name}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+
+                <Select value={actionFilter} onValueChange={handleActionFilterChange}>
+                    <SelectTrigger className="w-full md:w-48">
+                        <SelectValue placeholder="Filter Action" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All Actions</SelectItem>
+                        <SelectItem value="Transfer">Transfer</SelectItem>
+                        <SelectItem value="Disposal">Disposal</SelectItem>
+                    </SelectContent>
+                </Select>
             </div>
 
-            {/* table */}
+            {/* Table */}
             <Card>
-                <CardHeader><CardTitle>Records</CardTitle></CardHeader>
+                <CardHeader><CardTitle>Records ({totalRecords})</CardTitle></CardHeader>
                 <CardContent>
                     <div className="overflow-x-auto">
                         <Table>
@@ -373,128 +466,296 @@ export default function AssetDisposalTransferPage() {
                                     <TableHead>Date</TableHead>
                                     <TableHead>Asset</TableHead>
                                     <TableHead>Action</TableHead>
-                                    <TableHead>From</TableHead>
-                                    <TableHead>To / Method</TableHead>
-                                    <TableHead>Value</TableHead>
+                                    <TableHead>From Location</TableHead>
+                                    <TableHead>To Location / Method</TableHead>
+                                    <TableHead>Value (₹)</TableHead>
                                     <TableHead>Financial Ref</TableHead>
-                                    <TableHead>Archived</TableHead>
                                     <TableHead>Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {filtered.map((r) => (
-                                    <TableRow key={r.id}>
-                                        <TableCell>{r.disposalDate}</TableCell>
-                                        <TableCell>{r.assetId} {r.assetName ? `— ${r.assetName}` : ""}</TableCell>
-                                        <TableCell>{r.action}</TableCell>
-                                        <TableCell>{r.fromLocation}</TableCell>
-                                        <TableCell>{r.action === "TRANSFER" ? r.toLocation : r.disposalMethod}</TableCell>
-                                        <TableCell>
-                                            {r.scrapValue ? `Scrap ₹${r.scrapValue}` : ""}
-                                            {r.resaleValue ? (r.scrapValue ? " / " : "") + `Resale ₹${r.resaleValue}` : ""}
-                                        </TableCell>
-                                        <TableCell>{r.financialRef}</TableCell>
-                                        <TableCell>{r.archived ? "Yes" : "No"}</TableCell>
-                                        <TableCell>
-                                            <div className="flex gap-2">
-                                                <Button size="sm" variant="ghost" onClick={() => openEdit(r)}><Edit2 className="w-4 h-4" /></Button>
-                                                <Button size="sm" variant="ghost" onClick={() => deleteRecord(r.id)}><Trash2 className="w-4 h-4 text-red-500" /></Button>
-                                                <Button size="sm" variant="ghost" onClick={() => markArchived(r.id, !r.archived)} title={r.archived ? "Unarchive" : "Archive"}>
-                                                    <FileText className="w-4 h-4" />
-                                                </Button>
-                                            </div>
+                                {loading ? (
+                                    <TableRow>
+                                        <TableCell colSpan={8} className="text-center py-4">
+                                            Loading...
                                         </TableCell>
                                     </TableRow>
-                                ))}
+                                ) : records.length === 0 ? (
+                                    <TableRow>
+                                        <TableCell colSpan={8} className="text-center py-4">
+                                            No records found
+                                        </TableCell>
+                                    </TableRow>
+                                ) : (
+                                    records.map((r) => (
+                                        <TableRow key={r._id}>
+                                            <TableCell>{new Date(r.date).toLocaleDateString()}</TableCell>
+                                            <TableCell>
+                                                <div>
+                                                    <div className="font-medium">{r.assetId}</div>
+                                                    {r.assetName && (
+                                                        <div className="text-sm text-muted-foreground">{r.assetName}</div>
+                                                    )}
+                                                </div>
+                                            </TableCell>
+                                            <TableCell>
+                                                <span className={`px-2 py-1 rounded-full text-xs ${
+                                                    r.action === "Transfer" 
+                                                        ? "bg-blue-100 text-blue-800" 
+                                                        : "bg-red-100 text-red-800"
+                                                }`}>
+                                                    {r.action}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell>
+                                                {typeof r.fromLocation === 'string' 
+                                                    ? r.fromLocation 
+                                                    : r.fromLocation?.name}
+                                            </TableCell>
+                                            <TableCell>
+                                                {r.action === "Transfer" 
+                                                    ? (typeof r.toLocation === 'string' 
+                                                        ? r.toLocation 
+                                                        : r.toLocation?.name)
+                                                    : r.disposalMethod}
+                                            </TableCell>
+                                            <TableCell>
+                                                <div className="text-sm">
+                                                    {r.scrapValue > 0 && <div>Scrap: ₹{r.scrapValue}</div>}
+                                                    {r.resaleValue > 0 && <div>Resale: ₹{r.resaleValue}</div>}
+                                                    {r.scrapValue === 0 && r.resaleValue === 0 && <div>-</div>}
+                                                </div>
+                                            </TableCell>
+                                            <TableCell>{r.financialReference || "-"}</TableCell>
+                                            <TableCell>
+                                                <div className="flex gap-2">
+                                                    {canEdit && (
+                                                        <Button 
+                                                            size="sm" 
+                                                            variant="ghost" 
+                                                            onClick={() => openEdit(r)}
+                                                        >
+                                                            <Edit2 className="w-4 h-4" />
+                                                        </Button>
+                                                    )}
+                                                    {canDelete && (
+                                                        <Button 
+                                                            size="sm" 
+                                                            variant="ghost" 
+                                                            onClick={() => deleteRecord(r._id)}
+                                                        >
+                                                            <Trash2 className="w-4 h-4 text-red-500" />
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))
+                                )}
                             </TableBody>
                         </Table>
                     </div>
+
+                    {/* Pagination */}
+                    {totalPages > 1 && (
+                        <div className="flex items-center justify-end space-x-2 p-4 border-t">
+                            <span className="text-sm text-muted-foreground">
+                                Page {page} of {totalPages} (Total: {totalRecords})
+                            </span>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handlePrevPage}
+                                disabled={page === 1}
+                            >
+                                <ChevronLeft size={16} />
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleNextPage}
+                                disabled={page === totalPages}
+                            >
+                                <ChevronRight size={16} />
+                            </Button>
+                        </div>
+                    )}
                 </CardContent>
             </Card>
 
-            {/* dialog */}
-            <Dialog open={open} onOpenChange={setOpen}>
+            {/* Dialog */}
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                 <DialogContent className="max-w-3xl">
-                    <DialogHeader><DialogTitle>{editing ? "Edit Asset Action" : "New Asset Transfer / Disposal"}</DialogTitle></DialogHeader>
+                    <DialogHeader>
+                        <DialogTitle>
+                            {editing ? "Edit Asset Action" : "New Asset Transfer / Disposal"}
+                        </DialogTitle>
+                    </DialogHeader>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <Label>Asset ID / Code</Label>
-                            <Input value={form.assetId || ""} onChange={(e) => setForm((f) => ({ ...f, assetId: e.target.value }))} />
+                            <Label>Asset ID / Code *</Label>
+                            <Input 
+                                value={form.assetId} 
+                                onChange={(e) => setForm({...form, assetId: e.target.value})} 
+                                placeholder="Enter asset ID"
+                            />
                         </div>
 
                         <div>
                             <Label>Asset Name (optional)</Label>
-                            <Input value={form.assetName || ""} onChange={(e) => setForm((f) => ({ ...f, assetName: e.target.value }))} />
+                            <Input 
+                                value={form.assetName || ""} 
+                                onChange={(e) => setForm({...form, assetName: e.target.value})} 
+                                placeholder="Enter asset name"
+                            />
                         </div>
 
                         <div>
-                            <Label>Action</Label>
-                            <select value={form.action} onChange={(e) => setForm((f) => ({ ...f, action: e.target.value }))} className="border rounded px-2 py-2 w-full">
-                                <option value="TRANSFER">Transfer</option>
-                                <option value="DISPOSAL">Disposal</option>
-                                <option value="WRITE_OFF">Write-off</option>
-                                <option value="ARCHIVE">Archive</option>
-                            </select>
+                            <Label>Action *</Label>
+                            <Select 
+                                value={form.action} 
+                                onValueChange={(val: ActionType) => setForm({...form, action: val, toLocation: val === "Disposal" ? undefined : form.toLocation})}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select action" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="Transfer">Transfer</SelectItem>
+                                    <SelectItem value="Disposal">Disposal</SelectItem>
+                                </SelectContent>
+                            </Select>
                         </div>
 
                         <div>
-                            <Label>Date</Label>
-                            <Input type="date" value={form.disposalDate || new Date().toISOString().slice(0, 10)} onChange={(e) => setForm((f) => ({ ...f, disposalDate: e.target.value }))} />
+                            <Label>Date *</Label>
+                            <Input 
+                                type="date" 
+                                value={form.date} 
+                                onChange={(e) => setForm({...form, date: e.target.value})} 
+                            />
                         </div>
 
                         <div>
-                            <Label>From Location</Label>
-                            <Input value={form.fromLocation || ""} onChange={(e) => setForm((f) => ({ ...f, fromLocation: e.target.value }))} />
+                            <Label>From Location *</Label>
+                            <Select 
+                                value={form.fromLocation} 
+                                onValueChange={(val) => setForm({...form, fromLocation: val})}
+                                disabled={isLocationRestricted}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select from location" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {locations.map((loc) => (
+                                        <SelectItem key={loc._id} value={loc._id}>
+                                            {loc.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
                         </div>
 
-                        <div>
-                            <Label>To Location (for transfer)</Label>
-                            <Input value={form.toLocation || ""} onChange={(e) => setForm((f) => ({ ...f, toLocation: e.target.value }))} />
-                        </div>
+                        {form.action === "Transfer" && (
+                            <div>
+                                <Label>To Location *</Label>
+                                <Select 
+                                    value={form.toLocation || ""} 
+                                    onValueChange={(val) => setForm({...form, toLocation: val})}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select to location" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {locations
+                                            .filter(loc => loc._id !== form.fromLocation)
+                                            .map((loc) => (
+                                                <SelectItem key={loc._id} value={loc._id}>
+                                                    {loc.name}
+                                                </SelectItem>
+                                            ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        )}
 
-                        <div>
-                            <Label>Disposal Method (if disposal)</Label>
-                            <select value={form.disposalMethod} onChange={(e) => setForm((f) => ({ ...f, disposalMethod: e.target.value }))} className="border rounded px-2 py-2 w-full">
-                                <option value="">Select</option>
-                                <option value="Scrap">Scrap</option>
-                                <option value="Resale">Resale</option>
-                                <option value="Donation">Donation</option>
-                                <option value="Other">Other</option>
-                            </select>
-                        </div>
+                        {form.action === "Disposal" && (
+                            <div>
+                                <Label>Disposal Method *</Label>
+                                <Select 
+                                    value={form.disposalMethod || ""} 
+                                    onValueChange={(val) => setForm({...form, disposalMethod: val})}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select disposal method" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="Scrap">Scrap</SelectItem>
+                                        <SelectItem value="Resale">Resale</SelectItem>
+                                        <SelectItem value="Donation">Donation</SelectItem>
+                                        <SelectItem value="Other">Other</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        )}
 
                         <div>
                             <Label>Scrap Value (₹)</Label>
-                            <Input type="number" value={form.scrapValue || 0} onChange={(e) => setForm((f) => ({ ...f, scrapValue: Number(e.target.value) }))} />
+                            <Input 
+                                type="number" 
+                                value={form.scrapValue} 
+                                onChange={(e) => setForm({...form, scrapValue: Number(e.target.value)})} 
+                                min="0"
+                            />
                         </div>
 
                         <div>
                             <Label>Resale Value (₹)</Label>
-                            <Input type="number" value={form.resaleValue || 0} onChange={(e) => setForm((f) => ({ ...f, resaleValue: Number(e.target.value) }))} />
+                            <Input 
+                                type="number" 
+                                value={form.resaleValue} 
+                                onChange={(e) => setForm({...form, resaleValue: Number(e.target.value)})} 
+                                min="0"
+                            />
                         </div>
 
                         <div>
                             <Label>Financial Reference</Label>
-                            <Input value={form.financialRef || ""} onChange={(e) => setForm((f) => ({ ...f, financialRef: e.target.value }))} />
+                            <Input 
+                                value={form.financialReference || ""} 
+                                onChange={(e) => setForm({...form, financialReference: e.target.value})} 
+                                placeholder="Enter financial reference"
+                            />
                         </div>
 
                         <div className="col-span-2">
                             <Label>Reason / Notes</Label>
-                            <Input value={form.reason || ""} onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))} />
+                            <Input 
+                                value={form.reason || ""} 
+                                onChange={(e) => setForm({...form, reason: e.target.value})} 
+                                placeholder="Enter reason or notes"
+                            />
                         </div>
 
                         <div className="col-span-2 flex items-center gap-4">
                             <label className="flex items-center gap-2">
-                                <input type="checkbox" checked={Boolean(form.archived)} onChange={(e) => setForm((f) => ({ ...f, archived: e.target.checked }))} />
+                                <input 
+                                    type="checkbox" 
+                                    checked={form.archiveImmediately} 
+                                    onChange={(e) => setForm({...form, archiveImmediately: e.target.checked})} 
+                                />
                                 Archive record immediately
                             </label>
                         </div>
                     </div>
 
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-                        <Button onClick={saveForm}><Save className="mr-2 h-4 w-4" /> Save</Button>
+                        <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+                            Cancel
+                        </Button>
+                        <Button onClick={saveForm}>
+                            <Save className="mr-2 h-4 w-4" /> Save
+                        </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
