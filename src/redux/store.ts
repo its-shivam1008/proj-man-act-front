@@ -56,6 +56,10 @@ import productionReportingReducer from "./slices/production/productionReportingS
 import downtimeAnalysisReducer from "./slices/production/downtimeAnalysisSlice";
 import productionEfficiencyReducer from "./slices/production/productionEfficiencySlice";
 import orderProgressReducer from "./slices/production/orderProgressSlice";
+import repairOrders from "./slices/repairOrderSlice";
+import repairTeams from "./slices/repairTeamSlice";
+import repairTemplates from "./slices/repairTemplateSice";
+import barcodeReducer from './slices/barcodeSlice'
 export const store = configureStore({
   reducer: {
     itemMaster: itemMasterReducer,
@@ -115,6 +119,10 @@ export const store = configureStore({
     downtimeAnalysis: downtimeAnalysisReducer,
     productionEfficiency: productionEfficiencyReducer,
     orderProgress: orderProgressReducer,
+    repairOrders,
+    repairTeams,
+    repairTemplates,
+    barcode: barcodeReducer,
   },
 });
 
