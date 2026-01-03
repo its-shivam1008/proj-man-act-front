@@ -5,6 +5,7 @@ import { usePermission } from '@/hooks/userPermission';
 import { fetchRepairTeams, createRepairTeam, deleteRepairTeam } from '@/redux/slices/repairTeamSlice';
 import { fetchRepairOrders, createRepairOrder, updateRepairOrder, deleteRepairOrder } from '@/redux/slices/repairOrderSlice';
 import { fetchMasterData } from '@/redux/slices/masterDataSlice';
+import { fetchProducts } from '@/redux/slices/productSlice';
 import { RepairTeam } from '@/types/repair.types';
 import api from '@/utils/axiosApi';
 
@@ -26,11 +27,13 @@ interface RepairOrderFormProps {
   setFormData: React.Dispatch<React.SetStateAction<any>>;
   onSubmit: (e: React.FormEvent) => void;
   onCancel: () => void;
-  inventory: any[];
+  products: any[];
   filteredRepairTeams: RepairTeam[];
-  allLocations: string[];
+  allLocations: any[];
   hasLocations: boolean;
   dispatch: any;
+  isLocationRestricted: boolean;
+  masterDataLocations: any[];
 }
 
 const RepairOrderForm: React.FC<RepairOrderFormProps> = ({ 
@@ -39,11 +42,13 @@ const RepairOrderForm: React.FC<RepairOrderFormProps> = ({
   setFormData, 
   onSubmit, 
   onCancel,
-  inventory,
+  products,
   filteredRepairTeams,
   allLocations,
   hasLocations,
-  dispatch
+  dispatch,
+  isLocationRestricted,
+  masterDataLocations
 }) => (
   <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
     <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 shadow-lg rounded-md bg-white">
@@ -76,8 +81,10 @@ const RepairOrderForm: React.FC<RepairOrderFormProps> = ({
                   required
                 >
                   <option value="">Select Product</option>
-                  {inventory.map(item => (
-                    <option key={item.id} value={item.id}>{item.name}</option>
+                  {products.map(product => (
+                    <option key={product._id || product.id} value={product._id || product.id}>
+                      {product.name || product.productName}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -216,17 +223,14 @@ const RepairOrderForm: React.FC<RepairOrderFormProps> = ({
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Assigned Technician *
                 </label>
-                <select
-                  value={formData.technicianId}
-                  onChange={(e) => setFormData(prev => ({ ...prev, technicianId: e.target.value }))}
+                <input
+                  type="text"
+                  value={formData.assignedTechnician || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, assignedTechnician: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Enter technician name"
                   required
-                >
-                  <option value="">Select Technician</option>
-                  {filteredRepairTeams.flatMap((team: RepairTeam) => team.members).map((member: any) => (
-                    <option key={member.technicianId} value={member.technicianId}>{member.name}</option>
-                  ))}
-                </select>
+                />
               </div>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 mt-4">
@@ -254,40 +258,24 @@ const RepairOrderForm: React.FC<RepairOrderFormProps> = ({
                   required
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Location *
-                </label>
-                <select
-                  value={formData.location}
-                  onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                >
-                  <option value="">Select Location</option>
-                  {hasLocations ? (
-                    allLocations.map(location => (
-                      <option key={location} value={location}>{location}</option>
-                    ))
-                  ) : (
-                    <option value="" disabled>No locations available - Please add locations in Master Data</option>
-                  )}
-                </select>
-                {!hasLocations && (
-                  <div className="mt-2">
-                    <p className="text-sm text-gray-600 mb-2">
-                      No locations found. You can create sample locations to get started.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={createSampleLocations}
-                      className="text-sm bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
-                    >
-                      Create Sample Locations
-                    </button>
-                  </div>
-                )}
-              </div>
+              {!isLocationRestricted && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Location *
+                  </label>
+                  <select
+                    value={formData.location}
+                    onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
+                    <option value="">Select Location</option>
+                    {masterDataLocations.map((location: any) => (
+                      <option key={location._id} value={location._id}>{location.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           </div>
           {/* Additional Information */}
@@ -404,9 +392,11 @@ interface TeamFormProps {
   }>>;
   onSubmit: (e: React.FormEvent) => void;
   onCancel: () => void;
-  allLocations: string[];
+  allLocations: any[];
   hasLocations: boolean;
   dispatch: any;
+  isLocationRestricted: boolean;
+  masterDataLocations: any[];
 }
 
 const TeamForm: React.FC<TeamFormProps> = ({ 
@@ -416,7 +406,9 @@ const TeamForm: React.FC<TeamFormProps> = ({
   onCancel, 
   allLocations, 
   hasLocations,
-  dispatch
+  dispatch,
+  isLocationRestricted,
+  masterDataLocations
 }) => (
   <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
     <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 shadow-lg rounded-md bg-white">
@@ -464,40 +456,24 @@ const TeamForm: React.FC<TeamFormProps> = ({
               </div>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 mt-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Location *
-                </label>
-                <select
-                  value={teamFormData.location}
-                  onChange={(e) => setTeamFormData(prev => ({ ...prev, location: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                >
-                  <option value="">Select Location</option>
-                  {hasLocations ? (
-                    allLocations.map(location => (
-                      <option key={location} value={location}>{location}</option>
-                    ))
-                  ) : (
-                    <option value="" disabled>No locations available - Please add locations in Master Data</option>
-                  )}
-                </select>
-                {!hasLocations && (
-                  <div className="mt-2">
-                    <p className="text-sm text-gray-600 mb-2">
-                      No locations found. You can create sample locations to get started.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={createSampleLocations}
-                      className="text-sm bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
-                    >
-                      Create Sample Locations
-                    </button>
-                  </div>
-                )}
-              </div>
+              {!isLocationRestricted && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Location *
+                  </label>
+                  <select
+                    value={teamFormData.location}
+                    onChange={(e) => setTeamFormData(prev => ({ ...prev, location: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
+                    <option value="">Select Location</option>
+                    {masterDataLocations.map((location: any) => (
+                      <option key={location._id} value={location._id}>{location.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Email *
@@ -554,37 +530,46 @@ const Repair: React.FC = () => {
   const { data: repairTeams, loading: teamsLoading } = useSelector((state: any) => state.repairTeams);
   const { data: repairOrders, loading: ordersLoading } = useSelector((state: any) => state.repairOrders);
   const { locations } = useSelector((state: any) => state.masterData);
+  const { products, loading: productsLoading } = useSelector((state: any) => state.products);
   
-  // Local state for data (keeping existing structure for templates, inventory until migrated)
+  // Local state for data (keeping existing structure for templates until migrated)
   const [repairTemplates, setRepairTemplates] = useState<any[]>([]);
-  const [inventory] = useState<any[]>([]);
 
   const canView = usePermission('repair', 'view');
   const canCreate = usePermission('repair', 'create');
   const canDelete = usePermission('repair', 'delete');
 
-  // Get user's location restriction if any
-  const userLocation = userProfile?.location || userProfile?.allowedLocations?.[0];
+  // Location restrictions (same as QualityChecks)
+  const isLocationRestricted = 
+    userProfile?.role !== 'admin' && 
+    !!userProfile?.location;
   
-  // Get locations from master data instead of hardcoded values
+  // Get locations from master data (same as QualityChecks)
   const masterDataLocations = React.useMemo(() => {
-    return locations?.map((loc: any) => loc.name) || [];
+    return locations || [];
   }, [locations]);
-  
-  // Get unique locations from existing teams and merge with master data
-  const allLocations = React.useMemo(() => {
-    const teamLocations = repairTeams.map((team: RepairTeam) => team.location).filter(Boolean);
-    const combined = [...new Set([...masterDataLocations, ...teamLocations])];
-    return combined;
-  }, [masterDataLocations, repairTeams]);
 
-  // If no locations available, show a fallback message
-  const hasLocations = allLocations.length > 0;
+  // Helper function to get location name by ID (same as QualityChecks)
+  const getLocationName = (locationId: string) => {
+    if (!locationId) return 'N/A';
+    const location = masterDataLocations.find(loc => loc._id === locationId);
+    return location ? location.name : locationId;
+  };
 
-  // Filter teams based on user location restriction
-  const filteredRepairTeams = userLocation 
-    ? repairTeams.filter((team: RepairTeam) => team.location === userLocation)
-    : repairTeams;
+  // Remove unused variables
+  const hasLocations = masterDataLocations.length > 0;
+
+  // Filter teams based on user location restriction (same as QualityChecks pattern)
+  const filteredRepairTeams = React.useMemo(() => {
+    if (!isLocationRestricted || !userProfile?.location) {
+      return repairTeams;
+    }
+    
+    // Filter teams by matching location
+    return repairTeams.filter((team: RepairTeam) => {
+      return team.location === userProfile.location;
+    });
+  }, [repairTeams, isLocationRestricted, userProfile?.location]);
 
   // Form states (updated for location dropdown)
   const [teamFormData, setTeamFormData] = useState({
@@ -598,6 +583,7 @@ const Repair: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
+  const [locationFilter, setLocationFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showUpdateForm, setShowUpdateForm] = useState(false);
@@ -615,7 +601,7 @@ const Repair: React.FC = () => {
     rootCause: '',
     issueDescription: '',
     teamId: '',
-    technicianId: '',
+    assignedTechnician: '',
     requestedDate: '',
     expectedCompletion: '',
     location: '',
@@ -634,7 +620,7 @@ const Repair: React.FC = () => {
     rootCause: '',
     issueDescription: '',
     teamId: '',
-    technicianId: '',
+    assignedTechnician: '',
     requestedDate: '',
     expectedCompletion: '',
     location: '',
@@ -648,29 +634,36 @@ const Repair: React.FC = () => {
   const [showTemplateUpdateModal, setShowTemplateUpdateModal] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
 
-  // Initialize data on mount
-  useEffect(() => {
-    const initializeData = async () => {
-      try {
-        // Fetch master data locations
-        await dispatch(fetchMasterData('location') as any);
-        
-        // Fetch repair teams from API with location filter if user has restriction
-        await dispatch(fetchRepairTeams(userLocation) as any);
-        
-        // Fetch repair orders from API with location filter if user has restriction
-        await dispatch(fetchRepairOrders({ location: userLocation }) as any);
-      } catch (error) {
-        console.error('Error initializing data:', error);
-      }
-    };
 
-    initializeData();
+
+  // Set location filter for restricted users (same as QualityChecks)
+  useEffect(() => {
+    if (isLocationRestricted && userProfile?.location) {
+      setLocationFilter(userProfile.location);
+    }
+  }, [isLocationRestricted, userProfile]);
+
+  // Load master data on mount (same as QualityChecks)
+  useEffect(() => {
+    dispatch(fetchMasterData("location"));
+    // Also fetch products for the dropdown
+    dispatch(fetchProducts({ page: 1, limit: 1000 }) as any);
+  }, [dispatch]);
+
+  // Fetch repair data when filters change (same as QualityChecks pattern)
+  useEffect(() => {
+    const organisationId = localStorage.getItem('organisationId');
     
-    // Keep existing local storage for other data until they're migrated
-    // setRepairTemplates(storage.get(STORAGE_KEYS.REPAIR_TEMPLATES, []));
-    // setInventory(storage.get(STORAGE_KEYS.INVENTORY, []));
-  }, [dispatch, userLocation]);
+    if (organisationId && canView) {
+      // Fetch repair teams
+      dispatch(fetchRepairTeams(locationFilter !== 'all' ? locationFilter : undefined) as any);
+      
+      // Fetch repair orders
+      dispatch(fetchRepairOrders({ 
+        location: locationFilter !== 'all' ? locationFilter : undefined 
+      }) as any);
+    }
+  }, [locationFilter, canView, dispatch]);
 
   const handleCreateRepairOrder = useCallback(async (orderData: any) => {
     try {
@@ -700,12 +693,13 @@ const Repair: React.FC = () => {
   const handleCreateTeam = useCallback(async (teamData: Partial<RepairTeam>) => {
     try {
       await dispatch(createRepairTeam(teamData) as any);
-      // Refresh teams list with location filter
-      dispatch(fetchRepairTeams(userLocation) as any);
+      // Refresh teams list with current location filter
+      const refreshLocationParam = locationFilter !== 'all' ? locationFilter : undefined;
+      dispatch(fetchRepairTeams(refreshLocationParam) as any);
     } catch (error) {
       console.error('Failed to create team:', error);
     }
-  }, [dispatch, userLocation]);
+  }, [dispatch, locationFilter]);
 
   const handleDeleteTeam = async (id: string) => {
     try {
@@ -741,7 +735,7 @@ const Repair: React.FC = () => {
           rootCause: order.rootCause || '',
           issueDescription: order.issueDescription || '',
           teamId: order.teamId || '',
-          technicianId: order.technicianId || '',
+          assignedTechnician: order.assignedTechnician || '',
           requestedDate: order.requestedDate || '',
           expectedCompletion: order.expectedCompletion || '',
           location: order.location || '',
@@ -756,14 +750,12 @@ const Repair: React.FC = () => {
 
   const handleCreateSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    const selectedTeam = filteredRepairTeams.find((t: RepairTeam) => t._id === createFormData.teamId);
-    const selectedTechnician = selectedTeam?.members.find((m: any) => m.technicianId === createFormData.technicianId);
     
     const newOrder = {
       ...createFormData,
+      // For location-restricted users, use their location; otherwise use form data
+      location: isLocationRestricted ? userProfile?.location : createFormData.location,
       status: 'draft' as const,
-      assignedTechnician: selectedTechnician?.name || '',
-      // Remove local ID generation - let backend handle it
     };
     
     try {
@@ -779,7 +771,7 @@ const Repair: React.FC = () => {
         rootCause: '',
         issueDescription: '',
         teamId: '',
-        technicianId: '',
+        assignedTechnician: '',
         requestedDate: '',
         expectedCompletion: '',
         location: '',
@@ -791,18 +783,15 @@ const Repair: React.FC = () => {
     } catch (error) {
       console.error('Failed to create repair order:', error);
     }
-  }, [createFormData, filteredRepairTeams, handleCreateRepairOrder]);
+  }, [createFormData, handleCreateRepairOrder, isLocationRestricted, userProfile?.location]);
 
   const handleUpdateSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedOrder) return;
     
-    const selectedTeam = filteredRepairTeams.find((t: RepairTeam) => t._id === updateFormData.teamId);
-    const selectedTechnician = selectedTeam?.members.find((m: any) => m.technicianId === updateFormData.technicianId);
-    
     const updatedOrder = {
       ...updateFormData,
-      assignedTechnician: selectedTechnician?.name || (updateFormData as any).assignedTechnician || '',
+      // assignedTechnician is already in updateFormData
     };
     
     try {
@@ -812,7 +801,7 @@ const Repair: React.FC = () => {
     } catch (error) {
       console.error('Failed to update repair order:', error);
     }
-  }, [selectedOrder, updateFormData, filteredRepairTeams, handleUpdateRepairOrder]);
+  }, [selectedOrder, updateFormData, handleUpdateRepairOrder]);
 
   const handleCancelCreateForm = useCallback(() => {
     setShowCreateForm(false);
@@ -883,14 +872,16 @@ const Repair: React.FC = () => {
     { id: 'settings', name: 'Settings', icon: Settings }
   ];
   const filteredOrders = repairOrders.filter((order: any) => {
-    const product = inventory.find(item => item.id === order.productId);
-    const matchesSearch = product?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    const product = products.find(item => (item._id || item.id) === order.productId);
+    const matchesSearch = product?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         product?.productName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          order.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          order._id.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
     const matchesType = typeFilter === 'all' || order.repairType === typeFilter;
     const matchesPriority = priorityFilter === 'all' || order.priority === priorityFilter;
-    return matchesSearch && matchesStatus && matchesType && matchesPriority;
+    const matchesLocation = locationFilter === 'all' || order.location === locationFilter;
+    return matchesSearch && matchesStatus && matchesType && matchesPriority && matchesLocation;
   });
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -1057,16 +1048,16 @@ const Repair: React.FC = () => {
         </div>
         <div className="divide-y divide-gray-200">
           {repairOrders.slice(0, 5).map((order: any) => {
-            const product = inventory.find(item => item.id === order.productId);
+            const product = products.find(item => (item._id || item.id) === order.productId);
             return (
-              <div key={order.id} className="px-6 py-4 flex items-center justify-between">
+              <div key={order._id} className="px-6 py-4 flex items-center justify-between">
                 <div className="flex items-center">
                   <div className="flex-shrink-0">
                     {getStatusIcon(order.status)}
                   </div>
                   <div className="ml-4">
-                    <p className="text-sm font-medium text-gray-900">{product?.name || 'Unknown Product'}</p>
-                    <p className="text-sm text-gray-500">{order.customerName} • {order.assignedTechnician}</p>
+                    <p className="text-sm font-medium text-gray-900">{product?.name || product?.productName || 'Unknown Product'}</p>
+                    <p className="text-sm text-gray-500">{order.customerName} • {order.assignedTechnician || 'Unassigned'}</p>
                   </div>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -1085,7 +1076,7 @@ const Repair: React.FC = () => {
     </div>
   );
   const ViewRepairOrderModal = ({ order, onClose }: { order: any; onClose: () => void }) => {
-    const product = inventory.find((item) => item.id === order.productId);
+    const product = products.find((item) => (item._id || item.id) === order.productId);
     const team = filteredRepairTeams.find((t: RepairTeam) => t._id === order.teamId);
     if (!order) return null;
     return (
@@ -1117,7 +1108,7 @@ const Repair: React.FC = () => {
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Product</label>
-                    <p className="text-sm text-gray-900 font-medium">{product?.name || 'Unknown Product'}</p>
+                    <p className="text-sm text-gray-900 font-medium">{product?.name || product?.productName || 'Unknown Product'}</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
@@ -1201,7 +1192,7 @@ const Repair: React.FC = () => {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-                    <p className="text-sm text-gray-900">{order.location}</p>
+                    <p className="text-sm text-gray-900">{getLocationName(order.location)}</p>
                   </div>
                 </div>
                 <div className="mt-4 pt-4 border-t border-gray-200">
@@ -1266,7 +1257,7 @@ const Repair: React.FC = () => {
     <div className="space-y-6">
       {/* Filters */}
       <div className="bg-white shadow rounded-lg p-6">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-6">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-7">
           <div className="relative">
             <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
             <input
@@ -1310,6 +1301,18 @@ const Repair: React.FC = () => {
             <option value="medium">Medium</option>
             <option value="high">High</option>
           </select>
+          {!isLocationRestricted && (
+            <select
+              value={locationFilter}
+              onChange={(e) => setLocationFilter(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="all">All Locations</option>
+              {masterDataLocations.map((location: any) => (
+                <option key={location._id} value={location._id}>{location.name}</option>
+              ))}
+            </select>
+          )}
           <button className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors flex items-center justify-center">
             <Download className="h-4 w-4 mr-2" />
             Export
@@ -1347,6 +1350,9 @@ const Repair: React.FC = () => {
                 Technician
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Location
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Timeline
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1359,12 +1365,12 @@ const Repair: React.FC = () => {
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {filteredOrders.map((order) => {
-              const product = inventory.find(item => item.id === order.productId);
+              const product = products.find(item => (item._id || item.id) === order.productId);
               return (
-                <tr key={order.id} className="hover:bg-gray-50">
+                <tr key={order._id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
-                      <div className="text-sm font-medium text-gray-900">{order.id}</div>
+                      <div className="text-sm font-medium text-gray-900">{order._id}</div>
                       <div className="text-sm text-gray-500">Qty: {order.quantity}</div>
                       {order.serialLotNumber && (
                         <div className="text-xs text-gray-400">S/N: {order.serialLotNumber}</div>
@@ -1374,7 +1380,7 @@ const Repair: React.FC = () => {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       <Package className="h-4 w-4 text-gray-400 mr-2" />
-                      <div className="text-sm text-gray-900">{product?.name || 'Unknown Product'}</div>
+                      <div className="text-sm text-gray-900">{product?.name || product?.productName || 'Unknown Product'}</div>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -1408,17 +1414,23 @@ const Repair: React.FC = () => {
                       <div className="text-sm text-gray-900">{order.assignedTechnician}</div>
                     </div>
                   </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center">
+                      <MapPin className="h-4 w-4 text-gray-400 mr-2" />
+                      <div className="text-sm text-gray-900">{getLocationName(order.location)}</div>
+                    </div>
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     <div>
                       <div className="text-sm font-medium">Due: {order.expectedCompletion}</div>
-                      <div className="text-sm text-gray-500">Created: {order.createdDate}</div>
+                      <div className="text-sm text-gray-500">Created: {new Date(order.createdAt).toLocaleDateString()}</div>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-900">
-                      <div className="font-medium">${order.totalCost.toFixed(2)}</div>
+                      <div className="font-medium">${(order.totalCost || 0).toFixed(2)}</div>
                       <div className="text-xs text-gray-500">
-                        Parts: ${order.partsCost.toFixed(2)} | Labor: ${order.laborCost.toFixed(2)}
+                        Parts: ${(order.partsCost || 0).toFixed(2)} | Labor: ${(order.laborCost || 0).toFixed(2)}
                       </div>
                     </div>
                   </td>
@@ -1427,7 +1439,7 @@ const Repair: React.FC = () => {
                       <button
                         className="text-blue-600 hover:text-blue-900"
                         onClick={() => {
-                          setSelectedOrder(order.id);
+                          setSelectedOrder(order._id);
                           setShowViewModal(true);
                         }}
                         title="View Details"
@@ -1437,7 +1449,7 @@ const Repair: React.FC = () => {
                       <button
                         className="text-green-600 hover:text-green-900"
                         onClick={() => {
-                          setSelectedOrder(order.id);
+                          setSelectedOrder(order._id);
                           setShowUpdateForm(true);
                         }}
                         title="Edit"
@@ -1449,7 +1461,11 @@ const Repair: React.FC = () => {
                           <Play className="h-4 w-4" />
                         </button>
                       )}
-                      <button className="text-red-600 hover:text-red-900" title="Delete">
+                      <button 
+                        className="text-red-600 hover:text-red-900" 
+                        title="Delete"
+                        onClick={() => handleDeleteRepairOrder(order._id)}
+                      >
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
@@ -1482,7 +1498,8 @@ const Repair: React.FC = () => {
       const newTeam = {
         teamName: teamFormData.teamName,
         teamLead: teamFormData.teamLead,
-        location: teamFormData.location,
+        // For location-restricted users, use their location; otherwise use form data
+        location: isLocationRestricted ? userProfile?.location : teamFormData.location,
         contactInfo: teamFormData.contactInfo,
         members: [],
       };
@@ -1501,7 +1518,7 @@ const Repair: React.FC = () => {
         console.error('Failed to create team:', error);
       }
     }
-  }, [teamFormData, handleCreateTeam]);
+  }, [teamFormData, handleCreateTeam, isLocationRestricted, userProfile?.location]);
 
   const renderTeams = () => (
     <div className="space-y-6">
@@ -1616,9 +1633,11 @@ const Repair: React.FC = () => {
           setTeamFormData={setTeamFormData}
           onSubmit={handleAddTeamSubmit}
           onCancel={handleCancelTeamForm}
-          allLocations={allLocations}
+          allLocations={masterDataLocations}
           hasLocations={hasLocations}
           dispatch={dispatch}
+          isLocationRestricted={isLocationRestricted}
+          masterDataLocations={masterDataLocations}
         />
       )}
     </div>
@@ -1838,7 +1857,7 @@ const Repair: React.FC = () => {
     </tbody>
   </table>
 </div>
-      </div>
+</div>
       {/* Template Modals */}
       <TemplateModal
         isOpen={showTemplateForm}
@@ -1970,6 +1989,7 @@ const Repair: React.FC = () => {
       </div>
     </div>
   );
+
   const renderSettings = () => (
     <div className="space-y-6">
       {/* Settings Categories */}
@@ -2147,11 +2167,13 @@ const Repair: React.FC = () => {
             setFormData={setCreateFormData}
             onSubmit={handleCreateSubmit}
             onCancel={handleCancelCreateForm}
-            inventory={inventory}
+            products={products}
             filteredRepairTeams={filteredRepairTeams}
-            allLocations={allLocations}
+            allLocations={masterDataLocations}
             hasLocations={hasLocations}
             dispatch={dispatch}
+            isLocationRestricted={isLocationRestricted}
+            masterDataLocations={masterDataLocations}
           />
         )}
         {showUpdateForm && (
@@ -2161,11 +2183,13 @@ const Repair: React.FC = () => {
             setFormData={setUpdateFormData}
             onSubmit={handleUpdateSubmit}
             onCancel={handleCancelUpdateForm}
-            inventory={inventory}
+            products={products}
             filteredRepairTeams={filteredRepairTeams}
-            allLocations={allLocations}
+            allLocations={masterDataLocations}
             hasLocations={hasLocations}
             dispatch={dispatch}
+            isLocationRestricted={isLocationRestricted}
+            masterDataLocations={masterDataLocations}
           />
         )}
       </div>

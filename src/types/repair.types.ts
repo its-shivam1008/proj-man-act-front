@@ -12,9 +12,12 @@ export interface RepairOrder {
   location: string;
   productId: string;
   quantity: number;
+  serialLotNumber?: string;
   customerName: string;
   repairType: "warranty" | "paid" | "internal";
   priority: "low" | "medium" | "high";
+  rootCause?: "damage" | "defect" | "misuse" | "unknown";
+  issueDescription: string;
   status:
     | "draft"
     | "confirmed"
@@ -24,10 +27,18 @@ export interface RepairOrder {
     | "cancelled";
   teamId?: string;
   technicianId?: string;
+  assignedTechnician?: string;
   requestedDate?: string;
   expectedCompletion?: string;
+  sourceDocument?: string;
+  warrantyType?: "in-warranty" | "extended" | "expired";
+  isChargeable?: boolean;
+  totalCost?: number;
+  partsCost?: number;
+  laborCost?: number;
   notes?: string;
   createdAt: string;
+  updatedAt: string;
 }
 
 /* ---------- Repair Team ---------- */

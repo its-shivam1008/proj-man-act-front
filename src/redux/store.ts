@@ -61,6 +61,11 @@ import repairTeams from "./slices/repairTeamSlice";
 import repairTemplates from "./slices/repairTemplateSice";
 import barcodeReducer from './slices/barcodeSlice'
 import qualityMReducer from "./slices/qualitySliceManagement";
+import qualityCheckReducer from "./slices/qualityCheckSlice";
+import controlPointReducer from "./slices/controlPointSlice";
+import qualityAlertReducer from "./slices/qualityAlertSlice";
+import qualityTeamReducer from "./slices/qualityTeamSlice";
+import qualityTagReducer from "./slices/qualityTagSlice";
 export const store = configureStore({
   reducer: {
     itemMaster: itemMasterReducer,
@@ -125,6 +130,11 @@ export const store = configureStore({
     repairTemplates,
     barcode: barcodeReducer,
     qualityM: qualityMReducer,
+    qualityChecks: qualityCheckReducer,
+    controlPoints: controlPointReducer,
+    qualityAlerts: qualityAlertReducer,
+    qualityTeams: qualityTeamReducer,
+    qualityTags: qualityTagReducer,
   },
 });
 
