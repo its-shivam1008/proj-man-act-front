@@ -5,6 +5,8 @@ import { toast } from 'sonner';
 import { usePermission } from '@/hooks/userPermission';
 import { useDebounce } from '@/hooks/useDebounce';
 import { fetchMasterData } from '@/redux/slices/masterDataSlice';
+import { fetchProducts } from '@/redux/slices/productSlice';
+import { fetchQualityTeams } from '@/redux/slices/qualityTeamSlice';
 import {
   fetchControlPoints,
   addControlPoint,
@@ -52,6 +54,8 @@ const ControlPoints: React.FC<ControlPointsProps> = () => {
 
   const { userProfile } = useSelector((state: RootState) => state.auth);
   const { locations } = useSelector((state: RootState) => state.masterData);
+  const { products } = useSelector((state: RootState) => state.products);
+  const { qualityTeams } = useSelector((state: RootState) => state.qualityTeams);
 
   // Permissions
   const canView = usePermission('qualityControl', 'view');
@@ -86,7 +90,17 @@ const ControlPoints: React.FC<ControlPointsProps> = () => {
   // Load master data on mount
   useEffect(() => {
     dispatch(fetchMasterData("location"));
-  }, [dispatch]);
+    // Fetch products for dropdown
+    dispatch(fetchProducts({ page: 1, limit: 100 }));
+    // Fetch quality teams for dropdown
+    if (organisationId) {
+      dispatch(fetchQualityTeams({
+        organisationId,
+        page: 1,
+        limit: 100
+      }));
+    }
+  }, [dispatch, organisationId]);
 
   // Load data on mount and filter changes
   useEffect(() => {
@@ -168,8 +182,8 @@ const ControlPoints: React.FC<ControlPointsProps> = () => {
     const controlPointData: CreateControlPointData = {
       controlPointName: (form.elements.namedItem('controlPointName') as HTMLInputElement).value,
       operationType: (form.elements.namedItem('operationType') as HTMLSelectElement).value as ControlPointOperation,
-      product: (form.elements.namedItem('product') as HTMLInputElement).value,
-      qualityTeamId: (form.elements.namedItem('qualityTeamId') as HTMLInputElement).value,
+      product: (form.elements.namedItem('product') as HTMLSelectElement).value,
+      qualityTeamId: (form.elements.namedItem('qualityTeamId') as HTMLSelectElement).value,
       controlType: (form.elements.namedItem('controlType') as HTMLSelectElement).value as ControlPointType,
       frequency: Number((form.elements.namedItem('frequency') as HTMLInputElement).value) || null,
       instruction: (form.elements.namedItem('instruction') as HTMLTextAreaElement).value,
@@ -185,6 +199,22 @@ const ControlPoints: React.FC<ControlPointsProps> = () => {
       await dispatch(addControlPoint(controlPointData)).unwrap();
       toast.success('Control point created successfully');
       setShowCreateForm(false);
+      
+      // Refresh the control points list with current filters
+      if (organisationId) {
+        dispatch(
+          fetchControlPoints({
+            organisationId,
+            page,
+            limit: 10,
+            operationType: operationFilter,
+            controlType: controlTypeFilter,
+            active: activeFilter,
+            search: debouncedSearch,
+            location: locationFilter,
+          })
+        );
+      }
     } catch (error: any) {
       toast.error(error || 'Failed to create control point');
     }
@@ -198,6 +228,22 @@ const ControlPoints: React.FC<ControlPointsProps> = () => {
       toast.success('Control point deleted successfully');
       setShowDeleteConfirm(false);
       setItemToDelete(null);
+      
+      // Refresh the control points list with current filters
+      if (organisationId) {
+        dispatch(
+          fetchControlPoints({
+            organisationId,
+            page,
+            limit: 10,
+            operationType: operationFilter,
+            controlType: controlTypeFilter,
+            active: activeFilter,
+            search: debouncedSearch,
+            location: locationFilter,
+          })
+        );
+      }
     } catch (error: any) {
       toast.error(error || 'Failed to delete control point');
     }
@@ -223,6 +269,13 @@ const ControlPoints: React.FC<ControlPointsProps> = () => {
     if (!locationId) return 'N/A';
     const location = locations.find(loc => loc._id === locationId);
     return location ? location.name : locationId;
+  };
+
+  // Helper function to get quality team name
+  const getQualityTeamName = (teamId: string) => {
+    if (!teamId) return 'N/A';
+    const team = qualityTeams.find((team: any) => team._id === teamId);
+    return team ? team.teamName : teamId;
   };
 
   // Permission check
@@ -277,23 +330,33 @@ const ControlPoints: React.FC<ControlPointsProps> = () => {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Product *</label>
-                <input
+                <select
                   name="product"
-                  type="text"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter product name"
                   required
-                />
+                >
+                  <option value="">Select Product</option>
+                  {products.map((product: any) => (
+                    <option key={product._id} value={product.name}>
+                      {product.name} - {product.category}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Quality Team ID *</label>
-                <input
+                <label className="block text-sm font-medium text-gray-700 mb-1">Quality Team *</label>
+                <select
                   name="qualityTeamId"
-                  type="text"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter quality team ID"
                   required
-                />
+                >
+                  <option value="">Select Quality Team</option>
+                  {qualityTeams.map((team: any) => (
+                    <option key={team._id} value={team._id}>
+                      {team.teamName} - {team.teamLeader}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -515,6 +578,9 @@ const ControlPoints: React.FC<ControlPointsProps> = () => {
                     Product
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Quality Team
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Type
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -531,7 +597,7 @@ const ControlPoints: React.FC<ControlPointsProps> = () => {
               <tbody className="bg-white divide-y divide-gray-200">
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-8">
+                    <td colSpan={8} className="text-center py-8">
                       <ClipLoader
                         color="#3B82F6"
                         loading={loading}
@@ -542,7 +608,7 @@ const ControlPoints: React.FC<ControlPointsProps> = () => {
                   </tr>
                 ) : controlPoints.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-8">
+                    <td colSpan={8} className="text-center py-8">
                       <div className="text-gray-500">
                         <Target className="mx-auto h-12 w-12 text-gray-400 mb-4" />
                         <h3 className="text-sm font-medium text-gray-900">No control points found</h3>
@@ -564,6 +630,9 @@ const ControlPoints: React.FC<ControlPointsProps> = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {cp.product}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {getQualityTeamName(cp.qualityTeamId)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 capitalize">
                         {cp.typeOfCheck}
