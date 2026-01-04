@@ -42,6 +42,13 @@ export interface RepairOrder {
 }
 
 /* ---------- Repair Team ---------- */
+export interface TeamMember {
+  technicianId: string;
+  name: string;
+  hourlyRate?: number;
+  availability?: 'available' | 'busy' | 'unavailable';
+}
+
 export interface RepairTeam {
   _id: string;
   organisationId: string;
@@ -52,17 +59,20 @@ export interface RepairTeam {
     email: string;
     phone?: string;
   };
-  members: any[];
+  members: TeamMember[];
 }
 
 /* ---------- Repair Template ---------- */
 export interface RepairTemplate {
   _id: string;
   organisationId: string;
+  location: string;
   templateName: string;
   productCategory: string;
   commonIssue: string;
   estimatedDuration: number;
   defaultParts: string[];
   isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
 }

@@ -25,7 +25,9 @@ const initialState: RepairOrderState = {
 export const fetchRepairOrders = createAsyncThunk(
   "repairOrders/fetch",
   async (params: FetchParams) => {
+    console.log('Redux: Making API call to /repair-orders/fetch with params:', params);
     const res = await api.get("/repair-orders/fetch", { params });
+    console.log('Redux: API response received:', res.data);
     return res.data;
   }
 );

@@ -1,9 +1,16 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import api from "@/utils/axiosApi";
-import { RepairTemplate } from "@/types/repair.types";
+import { RepairTemplate, Pagination } from "@/types/repair.types";
+
+interface FetchParams {
+  location?: string;
+  page?: number;
+  limit?: number;
+}
 
 interface RepairTemplateState {
   data: RepairTemplate[];
+  pagination?: Pagination;
   loading: boolean;
   error?: string;
 }
@@ -15,9 +22,11 @@ const initialState: RepairTemplateState = {
 
 export const fetchRepairTemplates = createAsyncThunk(
   "repairTemplates/fetch",
-  async () => {
-    const res = await api.get("/repair-templates/fetch");
-    return res.data.data as RepairTemplate[];
+  async (params: FetchParams = {}) => {
+    console.log('Redux: Fetching repair templates with params:', params);
+    const res = await api.get("/repair-templates/fetch", { params });
+    console.log('Redux: Repair templates API response:', res.data);
+    return res.data;
   }
 );
 
@@ -56,7 +65,8 @@ const repairTemplateSlice = createSlice({
       })
       .addCase(fetchRepairTemplates.fulfilled, (state, action) => {
         state.loading = false;
-        state.data = action.payload;
+        state.data = action.payload.data;
+        state.pagination = action.payload.pagination;
       })
       .addCase(fetchRepairTemplates.rejected, (state, action) => {
         state.loading = false;

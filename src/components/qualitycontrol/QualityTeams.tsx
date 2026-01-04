@@ -14,6 +14,7 @@ import {
 } from '@/redux/slices/qualityTeamSlice';
 import {
   QualityTeam,
+  QualityTeamUser,
   CreateQualityTeamData,
   UpdateQualityTeamData,
   QualityTeamDepartment,
@@ -259,142 +260,347 @@ const QualityTeams: React.FC<QualityTeamsProps> = () => {
     );
   }
 
-  const CreateTeamForm = () => (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
-        <div className="mt-3">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-medium text-gray-900">Create Quality Team</h3>
-            <button
-              onClick={() => setShowCreateForm(false)}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              <X className="h-6 w-6" />
-            </button>
+  const CreateTeamForm = () => {
+    // Local state for member management
+    const [newMemberName, setNewMemberName] = useState('');
+    const [newMemberEmail, setNewMemberEmail] = useState('');
+    const [newMemberRole, setNewMemberRole] = useState('');
+    const [teamMembers, setTeamMembers] = useState<QualityTeamUser[]>([]);
+
+    // Add member function
+    const addMember = () => {
+      if (newMemberName.trim() && newMemberEmail.trim() && newMemberRole.trim()) {
+        const newMember: QualityTeamUser = {
+          userId: `temp_${Date.now()}`, // Temporary ID
+          name: newMemberName.trim(),
+          email: newMemberEmail.trim(),
+          role: newMemberRole.trim()
+        };
+        
+        setTeamMembers(prev => [...prev, newMember]);
+        setNewMemberName('');
+        setNewMemberEmail('');
+        setNewMemberRole('');
+      }
+    };
+
+    // Remove member function
+    const removeMember = (index: number) => {
+      setTeamMembers(prev => prev.filter((_, i) => i !== index));
+    };
+
+    // Handle Enter key for adding members
+    const handleMemberKeyPress = (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        addMember();
+      }
+    };
+
+    // Handle form submission with members
+    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault();
+      const form = e.currentTarget;
+      
+      const teamData: CreateQualityTeamData = {
+        teamName: (form.elements.namedItem('teamName') as HTMLInputElement).value,
+        teamLeader: (form.elements.namedItem('teamLeader') as HTMLInputElement).value,
+        department: (form.elements.namedItem('department') as HTMLSelectElement).value as QualityTeamDepartment,
+        email: (form.elements.namedItem('email') as HTMLInputElement).value,
+        phone: (form.elements.namedItem('phone') as HTMLInputElement).value || undefined,
+        relatedProducts: [],
+        assignedUsers: teamMembers,
+        isActive: (form.elements.namedItem('isActive') as HTMLInputElement).checked,
+        location: isLocationRestricted ? userProfile?.location : (form.elements.namedItem('location') as HTMLSelectElement)?.value,
+      };
+
+      try {
+        await dispatch(addQualityTeam(teamData)).unwrap();
+        toast.success('Quality team created successfully');
+        setShowCreateForm(false);
+        setTeamMembers([]);
+      } catch (error: any) {
+        toast.error(error || 'Failed to create quality team');
+      }
+    };
+
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 shadow-lg rounded-md bg-white">
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">Create Quality Team</h3>
+              <button
+                onClick={() => {
+                  setShowCreateForm(false);
+                  setTeamMembers([]);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Basic Information */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="text-md font-medium text-gray-900 mb-3">Basic Information</h4>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Team ID</label>
+                    <input
+                      type="text"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                      placeholder="Auto-generated"
+                      disabled
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Team Name *</label>
+                    <input
+                      name="teamName"
+                      type="text"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      placeholder="Enter team name"
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 mt-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Team Leader *</label>
+                    <input
+                      name="teamLeader"
+                      type="text"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      placeholder="Enter team leader name"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Department *</label>
+                    <select
+                      name="department"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      required
+                    >
+                      <option value="">Select Department</option>
+                      <option value="quality-control">Quality Control</option>
+                      <option value="production">Production</option>
+                      <option value="incoming-inspection">Incoming Inspection</option>
+                      <option value="final-inspection">Final Inspection</option>
+                      <option value="laboratory">Laboratory</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 mt-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                    <input
+                      name="email"
+                      type="email"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      placeholder="Enter email address"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                    <input
+                      name="phone"
+                      type="tel"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      placeholder="Enter phone number"
+                    />
+                  </div>
+                </div>
+                {!isLocationRestricted && (
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                    <select
+                      name="location"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Select Location</option>
+                      {locations.map((location) => (
+                        <option key={location._id} value={location._id}>
+                          {location.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="flex items-center mt-4">
+                  <input
+                    name="isActive"
+                    type="checkbox"
+                    defaultChecked={true}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <label className="ml-2 text-sm text-gray-700">Active Team</label>
+                </div>
+              </div>
+
+              {/* Team Members Section */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="text-md font-medium text-gray-900 mb-3">Team Members</h4>
+                
+                {/* Add Member Inputs */}
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-4 mb-4">
+                  <input
+                    type="text"
+                    value={newMemberName}
+                    onChange={(e) => setNewMemberName(e.target.value)}
+                    onKeyPress={handleMemberKeyPress}
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Member name"
+                  />
+                  <input
+                    type="email"
+                    value={newMemberEmail}
+                    onChange={(e) => setNewMemberEmail(e.target.value)}
+                    onKeyPress={handleMemberKeyPress}
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Member email"
+                  />
+                  <input
+                    type="text"
+                    value={newMemberRole}
+                    onChange={(e) => setNewMemberRole(e.target.value)}
+                    onKeyPress={handleMemberKeyPress}
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Member role"
+                  />
+                  <button
+                    type="button"
+                    onClick={addMember}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Add Member
+                  </button>
+                </div>
+
+                {/* Members List */}
+                {teamMembers.length > 0 ? (
+                  <div className="space-y-2">
+                    <p className="text-sm text-gray-600 mb-2">
+                      Team Members ({teamMembers.length}):
+                    </p>
+                    <div className="max-h-40 overflow-y-auto">
+                      {teamMembers.map((member, index) => (
+                        <div key={index} className="flex items-center justify-between bg-white p-3 rounded border">
+                          <div className="flex-1">
+                            <div className="text-sm font-medium text-gray-900">{member.name}</div>
+                            <div className="text-xs text-gray-500">{member.email} • {member.role}</div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeMember(index)}
+                            className="text-red-600 hover:text-red-800 text-sm ml-2"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500 italic">No members added yet. Add members using the inputs above.</p>
+                )}
+              </div>
+              
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCreateForm(false);
+                    setTeamMembers([]);
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                >
+                  {loading ? 'Creating...' : 'Create Team'}
+                </button>
+              </div>
+            </form>
           </div>
-          <form onSubmit={handleCreateTeam} className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Team ID</label>
-                <input
-                  type="text"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                  placeholder="Auto-generated"
-                  disabled
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Team Name *</label>
-                <input
-                  name="teamName"
-                  type="text"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter team name"
-                  required
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Team Leader *</label>
-                <input
-                  name="teamLeader"
-                  type="text"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter team leader name"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Department *</label>
-                <select
-                  name="department"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  required
-                >
-                  <option value="">Select Department</option>
-                  <option value="quality-control">Quality Control</option>
-                  <option value="production">Production</option>
-                  <option value="incoming-inspection">Incoming Inspection</option>
-                  <option value="final-inspection">Final Inspection</option>
-                  <option value="laboratory">Laboratory</option>
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
-                <input
-                  name="email"
-                  type="email"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter email address"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                <input
-                  name="phone"
-                  type="tel"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter phone number"
-                />
-              </div>
-            </div>
-            {!isLocationRestricted && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-                <select
-                  name="location"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select Location</option>
-                  {locations.map((location) => (
-                    <option key={location._id} value={location._id}>
-                      {location.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <div className="flex items-center">
-              <input
-                name="isActive"
-                type="checkbox"
-                defaultChecked={true}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              <label className="ml-2 text-sm text-gray-700">Active Team</label>
-            </div>
-            <div className="flex justify-end space-x-3 pt-4">
-              <button
-                type="button"
-                onClick={() => setShowCreateForm(false)}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={loading}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-              >
-                {loading ? 'Creating...' : 'Create Team'}
-              </button>
-            </div>
-          </form>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const UpdateTeamForm = () => {
     if (!editingTeam) return null;
 
+    // Local state for member management
+    const [newMemberName, setNewMemberName] = useState('');
+    const [newMemberEmail, setNewMemberEmail] = useState('');
+    const [newMemberRole, setNewMemberRole] = useState('');
+    const [teamMembers, setTeamMembers] = useState<QualityTeamUser[]>(editingTeam.assignedUsers || []);
+
+    // Add member function
+    const addMember = () => {
+      if (newMemberName.trim() && newMemberEmail.trim() && newMemberRole.trim()) {
+        const newMember: QualityTeamUser = {
+          userId: `temp_${Date.now()}`, // Temporary ID
+          name: newMemberName.trim(),
+          email: newMemberEmail.trim(),
+          role: newMemberRole.trim()
+        };
+        
+        setTeamMembers(prev => [...prev, newMember]);
+        setNewMemberName('');
+        setNewMemberEmail('');
+        setNewMemberRole('');
+      }
+    };
+
+    // Remove member function
+    const removeMember = (index: number) => {
+      setTeamMembers(prev => prev.filter((_, i) => i !== index));
+    };
+
+    // Handle Enter key for adding members
+    const handleMemberKeyPress = (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        addMember();
+      }
+    };
+
+    // Handle form submission with members
+    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault();
+      const form = e.currentTarget;
+      
+      const updateData: UpdateQualityTeamData = {
+        teamName: (form.elements.namedItem('teamName') as HTMLInputElement).value,
+        teamLeader: (form.elements.namedItem('teamLeader') as HTMLInputElement).value,
+        department: (form.elements.namedItem('department') as HTMLSelectElement).value as QualityTeamDepartment,
+        email: (form.elements.namedItem('email') as HTMLInputElement).value,
+        phone: (form.elements.namedItem('phone') as HTMLInputElement).value || undefined,
+        assignedUsers: teamMembers,
+        isActive: (form.elements.namedItem('isActive') as HTMLInputElement).checked,
+      };
+
+      try {
+        await dispatch(updateQualityTeam({ id: editingTeam._id, data: updateData })).unwrap();
+        toast.success('Quality team updated successfully');
+        setShowUpdateForm(false);
+        setEditingTeam(null);
+      } catch (error: any) {
+        toast.error(error || 'Failed to update quality team');
+      }
+    };
+
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-        <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+        <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 shadow-lg rounded-md bg-white">
           <div className="mt-3">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-medium text-gray-900">Update Quality Team</h3>
@@ -408,86 +614,159 @@ const QualityTeams: React.FC<QualityTeamsProps> = () => {
                 <X className="h-6 w-6" />
               </button>
             </div>
-            <form onSubmit={handleUpdateTeam} className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Team ID</label>
-                  <input
-                    type="text"
-                    value={editingTeam.teamId}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
-                    disabled
-                  />
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Basic Information */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="text-md font-medium text-gray-900 mb-3">Basic Information</h4>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Team ID</label>
+                    <input
+                      type="text"
+                      value={editingTeam.teamId}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
+                      disabled
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Team Name *</label>
+                    <input
+                      name="teamName"
+                      type="text"
+                      defaultValue={editingTeam.teamName}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Team Name *</label>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 mt-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Team Leader *</label>
+                    <input
+                      name="teamLeader"
+                      type="text"
+                      defaultValue={editingTeam.teamLeader}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Department *</label>
+                    <select
+                      name="department"
+                      defaultValue={editingTeam.department}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      required
+                    >
+                      <option value="">Select Department</option>
+                      <option value="quality-control">Quality Control</option>
+                      <option value="production">Production</option>
+                      <option value="incoming-inspection">Incoming Inspection</option>
+                      <option value="final-inspection">Final Inspection</option>
+                      <option value="laboratory">Laboratory</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 mt-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                    <input
+                      name="email"
+                      type="email"
+                      defaultValue={editingTeam.email}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                    <input
+                      name="phone"
+                      type="tel"
+                      defaultValue={editingTeam.phone || ''}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center mt-4">
                   <input
-                    name="teamName"
-                    type="text"
-                    defaultValue={editingTeam.teamName}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    required
+                    name="isActive"
+                    type="checkbox"
+                    defaultChecked={editingTeam.isActive}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
+                  <label className="ml-2 text-sm text-gray-700">Active Team</label>
                 </div>
               </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Team Leader *</label>
+
+              {/* Team Members Section */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="text-md font-medium text-gray-900 mb-3">Team Members</h4>
+                
+                {/* Add Member Inputs */}
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-4 mb-4">
                   <input
-                    name="teamLeader"
                     type="text"
-                    defaultValue={editingTeam.teamLeader}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    required
+                    value={newMemberName}
+                    onChange={(e) => setNewMemberName(e.target.value)}
+                    onKeyPress={handleMemberKeyPress}
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Member name"
                   />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Department *</label>
-                  <select
-                    name="department"
-                    defaultValue={editingTeam.department}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    required
-                  >
-                    <option value="">Select Department</option>
-                    <option value="quality-control">Quality Control</option>
-                    <option value="production">Production</option>
-                    <option value="incoming-inspection">Incoming Inspection</option>
-                    <option value="final-inspection">Final Inspection</option>
-                    <option value="laboratory">Laboratory</option>
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
                   <input
-                    name="email"
                     type="email"
-                    defaultValue={editingTeam.email}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    required
+                    value={newMemberEmail}
+                    onChange={(e) => setNewMemberEmail(e.target.value)}
+                    onKeyPress={handleMemberKeyPress}
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Member email"
                   />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
                   <input
-                    name="phone"
-                    type="tel"
-                    defaultValue={editingTeam.phone || ''}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    type="text"
+                    value={newMemberRole}
+                    onChange={(e) => setNewMemberRole(e.target.value)}
+                    onKeyPress={handleMemberKeyPress}
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Member role"
                   />
+                  <button
+                    type="button"
+                    onClick={addMember}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Add Member
+                  </button>
                 </div>
+
+                {/* Members List */}
+                {teamMembers.length > 0 ? (
+                  <div className="space-y-2">
+                    <p className="text-sm text-gray-600 mb-2">
+                      Team Members ({teamMembers.length}):
+                    </p>
+                    <div className="max-h-40 overflow-y-auto">
+                      {teamMembers.map((member, index) => (
+                        <div key={index} className="flex items-center justify-between bg-white p-3 rounded border">
+                          <div className="flex-1">
+                            <div className="text-sm font-medium text-gray-900">{member.name}</div>
+                            <div className="text-xs text-gray-500">{member.email} • {member.role}</div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeMember(index)}
+                            className="text-red-600 hover:text-red-800 text-sm ml-2"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500 italic">No members added yet. Add members using the inputs above.</p>
+                )}
               </div>
-              <div className="flex items-center">
-                <input
-                  name="isActive"
-                  type="checkbox"
-                  defaultChecked={editingTeam.isActive}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <label className="ml-2 text-sm text-gray-700">Active Team</label>
-              </div>
+              
               <div className="flex justify-end space-x-3 pt-4">
                 <button
                   type="button"
@@ -495,14 +774,14 @@ const QualityTeams: React.FC<QualityTeamsProps> = () => {
                     setShowUpdateForm(false);
                     setEditingTeam(null);
                   }}
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
                 >
                   {loading ? 'Updating...' : 'Update Team'}
                 </button>
@@ -570,6 +849,31 @@ const QualityTeams: React.FC<QualityTeamsProps> = () => {
                 <span className="ml-1">{team.assignedUsers?.length || 0}</span>
               </div>
             </div>
+
+            {/* Team Members */}
+            {team.assignedUsers && team.assignedUsers.length > 0 && (
+              <div className="mb-4">
+                <span className="text-sm font-medium text-gray-700">Team Members ({team.assignedUsers.length}):</span>
+                <div className="mt-2 space-y-1 max-h-24 overflow-y-auto">
+                  {team.assignedUsers.slice(0, 3).map((member: QualityTeamUser, index: number) => (
+                    <div key={index} className="flex items-center justify-between text-xs bg-gray-50 p-2 rounded">
+                      <div>
+                        <div className="font-medium text-gray-900">{member.name}</div>
+                        <div className="text-gray-500">{member.role}</div>
+                      </div>
+                      <div className="text-gray-500 truncate ml-2" style={{maxWidth: '120px'}}>
+                        {member.email}
+                      </div>
+                    </div>
+                  ))}
+                  {team.assignedUsers.length > 3 && (
+                    <div className="text-xs text-gray-500 text-center py-1">
+                      +{team.assignedUsers.length - 3} more members
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Related Products */}
             {team.relatedProducts && team.relatedProducts.length > 0 && (
