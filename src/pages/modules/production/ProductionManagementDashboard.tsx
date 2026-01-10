@@ -23,6 +23,9 @@ import {
   Cell,
 } from "recharts";
 import { storage, STORAGE_KEYS } from "../../../lib/storage";
+import { fetchTotalProduced } from "@/redux/slices/production/workOrderSlice";
+import { RootState } from "@/redux/store";
+import { useDispatch, useSelector } from "react-redux";
 
 // ------------------- Types -------------------
 type ProductionRecord = {
@@ -67,6 +70,7 @@ const genId = (prefix = "id") => `${prefix}_${Math.random().toString(36).slice(2
 
 // ------------------- Component -------------------
 export default function ProductionAnalyticsDashboard() {
+  const dispatch = useDispatch()
   const canView = usePermission("productionReportingAnalytics", "view");
 
   if (!canView) {
@@ -109,6 +113,23 @@ export default function ProductionAnalyticsDashboard() {
     count: 1,
     remarks: "",
   });
+const workOrders = useSelector(
+  (state: RootState) => state.workOrders.list
+);
+
+
+const totalProduced = workOrders.reduce(
+  (sum, wo) => sum + (wo.producedQuantity || 0),
+  0
+);
+console.log(toDate , workOrders , "Total Produced")
+
+const orgId= localStorage.getItem('organisationId')
+console.log(totalProduced , "totl production")
+useEffect(() => {
+
+  dispatch(fetchTotalProduced(orgId));
+}, [dispatch]);
 
   // Load
   useEffect(() => {
@@ -138,7 +159,7 @@ export default function ProductionAnalyticsDashboard() {
   );
 
   // ------------------- KPI Calculations -------------------
-  const totalProduced = filteredProduction.reduce((s, r) => s + r.produced, 0);
+  // const totalProduced = filteredProduction.reduce((s, r) => s + r.produced, 0);
   const totalGood = filteredProduction.reduce((s, r) => s + r.good, 0);
   const totalScrap = filteredProduction.reduce((s, r) => s + r.scrap, 0);
   const totalDowntimeMinutes = filteredDowntime.reduce((s, d) => s + d.minutes, 0);

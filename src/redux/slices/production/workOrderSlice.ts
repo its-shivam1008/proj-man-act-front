@@ -19,6 +19,7 @@ export interface WorkOrder {
   location?: string; // ✅ ADD LOCATION FIELD
   plannedHours?: number; // ✅ ADD PLANNED HOURS
   createdAt?: string;
+  producedQuantity?: number; 
   updatedAt?: string;
 }
 
@@ -26,6 +27,7 @@ interface WorkOrderState {
   list: WorkOrder[];
   loading: boolean;
   error: string | null;
+  totalProduced: number,
   pagination: {
     total: number;
     page: number;
@@ -40,6 +42,7 @@ const initialState: WorkOrderState = {
   list: [],
   loading: false,
   error: null,
+  totalProduced: 0,
   pagination: {
     total: 0,
     page: 1,
@@ -52,11 +55,11 @@ const initialState: WorkOrderState = {
 /* ================= THUNKS ================= */
 export const fetchWorkOrders = createAsyncThunk(
   "workOrder/fetch",
-  async (params?: { 
-    location?: string; 
-    page?: number; 
-    limit?: number; 
-    search?: string; 
+  async (params?: {
+    location?: string;
+    page?: number;
+    limit?: number;
+    search?: string;
   }, { rejectWithValue }) => {
     try {
       const queryParams = {
@@ -65,7 +68,7 @@ export const fetchWorkOrders = createAsyncThunk(
         ...(params?.limit && { limit: params.limit }),
         ...(params?.search && { search: params.search })
       };
-      
+
       const res = await axios.get("/fetch/work-order", { params: queryParams });
       return res.data;
     } catch (err: any) {
@@ -107,6 +110,13 @@ export const deleteWorkOrder = createAsyncThunk(
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || "Delete failed");
     }
+  }
+);
+export const fetchTotalProduced = createAsyncThunk(
+  "workOrder/totalProduced",
+  async () => {
+    const res = await axios.get("/work-order/total-produced");
+    return res.data.totalProduced;
   }
 );
 
@@ -151,6 +161,17 @@ const workOrderSlice = createSlice({
       /* DELETE */
       .addCase(deleteWorkOrder.fulfilled, (state, action) => {
         state.list = state.list.filter(w => w._id !== action.payload);
+      })/* TOTAL PRODUCED */
+      .addCase(fetchTotalProduced.pending, (state) => {
+        state.loading = true;
+      })
+      .addCase(fetchTotalProduced.fulfilled, (state, action) => {
+        state.loading = false;
+        state.totalProduced = action.payload; // ✅ STORE VALUE
+      })
+      .addCase(fetchTotalProduced.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || "Failed to load total production";
       });
   },
 });

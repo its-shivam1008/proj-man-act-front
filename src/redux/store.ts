@@ -1,4 +1,5 @@
 import { configureStore } from "@reduxjs/toolkit";
+import ecoReducer from "./slices/ecoSlice";
 import authReducer from "./slices/authSlice";
 import projectReducer from "./slices/projectSlice";
 import wbsReducer from "./slices/wbsSlice";
@@ -66,8 +67,15 @@ import controlPointReducer from "./slices/controlPointSlice";
 import qualityAlertReducer from "./slices/qualityAlertSlice";
 import qualityTeamReducer from "./slices/qualityTeamSlice";
 import qualityTagReducer from "./slices/qualityTagSlice";
+import documentReducer from "./slices/documentSlice";
+import purchaseDashboardReducer from "./slices/purchase/purchaseDashboardSlice";
+import teamReducer from "./slices/teamSlice";
 export const store = configureStore({
   reducer: {
+    teams: teamReducer,
+    documents: documentReducer,
+    ecos: ecoReducer,
+    purchaseDashboard: purchaseDashboardReducer,
     itemMaster: itemMasterReducer,
     auth: authReducer,
     projects: projectReducer,

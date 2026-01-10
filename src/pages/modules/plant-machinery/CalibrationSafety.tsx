@@ -129,6 +129,20 @@ export default function CalibrationSafetyDashboard() {
     remarks: "",
   });
 
+  const getLocationName = (location: any) => {
+  if (!location) return "N/A";
+
+  // populated object
+  if (typeof location === "object" && location.name) {
+    return location.name;
+  }
+
+  // only ID
+  const found = locations.find(l => l._id === location);
+  return found?.name || "N/A";
+};
+
+
   // Load data on component mount
   useEffect(() => {
     dispatch(fetchMasterData("location"));
@@ -490,7 +504,7 @@ export default function CalibrationSafetyDashboard() {
                       <TableCell>
                         <div className="flex items-center gap-1">
                           <MapPin className="w-3 h-3 text-gray-400" />
-                          {record.location?.name || "N/A"}
+                           {getLocationName(record.location)}
                         </div>
                       </TableCell>
                       <TableCell>

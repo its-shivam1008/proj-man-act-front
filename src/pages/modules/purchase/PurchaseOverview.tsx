@@ -1,184 +1,609 @@
+"use client";
+
 import { usePermission } from "@/hooks/userPermission";
-import React, { useState, useEffect } from 'react';
-import { storage, STORAGE_KEYS } from '@/lib/storage';
+import { useEffect, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { RootState, AppDispatch } from "@/redux/store";
+import {
+  FilterType,
+  fetchPurchaseDashboard,
+} from "@/redux/slices/purchase/purchaseDashboardSlice";
+
 import {
   ShoppingCart,
-  Plus,
   DollarSign,
-  FileText,
   Users,
-  CheckCircle,
-  Send,
-  Package,
-  ShieldAlert
-} from 'lucide-react';
+  FileText,
+  ShieldAlert,
+} from "lucide-react";
 
-interface PurchaseOrder {
-  id: string;
-  totalAmount: number;
-}
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 
-interface RFQ {
-  id: string;
-}
-
-interface Vendor {
-  id: string;
-  isActive: boolean;
-}
-
-const PurchaseOverview: React.FC = () => {
-  const canView = usePermission("purchaseOverview", "view");
-  if (!canView) {
-    return (
-      <div className="text-center py-12 px-4">
-        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
-        <h3 className="text-xl font-semibold text-gray-900 mb-2">
-          Access Denied
-        </h3>
-        <p className="text-gray-600">
-          You do not have the necessary permissions to view this page.
-        </p>
-      </div>
-    );
-  }
-  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
-  const [rfqs, setRfqs] = useState<RFQ[]>([]);
-  const [vendors, setVendors] = useState<Vendor[]>([]);
-
-  useEffect(() => {
-    const loadedPOs = storage.get<PurchaseOrder[]>(STORAGE_KEYS.PURCHASE_ORDERS, []);
-    setPurchaseOrders(Array.isArray(loadedPOs) ? loadedPOs : []);
-    const loadedRFQs = storage.get<RFQ[]>(STORAGE_KEYS.RFQS, []);
-    setRfqs(Array.isArray(loadedRFQs) ? loadedRFQs : []);
-    const loadedVendors = storage.get<Vendor[]>(STORAGE_KEYS.VENDORS, []);
-    setVendors(Array.isArray(loadedVendors) ? loadedVendors : []);
-  }, []);
+/* ---------------------------------- */
+/* STATUS BADGE */
+/* ---------------------------------- */
+const StatusBadge = ({ status }: { status: string }) => {
+  const colors: Record<string, string> = {
+    open: "bg-blue-100 text-blue-700",
+    draft: "bg-gray-100 text-gray-600",
+    delivered: "bg-green-100 text-green-700",
+    closed: "bg-green-100 text-green-700",
+    active: "bg-green-100 text-green-700",
+    inactive: "bg-red-100 text-red-700",
+    expired: "bg-red-100 text-red-700",
+    pending: "bg-yellow-100 text-yellow-700",
+    sent: "bg-purple-100 text-purple-700",
+  };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Purchase Overview</h1>
-          <p className="mt-1 text-sm text-gray-600">
-            Comprehensive procurement management with RFQ, PO, vendor management, and reporting
-          </p>
-        </div>
-      </div>
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="bg-white overflow-hidden shadow rounded-lg">
-          <div className="p-5">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <ShoppingCart className="h-6 w-6 text-blue-500" />
-              </div>
-              <div className="ml-5">
-                <p className="text-sm font-medium text-gray-500">Total Purchase Orders</p>
-                <p className="text-2xl font-semibold text-gray-900">{purchaseOrders.length}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white overflow-hidden shadow rounded-lg">
-          <div className="p-5">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <DollarSign className="h-6 w-6 text-green-500" />
-              </div>
-              <div className="ml-5">
-                <p className="text-sm font-medium text-gray-500">Total Value</p>
-                <p className="text-2xl font-semibold text-gray-900">
-                  ₹{purchaseOrders.reduce((sum, order) => sum + (order.totalAmount || 0), 0).toLocaleString()}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white overflow-hidden shadow rounded-lg">
-          <div className="p-5">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <FileText className="h-6 w-6 text-purple-500" />
-              </div>
-              <div className="ml-5">
-                <p className="text-sm font-medium text-gray-500">Active RFQs</p>
-                <p className="text-2xl font-semibold text-gray-900">{rfqs.length}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white overflow-hidden shadow rounded-lg">
-          <div className="p-5">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <Users className="h-6 w-6 text-orange-500" />
-              </div>
-              <div className="ml-5">
-                <p className="text-sm font-medium text-gray-500">Active Vendors</p>
-                <p className="text-2xl font-semibold text-gray-900">
-                  {vendors.filter(vendor => vendor.isActive).length}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Quick Actions */}
-      {/* <div className="bg-white shadow rounded-lg p-6">
-        <h3 className="text-lg font-medium text-gray-900 mb-4">Quick Actions</h3>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <button className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-            <Plus className="h-5 w-5 text-gray-400 mr-2" />
-            <span className="text-sm font-medium text-gray-700">New RFQ</span>
-          </button>
-          <button className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-            <ShoppingCart className="h-5 w-5 text-gray-400 mr-2" />
-            <span className="text-sm font-medium text-gray-700">New Purchase Order</span>
-          </button>
-          <button className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-            <FileText className="h-5 w-5 text-gray-400 mr-2" />
-            <span className="text-sm font-medium text-gray-700">New Agreement</span>
-          </button>
-          <button className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-            <Users className="h-5 w-5 text-gray-400 mr-2" />
-            <span className="text-sm font-medium text-gray-700">Add Vendor</span>
-          </button>
-        </div>
-      </div> */}
-
-      {/* Recent Activity */}
-      <div className="bg-white shadow rounded-lg">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-medium text-gray-900">Recent Purchase Activity</h3>
-        </div>
-        <div className="divide-y divide-gray-200">
-          <div className="px-6 py-4 flex items-center">
-            <CheckCircle className="h-5 w-5 text-green-500 mr-3" />
-            <div className="flex-1">
-              <p className="text-sm text-gray-900">Purchase Order PO-2024-001 confirmed with Steel Corp Ltd</p>
-              <p className="text-xs text-gray-500">2 hours ago</p>
-            </div>
-          </div>
-          <div className="px-6 py-4 flex items-center">
-            <Send className="h-5 w-5 text-blue-500 mr-3" />
-            <div className="flex-1">
-              <p className="text-sm text-gray-900">RFQ RFQ-2024-001 sent to 3 vendors</p>
-              <p className="text-xs text-gray-500">1 day ago</p>
-            </div>
-          </div>
-          <div className="px-6 py-4 flex items-center">
-            <Users className="h-5 w-5 text-purple-500 mr-3" />
-            <div className="flex-1">
-              <p className="text-sm text-gray-900">New vendor Aluminum Co added to database</p>
-              <p className="text-xs text-gray-500">2 days ago</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <span
+      className={`px-2 py-1 rounded-full text-xs font-medium ${
+        colors[status] || "bg-gray-100 text-gray-600"
+      }`}
+    >
+      {status}
+    </span>
   );
 };
 
-export default PurchaseOverview;
+/* ---------------------------------- */
+/* KPI CARD */
+/* ---------------------------------- */
+const DashboardCard = ({
+  title,
+  value,
+  icon,
+  highlight,
+}: any) => (
+  <div
+    className={`bg-white rounded-2xl p-5 shadow-sm border ${
+      highlight ? "ring-1 ring-blue-500" : ""
+    }`}
+  >
+    <div className="flex items-center justify-between">
+      <p className="text-sm text-gray-500">{title}</p>
+      <div className="text-blue-600">{icon}</div>
+    </div>
+    <p className="text-2xl font-bold mt-2">{value}</p>
+  </div>
+);
+
+/* ---------------------------------- */
+/* MAIN COMPONENT */
+/* ---------------------------------- */
+export default function PurchaseOverview() {
+  const canView = usePermission("purchaseOverview", "view");
+  const dispatch = useDispatch<AppDispatch>();
+
+  const { loading, data, summary } = useSelector(
+    (state: RootState) => state.purchaseDashboard
+  );
+
+  const [filterType, setFilterType] = useState<FilterType>("po");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+
+  /* ---------------------------------- */
+  /* FETCH DATA */
+  /* ---------------------------------- */
+  useEffect(() => {
+    const organisationId = localStorage.getItem("organisationId");
+    if (!organisationId) return;
+
+    dispatch(
+      fetchPurchaseDashboard({
+        type: filterType,
+        fromDate: fromDate || undefined,
+        toDate: toDate || undefined,
+      })
+    );
+  }, [filterType, fromDate, toDate, dispatch]);
+
+  if (!canView) {
+    return (
+      <div className="text-center py-12">
+        <ShieldAlert className="w-14 h-14 text-red-500 mx-auto" />
+        <h3 className="mt-3 font-semibold">Access Denied</h3>
+      </div>
+    );
+  }
+
+  const recentData = data.slice(0, 6);
+
+  return (
+    <div className="space-y-8">
+
+      {/* ---------------------------------- */}
+      {/* HERO HEADER */}
+      {/* ---------------------------------- */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">
+            Purchase Dashboard
+          </h1>
+          <p className="text-gray-500 mt-1">
+            Real-time procurement performance overview
+          </p>
+        </div>
+
+        <div className="flex gap-3">
+          <input
+            type="date"
+            className="border px-3 py-2 rounded-lg"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+          />
+          <input
+            type="date"
+            className="border px-3 py-2 rounded-lg"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+          />
+          <select
+            className="border px-3 py-2 rounded-lg"
+            value={filterType}
+            onChange={(e) =>
+              setFilterType(e.target.value as FilterType)
+            }
+          >
+            <option value="po">Purchase Orders</option>
+            <option value="rfq">RFQs</option>
+            <option value="vendor">Vendors</option>
+            <option value="agreement">Agreements</option>
+          </select>
+        </div>
+      </div>
+
+      {/* ---------------------------------- */}
+      {/* KPI CARDS */}
+      {/* ---------------------------------- */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <DashboardCard
+          title="Total Records"
+          value={summary.totalCount ?? 0}
+          icon={<ShoppingCart />}
+        />
+
+        {summary.totalValue !== undefined && (
+          <DashboardCard
+            title="Total Value"
+            value={`₹${summary.totalValue.toLocaleString()}`}
+            icon={<DollarSign />}
+            highlight
+          />
+        )}
+
+        {summary.activeVendors !== undefined && (
+          <DashboardCard
+            title="Active Vendors"
+            value={summary.activeVendors}
+            icon={<Users />}
+          />
+        )}
+
+        <DashboardCard
+          title="System Status"
+          value="Healthy"
+          icon={<FileText />}
+        />
+      </div>
+
+      {/* ---------------------------------- */}
+      {/* TREND CHART */}
+      {/* ---------------------------------- */}
+      {filterType === "po" && (
+        <div className="bg-white p-6 rounded-2xl shadow-sm border">
+          <h3 className="font-semibold mb-4">
+            Purchase Value Trend
+          </h3>
+
+          <ResponsiveContainer width="100%" height={260}>
+            <LineChart data={data}>
+              <XAxis
+                dataKey="createdAt"
+                tickFormatter={(v) =>
+                  new Date(v).toLocaleDateString()
+                }
+              />
+              <YAxis />
+              <Tooltip />
+              <Line
+                type="monotone"
+                dataKey="totalAmount"
+                stroke="#2563eb"
+                strokeWidth={2}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* ---------------------------------- */}
+      {/* RECENT ACTIVITY TABLE */}
+      {/* ---------------------------------- */}
+      <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+        <div className="px-6 py-4 border-b">
+          <h3 className="font-semibold">
+            Recent {filterType.toUpperCase()}
+          </h3>
+        </div>
+
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="p-3 text-left">Reference</th>
+              <th className="p-3 text-left">Status</th>
+              <th className="p-3 text-right">Amount</th>
+              <th className="p-3 text-left">Date</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {!loading && recentData.length === 0 && (
+              <tr>
+                <td
+                  colSpan={4}
+                  className="p-6 text-center text-gray-400"
+                >
+                  No recent records
+                </td>
+              </tr>
+            )}
+
+            {!loading &&
+              recentData.map((row: any) => (
+                <tr
+                  key={row._id}
+                  className="border-t hover:bg-gray-50"
+                >
+                  <td className="p-3 font-medium">
+                    {row.poNo ||
+                      row.rfqNumber ||
+                      row.vendorName ||
+                      row.agreementNumber}
+                  </td>
+                  <td className="p-3">
+                    <StatusBadge
+                      status={
+                        row.status ||
+                        (row.isActive ? "active" : "inactive")
+                      }
+                    />
+                  </td>
+                  <td className="p-3 text-right">
+                    {row.totalAmount
+                      ? `₹${row.totalAmount.toLocaleString()}`
+                      : row.totalValue
+                      ? `₹${row.totalValue.toLocaleString()}`
+                      : "-"}
+                  </td>
+                  <td className="p-3">
+                    {new Date(row.createdAt).toLocaleDateString()}
+                  </td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+
+// import { usePermission } from "@/hooks/userPermission";
+// import { useEffect, useState } from "react";
+// import { useDispatch, useSelector } from "react-redux";
+// import { RootState, AppDispatch } from "@/redux/store";
+// import {
+//   FilterType, fetchPurchaseDashboard
+// } from "@/redux/slices/purchase/purchaseDashboardSlice";
+// import {
+//   ShoppingCart,
+//   DollarSign,
+//   FileText,
+//   Users,
+//   ShieldAlert,
+// } from "lucide-react";
+
+// interface PurchaseOrder {
+//   _id: string;
+//   poNo: string;
+//   vendorId: string;
+//   totalAmount: number;
+//   createdAt: string;
+// }
+
+// interface RFQ {
+//   _id: string;
+//   rfqNumber: string;
+//   createdAt: string;
+// }
+
+// interface Vendor {
+//   _id: string;
+//   vendorName: string;
+//   isActive: boolean;
+//   createdAt: string;
+// }
+
+// type FilterType = "po" | "rfq" | "vendor" | "agreement";
+// export default function PurchaseOverview() {
+//   const canView = usePermission("purchaseOverview", "view");
+//   const dispatch = useDispatch<AppDispatch>();
+
+//   const { loading, data, summary } = useSelector(
+//     (state: RootState) => state.purchaseDashboard
+//   );
+
+//   const [filterType, setFilterType] = useState<FilterType>("po");
+//   const [fromDate, setFromDate] = useState("");
+//   const [toDate, setToDate] = useState("");
+//   const [vendorId, setVendorId] = useState("");
+
+//   const StatusBadge = ({ status }: { status: string }) => {
+//     const colors: Record<string, string> = {
+//       open: "bg-blue-100 text-blue-700",
+//       draft: "bg-gray-100 text-gray-600",
+//       delivered: "bg-green-100 text-green-700",
+//       closed: "bg-green-100 text-green-700",
+//       active: "bg-green-100 text-green-700",
+//       expired: "bg-red-100 text-red-700",
+//       pending: "bg-yellow-100 text-yellow-700",
+//       sent: "bg-purple-100 text-purple-700",
+//     };
+
+//     return (
+//       <span
+//         className={`px-2 py-1 rounded-full text-xs font-medium ${colors[status] || "bg-gray-100 text-gray-600"
+//           }`}
+//       >
+//         {status}
+//       </span>
+//     );
+//   };
+
+//   // 🔥 Fetch on filter change
+//   useEffect(() => {
+//     const organisationId = localStorage.getItem("organisationId");
+
+//     if (!organisationId) {
+//       console.warn("⛔ Organisation ID missing, skipping dashboard fetch");
+//       return;
+//     }
+
+//     dispatch(
+//       fetchPurchaseDashboard({
+//         type: filterType,
+//         fromDate: fromDate || undefined,
+//         toDate: toDate || undefined,
+//         vendorId: vendorId || undefined,
+//       })
+//     );
+//   }, [filterType, fromDate, toDate, vendorId, dispatch]);
+
+
+//   if (!canView) {
+//     return (
+//       <div className="text-center py-12">
+//         <ShieldAlert className="w-14 h-14 text-red-500 mx-auto" />
+//         <h3 className="mt-3 font-semibold">Access Denied</h3>
+//       </div>
+//     );
+//   }
+
+//   return (
+//     <div className="space-y-6">
+
+//       {/* HEADER */}
+//       <div>
+//         <h1 className="text-2xl font-bold">Purchase Overview</h1>
+//         <p className="text-sm text-gray-500">
+//           Date & type based procurement analytics
+//         </p>
+//       </div>
+
+//       {/* FILTERS */}
+//       <div className="bg-white p-4 rounded-lg shadow flex gap-4">
+//         <select
+//           className="border px-3 py-2 rounded"
+//           value={filterType}
+//           onChange={e => setFilterType(e.target.value as FilterType)}
+//         >
+//           <option value="po">Purchase Orders</option>
+//           <option value="rfq">RFQs</option>
+//           <option value="vendor">Vendors</option>
+//           <option value="agreement">Agreements</option>
+//         </select>
+
+//         <input
+//           type="date"
+//           className="border px-3 py-2 rounded"
+//           value={fromDate}
+//           onChange={e => setFromDate(e.target.value)}
+//         />
+
+//         <input
+//           type="date"
+//           className="border px-3 py-2 rounded"
+//           value={toDate}
+//           onChange={e => setToDate(e.target.value)}
+//         />
+//       </div>
+
+//       {/* STATS */}
+//       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+//         <StatCard
+//           icon={<ShoppingCart />}
+//           title="Total Count"
+//           value={summary.totalCount ?? 0}
+//         />
+//         {summary.totalValue !== undefined && (
+//           <StatCard
+//             icon={<DollarSign />}
+//             title="Total Value"
+//             value={`₹${summary.totalValue.toLocaleString()}`}
+//           />
+//         )}
+//         {summary.activeVendors !== undefined && (
+//           <StatCard
+//             icon={<Users />}
+//             title="Active Vendors"
+//             value={summary.activeVendors}
+//           />
+//         )}
+//       </div>
+
+//       {/* TABLE */}
+//       <div className="bg-white rounded-lg shadow overflow-auto">
+//         <table className="w-full text-sm">
+//           <thead className="bg-gray-50">
+//             <tr>
+//               {filterType === "po" && (
+//                 <>
+//                   <th className="p-3 text-left">PO No</th>
+//                   <th className="p-3 text-left">Vendor</th>
+//                   <th className="p-3 text-left">Status</th>
+//                   <th className="p-3 text-right">Amount</th>
+//                   <th className="p-3 text-left">Date</th>
+//                 </>
+//               )}
+
+//               {filterType === "rfq" && (
+//                 <>
+//                   <th className="p-3 text-left">RFQ No</th>
+//                   <th className="p-3 text-left">Status</th>
+//                   <th className="p-3 text-left">Date</th>
+//                 </>
+//               )}
+
+//               {filterType === "vendor" && (
+//                 <>
+//                   <th className="p-3 text-left">Vendor Name</th>
+//                   <th className="p-3 text-left">Status</th>
+//                   <th className="p-3 text-left">Created</th>
+//                 </>
+//               )}
+
+//               {filterType === "agreement" && (
+//                 <>
+//                   <th className="p-3 text-left">Agreement No</th>
+//                   <th className="p-3 text-left">Vendor</th>
+//                   <th className="p-3 text-left">Status</th>
+//                   <th className="p-3 text-right">Total Value</th>
+//                   <th className="p-3 text-left">Period</th>
+//                 </>
+//               )}
+//             </tr>
+//           </thead>
+
+//           <tbody>
+//             {!loading && data.length === 0 && (
+//               <tr>
+//                 <td colSpan={10} className="p-6 text-center text-gray-400">
+//                   No records found
+//                 </td>
+//               </tr>
+//             )}
+
+//             {!loading &&
+//               data.map((row: any) => (
+//                 <tr key={row._id} className="border-t hover:bg-gray-50">
+
+//                   {/* PURCHASE ORDERS */}
+//                   {filterType === "po" && (
+//                     <>
+//                       <td className="p-3 font-medium">{row.poNo}</td>
+//                       <td className="p-3">{row.vendor}</td>
+//                       <td className="p-3">
+//                         <StatusBadge status={row.status} />
+//                       </td>
+//                       <td className="p-3 text-right font-semibold">
+//                         ₹{row.totalAmount?.toLocaleString()}
+//                       </td>
+//                       <td className="p-3">
+//                         {new Date(row.createdAt).toLocaleDateString()}
+//                       </td>
+//                     </>
+//                   )}
+
+//                   {/* RFQs */}
+//                   {filterType === "rfq" && (
+//                     <>
+//                       <td className="p-3 font-medium">{row.rfqNumber}</td>
+//                       <td className="p-3">
+//                         <StatusBadge status={row.status} />
+//                       </td>
+//                       <td className="p-3">
+//                         {new Date(row.createdAt).toLocaleDateString()}
+//                       </td>
+//                     </>
+//                   )}
+
+//                   {/* VENDORS */}
+//                   {filterType === "vendor" && (
+//                     <>
+//                       <td className="p-3 font-medium">{row.vendorName}</td>
+//                       <td className="p-3">
+//                         <StatusBadge status={row.isActive ? "active" : "inactive"} />
+//                       </td>
+//                       <td className="p-3">
+//                         {new Date(row.createdAt).toLocaleDateString()}
+//                       </td>
+//                     </>
+//                   )}
+
+//                   {/* AGREEMENTS */}
+//                   {filterType === "agreement" && (
+//                     <>
+//                       <td className="p-3 font-medium">{row.agreementNumber}</td>
+//                       <td className="p-3">{row.vendor}</td>
+//                       <td className="p-3">
+//                         <StatusBadge status={row.status} />
+//                       </td>
+//                       <td className="p-3 text-right font-semibold">
+//                         ₹{row.totalValue?.toLocaleString()}
+//                       </td>
+//                       <td className="p-3 text-sm text-gray-600">
+//                         {new Date(row.startDate).toLocaleDateString()} →{" "}
+//                         {new Date(row.endDate).toLocaleDateString()}
+//                       </td>
+//                     </>
+//                   )}
+
+//                 </tr>
+//               ))}
+//           </tbody>
+
+//         </table>
+//       </div>
+//     </div>
+//   );
+// }
+
+// /* SMALL CARD */
+// const StatCard = ({
+//   icon,
+//   title,
+//   value,
+// }: {
+//   icon: React.ReactNode;
+//   title: string;
+//   value: any;
+// }) => (
+//   <div className="bg-white p-4 rounded-lg shadow flex items-center gap-4">
+//     <div className="text-blue-500">{icon}</div>
+//     <div>
+//       <p className="text-xs text-gray-500">{title}</p>
+//       <p className="text-xl font-semibold">{value}</p>
+//     </div>
+//   </div>
+// );
+
+// // export default PurchaseOverview;

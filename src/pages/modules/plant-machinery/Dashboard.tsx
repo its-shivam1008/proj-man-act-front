@@ -341,7 +341,7 @@ const PlantMachineryDashboard: React.FC = () => {
     },
     {
       name: 'Assets Disposal Transfer',
-      href: '/plant-machinery/asset-disposal-transfer',
+      href: '/plant-machinery/assets-disposal',
       icon: Activity,
       color: 'bg-red-600',
       count: stats.assetDisposalTransfer,
