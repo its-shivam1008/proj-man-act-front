@@ -70,8 +70,10 @@ import qualityTagReducer from "./slices/qualityTagSlice";
 import documentReducer from "./slices/documentSlice";
 import purchaseDashboardReducer from "./slices/purchase/purchaseDashboardSlice";
 import teamReducer from "./slices/teamSlice";
+import routingReducer from "./slices/production/routingSlice";
 export const store = configureStore({
   reducer: {
+    routing: routingReducer,
     teams: teamReducer,
     documents: documentReducer,
     ecos: ecoReducer,

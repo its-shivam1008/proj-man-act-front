@@ -99,6 +99,7 @@ import ReportingModule, { InventoryHistoryPage, MovesAnalysisPage, StockPage, Va
 import Drawing from "./pages/modules/Drawing";
 import InventoryMasterData from "./pages/modules/inventory/InventoryMasterData";
 import UserProfileMiddleware from "./middleware/UserProfileMiddleware";
+import RoutingMaster from "./pages/modules/production/Routing";
 
 function App() {
   useEffect(() => {
@@ -183,6 +184,7 @@ function App() {
                 path="/production/productionexecution"
                 element={<ProductionExecution />}
               />
+              <Route path="/production/routing" element={<RoutingMaster/>}/>
               <Route
                 path="/production/materialissue"
                 element={<MaterialIssue />}

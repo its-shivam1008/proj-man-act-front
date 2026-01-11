@@ -93,6 +93,7 @@ const Layout: React.FC = () => {
     { name: "Production Dashboard", href: "/production", icon: LayoutDashboard, key: "productionDashboard" },
     { name: "PPC", href: "/production/ppc", icon: Factory, key: "ppc" },
     { name: "Item Master", href: "/production/item-master", icon: Package, key: "itemMaster" },
+    {name:'Routing' , href:'/production/routing' , icon:Package , key:'routing'},
     { name: "BOM Management", href: "/production/bom-management", icon: FactoryIcon, key: "bomManagement" },
     { name: "Product Orders", href: "/production/product-orders", icon: ShoppingCart, key: "productOrders" },
     { name: "Work Center Mgt", href: "/production/work-center-management", icon: Factory, key: "workCenterMgt" },

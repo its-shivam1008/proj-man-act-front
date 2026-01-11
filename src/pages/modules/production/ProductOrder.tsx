@@ -13,6 +13,7 @@ import {
   PopoverTrigger,
   PopoverContent,
 } from "@/components/ui/popover";
+import { fetchBOMs } from "@/redux/slices/production/bomSlice"
 import {
   Command,
   CommandInput,
@@ -58,12 +59,12 @@ type WorkOrder = {
   _id?: string;
   id?: string;
   orderNo: string;
+  bomId: string;
   productCode?: string;
   productName?: string;
   productId?: string;
   quantity: number;
   batchNo?: string;
-  bomId?: string;
   routingId?: string;
   workCenterId?: string;
   operators?: string[];
@@ -96,6 +97,9 @@ export default function WorkOrdersAdvanced() {
   const { list: orders, pagination } = useSelector(
     (state: RootState) => state.workOrders
   );
+  const { list: boms = [] } = useSelector(
+    (state: RootState) => state.bom
+  );
 
   const { products } = useSelector((state: RootState) => state.products);
   const { locations } = useSelector((state: RootState) => state.masterData);
@@ -110,14 +114,14 @@ export default function WorkOrdersAdvanced() {
   const [locationFilter, setLocationFilter] = useState("all");
   const [locationOpen, setLocationOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  
+
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
-  
+
   // Location restriction logic
-  const isLocationRestricted = 
-    userProfile?.role !== 'admin' && 
+  const isLocationRestricted =
+    userProfile?.role !== 'admin' &&
     !!userProfile?.location;
 
   if (!canView) {
@@ -142,8 +146,8 @@ export default function WorkOrdersAdvanced() {
     productCode: "",
     productName: "",
     quantity: 0,
-    batchNo: "",
     bomId: "",
+    batchNo: "",
     routingId: "",
     workCenterId: "",
     startDate: todayISO(),
@@ -165,7 +169,9 @@ export default function WorkOrdersAdvanced() {
   useEffect(() => {
     if (orgID) {
       (dispatch as any)(fetchProducts({ page: 1, limit: 100 }));
+      dispatch(fetchBOMs({ page: 1, limit: 100 }) as any);
     }
+
     // Fetch master data for locations
     (dispatch as any)(fetchMasterData("location"));
   }, [dispatch, orgID]);
@@ -174,6 +180,7 @@ export default function WorkOrdersAdvanced() {
   useEffect(() => {
     if (isLocationRestricted && userProfile?.location) {
       setLocationFilter(userProfile.location);
+
     }
   }, [isLocationRestricted, userProfile]);
 
@@ -194,6 +201,21 @@ export default function WorkOrdersAdvanced() {
     setCurrentPage(1); // Reset to first page when changing location
   };
 
+ const getBOMName = (bomId?: string) => {
+  if (!bomId) return "—";
+
+  const bom = boms.find((b: any) => b._id === bomId);
+  if (!bom) return "Unknown BOM";
+
+  const product = products.find(
+    (p: any) => p._id === bom.productId
+  );
+
+  return `${product?.name || "Unknown Product"} (v${bom.version})`;
+};
+
+
+
   // Helper to get location name
   const getLocationName = (locData: string | { _id: string; name: string } | undefined) => {
     if (!locData) return "No Location";
@@ -209,23 +231,13 @@ export default function WorkOrdersAdvanced() {
 
   const handleItemsPerPageChange = (limit: number) => {
     setItemsPerPage(limit);
-    setCurrentPage(1); // Reset to first page when changing limit
+    setCurrentPage(1);
   };
 
   const handleSearchChange = (value: string) => {
     setSearchTerm(value);
-    setCurrentPage(1); // Reset to first page when searching
+    setCurrentPage(1);
   };
-
-
-  /* -----------------------------------
-     Derived Data
-  ----------------------------------- */
-  // Remove unused ordersByStatus for now since we're not displaying charts
-
-  /* -----------------------------------
-     CRUD Operations
-  ----------------------------------- */
   const openNew = () => {
     setEditing(null);
     setForm({
@@ -251,7 +263,7 @@ export default function WorkOrdersAdvanced() {
 
   const openEdit = (wo: any) => {
     setEditing(wo);
-    setForm({ 
+    setForm({
       ...wo,
       location: wo.location || (isLocationRestricted ? userProfile.location : undefined)
     });
@@ -266,6 +278,7 @@ export default function WorkOrdersAdvanced() {
 
     const payload: any = {
       productId: form.productId,
+      bomId: form.bomId,
       productName: form.productName,
       quantity: Number(form.quantity),
       batchNo: form.batchNo,
@@ -306,31 +319,6 @@ export default function WorkOrdersAdvanced() {
       }));
     }
   }, [form.productCode, products]);
-
-  /* --------
-  --------------------------
-     Inventory Safe Renderer
-  ----------------------------------- */
-  // const renderInventory = () => {
-  //   const entries = Object.entries(inventory || {});
-  //   if (entries.length === 0) return <div>No inventory data</div>;
-
-  //   return entries.map(([key, val]) => {
-  //     const item = items.find((i: any) => i.id === key);
-  //     const name = item?.name || key;
-  //     const qty = typeof val === "object" ? val.qty : val;
-  //     const wh = typeof val === "object" ? val.warehouse : "—";
-  //     return (
-  //       <div key={key} className="text-sm border-b border-dashed py-1">
-  //         {name}: <strong>{qty}</strong> (Warehouse: {wh})
-  //       </div>
-  //     );
-  //   });
-  // };
-
-  /* -----------------------------------
-     Export CSV
-  ----------------------------------- */
   const exportOrdersCSV = () => {
     if (!orders.length) return alert("No orders to export");
     const keys = [
@@ -394,9 +382,9 @@ export default function WorkOrdersAdvanced() {
             onChange={(e) => handleSearchChange(e.target.value)}
           />
         </div>
-        <Select 
-          disabled={isLocationRestricted} 
-          value={locationFilter} 
+        <Select
+          disabled={isLocationRestricted}
+          value={locationFilter}
           onValueChange={handleLocationFilterChange}
         >
           <SelectTrigger className="w-full md:w-48">
@@ -436,6 +424,7 @@ export default function WorkOrdersAdvanced() {
                 <TableHead>Status</TableHead>
                 <TableHead>Planned Hrs</TableHead>
                 <TableHead>Image</TableHead>
+                <TableHead>BOM</TableHead>
                 <TableHead>Notes</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
@@ -444,8 +433,8 @@ export default function WorkOrdersAdvanced() {
               {orders.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={9} className="text-center py-6">
-                    {searchTerm || locationFilter !== "all" 
-                      ? "No work orders match your filters" 
+                    {searchTerm || locationFilter !== "all"
+                      ? "No work orders match your filters"
                       : "No work orders found"
                     }
                   </TableCell>
@@ -481,6 +470,11 @@ export default function WorkOrdersAdvanced() {
                       ) : (
                         <span className="text-gray-400 text-sm">No image</span>
                       )}
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-sm font-medium">
+                        {getBOMName(wo.bomId)}
+                      </span>
                     </TableCell>
 
                     {/* Notes Column */}
@@ -525,7 +519,7 @@ export default function WorkOrdersAdvanced() {
               )}
             </TableBody>
           </Table>
-          
+
           {/* Pagination */}
           <Pagination
             currentPage={pagination.page}
@@ -551,18 +545,6 @@ export default function WorkOrdersAdvanced() {
               opacity: editing ? (canEdit ? 1 : 0.6) : (canCreate ? 1 : 0.6),
             }}
           >
-
-            {/* <div>
-              <Label>Product Code</Label>
-              <Input
-                placeholder="Enter Product Code"
-                value={form.productCode || ""}
-                onChange={(e) =>
-                  setForm({ ...form, productCode: e.target.value })
-                }
-              />
-            </div> */}
-
             <div>
               <Label>Product</Label>
               <Select
@@ -584,7 +566,6 @@ export default function WorkOrdersAdvanced() {
                 </SelectTrigger>
                 <SelectContent>
                   {products.map((product) => (
-                    // Use product.name as the value instead of product.code
                     <SelectItem key={product._id} value={product.name}>
                       {product.name}
                     </SelectItem>
@@ -592,6 +573,28 @@ export default function WorkOrdersAdvanced() {
                 </SelectContent>
               </Select>
             </div>
+            <div>
+              <Label>BOM</Label>
+              <Select
+                value={form.bomId || ""}
+                onValueChange={(value) =>
+                  setForm({ ...form, bomId: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select BOM" />
+                </SelectTrigger>
+
+                <SelectContent>
+                  {boms.map((bom: any) => (
+                    <SelectItem key={bom._id} value={bom._id}>
+                      {bom.productName} (v{bom.version})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
 
 
             <div>
@@ -642,7 +645,7 @@ export default function WorkOrdersAdvanced() {
                     <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
                   </Button>
                 </PopoverTrigger>
-                
+
                 {!isLocationRestricted && (
                   <PopoverContent className="w-full p-0">
                     <Command>
