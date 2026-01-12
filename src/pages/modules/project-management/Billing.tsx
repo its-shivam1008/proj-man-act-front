@@ -1,5 +1,5 @@
 "use client";
-
+import { fetchWbsByIds, fetchWbsByProject } from "@/redux/slices/wbsSlice";
 import React, { useEffect, useMemo, useState } from "react";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
@@ -57,6 +57,13 @@ export default function BillingPage() {
     const { projects, loading: projectsLoading } = useSelector((state: RootState) => state.projects);
     const loading = billingLoading || projectsLoading;
 
+
+    const [wbsList, setWbsList] = useState<any[]>([]);
+    const [selectedWbs, setSelectedWbs] = useState<string[]>([]);
+    const [invoiceOpen, setInvoiceOpen] = useState(false);
+    const [invoiceData, setInvoiceData] = useState<any>(null);
+
+
     const canView = usePermission('billings', 'view');
     const canCreate = usePermission('billings', 'create');
     const canEdit = usePermission('billings', 'edit');
@@ -90,6 +97,18 @@ export default function BillingPage() {
             organisationId,
         }));
     }, [page, searchDebounce, projectId]);
+
+
+    useEffect(() => {
+        if (form.projectId) {
+            dispatch(fetchWbsByProject(form.projectId))
+                .unwrap()
+                .then((res) => setWbsList(res || []));
+        } else {
+            setWbsList([]);
+            setSelectedWbs([]);
+        }
+    }, [form.projectId]);
 
     useEffect(() => {
         if (safeMilestones.length === 0 && page > 1 && !loading) {
@@ -169,6 +188,7 @@ export default function BillingPage() {
                 billed,
                 balance,
                 projectId: form.projectId!,
+                wbsIds: selectedWbs,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
             };
@@ -228,6 +248,54 @@ export default function BillingPage() {
             })
         );
     };
+
+    const openInvoicePreview = async (milestone: any) => {
+        if (!milestone.wbsIds || milestone.wbsIds.length === 0) {
+            alert("No WBS linked with this milestone");
+            return;
+        }
+
+        const wbsItems = await dispatch(
+            fetchWbsByIds(milestone.wbsIds)
+        ).unwrap();
+
+        const totalAmount = wbsItems.reduce(
+            (sum: number, w: any) => sum + (w.plannedCost || 0),
+            0
+        );
+
+        setInvoiceData({
+            project: safeProjects.find(p => p._id === milestone.projectId),
+            milestone,
+            wbsItems,
+            totalAmount,
+            invoice: {
+                date: new Date().toISOString().slice(0, 10),
+                status: "Pending",
+            },
+        });
+
+        setInvoiceOpen(true);
+    };
+
+
+    const printInvoice = () => {
+        const input = document.getElementById("invoice");
+        if (!input) return;
+
+        html2canvas(input).then((canvas) => {
+            const imgData = canvas.toDataURL("image/png");
+            const pdf = new jsPDF("p", "mm", "a4");
+
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+            pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+            pdf.save("invoice.pdf");
+        });
+    };
+
+
 
     // Chart Data
     const invoicePaymentData = useMemo(() => {
@@ -289,6 +357,96 @@ export default function BillingPage() {
                     </Button>
                 </div>
             </div>
+           <Dialog open={invoiceOpen} onOpenChange={setInvoiceOpen}>
+  <DialogContent className="max-w-4xl p-0">
+    <DialogHeader className="px-8 pt-6 pb-4 border-b">
+      <DialogTitle className="text-2xl font-semibold">
+        Invoice Preview
+      </DialogTitle>
+    </DialogHeader>
+
+    {invoiceData && (
+      <>
+        {/* INVOICE */}
+        <div
+          id="invoice"
+          className="bg-white px-10 py-8 text-gray-900"
+        >
+          {/* Title */}
+          <div className="flex justify-between items-start mb-8">
+            <h1 className="text-3xl font-bold tracking-wide">
+              INVOICE
+            </h1>
+            <div className="text-right text-sm text-gray-600 space-y-1">
+              <p><span className="font-medium">Date:</span> {invoiceData.invoice.date}</p>
+              <p><span className="font-medium">Status:</span> {invoiceData.invoice.status}</p>
+            </div>
+          </div>
+
+          {/* Meta */}
+          <div className="grid grid-cols-2 gap-6 text-sm mb-8">
+            <div className="space-y-1">
+              <p className="text-gray-500">Project</p>
+              <p className="font-medium">{invoiceData.project?.name}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-gray-500">Milestone</p>
+              <p className="font-medium">{invoiceData.milestone.name}</p>
+            </div>
+          </div>
+
+          {/* Table */}
+          <div className="border rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-gray-600">
+                <tr>
+                  <th className="px-4 py-3 text-left font-medium">WBS</th>
+                  <th className="px-4 py-3 text-center font-medium">Duration</th>
+                  <th className="px-4 py-3 text-center font-medium">Progress</th>
+                  <th className="px-4 py-3 text-right font-medium">Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {invoiceData.wbsItems.map((w: any) => (
+                  <tr key={w._id} className="border-t">
+                    <td className="px-4 py-3">{w.name}</td>
+                    <td className="px-4 py-3 text-center">{w.duration} days</td>
+                    <td className="px-4 py-3 text-center">{w.progress}%</td>
+                    <td className="px-4 py-3 text-right">
+                      ₹{w.plannedCost?.toLocaleString("en-IN")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Total */}
+          <div className="flex justify-end mt-8">
+            <div className="text-right">
+              <p className="text-sm text-gray-500 mb-1">Total Amount</p>
+              <p className="text-2xl font-semibold">
+                ₹{invoiceData.totalAmount.toLocaleString("en-IN")}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <DialogFooter className="px-8 py-4 border-t bg-gray-50">
+          <Button variant="outline" onClick={() => setInvoiceOpen(false)}>
+            Close
+          </Button>
+          <Button onClick={printInvoice}>
+            Download PDF
+          </Button>
+        </DialogFooter>
+      </>
+    )}
+  </DialogContent>
+</Dialog>
+
+
 
             {/* Milestones Table */}
             <Card>
@@ -348,6 +506,10 @@ export default function BillingPage() {
                                                         <FileText className="h-4 w-4 mr-1" /> Invoice
                                                     </Button>
                                                 )}
+                                                <Button size="sm" onClick={() => openInvoicePreview(m)}>
+                                                    <FileText className="h-4 w-4 mr-1" /> Bill
+                                                </Button>
+
                                             </div>
                                         </TableCell>
                                     </TableRow>
@@ -611,6 +773,48 @@ export default function BillingPage() {
                                 <p className="text-sm text-muted-foreground">No projects found. Create one first.</p>
                             )}
                         </div>
+
+                        {wbsList.length > 0 && (
+                            <div className="grid gap-2">
+                                <Label>Link WBS Activities</Label>
+
+                                <div className="max-h-48 overflow-y-auto border rounded-lg p-2 space-y-2">
+                                    {wbsList.map((wbs) => (
+                                        <div
+                                            key={wbs._id}
+                                            className="flex items-center justify-between p-2 rounded hover:bg-gray-50"
+                                        >
+                                            <div>
+                                                <p className="font-medium">{wbs.name}</p>
+                                                <p className="text-xs text-muted-foreground">
+                                                    Planned: ₹{wbs.plannedCost || 0}
+                                                </p>
+                                            </div>
+
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedWbs.includes(wbs._id)}
+                                                onChange={(e) => {
+                                                    const updated = e.target.checked
+                                                        ? [...selectedWbs, wbs._id]
+                                                        : selectedWbs.filter(id => id !== wbs._id);
+
+                                                    setSelectedWbs(updated);
+
+                                                    // 🔥 Auto calculate milestone value
+                                                    const total = wbsList
+                                                        .filter(w => updated.includes(w._id))
+                                                        .reduce((sum, w) => sum + (w.plannedCost || 0), 0);
+
+                                                    setForm(prev => ({ ...prev, value: total }));
+                                                }}
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
 
                         <div className="grid gap-2">
                             <Label>Milestone Name *</Label>

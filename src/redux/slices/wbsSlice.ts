@@ -59,6 +59,7 @@ export interface WBSItem {
 
 interface WbsState {
   wbs: WBSItem[];
+  items: any[];
   loading: boolean;
   error: string | null;
   selectedItem?: WBSItem | null;
@@ -66,6 +67,7 @@ interface WbsState {
 
 const initialState: WbsState = {
   wbs: [],
+  items: [],
   loading: false,
   error: null,
   selectedItem: null,
@@ -193,6 +195,20 @@ export const pauseWbsTask = createAsyncThunk<
   }
 });
 
+export const fetchWbsByIds = createAsyncThunk(
+  "wbs/fetchByIds",
+  async (wbsIds: string[], { rejectWithValue }) => {
+    try {
+      const res = await api.post("/wbs/by-ids", { wbsIds });
+      return res.data;
+    } catch (error: any) {
+      return rejectWithValue(
+        error.response?.data?.message || "Failed to fetch WBS by IDs"
+      );
+    }
+  }
+);
+
 /* ----------------------------------------------------
    RESUME WBS TASK
 ---------------------------------------------------- */
@@ -236,7 +252,16 @@ const wbsSlice = createSlice({
     builder.addCase(fetchWbsByProject.rejected, (state, action) => {
       state.loading = false;
       state.error = action.payload || "Fetch failed";
-    });
+    }).addCase(fetchWbsByIds.pending, (state) => {
+      state.loading = true;
+    })
+      .addCase(fetchWbsByIds.fulfilled, (state, action) => {
+        state.loading = false;
+        state.items = action.payload; // 🔥 STORE FETCHED WBS
+      })
+      .addCase(fetchWbsByIds.rejected, (state) => {
+        state.loading = false;
+      });
 
     /* CREATE */
     builder.addCase(createWbsItem.fulfilled, (state, action) => {

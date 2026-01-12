@@ -1,5 +1,6 @@
 export interface Milestone {
   _id?: string;
+  wbsIds: string[];
   name: string;
   percent?: number;
   value?: number;
