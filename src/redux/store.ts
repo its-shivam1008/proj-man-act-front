@@ -71,8 +71,10 @@ import documentReducer from "./slices/documentSlice";
 import purchaseDashboardReducer from "./slices/purchase/purchaseDashboardSlice";
 import teamReducer from "./slices/teamSlice";
 import routingReducer from "./slices/production/routingSlice";
+import wbsBillReducer from './slices/wbsBillSlice'
 export const store = configureStore({
   reducer: {
+    wbsBill:wbsBillReducer,
     routing: routingReducer,
     teams: teamReducer,
     documents: documentReducer,

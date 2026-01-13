@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import BillModal from "@/components/wbsBill";
 import { parseISO, format, min, max } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,6 +36,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import {
+  FileText,
   Plus,
   Pencil,
   Trash2,
@@ -79,7 +81,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { toast as toastSonner} from 'sonner';
+import { toast as toastSonner } from 'sonner';
 // --- IMPORT THE SEPARATE MODAL COMPONENT ---
 import TeamSelectionDialog from "@/components/TeamSelectionDialog";
 import MaterialSelectionDialog from "@/components/MaterialSelectionDialog";
@@ -133,6 +135,7 @@ const WBS_ITEM_STATUSES: wbstatus[] = [
 
 // --- WBS NODE COMPONENT ---
 interface WBSNodeProps {
+  onOpenBill: (wbsId: string) => void;
   item: WBSItem;
   allwbs: WBSItem[];
   level: number;
@@ -165,12 +168,21 @@ const WBSNode: React.FC<WBSNodeProps> = ({
   onShowToast,
   onPause,
   onResume,
+  onOpenBill,
   getMaterialStatusSummary,
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const { userProfile } = useSelector((state: RootState) => state.auth);
   const canEdit = usePermission("wbsManagement", "edit");
   const canDelete = usePermission("wbsManagement", "delete");
+  // const [billModalOpen, setBillModalOpen] = useState(false);
+  // const [selectedBillWbsId, setSelectedBillWbsId] = useState<string | null>(null);
+
+  // const openBillModal = (wbsId: string) => {
+  //   setSelectedBillWbsId(wbsId);
+  //   setBillModalOpen(true);
+  // };
+
 
   const children = useMemo(
     () => allwbs.filter((i) => i.parentId === item.id),
@@ -182,7 +194,7 @@ const WBSNode: React.FC<WBSNodeProps> = ({
     if (item.isPaused) {
       return "bg-orange-100 text-orange-800 border-orange-200";
     }
-    
+
     if (!status) return "bg-gray-100 text-gray-800 border-gray-200";
     const colors: Record<wbstatus, string> = {
       "not-started": "bg-gray-100 text-gray-800 border-gray-200",
@@ -289,106 +301,76 @@ const WBSNode: React.FC<WBSNodeProps> = ({
           })()}
         </div>
 
-        <div className="w-60 flex justify-around text-center items-center space-x-2 pr-4">
-          {canEdit && (
-            <div className="space-x-2">
-              <Button
-                variant="ghost"
-                size="icon"
+        <div className="w-62 flex  items-center pr-4">
+          {/* ===== TOP ICON ROW ===== */}
+          <div className="w-62 flex items-center gap-6 pr-4">
+            {canEdit && (
+              <Package
+                className="h-4 w-4 text-blue-600 cursor-pointer"
                 title="Link Materials"
                 onClick={() => onLinkMaterial(item)}
-              >
-                <Package className="h-4 w-4 text-blue-600" />
-              </Button>
+              />
+            )}
 
-
-
-              {/* Team Button - Different behavior when paused */}
-              {item.isPaused ? (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  title="View Team Members"
+            {canEdit &&
+              (item.isPaused ? (
+                <UserCheck
+                  className="h-4 w-4 text-orange-600 cursor-pointer"
+                  title="View Team"
                   onClick={() => onTeamView(item)}
-                >
-                  <UserCheck className="h-4 w-4 text-orange-600" />
-                </Button>
+                />
               ) : (
-                <Button
-                  variant="ghost"
-                  size="icon"
+                <Users
+                  className="h-4 w-4 text-green-600 cursor-pointer"
                   title="Link Team"
                   onClick={() => onLinkTeam(item)}
-                >
-                  <Users className="h-4 w-4 text-green-600" />
-                </Button>
-              )}
+                />
+              ))}
 
-              {/* Pause/Resume Button */}
-              {item.isPaused ? (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="Resume Task"
-                        onClick={() => onResume(item)}
-                        className="text-green-600 hover:text-green-700"
-                      >
-                        <Play className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <div className="text-sm">
-                        <p className="font-semibold">Task is Paused</p>
-                        <p>Paused since: {item.pausedAt ? new Date(item.pausedAt).toLocaleDateString() : 'N/A'}</p>
-                        <p>Total paused days: {item.totalPausedDays || 0}</p>
-                        {item.pauseHistory && item.pauseHistory.length > 0 && (
-                          <div className="mt-2 pt-2 border-t border-gray-200">
-                            <p className="text-xs text-gray-500">Latest pause reason:</p>
-                            <p className="text-xs">{item.pauseHistory[item.pauseHistory.length - 1]?.reason || 'No reason provided'}</p>
-                          </div>
-                        )}
-                        <p className="text-xs text-gray-400 mt-1">Click to resume</p>
-                      </div>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+            {canEdit &&
+              (item.isPaused ? (
+                <Play
+                  className="h-4 w-4 text-green-600 cursor-pointer"
+                  title="Resume Task"
+                  onClick={() => onResume(item)}
+                />
               ) : (
-                <Button
-                  variant="ghost"
-                  size="icon"
+                <Pause
+                  className="h-4 w-4 text-orange-600 cursor-pointer"
                   title="Pause Task"
                   onClick={() => onPause(item)}
-                  className="text-orange-600 hover:text-orange-700"
-                >
-                  <Pause className="h-4 w-4" />
-                </Button>
-              )}
+                />
+              ))}
 
-              <Button
-                variant="ghost"
-                size="icon"
+            {canEdit && (
+              <Pencil
+                className="h-4 w-4 cursor-pointer"
                 title="Edit Item"
                 onClick={() => onEdit(item)}
-              >
-                <Pencil className="h-4 w-4" />
-              </Button>
-            </div>
-          )}
-          {canDelete && (
-            <Button
-              variant="ghost"
-              size="icon"
-              title="Delete Item"
-              onClick={() => onDelete(item.id)}
-            >
-              <Trash2 className="h-4 w-4 text-destructive" />
-            </Button>
-          )}
+              />
+            )}
+
+            {canEdit && (
+              <FileText
+                className="h-4 w-4 text-blue-600 cursor-pointer"
+                title="Add / View Bill"
+                onClick={() => onOpenBill(item._id)}
+              />
+            )}
+
+            {canDelete && (
+              <Trash2
+                className="h-4 w-4 text-destructive cursor-pointer"
+                title="Delete Item"
+                onClick={() => onDelete(item.id)}
+              />
+            )}
+          </div>
+
         </div>
+
       </div>
+
       {/* Render children */}
       {isExpanded &&
         children.map((child) => (
@@ -406,6 +388,7 @@ const WBSNode: React.FC<WBSNodeProps> = ({
             onPause={onPause}
             onResume={onResume}
             getMaterialStatusSummary={getMaterialStatusSummary}
+            onOpenBill={onOpenBill}
           />
         ))}
     </div>
@@ -422,6 +405,16 @@ export default function WBS() {
   const canView = usePermission("wbsManagement", "view");
   const canCreate = usePermission("wbsManagement", "create");
 
+  const [billModalOpen, setBillModalOpen] = useState(false);
+  const [selectedBillWbsId, setSelectedBillWbsId] = useState<string | null>(null);
+
+  const openBillModal = (wbsId: string) => {
+    setSelectedBillWbsId(wbsId);
+    setBillModalOpen(true);
+  };
+
+
+
   const { projects, loading: projectLoading } = useSelector(
     (state: RootState) => state.projects
   ) as { projects: Project[], loading: boolean };
@@ -437,14 +430,14 @@ export default function WBS() {
   const debouncedSearchTerm = useDebounce(searchTerm, 500);
   const [locationFilter, setLocationFilter] = useState("all");
 
-  const isLocationRestricted = 
-    userProfile?.role !== 'admin' && 
+  const isLocationRestricted =
+    userProfile?.role !== 'admin' &&
     !!userProfile?.location;
 
   const [resumeConflicts, setResumeConflicts] = useState<any[]>([]);
   const [resolutionMap, setResolutionMap] = useState<Record<string, "both" | "resumed_only">>({});
 
-  
+
 
   // --- TEAM LINKING STATE ---
   const [linkingItem, setLinkingItem] = useState<WBSItem | null>(null);
@@ -557,10 +550,10 @@ export default function WBS() {
         // We trigger the pause action automatically here
         if (formData.status === "delayed" && !editingItem.isPaused) {
           const pauseReason = `DELAYED: ${formData.delayReason}`;
-          
-          await dispatch(pauseWbsTask({ 
-            id: editingItem.id, 
-            reason: pauseReason 
+
+          await dispatch(pauseWbsTask({
+            id: editingItem.id,
+            reason: pauseReason
           })).unwrap();
 
           toastSonner.warning("Task Delayed & Paused", {
@@ -574,13 +567,13 @@ export default function WBS() {
       } else {
         // Create New Item
         const newItem = await dispatch(createWbsItem(formData)).unwrap();
-        
+
         // Handle case where a new item is created immediately as delayed (rare but possible)
         if (formData.status === "delayed") {
-           const pauseReason = `DELAYED: ${formData.delayReason}`;
-           await dispatch(pauseWbsTask({ 
-            id: newItem.id, 
-            reason: pauseReason 
+          const pauseReason = `DELAYED: ${formData.delayReason}`;
+          await dispatch(pauseWbsTask({
+            id: newItem.id,
+            reason: pauseReason
           })).unwrap();
         }
 
@@ -611,7 +604,7 @@ export default function WBS() {
   //   if (formData.startDate && formData.endDate) {
   //     const start = new Date(formData.startDate);
   //     const end = new Date(formData.endDate);
-      
+
   //     if (end < start) {
   //       toastSonner.error("Date Error",{
   //         description: "End Date cannot be earlier than Start Date.",
@@ -792,9 +785,9 @@ export default function WBS() {
   const handleTeamView = (item: WBSItem) => {
     setTeamViewItem(item);
     // Get all non-paused tasks in the same project for display
-    const nonPausedTasks = wbs.filter(task => 
-      task.projectId === item.projectId && 
-      !task.isPaused && 
+    const nonPausedTasks = wbs.filter(task =>
+      task.projectId === item.projectId &&
+      !task.isPaused &&
       task.id !== item.id
     );
     setAvailableTasks(nonPausedTasks);
@@ -817,12 +810,12 @@ export default function WBS() {
       await dispatch(assignPersonToWbs(payload)).unwrap();
       console.log("1")
       toast({
-        title:'Success',
+        title: 'Success',
         description: `Successfully assigned ${member.personalInfo?.name || "Member"} to "${targetTask.name}".`,
         className: "bg-green-50 border-green-200",
       });
       console.log("2")
-      
+
       // Close the dropdown or dialog if needed, or keep open for more moves
     } catch (error: any) {
       toast({
@@ -835,7 +828,7 @@ export default function WBS() {
 
   const handlePauseTask = async (item: WBSItem) => {
     const reason = prompt("Enter reason for pausing this task (optional):");
-    
+
     try {
       await dispatch(pauseWbsTask({ id: item.id, reason: reason || "" })).unwrap();
       toast({
@@ -867,7 +860,7 @@ export default function WBS() {
 
     // Identify which of these people are currently assigned to OTHER active tasks in this project
     const conflicts: any[] = [];
-    
+
     // Helper: Get all active tasks for this project (excluding the one being resumed)
     const activeProjectTasks = wbs.filter(
       t => t.projectId === item.projectId && t.id !== item.id && !t.isDeleted
@@ -876,28 +869,28 @@ export default function WBS() {
     snapshot.forEach(person => {
       // Find if this person is assigned to any active task
       // We check 'assignedPersons' of other tasks
-      const activeAssignments = activeProjectTasks.filter(t => 
+      const activeAssignments = activeProjectTasks.filter(t =>
         t.assignedPersons?.some(p => p.resourceId === person.resourceId)
       );
 
       if (activeAssignments.length > 0) {
         // Just take the first one found for simplicity, or list them all
-        const currentTask = activeAssignments[0]; 
+        const currentTask = activeAssignments[0];
         conflicts.push({
           person,
           currentTask,
           conflictType: 'reassigned'
         });
-        
+
         // Default resolution
-        setResolutionMap(prev => ({...prev, [person.resourceId]: "both"}));
+        setResolutionMap(prev => ({ ...prev, [person.resourceId]: "both" }));
       }
     });
 
     if (conflicts.length > 0) {
       setResumeConflicts(conflicts);
     }
-    
+
     setResumeDialogOpen(true);
   };
 
@@ -912,14 +905,14 @@ export default function WBS() {
     }));
 
     try {
-      const result = await dispatch(resumeWbsTask({ 
-        id: resumingItem.id, 
+      const result = await dispatch(resumeWbsTask({
+        id: resumingItem.id,
         resumeReason: resumeReason,
-        resolutions 
+        resolutions
       })).unwrap();
-      
+
       const pausedDays = result.pauseHistory?.[result.pauseHistory.length - 1]?.pausedDays || 0;
-      
+
       toast({
         title: "Task Resumed",
         description: `Task active. End date extended by ${Math.round(pausedDays)} days.`,
@@ -1175,8 +1168,8 @@ export default function WBS() {
                         >
                           <Check
                             className={`mr-2 h-4 w-4 ${selectedProjectId === project._id
-                                ? "opacity-100"
-                                : "opacity-0"
+                              ? "opacity-100"
+                              : "opacity-0"
                               }`}
                           />
                           <div className="flex flex-col">
@@ -1518,6 +1511,14 @@ export default function WBS() {
             <div className="w-60 text-right pr-4">Actions</div>
           </div>
         </CardHeader>
+        {selectedBillWbsId && (
+          <BillModal
+            open={billModalOpen}
+            onClose={() => setBillModalOpen(false)}
+            wbsId={selectedBillWbsId}
+          />
+        )}
+
         <CardContent>
           {!selectedProjectId ? (
             <div className="text-center py-12">
@@ -1554,6 +1555,7 @@ export default function WBS() {
                 onPause={handlePauseTask}
                 onResume={handleResumeTask}
                 getMaterialStatusSummary={getMaterialStatusSummary}
+                onOpenBill={openBillModal}
               />
             ))
           )}
@@ -1637,11 +1639,11 @@ export default function WBS() {
                   <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
                     <div className="flex-1">
                       <p className="font-medium">
-                        {member.personalInfo?.name || 
-                         member.personalInfo?.firstName || 
-                         member.personalInfo?.fullName || 
-                         member.name || 
-                         `Team Member`}
+                        {member.personalInfo?.name ||
+                          member.personalInfo?.firstName ||
+                          member.personalInfo?.fullName ||
+                          member.name ||
+                          `Team Member`}
                       </p>
                       <p className="text-sm text-muted-foreground capitalize">
                         {member.type} • Progress: {member.progress || 0}%

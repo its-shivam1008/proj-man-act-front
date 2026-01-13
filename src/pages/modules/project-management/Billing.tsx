@@ -1,5 +1,12 @@
 "use client";
 import { fetchWbsByIds, fetchWbsByProject } from "@/redux/slices/wbsSlice";
+import {
+    fetchBillsByWbs,
+    deleteBill,
+} from "@/redux/slices/wbsBillSlice";
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
+
 import React, { useEffect, useMemo, useState } from "react";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
@@ -83,6 +90,18 @@ export default function BillingPage() {
     const [projectId, setProjectId] = useState("");
     const safeMilestones = milestones?.length ? milestones : [];
 
+    const { bills: wbsBills, loading: billLoading } = useSelector(
+        (state: RootState) => state.wbsBill
+    );
+
+
+    const [billDialogOpen, setBillDialogOpen] = useState(false);
+    const [activeWbsId, setActiveWbsId] = useState<string | null>(null);
+
+    const [previewBill, setPreviewBill] = useState<any>(null);
+
+
+
     const safeProjects = (projects || []).filter(Boolean);
 
     // Safely get from localStorage
@@ -157,6 +176,26 @@ export default function BillingPage() {
         });
         setIsDialogOpen(true);
     };
+
+    const downloadBillPdf = async () => {
+        const element = document.getElementById("bill-pdf");
+        if (!element) return;
+
+        const canvas = await html2canvas(element, {
+            scale: 2,
+            useCORS: true, // 🔥 important for Cloudinary images
+        });
+
+        const imgData = canvas.toDataURL("image/png");
+        const pdf = new jsPDF("p", "mm", "a4");
+
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+        pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+        pdf.save("wbs-bill.pdf");
+    };
+
 
     const handleSave = async () => {
         if (!form.name || !form.projectId || (form.value ?? 0) <= 0) {
@@ -357,94 +396,94 @@ export default function BillingPage() {
                     </Button>
                 </div>
             </div>
-           <Dialog open={invoiceOpen} onOpenChange={setInvoiceOpen}>
-  <DialogContent className="max-w-4xl p-0">
-    <DialogHeader className="px-8 pt-6 pb-4 border-b">
-      <DialogTitle className="text-2xl font-semibold">
-        Invoice Preview
-      </DialogTitle>
-    </DialogHeader>
+            <Dialog open={invoiceOpen} onOpenChange={setInvoiceOpen}>
+                <DialogContent className="max-w-4xl p-0">
+                    <DialogHeader className="px-8 pt-6 pb-4 border-b">
+                        <DialogTitle className="text-2xl font-semibold">
+                            Invoice Preview
+                        </DialogTitle>
+                    </DialogHeader>
 
-    {invoiceData && (
-      <>
-        {/* INVOICE */}
-        <div
-          id="invoice"
-          className="bg-white px-10 py-8 text-gray-900"
-        >
-          {/* Title */}
-          <div className="flex justify-between items-start mb-8">
-            <h1 className="text-3xl font-bold tracking-wide">
-              INVOICE
-            </h1>
-            <div className="text-right text-sm text-gray-600 space-y-1">
-              <p><span className="font-medium">Date:</span> {invoiceData.invoice.date}</p>
-              <p><span className="font-medium">Status:</span> {invoiceData.invoice.status}</p>
-            </div>
-          </div>
+                    {invoiceData && (
+                        <>
+                            {/* INVOICE */}
+                            <div
+                                id="invoice"
+                                className="bg-white px-10 py-8 text-gray-900"
+                            >
+                                {/* Title */}
+                                <div className="flex justify-between items-start mb-8">
+                                    <h1 className="text-3xl font-bold tracking-wide">
+                                        INVOICE
+                                    </h1>
+                                    <div className="text-right text-sm text-gray-600 space-y-1">
+                                        <p><span className="font-medium">Date:</span> {invoiceData.invoice.date}</p>
+                                        <p><span className="font-medium">Status:</span> {invoiceData.invoice.status}</p>
+                                    </div>
+                                </div>
 
-          {/* Meta */}
-          <div className="grid grid-cols-2 gap-6 text-sm mb-8">
-            <div className="space-y-1">
-              <p className="text-gray-500">Project</p>
-              <p className="font-medium">{invoiceData.project?.name}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-gray-500">Milestone</p>
-              <p className="font-medium">{invoiceData.milestone.name}</p>
-            </div>
-          </div>
+                                {/* Meta */}
+                                <div className="grid grid-cols-2 gap-6 text-sm mb-8">
+                                    <div className="space-y-1">
+                                        <p className="text-gray-500">Project</p>
+                                        <p className="font-medium">{invoiceData.project?.name}</p>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <p className="text-gray-500">Milestone</p>
+                                        <p className="font-medium">{invoiceData.milestone.name}</p>
+                                    </div>
+                                </div>
 
-          {/* Table */}
-          <div className="border rounded-lg overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-gray-600">
-                <tr>
-                  <th className="px-4 py-3 text-left font-medium">WBS</th>
-                  <th className="px-4 py-3 text-center font-medium">Duration</th>
-                  <th className="px-4 py-3 text-center font-medium">Progress</th>
-                  <th className="px-4 py-3 text-right font-medium">Cost</th>
-                </tr>
-              </thead>
-              <tbody>
-                {invoiceData.wbsItems.map((w: any) => (
-                  <tr key={w._id} className="border-t">
-                    <td className="px-4 py-3">{w.name}</td>
-                    <td className="px-4 py-3 text-center">{w.duration} days</td>
-                    <td className="px-4 py-3 text-center">{w.progress}%</td>
-                    <td className="px-4 py-3 text-right">
-                      ₹{w.plannedCost?.toLocaleString("en-IN")}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                                {/* Table */}
+                                <div className="border rounded-lg overflow-hidden">
+                                    <table className="w-full text-sm">
+                                        <thead className="bg-gray-50 text-gray-600">
+                                            <tr>
+                                                <th className="px-4 py-3 text-left font-medium">WBS</th>
+                                                <th className="px-4 py-3 text-center font-medium">Duration</th>
+                                                <th className="px-4 py-3 text-center font-medium">Progress</th>
+                                                <th className="px-4 py-3 text-right font-medium">Cost</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {invoiceData.wbsItems.map((w: any) => (
+                                                <tr key={w._id} className="border-t">
+                                                    <td className="px-4 py-3">{w.name}</td>
+                                                    <td className="px-4 py-3 text-center">{w.duration} days</td>
+                                                    <td className="px-4 py-3 text-center">{w.progress}%</td>
+                                                    <td className="px-4 py-3 text-right">
+                                                        ₹{w.plannedCost?.toLocaleString("en-IN")}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
 
-          {/* Total */}
-          <div className="flex justify-end mt-8">
-            <div className="text-right">
-              <p className="text-sm text-gray-500 mb-1">Total Amount</p>
-              <p className="text-2xl font-semibold">
-                ₹{invoiceData.totalAmount.toLocaleString("en-IN")}
-              </p>
-            </div>
-          </div>
-        </div>
+                                {/* Total */}
+                                <div className="flex justify-end mt-8">
+                                    <div className="text-right">
+                                        <p className="text-sm text-gray-500 mb-1">Total Amount</p>
+                                        <p className="text-2xl font-semibold">
+                                            ₹{invoiceData.totalAmount.toLocaleString("en-IN")}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
 
-        {/* Footer */}
-        <DialogFooter className="px-8 py-4 border-t bg-gray-50">
-          <Button variant="outline" onClick={() => setInvoiceOpen(false)}>
-            Close
-          </Button>
-          <Button onClick={printInvoice}>
-            Download PDF
-          </Button>
-        </DialogFooter>
-      </>
-    )}
-  </DialogContent>
-</Dialog>
+                            {/* Footer */}
+                            <DialogFooter className="px-8 py-4 border-t bg-gray-50">
+                                <Button variant="outline" onClick={() => setInvoiceOpen(false)}>
+                                    Close
+                                </Button>
+                                <Button onClick={printInvoice}>
+                                    Download PDF
+                                </Button>
+                            </DialogFooter>
+                        </>
+                    )}
+                </DialogContent>
+            </Dialog>
 
 
 
@@ -509,6 +548,25 @@ export default function BillingPage() {
                                                 <Button size="sm" onClick={() => openInvoicePreview(m)}>
                                                     <FileText className="h-4 w-4 mr-1" /> Bill
                                                 </Button>
+                                                <Button
+                                                    size="sm"
+                                                    onClick={async () => {
+                                                        if (!m.wbsIds || m.wbsIds.length === 0) {
+                                                            alert("No WBS linked with this milestone");
+                                                            return;
+                                                        }
+
+                                                        // 🔥 Show bills of FIRST WBS (best practice)
+                                                        const wbsId = m.wbsIds[0];
+
+                                                        setActiveWbsId(wbsId);
+                                                        await dispatch(fetchBillsByWbs(wbsId));
+                                                        setBillDialogOpen(true);
+                                                    }}
+                                                >
+                                                    <FileText className="h-4 w-4 mr-1" />WBS Bill
+                                                </Button>
+
 
                                             </div>
                                         </TableCell>
@@ -522,6 +580,155 @@ export default function BillingPage() {
                             No milestones yet. Click "Add Milestone" to create one.
                         </div>
                     )}
+                    <Dialog open={!!previewBill} onOpenChange={() => setPreviewBill(null)}>
+                        <DialogContent className="max-w-xl">
+                            <DialogHeader>
+                                <DialogTitle>Bill Preview</DialogTitle>
+                            </DialogHeader>
+
+                            {previewBill && (
+                                <div id="bill-pdf" className="space-y-4">
+                                    {/* Image */}
+                                    <img
+                                        src={previewBill.billImage.url}
+                                        alt="Bill"
+                                        className="w-full rounded-lg border"
+                                    />
+
+                                    {/* Bill Info */}
+                                    <div className="grid grid-cols-2 gap-4 text-sm">
+                                        <p><b>Total:</b> ₹{previewBill.billingDetails.totalAmount}</p>
+                                        <p><b>GST:</b> ₹{previewBill.billingDetails.gstWithheld}</p>
+                                        <p><b>Retention:</b> ₹{previewBill.billingDetails.retentionWithheld}</p>
+                                        <p><b>Status:</b> {previewBill.billingDetails.status}</p>
+                                    </div>
+
+                                    <Button onClick={downloadBillPdf}>
+                                        Download PDF
+                                    </Button>
+                                </div>
+                            )}
+                        </DialogContent>
+                    </Dialog>
+
+                    <Dialog open={billDialogOpen} onOpenChange={setBillDialogOpen}>
+                        <DialogContent className="max-w-5xl">
+                            <DialogHeader>
+                                <DialogTitle className="text-xl font-semibold">
+                                    WBS Bills
+                                </DialogTitle>
+                            </DialogHeader>
+
+                            {billLoading ? (
+                                <div className="flex justify-center py-10">
+                                    <Loader2 className="h-6 w-6 animate-spin" />
+                                </div>
+                            ) : wbsBills?.length === 0 ? (
+                                <div className="text-center py-10 text-muted-foreground">
+                                    No bills created for this WBS.
+                                </div>
+                            ) : (
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>Maturity Date</TableHead>
+                                            <TableHead>Total</TableHead>
+                                            <TableHead>Received</TableHead>
+                                            <TableHead>GST</TableHead>
+                                            <TableHead>Retention</TableHead>
+                                            <TableHead>Balance</TableHead>
+                                            <TableHead>Status</TableHead>
+                                            <TableHead className="text-right">Actions</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+
+                                    <TableBody>
+                                        {wbsBills.map((bill: any) => {
+                                            const bd = bill.billingDetails || {};
+
+                                            const total = Number(bd.totalAmount || 0);
+                                            const received = Number(bd.totalPaid || 0);
+                                            const balance = Number(bd.balance ?? total - received);
+                                            const status = bd.status || "Pending";
+
+                                            return (
+                                                <TableRow key={bill._id}>
+                                                    <TableCell>
+                                                        {bd.maturityDate
+                                                            ? new Date(bd.maturityDate).toLocaleDateString()
+                                                            : "—"}
+                                                    </TableCell>
+
+                                                    <TableCell>
+                                                        ₹{total.toLocaleString("en-IN")}
+                                                    </TableCell>
+
+                                                    <TableCell>
+                                                        ₹{received.toLocaleString("en-IN")}
+                                                    </TableCell>
+
+                                                    <TableCell>
+                                                        ₹{Number(bd.gstWithheld || 0).toLocaleString("en-IN")}
+                                                    </TableCell>
+
+                                                    <TableCell>
+                                                        ₹{Number(bd.retentionWithheld || 0).toLocaleString("en-IN")}
+                                                    </TableCell>
+
+                                                    <TableCell
+                                                        className={
+                                                            balance > 0
+                                                                ? "text-red-600 font-semibold"
+                                                                : "text-green-600 font-semibold"
+                                                        }
+                                                    >
+                                                        ₹{balance.toLocaleString("en-IN")}
+                                                    </TableCell>
+
+                                                    <TableCell>
+                                                        <Badge
+                                                            variant={
+                                                                status === "Paid"
+                                                                    ? "default"
+                                                                    : status === "Partial"
+                                                                        ? "secondary"
+                                                                        : "outline"
+                                                            }
+                                                        >
+                                                            {status}
+                                                        </Badge>
+                                                    </TableCell>
+
+                                                    <TableCell className="text-right space-x-2">
+                                                        {bill.billImage?.url && (
+                                                            <Button
+                                                                size="icon"
+                                                                variant="ghost"
+                                                                onClick={() => setPreviewBill(bill)}
+                                                            >
+                                                                <FileText className="h-4 w-4 text-blue-600" />
+                                                            </Button>
+                                                        )}
+
+                                                        <Button
+                                                            size="icon"
+                                                            variant="ghost"
+                                                            onClick={() => dispatch(deleteBill(bill._id))}
+                                                        >
+                                                            <Trash2 className="h-4 w-4 text-red-600" />
+                                                        </Button>
+                                                    </TableCell>
+
+                                                </TableRow>
+                                            );
+                                        })}
+                                    </TableBody>
+
+                                </Table>
+                            )}
+                        </DialogContent>
+                    </Dialog>
+
 
                     <div className="flex justify-between items-center mt-4">
                         <Button disabled={page === 1} onClick={() => setPage(page - 1)}>

@@ -1886,7 +1886,7 @@ WBS Creation & Completion
         </TabsContent>
 
         {/* Comparison Tab */}
-        <TabsContent value="comparison" className="space-y-6 mt-6">
+        <TabsContent value="comparison" className="space-y-6 mt-6 p-3">
           <div className="space-y-6">
             {/* Project Comparison Report */}
             <Card className="h-[600px]">
@@ -1960,7 +1960,7 @@ WBS Creation & Completion
 
                     {/* All Projects Comparison Table - Show ALL projects */}
                     {filteredComparisonReport?.projects && filteredComparisonReport?.projects?.length > 0 ? (
-                      <div className="pt-2 border-t max-h-[200px] overflow-y-auto">
+                      <div className="pt-2 border-t max-h-[200px] overflow-y-auto p-3">
                         <div className="space-y-1 text-xs">
                           <div className="grid grid-cols-5 gap-1 font-semibold text-muted-foreground pb-1 border-b sticky top-0 bg-white">
                             <div className="truncate">Project</div>
