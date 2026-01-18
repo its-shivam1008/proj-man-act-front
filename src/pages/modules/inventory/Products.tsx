@@ -15,6 +15,9 @@ import { fetchInventoryMaster } from "@/redux/slices/inventoryMasterSlice";
 import { createMovement } from "@/redux/slices/materialMovementSlice";
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/userPermission";
+import * as XLSX from 'xlsx';
+import { Upload, AlertCircle, Check, FileSpreadsheet, Loader2 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"; // Assuming you have these or use standard HTML dialog
 
 import {
   Package,
@@ -145,6 +148,119 @@ const Products: React.FC = () => {
   const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
   const [purchaseHistory, setPurchaseHistory] = useState<{[key: string]: any[]}>({});
   const [loadingHistory, setLoadingHistory] = useState<{[key: string]: boolean}>({});
+
+  const [isImporting, setIsImporting] = useState(false);
+  const [importReport, setImportReport] = useState<{
+    total: number;
+    success: number;
+    failed: number;
+    errors: string[];
+  } | null>(null);
+
+  // [!code ++] Import Handler
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    const reader = new FileReader();
+
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: "binary" });
+        const wsName = wb.SheetNames[0];
+        const ws = wb.Sheets[wsName];
+        const data = XLSX.utils.sheet_to_json(ws);
+
+        let successCount = 0;
+        let failCount = 0;
+        const errorLog: string[] = [];
+
+        // Loop through data
+        for (const [index, row] of data.entries()) {
+          const rowNum = index + 2; // +1 for 0-index, +1 for header row
+          
+          try {
+            // 1. Validate Mandatory Fields
+            if (!row["Product Name"]) throw new Error("Missing Product Name");
+            if (!row["Product Type"]) throw new Error("Missing Product Type");
+
+            // 2. Validate Category
+            const excelCategory = row["Category"]?.trim();
+            const categoryMatch = categories.find(
+              (c: any) => c.name.toLowerCase() === excelCategory?.toLowerCase()
+            );
+            if (!categoryMatch) {
+              throw new Error(`Category '${excelCategory}' not found in system.`);
+            }
+
+            // 3. Validate Warehouse
+            const excelWarehouse = row["Warehouse"]?.trim();
+            const warehouseMatch = warehouses.find(
+              (w: any) => w.name.toLowerCase() === excelWarehouse?.toLowerCase()
+            );
+            
+            // If warehouse specified but not found
+            if (excelWarehouse && !warehouseMatch) {
+              throw new Error(`Warehouse '${excelWarehouse}' not found.`);
+            }
+
+            // 4. Construct Payload
+            const payload: any = {
+              organisationId: orgId,
+              name: row["Product Name"],
+              type: row["Product Type"].toLowerCase(), // Ensure lowercase for enum
+              category: categoryMatch.name, // Use system name
+              sku: row["SKU"] || `SKU-${Date.now()}-${index}`,
+              
+              // Stock Logic
+              trackInventory: true,
+              quantity: Number(row["Available stock level"] || 0),
+              minStock: 0,
+              
+              // Pricing
+              unitCost: Number(row["Cost Price"] || 0),
+              salesPrice: Number(row["Sales Price"] || 0),
+              
+              // Location
+              warehouseId: warehouseMatch?._id || null,
+              location: warehouseMatch?.name || "Main Warehouse",
+              
+              status: Number(row["Available stock level"]) > 0 ? "in-stock" : "out-of-stock"
+            };
+
+            // 5. Dispatch Action
+            // We await here to ensure sequential processing (safer for bulk)
+            await dispatch(addProduct(payload)).unwrap();
+            successCount++;
+
+          } catch (err: any) {
+            failCount++;
+            errorLog.push(`Row ${rowNum} (${row["Product Name"] || "Unknown"}): ${err.message || "Failed to save"}`);
+          }
+        }
+
+        setImportReport({
+          total: data.length,
+          success: successCount,
+          failed: failCount,
+          errors: errorLog
+        });
+
+      } catch (error) {
+        toast.error("Failed to parse Excel file");
+        console.error(error);
+      } finally {
+        setIsImporting(false);
+        // Reset file input
+        e.target.value = ""; 
+        dispatch(fetchProducts({ page, limit }));
+      }
+    };
+
+    reader.readAsBinaryString(file);
+  };
 
   // Fetch purchase history for a product
   const fetchPurchaseHistory = async (productId: string, forceRefresh = false) => {
@@ -1528,6 +1644,23 @@ const Products: React.FC = () => {
             Complete product catalog management
           </p>
         </div>
+        <div className="flex gap-3">
+          <input
+            type="file"
+            accept=".xlsx, .xls"
+            id="product-import"
+            className="hidden"
+            onChange={handleFileUpload}
+            disabled={isImporting}
+          />
+          
+          <label 
+            htmlFor="product-import"
+            className={`cursor-pointer bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 flex items-center gap-2 text-sm font-medium shadow-lg ${isImporting ? 'opacity-50 pointer-events-none' : ''}`}
+          >
+             {isImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+             {isImporting ? "Importing..." : "Import Excel"}
+          </label>
         <button
           disabled={!canCreate}
           onClick={() => {
@@ -1538,6 +1671,7 @@ const Products: React.FC = () => {
         >
           <Plus className="h-4 w-4" /> Add Product
         </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -2064,7 +2198,58 @@ const Products: React.FC = () => {
           </div>
         </div>
       )}
+      {importReport && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
+            <div className="p-6 border-b">
+              <h3 className="text-xl font-bold flex items-center gap-2">
+                <Upload className="h-5 w-5" /> Import Results
+              </h3>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div className="bg-blue-50 p-3 rounded-lg">
+                  <div className="text-2xl font-bold text-blue-600">{importReport.total}</div>
+                  <div className="text-xs text-gray-600">Total Rows</div>
+                </div>
+                <div className="bg-green-50 p-3 rounded-lg">
+                  <div className="text-2xl font-bold text-green-600">{importReport.success}</div>
+                  <div className="text-xs text-gray-600">Success</div>
+                </div>
+                <div className="bg-red-50 p-3 rounded-lg">
+                  <div className="text-2xl font-bold text-red-600">{importReport.failed}</div>
+                  <div className="text-xs text-gray-600">Failed</div>
+                </div>
+              </div>
 
+              {importReport.errors.length > 0 && (
+                <div className="mt-4">
+                  <h4 className="font-semibold text-red-600 mb-2 flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4" /> Failed Rows
+                  </h4>
+                  <div className="bg-red-50 p-3 rounded-lg max-h-60 overflow-y-auto text-sm space-y-2 border border-red-100">
+                    {importReport.errors.map((err, i) => (
+                      <div key={i} className="text-red-700 border-b border-red-100 last:border-0 pb-1">
+                        • {err}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 bg-gray-50 flex justify-end">
+              <button
+                onClick={() => setImportReport(null)}
+                className="px-6 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

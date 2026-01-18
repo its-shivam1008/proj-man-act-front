@@ -1,7 +1,8 @@
 import { usePermission } from "@/hooks/userPermission";
 import React, { useEffect, useMemo, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
-
+import * as XLSX from 'xlsx';
+import { Upload, AlertCircle, FileSpreadsheet, Loader2 } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import { RootState, AppDispatch } from "@/redux/store";
 
@@ -104,6 +105,110 @@ export default function RawMaterialMaster() {
   const { userProfile } = useSelector((state: RootState) => state.auth);
   const { locations } = useSelector((state: RootState) => state.masterData);
   const { warehouses } = useSelector((state: RootState) => state.warehouse);
+
+  const validUoMs = ['kg', 'gm', 'mg', 'km', 'meter', 'liter', 'ml', 'pcs'];
+
+  // [!code ++] State
+  const [isImporting, setIsImporting] = useState(false);
+  const [importReport, setImportReport] = useState<{
+    total: number; success: number; failed: number; errors: string[];
+  } | null>(null);
+
+  // [!code ++] Handler
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    const reader = new FileReader();
+
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: "binary" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const data = XLSX.utils.sheet_to_json(ws);
+
+        let successCount = 0;
+        let failCount = 0;
+        const errorLog: string[] = [];
+
+        for (const [index, row] of data.entries()) {
+          const rowNum = index + 2;
+          try {
+            // 1. Basic Validation
+            if (!row["Name"]) throw new Error("Missing Name");
+
+            // 2. Validate UoM
+            const uom = row["Unit of measure"]?.toLowerCase()?.trim();
+            if (!validUoMs.includes(uom)) {
+              throw new Error(`Invalid Unit of Measure: '${row["Unit of measure"]}'. Allowed: ${validUoMs.join(', ')}`);
+            }
+
+            // 3. Validate Warehouse
+            const excelWarehouse = row["Warehouse"]?.trim();
+            const warehouseMatch = warehouses.find(
+              (w: any) => w.name.toLowerCase() === excelWarehouse?.toLowerCase()
+            );
+            
+            if (excelWarehouse && !warehouseMatch) {
+              throw new Error(`Warehouse '${excelWarehouse}' not found.`);
+            }
+            if (!excelWarehouse && !warehouses[0]) {
+               throw new Error(`No Warehouse specified and no default available.`);
+            }
+
+            // 4. Construct Payload (Matching onSubmit logic)
+            const warehouseId = warehouseMatch?._id || warehouses[0]?._id;
+            const quantity = Number(row["Quantity"] || 0);
+            const unitCost = Number(row["Unit Cost"] || 0);
+
+            const payload: any = {
+              organisationId: localStorage.getItem("organisationId"),
+              name: row["Name"],
+              itemCode: row["Item code"] || "",
+              unitOfMeasure: uom,
+              hsn: row["HSN"] || "",
+              gstPercent: Number(row["GST"] || 0),
+              valuationMethod: "FIFO",
+              trackInventory: true,
+              reorderLevel: 0,
+              
+              // Raw Material specific structure for Stocks
+              stocks: quantity > 0 ? [{
+                warehouseId: warehouseId,
+                quantity: quantity,
+                unitCost: unitCost
+              }] : []
+            };
+
+            // 5. Dispatch
+            await dispatch(addMaterial(payload)).unwrap();
+            successCount++;
+
+          } catch (err: any) {
+            failCount++;
+            errorLog.push(`Row ${rowNum} (${row["Name"] || "Unknown"}): ${err.message}`);
+          }
+        }
+
+        setImportReport({
+          total: data.length,
+          success: successCount,
+          failed: failCount,
+          errors: errorLog
+        });
+
+      } catch (error) {
+        toast.error("Failed to parse Excel file");
+      } finally {
+        setIsImporting(false);
+        e.target.value = "";
+        dispatch(fetchMaterials({ page, limit }));
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
 
   const getLocationName = (loc: string | { name: string } | undefined) => {
     if (!loc) return "N/A";
@@ -776,6 +881,22 @@ export default function RawMaterialMaster() {
             onOpenChange={setOpen}
           >
             {/* [!code ++] Remove DialogTrigger wrapper and use direct Button */}
+            <input
+            type="file"
+            accept=".xlsx, .xls"
+            id="rm-import"
+            className="hidden"
+            onChange={handleImport}
+            disabled={isImporting}
+          />
+
+          <label 
+            htmlFor="rm-import"
+            className={`cursor-pointer bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 flex items-center gap-2 text-sm font-medium ${isImporting ? 'opacity-50 pointer-events-none' : ''}`}
+          >
+             {isImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+             Import
+          </label>
             <Button disabled={!canCreate} onClick={handleAdd}>
               <Plus className="h-4 w-4 mr-1" /> Add Material
             </Button>
@@ -1378,6 +1499,59 @@ export default function RawMaterialMaster() {
             </div>
           </DialogContent>
         </Dialog>
+      )}
+
+      {importReport && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
+            <div className="p-6 border-b">
+              <h3 className="text-xl font-bold flex items-center gap-2">
+                <Upload className="h-5 w-5" /> Import Results
+              </h3>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div className="bg-blue-50 p-3 rounded-lg">
+                  <div className="text-2xl font-bold text-blue-600">{importReport.total}</div>
+                  <div className="text-xs text-gray-600">Total Rows</div>
+                </div>
+                <div className="bg-green-50 p-3 rounded-lg">
+                  <div className="text-2xl font-bold text-green-600">{importReport.success}</div>
+                  <div className="text-xs text-gray-600">Success</div>
+                </div>
+                <div className="bg-red-50 p-3 rounded-lg">
+                  <div className="text-2xl font-bold text-red-600">{importReport.failed}</div>
+                  <div className="text-xs text-gray-600">Failed</div>
+                </div>
+              </div>
+
+              {importReport.errors.length > 0 && (
+                <div className="mt-4">
+                  <h4 className="font-semibold text-red-600 mb-2 flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4" /> Failed Rows
+                  </h4>
+                  <div className="bg-red-50 p-3 rounded-lg max-h-60 overflow-y-auto text-sm space-y-2 border border-red-100">
+                    {importReport.errors.map((err, i) => (
+                      <div key={i} className="text-red-700 border-b border-red-100 last:border-0 pb-1">
+                        • {err}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 bg-gray-50 flex justify-end">
+              <button
+                onClick={() => setImportReport(null)}
+                className="px-6 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

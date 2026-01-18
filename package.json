@@ -62,7 +62,8 @@
     "tailwindcss-animate": "^1.0.7",
     "tesseract.js": "^6.0.1",
     "tesseract.js-core": "^6.0.0",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",
