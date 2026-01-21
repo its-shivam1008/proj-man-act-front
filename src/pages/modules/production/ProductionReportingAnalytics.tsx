@@ -52,6 +52,7 @@ import CostVsOutputAnalysis from "@/components/reports/CostVsOutputAnalysis";
 import DowntimeAnalysisReport from "@/components/reports/DowntimeAnalysisReport";
 import ProductionEfficiencyReport from "@/components/reports/ProductionEfficiencyReport";
 import OrderProgressTrackerReport from "@/components/reports/OrderProgressTrackerReport";
+import WorkOrderReport from "@/components/reports/WorkOrderReport";
 
 // Debounce utility function
 const debounce = (func: Function, delay: number) => {
@@ -220,11 +221,12 @@ export default function ProductionReportingAnalytics() {
         </Select>
       </div>
 
-      <Tabs value={tab} onValueChange={setTab}>
-        <TabsList>
+      <Tabs value={tab} onValueChange={setTab } className="">
+        <TabsList className="flex flex-wrap items-center justify-start w-full mb-6">
           <TabsTrigger value="workcenter-performance">
             Work Center Performance
           </TabsTrigger>
+          <TabsTrigger value="workorder">Work Oder </TabsTrigger>
           <TabsTrigger value="material-consumption">
             Material Consumption
           </TabsTrigger>
@@ -459,6 +461,9 @@ export default function ProductionReportingAnalytics() {
         </TabsContent>
         <TabsContent value="order-progress">
           <OrderProgressTrackerReport locationFilter={locationFilter} />
+        </TabsContent>
+        <TabsContent value="workorder">
+          <WorkOrderReport/>
         </TabsContent>
 
 

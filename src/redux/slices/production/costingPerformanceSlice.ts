@@ -115,12 +115,33 @@ const initialState: CostingState = {
 
 export const fetchStandards = createAsyncThunk(
   "costing/fetchStandards",
-  async ({ location, page = 1, limit = 10, search = "" }: { location?: string; page?: number; limit?: number; search?: string } = {}, { rejectWithValue }) => {
+  async (
+    { location, page = 1, limit = 10, search = "" }:
+      { location?: string; page?: number; limit?: number; search?: string } = {},
+    { rejectWithValue }
+  ) => {
     try {
+      // ✅ Read directly from localStorage
+      const organisationId =
+        typeof window !== "undefined"
+          ? localStorage.getItem("organisationId")
+          : null;
+
+      // ✅ Stop API call if not present
+      if (!organisationId) {
+        return rejectWithValue("organisationId not found");
+      }
+
       const params: any = { page, limit, search };
       if (location) params.location = location;
-      const res = await axios.get("/api/costing/standards", { params });
-      // ✅ FIXED: Return full response structure
+
+      const res = await axios.get("/api/costing/standards", {
+        params,
+        headers: {
+          organisationid: organisationId, // 🔥 BACKEND MATCH
+        },
+      });
+
       return res.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message);
@@ -128,44 +149,56 @@ export const fetchStandards = createAsyncThunk(
   }
 );
 
+
 export const createStandard = createAsyncThunk(
   "costing/createStandard",
-  async (payload: Partial<StandardCost>, { rejectWithValue }) => {
-    try {
-      const res = await axios.post("/api/costing/standards", payload);
-      return res.data.data;
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.message);
-    }
+  async (
+    { data, organisationId }:
+      { data: Partial<StandardCost>; organisationId: string }
+  ) => {
+    const res = await axios.post(
+      "/api/costing/standards",
+      data,
+      { headers: { organisationId } }
+    );
+    return res.data.data;
   }
 );
+
 
 export const updateStandard = createAsyncThunk(
   "costing/updateStandard",
-  async (
-    { id, data }: { id: string; data: Partial<StandardCost> },
-    { rejectWithValue }
-  ) => {
-    try {
-      const res = await axios.put(`/api/costing/standards/${id}`, data);
-      return res.data.data;
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.message);
-    }
+  async ({ id, data, organisationId }: any) => {
+    const res = await axios.put(
+      `/api/costing/standards/${id}`,   // ✅ ID IN URL
+      data,                             // ✅ BODY ONLY
+      {
+        headers: {
+          organisationId,
+        },
+      }
+    );
+    return res.data.data;
   }
 );
 
+
+
 export const deleteStandard = createAsyncThunk(
   "costing/deleteStandard",
-  async (id: string, { rejectWithValue }) => {
-    try {
-      await axios.delete(`/api/costing/standards/${id}`);
-      return id;
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.message);
-    }
+  async ({ id, organisationId }: any) => {
+    await axios.delete(
+      `/api/costing/standards/${id}`,   // ✅ ID IN URL
+      {
+        headers: {
+          organisationId,
+        },
+      }
+    );
+    return id;
   }
 );
+
 
 /* =========================
    THUNKS – ACTUALS
@@ -173,57 +206,66 @@ export const deleteStandard = createAsyncThunk(
 
 export const fetchActuals = createAsyncThunk(
   "costing/fetchActuals",
-  async ({ location, page = 1, limit = 10, search = "" }: { location?: string; page?: number; limit?: number; search?: string } = {}, { rejectWithValue }) => {
-    try {
-      const params: any = { page, limit, search };
-      if (location) params.location = location;
-      const res = await axios.get("/api/costing/actuals", { params });
-      // ✅ FIXED: Return full response structure
-      return res.data;
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.message);
-    }
+  async ({ location, page = 1, limit = 10, search = "" } = {}, { rejectWithValue }) => {
+    const organisationId = localStorage.getItem("organisationId");
+    if (!organisationId) return rejectWithValue("organisationId not found");
+
+    const res = await axios.get("/api/costing/actuals", {
+      params: { page, limit, search, location },
+      headers: { organisationid: organisationId },
+    });
+
+    return res.data;
   }
 );
+
 
 export const createActual = createAsyncThunk(
   "costing/createActual",
   async (payload: Partial<ActualCost>, { rejectWithValue }) => {
-    try {
-      const res = await axios.post("/api/costing/actuals", payload);
-      return res.data.data;
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.message);
-    }
+    const organisationId = localStorage.getItem("organisationId");
+    if (!organisationId) return rejectWithValue("organisationId not found");
+
+    const res = await axios.post("/api/costing/actuals", payload, {
+      headers: { organisationid: organisationId },
+    });
+
+    return res.data.data;
   }
 );
 
+
 export const updateActual = createAsyncThunk(
   "costing/updateActual",
-  async (
-    { id, data }: { id: string; data: Partial<ActualCost> },
-    { rejectWithValue }
-  ) => {
-    try {
-      const res = await axios.put(`/api/costing/actuals/${id}`, data);
-      return res.data.data;
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.message);
-    }
+  async ({ id, data }: { id: string; data: Partial<ActualCost> }, { rejectWithValue }) => {
+    const organisationId = localStorage.getItem("organisationId");
+    if (!organisationId) return rejectWithValue("organisationId not found");
+
+    const res = await axios.put(`/api/costing/actuals/${id}`, data, {
+      headers: { organisationid: organisationId },
+    });
+
+    return res.data.data;
   }
 );
+
+
 
 export const deleteActual = createAsyncThunk(
   "costing/deleteActual",
   async (id: string, { rejectWithValue }) => {
-    try {
-      await axios.delete(`/api/costing/actuals/${id}`);
-      return id;
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.message);
-    }
+    const organisationId = localStorage.getItem("organisationId");
+    if (!organisationId) return rejectWithValue("organisationId not found");
+
+    await axios.delete(`/api/costing/actuals/${id}`, {
+      headers: { organisationid: organisationId },
+    });
+
+    return id;
   }
 );
+
+
 
 /* =========================
    THUNKS – METRICS
@@ -231,12 +273,28 @@ export const deleteActual = createAsyncThunk(
 
 export const fetchMetrics = createAsyncThunk(
   "costing/fetchMetrics",
-  async ({ location, page = 1, limit = 10, search = "" }: { location?: string; page?: number; limit?: number; search?: string } = {}, { rejectWithValue }) => {
+  async (
+    { location, page = 1, limit = 10, search = "" } = {},
+    { rejectWithValue }
+  ) => {
     try {
+      const organisationId =
+        typeof window !== "undefined"
+          ? localStorage.getItem("organisationId")
+          : null;
+
+      if (!organisationId) {
+        return rejectWithValue("organisationId not found");
+      }
+
       const params: any = { page, limit, search };
       if (location) params.location = location;
-      const res = await axios.get("/api/costing/metrics", { params });
-      // ✅ FIXED: Return full response structure
+
+      const res = await axios.get("/api/costing/metrics", {
+        params,
+        headers: { organisationid: organisationId },
+      });
+
       return res.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message);
@@ -244,11 +302,27 @@ export const fetchMetrics = createAsyncThunk(
   }
 );
 
+
 export const createMetric = createAsyncThunk(
   "costing/createMetric",
   async (payload: Partial<PerfMetric>, { rejectWithValue }) => {
     try {
-      const res = await axios.post("/api/costing/metrics", payload);
+      const organisationId = localStorage.getItem("organisationId");
+
+      if (!organisationId) {
+        return rejectWithValue("organisationId not found");
+      }
+
+      const res = await axios.post(
+        "/api/costing/metrics",
+        payload,
+        {
+          headers: {
+            organisationid: organisationId, // ✅ REQUIRED
+          },
+        }
+      );
+
       return res.data.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message);
@@ -263,7 +337,21 @@ export const updateMetric = createAsyncThunk(
     { rejectWithValue }
   ) => {
     try {
-      const res = await axios.put(`/api/costing/metrics/${id}`, data);
+      const organisationId = localStorage.getItem("organisationId");
+      if (!organisationId) {
+        return rejectWithValue("organisationId not found");
+      }
+
+      const res = await axios.put(
+        `/api/costing/metrics/${id}`,
+        data,
+        {
+          headers: {
+            organisationid: organisationId, // ✅ REQUIRED
+          },
+        }
+      );
+
       return res.data.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message);
@@ -271,11 +359,22 @@ export const updateMetric = createAsyncThunk(
   }
 );
 
+
 export const deleteMetric = createAsyncThunk(
   "costing/deleteMetric",
   async (id: string, { rejectWithValue }) => {
     try {
-      await axios.delete(`/api/costing/metrics/${id}`);
+      const organisationId = localStorage.getItem("organisationId");
+      if (!organisationId) {
+        return rejectWithValue("organisationId not found");
+      }
+
+      await axios.delete(`/api/costing/metrics/${id}`, {
+        headers: {
+          organisationid: organisationId, // ✅ REQUIRED
+        },
+      });
+
       return id;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message);

@@ -88,6 +88,8 @@ const ScrapManagement: React.FC = () => {
     return found ? found.name : loc;
   };
 
+
+
   // Dialog states
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -95,11 +97,11 @@ const ScrapManagement: React.FC = () => {
   const [selectedOrder, setSelectedOrder] = useState<any>(null); // For view modal
 
   const [createForm, setCreateForm] = useState({
-      productId: "",
-      quantity: "",
-      reason: "",
-      remark: "",
-      scrapLocation: isLocationRestricted ? userProfile.location : "",
+    productId: "",
+    quantity: "",
+    reason: "",
+    remark: "",
+    scrapLocation: isLocationRestricted ? userProfile.location : "",
   });
   const [editForm, setEditForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -108,54 +110,86 @@ const ScrapManagement: React.FC = () => {
   const [updating, setUpdating] = useState(false);
   const [localScrapOrders, setLocalScrapOrders] = useState<any[]>([]);
   const orgId = localStorage.getItem('organisationId')
-  
+
   // Pagination and search states
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const itemsPerPage = 10;
-  
+
+  // const getTotalStock = (product: any) => {
+  //   if (!product?.stocks?.length) return 0;
+  //   return product.stocks.reduce(
+  //     (sum: number, s: any) => sum + (s.quantity || 0),
+  //     0
+  //   );
+  // };
+
+
   useEffect(() => {
     dispatch(fetchMasterData("location"));
-    dispatch(fetchProducts({page:1, limit:10}));
+    dispatch(fetchProducts({ page: 1, limit: 10 }));
     dispatch(getScrapOrders({ location: locationFilter }));
     // Load scrap orders from localStorage
     const stored = localStorage.getItem('SCRAP_ORDERS');
     if (stored) {
       setLocalScrapOrders(JSON.parse(stored));
     }
-  }, [dispatch]);
-  
+  }, [dispatch, locationFilter]);
+
   // Merge Redux scrap orders with localStorage scrap orders
   const allScrapOrders = useMemo(() => {
     return [...localScrapOrders, ...scrapOrders];
   }, [localScrapOrders, scrapOrders]);
-  
+
   // Filter scrap orders based on search and status
   const filteredScrapOrders = useMemo(() => {
     return allScrapOrders.filter((order: any) => {
-      const product = products.find((p: any) => p._id === order.productId) || {};
-      const productName = order.productName || product.name || "Unknown";
-      const productSku = product.sku || order.sku || "N/A";
-      
-      const matchesSearch = 
+      let product: any = null;
+
+      // CASE 1: productId is populated object
+      if (order.productId && typeof order.productId === "object") {
+        product = order.productId;
+      }
+
+      // CASE 2: productId is ObjectId string
+      if (!product) {
+        product = products.find(
+          (p: any) => String(p._id) === String(order.productId)
+        );
+      }
+
+      const productName = product?.name ?? "Unknown";
+      const productSku = product?.sku ?? "N/A";
+
+      const matchesSearch =
         productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         productSku.toLowerCase().includes(searchTerm.toLowerCase()) ||
         order.reason?.toLowerCase().includes(searchTerm.toLowerCase());
-      
-      const matchesStatus = statusFilter === "all" || order.status === statusFilter;
-      
+
+      const matchesStatus =
+        statusFilter === "all" || order.status === statusFilter;
+
       return matchesSearch && matchesStatus;
     });
   }, [allScrapOrders, searchTerm, statusFilter, products]);
-  
+
   // Paginate filtered orders
   const paginatedOrders = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
     return filteredScrapOrders.slice(startIndex, startIndex + itemsPerPage);
   }, [filteredScrapOrders, currentPage, itemsPerPage]);
-  
+
   const totalPages = Math.ceil(filteredScrapOrders.length / itemsPerPage);
+
+  const getTotalStock = (product: any) => {
+    if (!product?.stocks?.length) return 0;
+    return product.stocks.reduce(
+      (sum: number, s: any) => sum + (s.quantity || 0),
+      0
+    );
+  };
+
 
   const selectedCreateProduct = useMemo(
     () => products.find((p: any) => p._id === createForm.productId) || null,
@@ -179,10 +213,13 @@ const ScrapManagement: React.FC = () => {
       toast.error("Quantity must be a positive number");
       return;
     }
-    if (selectedCreateProduct && qty > selectedCreateProduct.quantity) {
-      toast.error(`Only ${selectedCreateProduct.quantity} available`);
+    const availableStock = getTotalStock(selectedCreateProduct);
+
+    if (selectedCreateProduct && qty > availableStock) {
+      toast.error(`Only ${availableStock} available`);
       return;
     }
+
     try {
       setCreating(true);
       await dispatch(
@@ -254,6 +291,21 @@ const ScrapManagement: React.FC = () => {
     }
   };
 
+  const resolveProduct = (order: any) => {
+    if (!order?.productId) return null;
+
+    // If populated object
+    if (typeof order.productId === "object" && order.productId.sku) {
+      return order.productId;
+    }
+
+    // If ObjectId string
+    return products.find(
+      (p: any) => String(p._id) === String(order.productId)
+    ) || null;
+  };
+
+
   const handleApprove = async (id: string) => {
     if (!confirm("Approve and deduct stock?")) return;
     try {
@@ -276,7 +328,17 @@ const ScrapManagement: React.FC = () => {
       toast.error(err?.message || "Failed");
     }
   };
-  
+  const availableCreateStock = useMemo(() => {
+    return selectedCreateProduct
+      ? getTotalStock(selectedCreateProduct)
+      : 0;
+  }, [selectedCreateProduct]);
+  const remainingCreateStock = useMemo(() => {
+    const qty = Number(createForm.quantity || 0);
+    if (!selectedCreateProduct) return 0;
+    return Math.max(availableCreateStock - qty, 0);
+  }, [availableCreateStock, createForm.quantity, selectedCreateProduct]);
+
   // DELETE LOCAL (from localStorage)
   const handleDeleteLocal = (index: number) => {
     if (!confirm("Delete this scrap order?")) return;
@@ -308,7 +370,7 @@ const ScrapManagement: React.FC = () => {
           {/* CREATE DIALOG */}
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogTrigger asChild>
-              <Button  disabled={!canCreate} className="px-4">
+              <Button disabled={!canCreate} className="px-4">
                 <Plus className="w-4 h-4 mr-2" /> Create Scrap Order
               </Button>
             </DialogTrigger>
@@ -333,16 +395,24 @@ const ScrapManagement: React.FC = () => {
                     <SelectContent>
                       {products.map((p: any) => (
                         <SelectItem key={p._id} value={p._id}>
-                          {p.name} — Stock: {p.quantity ?? 0}
+                          {p.name} — Stock: {getTotalStock(p)}
+
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                   {selectedCreateProduct && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Available: {selectedCreateProduct.quantity}
+                    <p className="text-xs mt-1">
+                      <span className="text-muted-foreground">
+                        Available: {availableCreateStock}
+                      </span>
+                      <br />
+                      <span className="font-semibold text-rose-600">
+                        After Scrap: {remainingCreateStock}
+                      </span>
                     </p>
                   )}
+
                 </div>
 
                 <div>
@@ -380,7 +450,7 @@ const ScrapManagement: React.FC = () => {
 
                 <div>
                   <Label>Location</Label>
-                   {/* [!code ++] Replace Input with Select */}
+                  {/* [!code ++] Replace Input with Select */}
                   <Select
                     value={createForm.scrapLocation}
                     onValueChange={(v) =>
@@ -389,12 +459,12 @@ const ScrapManagement: React.FC = () => {
                     disabled={isLocationRestricted}
                   >
                     <SelectTrigger>
-                        <SelectValue placeholder="Select Location" />
+                      <SelectValue placeholder="Select Location" />
                     </SelectTrigger>
                     <SelectContent>
-                         {locations.map(l => (
-                            <SelectItem key={l._id} value={l._id}>{l.name}</SelectItem>
-                        ))}
+                      {locations.map(l => (
+                        <SelectItem key={l._id} value={l._id}>{l.name}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -446,7 +516,7 @@ const ScrapManagement: React.FC = () => {
               />
             </div>
             <div className="flex gap-3">
-            <Select
+              <Select
                 value={locationFilter}
                 onValueChange={setLocationFilter}
                 disabled={isLocationRestricted}
@@ -456,9 +526,9 @@ const ScrapManagement: React.FC = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Locations</SelectItem>
-                   {locations.map(l => (
-                        <SelectItem key={l._id} value={l._id}>{l.name}</SelectItem>
-                    ))}
+                  {locations.map(l => (
+                    <SelectItem key={l._id} value={l._id}>{l.name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               <Select
@@ -500,9 +570,8 @@ const ScrapManagement: React.FC = () => {
                   ].map((head, i) => (
                     <TableHead
                       key={i}
-                      className={`text-gray-700 font-semibold whitespace-nowrap ${
-                        head === "Actions" ? "text-right" : ""
-                      }`}
+                      className={`text-gray-700 font-semibold whitespace-nowrap ${head === "Actions" ? "text-right" : ""
+                        }`}
                     >
                       {head}
                     </TableHead>
@@ -515,19 +584,26 @@ const ScrapManagement: React.FC = () => {
                 {paginatedOrders.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-12 text-gray-500">
-                      {searchTerm || statusFilter !== "all" 
-                        ? "No scrap orders found matching your filters" 
+                      {searchTerm || statusFilter !== "all"
+                        ? "No scrap orders found matching your filters"
                         : "No scrap orders found"}
                     </TableCell>
                   </TableRow>
                 ) : paginatedOrders.map((order: any, index: number) => {
-                  const product =
-                    products.find((p: any) => p._id === order.productId) || {};
-                  
+                  const product = resolveProduct(order);
+
                   // For localStorage items, use productName directly
-                  const productName = order.productName || product.name || "Unknown";
-                  const productSku = product.sku || order.sku || "N/A";
-                  const productStock = product.quantity ?? order.stock ?? 0;
+                  const productName = order.productName || product.name;
+                  const productSku = product.sku || order.sku;
+                  const fullProduct = products.find(
+                    (p: any) => p._id === (product._id || order.productId)
+                  );
+
+                  const productStock = fullProduct
+                    ? getTotalStock(fullProduct)
+                    : 0;
+
+
 
                   return (
                     <TableRow
@@ -580,10 +656,15 @@ const ScrapManagement: React.FC = () => {
 
                       {/* DATE */}
                       <TableCell className="text-gray-600 text-sm">
-                        {order.date ? format(new Date(order.date), "PP") : 
-                         order.rejectedDate ? format(new Date(order.rejectedDate), "PP") : 
-                         'N/A'}
+                        {order.createdAt
+                          ? format(new Date(order.createdAt), "PP")
+                          : order.date
+                            ? format(new Date(`${order.date}T00:00:00`), "PP")
+                            : "N/A"}
                       </TableCell>
+
+
+
 
                       {/* ACTIONS */}
                       <TableCell className="text-right space-x-1">
@@ -611,7 +692,7 @@ const ScrapManagement: React.FC = () => {
                         {/* EDIT */}
                         {order._id && (
                           <Button
-                          disabled={!canEdit}
+                            disabled={!canEdit}
                             size="icon"
                             variant="ghost"
                             className="h-8 w-8 hover:bg-indigo-50 text-indigo-600"
@@ -623,7 +704,7 @@ const ScrapManagement: React.FC = () => {
 
                         {/* DELETE */}
                         <Button
-                        disabled={!canDelete}
+                          disabled={!canDelete}
                           size="icon"
                           variant="destructive"
                           className="h-8 w-8"
@@ -638,7 +719,7 @@ const ScrapManagement: React.FC = () => {
               </TableBody>
             </Table>
           </div>
-          
+
           {/* PAGINATION */}
           {totalPages > 1 && (
             <div className="px-6 py-4 border-t flex items-center justify-between">
@@ -682,102 +763,44 @@ const ScrapManagement: React.FC = () => {
               </p>
             </DialogHeader>
 
-            {selectedOrder && (
-              <div className="mt-4 space-y-5">
-                {/* TOP CARD */}
-                <div className="rounded-lg border bg-gray-50 p-4">
-                  <h3 className="text-sm font-semibold mb-3">
-                    Product Information
-                  </h3>
+            {selectedOrder && (() => {
+              const product = resolveProduct(selectedOrder);
 
-                  <div className="grid grid-cols-4 gap-y-3 text-sm">
-                    <span className="font-medium text-gray-600">Product:</span>
-                    <span className="col-span-3 font-medium">
-                      {products.find(
-                        (p: any) => p._id === selectedOrder.productId
-                      )?.name || "N/A"}
-                    </span>
+              return (
+                <div className="mt-4 space-y-5">
+                  {/* PRODUCT INFO */}
+                  <div className="rounded-lg border bg-gray-50 p-4">
+                    <h3 className="text-sm font-semibold mb-3">Product Information</h3>
 
-                    <span className="font-medium text-gray-600">SKU:</span>
-                    <span className="col-span-3">
-                      {products.find(
-                        (p: any) => p._id === selectedOrder.productId
-                      )?.sku || "N/A"}
-                    </span>
+                    <div className="grid grid-cols-4 gap-y-3 text-sm">
+                      <span className="font-medium text-gray-600">Product:</span>
+                      <span className="col-span-3 font-medium">
+                        {product?.name || "N/A"}
+                      </span>
 
-                    <span className="font-medium text-gray-600">Quantity:</span>
-                    <span className="col-span-3 font-bold text-rose-600 text-base">
-                      {selectedOrder.quantity}
-                    </span>
+                      <span className="font-medium text-gray-600">SKU:</span>
+                      <span className="col-span-3">
+                        {product?.sku || "N/A"}
+                      </span>
+
+                      <span className="font-medium text-gray-600">Quantity:</span>
+                      <span className="col-span-3 font-bold text-rose-600 text-base">
+                        {selectedOrder.quantity}
+                      </span>
+                    </div>
                   </div>
-                </div>
 
-                {/* MIDDLE CARD */}
-                <div className="rounded-lg border bg-white p-4 shadow-sm">
-                  <h3 className="text-sm font-semibold mb-3">Order Details</h3>
-
-                  <div className="grid grid-cols-4 gap-y-3 text-sm">
-                    <span className="font-medium text-gray-600">Reason:</span>
-                    <span className="col-span-3 capitalize">
-                      {selectedOrder.reason}
-                    </span>
-
-                    <span className="font-medium text-gray-600">Status:</span>
-                    <span className="col-span-3">
-                      <Badge
-                        variant={
-                          selectedOrder.status === "pending"
-                            ? "outline"
-                            : "default"
-                        }
-                        className={
-                          selectedOrder.status === "approved"
-                            ? "bg-green-600 text-white"
-                            : selectedOrder.status === "rejected"
-                            ? "bg-red-600 text-white"
-                            : ""
-                        }
-                      >
-                        {selectedOrder.status}
-                      </Badge>
-                    </span>
-
-                    {selectedOrder.scrapLocation && (
-                      <>
-                        <span className="font-medium text-gray-600">
-                          Location:
-                        </span>
-                        <span className="col-span-3">
-                          {getLocationName(selectedOrder.scrapLocation)}
-                        </span>
-                      </>
-                    )}
-
-                    {selectedOrder.remark && (
-                      <>
-                        <span className="font-medium text-gray-600">
-                          Remark:
-                        </span>
-                        <span className="col-span-3 text-gray-700">
-                          {selectedOrder.remark}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* BOTTOM TIMELINE STYLE */}
-                <div className="rounded-lg border bg-gray-50 p-4">
-                  <h3 className="text-sm font-semibold mb-3">Timeline</h3>
-                  <div className="flex items-center gap-3">
-                    <div className="h-3 w-3 rounded-full bg-blue-600"></div>
+                  {/* TIMELINE */}
+                  <div className="rounded-lg border bg-gray-50 p-4">
+                    <h3 className="text-sm font-semibold mb-3">Timeline</h3>
                     <span className="text-sm text-gray-700">
-                      Created on: {format(new Date(selectedOrder.date), "PPpp")}
+                      Created on: {format(new Date(selectedOrder.createdAt), "PPpp")}
                     </span>
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
+
 
             <div className="flex justify-end mt-6">
               <DialogClose asChild>
@@ -811,14 +834,16 @@ const ScrapManagement: React.FC = () => {
                   <SelectContent>
                     {products.map((p: any) => (
                       <SelectItem key={p._id} value={p._id}>
-                        {p.name} — Stock: {p.quantity ?? 0}
+                        {p.name} — Stock: {getTotalStock(p)}
+
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 {selectedEditProduct && (
                   <p className="text-xs text-muted-foreground mt-1">
-                    Available: {selectedEditProduct.quantity}
+                    Available: {getTotalStock(selectedEditProduct)}
+
                   </p>
                 )}
               </div>
@@ -855,25 +880,25 @@ const ScrapManagement: React.FC = () => {
               </div>
 
               <div>
-                  <Label>Location</Label>
-                   {/* [!code ++] Replace Input with Select */}
-                  <Select
-                    value={createForm.scrapLocation}
-                    onValueChange={(v) =>
-                      setCreateForm({ ...createForm, scrapLocation: v })
-                    }
-                    disabled={isLocationRestricted}
-                  >
-                    <SelectTrigger>
-                        <SelectValue placeholder="Select Location" />
-                    </SelectTrigger>
-                    <SelectContent>
-                         {locations.map(l => (
-                            <SelectItem key={l._id} value={l.name}>{l.name}</SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <Label>Location</Label>
+                {/* [!code ++] Replace Input with Select */}
+                <Select
+                  value={createForm.scrapLocation}
+                  onValueChange={(v) =>
+                    setCreateForm({ ...createForm, scrapLocation: v })
+                  }
+                  disabled={isLocationRestricted}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Location" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {locations.map(l => (
+                      <SelectItem key={l._id} value={l.name}>{l.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
               <div>
                 <Label>Remark</Label>

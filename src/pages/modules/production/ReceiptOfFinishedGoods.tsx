@@ -110,8 +110,8 @@ export default function ReceiptOfFinishedGoods() {
   const [locationFilter, setLocationFilter] = useState("all");
   const [locationOpen, setLocationOpen] = useState(false);
 
-  const isLocationRestricted = 
-    userProfile?.role !== 'admin' && 
+  const isLocationRestricted =
+    userProfile?.role !== 'admin' &&
     !!userProfile?.location;
 
   const canView = usePermission("receipt", "view");
@@ -148,25 +148,25 @@ export default function ReceiptOfFinishedGoods() {
       const response = await axios.get(`/product/single/${productId}`);
       if (response.data.success && response.data.product) {
         const product = response.data.product;
-        
+
         // Calculate total current stock
         const totalCurrentStock = product.stocks?.reduce((sum: number, stock: any) => sum + (stock.quantity || 0), 0) || 0;
-        
+
         // Check if there's enough stock
         if (totalCurrentStock < quantityToDeduct) {
           toast.warning(`Insufficient stock for ${product.name}! Available: ${totalCurrentStock}, Required: ${quantityToDeduct}`);
           return false;
         }
-        
+
         // Calculate new stock quantities by deducting from each warehouse
         let remainingToDeduct = quantityToDeduct;
         const updatedStocks = product.stocks?.map((stock: any) => {
           const currentQty = stock.quantity || 0;
-          
+
           if (remainingToDeduct > 0 && currentQty > 0) {
             const deductFromThisStock = Math.min(currentQty, remainingToDeduct);
             remainingToDeduct -= deductFromThisStock;
-            
+
             return {
               ...stock,
               quantity: currentQty - deductFromThisStock
@@ -195,13 +195,13 @@ export default function ReceiptOfFinishedGoods() {
   // Function to validate stock availability for all GRN items
   const validateGRNStockAvailability = async (items: GRNItem[]) => {
     const stockValidations = [];
-    
+
     for (const item of items) {
       try {
         const response = await axios.get(`/product/single/${item.productId}`);
         if (response.data.success && response.data.product) {
           const totalCurrentStock = response.data.product.stocks?.reduce((sum: number, stock: any) => sum + (stock.quantity || 0), 0) || 0;
-          
+
           stockValidations.push({
             productId: item.productId,
             productName: response.data.product.name,
@@ -222,7 +222,7 @@ export default function ReceiptOfFinishedGoods() {
         });
       }
     }
-    
+
     return stockValidations;
   };
 
@@ -275,14 +275,14 @@ export default function ReceiptOfFinishedGoods() {
   useEffect(() => {
     if (isAuthenticated && organisationId) {
       const locationParam = locationFilter !== "all" ? locationFilter : undefined;
-      
+
       console.log('=== FRONTEND GRN FETCH DEBUG ===');
       console.log('isAuthenticated:', isAuthenticated);
       console.log('organisationId:', organisationId);
       console.log('locationFilter:', locationFilter);
       console.log('locationParam:', locationParam);
       console.log('userProfile:', userProfile);
-      
+
       (dispatch as any)(fetchGRNs({
         location: locationParam,
         page: grnsPagination?.currentPage || 1,
@@ -295,7 +295,7 @@ export default function ReceiptOfFinishedGoods() {
       });
 
       // Removed fetchPendingQC since that table is commented out
-      
+
       console.log('=== END FRONTEND DEBUG ===');
     }
   }, [dispatch, isAuthenticated, organisationId, locationFilter]);
@@ -303,7 +303,7 @@ export default function ReceiptOfFinishedGoods() {
   // Handle location filter change
   const handleLocationFilterChange = (val: string) => {
     setLocationFilter(val);
-    
+
     // Fetch GRN data with new location filter
     (dispatch as any)(fetchGRNs({
       location: val !== "all" ? val : undefined,
@@ -311,7 +311,7 @@ export default function ReceiptOfFinishedGoods() {
       limit: grnsPagination?.itemsPerPage || 10,
       search: ""
     }));
-    
+
     // Removed fetchPendingQC since that table is commented out
   };
 
@@ -356,12 +356,12 @@ export default function ReceiptOfFinishedGoods() {
   // Function to handle product selection and fetch stock
   const handleProductSelection = async (productId: string) => {
     setManualProductId(productId);
-    
+
     if (productId) {
       // Fetch and set current stock automatically
       const stock = await fetchProductStock(productId);
       setCurrentStock(stock);
-      
+
       // Set product name for display
       const product = products.find(p => p._id === productId);
       setSelectedProductName(product?.name || "");
@@ -399,12 +399,12 @@ export default function ReceiptOfFinishedGoods() {
     try {
       const stockValidations = await validateGRNStockAvailability(formItems);
       const insufficientItems = stockValidations.filter(v => !v.sufficient);
-      
+
       if (insufficientItems.length > 0) {
-        const errorMessage = insufficientItems.map(item => 
+        const errorMessage = insufficientItems.map(item =>
           `${item.productName}: Available ${item.available}, Required ${item.required}`
         ).join('\n');
-        
+
         toast.error(`Cannot create GRN! Insufficient stock for:\n${errorMessage}`);
         return;
       }
@@ -432,7 +432,7 @@ export default function ReceiptOfFinishedGoods() {
       let allStockDeducted = true;
       const deductionResults = [];
       const movementResults = [];
-      
+
       for (const item of formItems) {
         if (item.qty > 0) {
           const stockDeducted = await deductProductStock(item.productId, item.qty);
@@ -442,7 +442,7 @@ export default function ReceiptOfFinishedGoods() {
             quantity: item.qty,
             success: stockDeducted
           });
-          
+
           if (!stockDeducted) {
             allStockDeducted = false;
           } else {
@@ -459,7 +459,7 @@ export default function ReceiptOfFinishedGoods() {
               itemType: "product",
               unitCost: item.unitValue || 0
             });
-            
+
             movementResults.push({
               productName: product?.name || 'Unknown Product',
               movementCreated
@@ -476,7 +476,7 @@ export default function ReceiptOfFinishedGoods() {
         limit: grnsPagination?.itemsPerPage || 10,
         search: ""
       }));
-      
+
       // Removed fetchPendingQC since that table is commented out
 
       // Reset form
@@ -494,7 +494,7 @@ export default function ReceiptOfFinishedGoods() {
       if (allStockDeducted) {
         const totalItems = deductionResults.length;
         const successfulMovements = movementResults.filter(r => r.movementCreated).length;
-        
+
         if (successfulMovements === totalItems) {
           toast.success(`GRN created, stock deducted for ${totalItems} products, and movement entries created`);
         } else {
@@ -523,27 +523,42 @@ export default function ReceiptOfFinishedGoods() {
   };
 
   /** ---------------------- QC Accept/Reject ---------------------- */
-  const updateBatchQC = async (batchNo: string, action: "Accepted" | "Rejected") => {
-    try {
-      await (dispatch as any)(updateQC({ productId: "", batchNo, action }));
 
-      // Refresh GRN data with location filter
-      const locationParam = locationFilter !== "all" ? locationFilter : undefined;
-      (dispatch as any)(fetchGRNs({
-        location: locationParam,
-        page: grnsPagination?.currentPage || 1,
-        limit: grnsPagination?.itemsPerPage || 10,
-        search: ""
-      }));
-      
-      // Removed fetchPendingQC since that table is commented out
+  const updateBatchQC = async (
+    grnId: string,
+    batchNo: string,
+    action: "Accepted" | "Rejected"
+  ) => {
+    try {
+      await dispatch(updateQC({ grnId, batchNo, action })).unwrap();
 
       toast.success(`Batch ${action.toLowerCase()} successfully`);
     } catch (error) {
-      toast.error(`Failed to ${action.toLowerCase()} batch`);
-      console.error(error);
+      toast.error(`Failed to ${action?.toLowerCase() ?? "process"} batch`);
     }
   };
+
+  // const updateBatchQC = async (batchNo: string, action: "Accepted" | "Rejected") => {
+  //   try {
+  //     await (dispatch as any)(updateQC({ productId: "", batchNo, action }));
+
+  //     // Refresh GRN data with location filter
+  //     const locationParam = locationFilter !== "all" ? locationFilter : undefined;
+  //     (dispatch as any)(fetchGRNs({
+  //       location: locationParam,
+  //       page: grnsPagination?.currentPage || 1,
+  //       limit: grnsPagination?.itemsPerPage || 10,
+  //       search: ""
+  //     }));
+
+  //     // Removed fetchPendingQC since that table is commented out
+
+  //     toast.success(`Batch ${action.toLowerCase()} successfully`);
+  //   } catch (error) {
+  //     toast.error(`Failed to ${action.toLowerCase()} batch`);
+  //     console.error(error);
+  //   }
+  // };
 
   /** ---------------------- Analytics ---------------------- */
   const { trend } = useSelector((state: any) => state.grn);
@@ -592,11 +607,11 @@ export default function ReceiptOfFinishedGoods() {
           <h2 className="text-2xl font-bold">Receipt of Finished Goods (GRN)</h2>
           <p className="text-muted-foreground">Transfer completed goods from WIP to Finished Goods inventory. Auto-generate batch and trigger QC.</p>
         </div>
-        
+
         {/* ✅ LOCATION FILTER */}
-        <Select 
-          disabled={isLocationRestricted} 
-          value={locationFilter} 
+        <Select
+          disabled={isLocationRestricted}
+          value={locationFilter}
           onValueChange={handleLocationFilterChange}
         >
           <SelectTrigger className="w-48">
@@ -649,9 +664,8 @@ export default function ReceiptOfFinishedGoods() {
                 <PopoverTrigger asChild>
                   <button
                     type="button"
-                    className={`w-full px-4 py-3 border rounded-lg text-left flex justify-between items-center ${
-                      isLocationRestricted ? 'bg-gray-100 cursor-not-allowed' : 'hover:bg-gray-50'
-                    }`}
+                    className={`w-full px-4 py-3 border rounded-lg text-left flex justify-between items-center ${isLocationRestricted ? 'bg-gray-100 cursor-not-allowed' : 'hover:bg-gray-50'
+                      }`}
                     disabled={isLocationRestricted}
                   >
                     {formLocation
@@ -660,7 +674,7 @@ export default function ReceiptOfFinishedGoods() {
                     <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
                   </button>
                 </PopoverTrigger>
-                
+
                 {!isLocationRestricted && (
                   <PopoverContent className="p-0">
                     <Command>
@@ -718,7 +732,7 @@ export default function ReceiptOfFinishedGoods() {
               <div>
                 <Label>Quantity</Label>
                 <Input type="number" value={manualQty as any} onChange={(e) => setManualQty(Number(e.target.value))} />
-                
+
                 {/* Stock validation indicator */}
                 {manualProductId && selectedProductName && (
                   <div className="mt-2">
@@ -726,12 +740,11 @@ export default function ReceiptOfFinishedGoods() {
                       Current Stock: <span className="font-medium">{currentStock}</span> units
                     </div>
                     {manualQty && Number(manualQty) > 0 && (
-                      <div className={`text-xs p-2 rounded ${
-                        currentStock >= Number(manualQty) 
-                          ? 'bg-green-50 text-green-700 border border-green-200' 
-                          : 'bg-red-50 text-red-700 border border-red-200'
-                      }`}>
-                        {currentStock >= Number(manualQty) 
+                      <div className={`text-xs p-2 rounded ${currentStock >= Number(manualQty)
+                        ? 'bg-green-50 text-green-700 border border-green-200'
+                        : 'bg-red-50 text-red-700 border border-red-200'
+                        }`}>
+                        {currentStock >= Number(manualQty)
                           ? `✅ Sufficient stock available (${currentStock} ≥ ${manualQty})`
                           : `⚠️ Insufficient stock! Available: ${currentStock}, Required: ${manualQty}`
                         }
@@ -769,7 +782,7 @@ export default function ReceiptOfFinishedGoods() {
                 })}
               </TableBody>
             </Table>
-            
+
             {/* Overall stock status summary for added items */}
             {formItems.length > 0 && (
               <div className="mt-3 text-center">
@@ -784,7 +797,7 @@ export default function ReceiptOfFinishedGoods() {
                 })()}
               </div>
             )}
-            
+
             <Label>Accepted By</Label>
             <Input value={acceptedBy} onChange={(e) => setAcceptedBy(e.target.value)} />
             <Label>Remarks</Label>
@@ -857,7 +870,7 @@ export default function ReceiptOfFinishedGoods() {
                                   {product.name}
                                 </div>
                               )}
-                              
+
                             </div>
                           );
                         }) || <span className="text-muted-foreground text-xs">No batches</span>}
@@ -877,6 +890,25 @@ export default function ReceiptOfFinishedGoods() {
                     </TableCell>
                     <TableCell>{grn.remarks || "—"}</TableCell>
                     <TableCell>
+                      <div className="space-y-1">
+                        {grn.items.map((item: any, idx: number) => (
+                          <Badge
+                            key={idx}
+                            variant={
+                              item.status === "Accepted"
+                                ? "success"
+                                : item.status === "Rejected"
+                                  ? "destructive"
+                                  : "secondary"
+                            }
+                          >
+                            {item.status}
+                          </Badge>
+                        ))}
+                      </div>
+                    </TableCell>
+
+                    {/* <TableCell>
                       {grn.requireFinalQC && grn.items?.some((item: any) => item.status === "Pending QC") ? (
                         <div className="flex gap-2">
                           {grn.items
@@ -888,7 +920,7 @@ export default function ReceiptOfFinishedGoods() {
                                   variant="outline"
                                   className="bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
                                   disabled={!canEdit}
-                                  onClick={() => canEdit && updateBatchQC(item.batchNo, "Accepted")}
+                                  onClick={() => canEdit && updateBatchQC(grn._id, item.batchNo, "Accepted")}
                                 >
                                   <Check className="w-3 h-3 mr-1" />
                                   Accept
@@ -898,7 +930,7 @@ export default function ReceiptOfFinishedGoods() {
                                   variant="outline"
                                   className="bg-red-50 text-red-700 border-red-200 hover:bg-red-100"
                                   disabled={!canEdit}
-                                  onClick={() => canEdit && updateBatchQC(item.batchNo, "Rejected")}
+                                  onClick={() => canEdit && updateBatchQC(grn._id, item.batchNo, "Rejected")}
                                 >
                                   <XCircle className="w-3 h-3 mr-1" />
                                   Reject
@@ -909,13 +941,13 @@ export default function ReceiptOfFinishedGoods() {
                       ) : (
                         <span className="text-muted-foreground text-sm">No actions needed</span>
                       )}
-                    </TableCell>
+                    </TableCell> */}
                   </TableRow>
                 ))
               )}
             </TableBody>
           </Table>
-          
+
           {/* ✅ ADD PAGINATION FOR GRN RECORDS */}
           {grnsPagination && grnsPagination.totalPages > 1 && (
             <div className="mt-4">
@@ -1035,7 +1067,7 @@ export default function ReceiptOfFinishedGoods() {
           </Table>
 
           {/* Pagination for Pending QC */}
-          {/* {pendingQCPagination && (
+      {/* {pendingQCPagination && (
             <Pagination
               currentPage={pendingQCPagination.currentPage}
               totalPages={pendingQCPagination.totalPages}
@@ -1045,7 +1077,7 @@ export default function ReceiptOfFinishedGoods() {
               onItemsPerPageChange={handlePendingQCItemsPerPageChange}
             />
           )} */}
-        {/* </CardContent>
+      {/* </CardContent>
       </Card> */}
 
       {/* GRN Trend */}

@@ -1,113 +1,90 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
 import {
   MessageSquare,
   Send,
   Paperclip,
-  Filter,
   User,
   Clock,
 } from "lucide-react";
 
+import { fetchMessages, sendMessage } from "@/redux/slices/production/chatSlice";
+
 /* ================= TYPES ================= */
 
-interface Activity {
-  id: string;
-  user: string;
-  action: string;
-  entity: string;
-  time: string;
+interface RootState {
+  auth: {
+    user: {
+      _id: string;
+      fullname: string;
+      role: string;
+    };
+  };
+  chat: {
+    messages: any[];
+    loading: boolean;
+  };
 }
 
-interface Message {
-  id: string;
-  user: string;
-  message: string;
-  time: string;
+interface CollaborationTabProps {
+  teamId: string;
 }
 
-/* ================= MAIN TAB ================= */
+/* ================= MAIN COMPONENT ================= */
 
-const CollaborationTab = () => {
-  const [filter, setFilter] = useState("all");
+const CollaborationTab = ({ teamId }: CollaborationTabProps) => {
+  const dispatch = useDispatch<any>();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const user = useSelector((state: any) => state.auth?.userProfile ?? null);
+  const { messages, loading } = useSelector((state: RootState) => state.chat);
+
   const [message, setMessage] = useState("");
 
-  const activities: Activity[] = [
-    {
-      id: "1",
-      user: "John Smith",
-      action: "created ECO",
-      entity: "ECO-1023",
-      time: "10 min ago",
-    },
-    {
-      id: "2",
-      user: "Amit Verma",
-      action: "uploaded document",
-      entity: "Spec_v2.pdf",
-      time: "1 hour ago",
-    },
-    {
-      id: "3",
-      user: "Sara Lee",
-      action: "approved ECO",
-      entity: "ECO-1019",
-      time: "Yesterday",
-    },
-  ];
+  /* ================= FETCH MESSAGES ================= */
 
-  const messages: Message[] = [
-    {
-      id: "1",
-      user: "John Smith",
-      message: "Please review the updated BoM for ECO-1023",
-      time: "09:45 AM",
-    },
-    {
-      id: "2",
-      user: "Amit Verma",
-      message: "CAD files uploaded, ready for approval",
-      time: "10:10 AM",
-    },
-  ];
+  useEffect(() => {
+    if (teamId) {
+      dispatch(fetchMessages(teamId));
+    }
+  }, [teamId, dispatch]);
+
+  /* ================= AUTO SCROLL ================= */
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  /* ================= SEND MESSAGE ================= */
+
+  const handleSend = () => {
+    if (!message.trim()) return;
+
+    dispatch(sendMessage({ teamId, message }));
+    setMessage("");
+  };
+
+  const canSend = user.role !== "user";
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-      {/* ACTIVITY FEED */}
+      {/* ================= ACTIVITY FEED (OPTIONAL STATIC) ================= */}
       <div className="lg:col-span-1 bg-white rounded-xl shadow">
-        <div className="flex justify-between items-center px-5 py-4 border-b">
-          <h3 className="font-semibold flex items-center gap-2">
-            <Clock className="h-4 w-4" />
-            Activity Feed
-          </h3>
-
-          <select
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            className="text-sm border rounded-lg px-2 py-1"
-          >
-            <option value="all">All</option>
-            <option value="eco">ECOs</option>
-            <option value="document">Documents</option>
-            <option value="team">Teams</option>
-          </select>
+        <div className="flex items-center gap-2 px-5 py-4 border-b">
+          <Clock className="h-4 w-4" />
+          <h3 className="font-semibold">Activity Feed</h3>
         </div>
 
-        <div className="divide-y">
-          {activities.map((a) => (
-            <div key={a.id} className="px-5 py-4 text-sm">
-              <p className="font-medium">{a.user}</p>
-              <p className="text-gray-600">
-                {a.action} <span className="font-medium">{a.entity}</span>
-              </p>
-              <p className="text-xs text-gray-400">{a.time}</p>
-            </div>
-          ))}
+        <div className="p-4 text-sm text-gray-500">
+          Activity integration can be added later
         </div>
       </div>
 
-      {/* CHAT / DISCUSSION */}
+      {/* ================= CHAT ================= */}
       <div className="lg:col-span-2 bg-white rounded-xl shadow flex flex-col">
+
+        {/* HEADER */}
         <div className="px-6 py-4 border-b flex items-center gap-2">
           <MessageSquare className="h-5 w-5 text-blue-600" />
           <h3 className="font-semibold">Team Discussion</h3>
@@ -115,18 +92,54 @@ const CollaborationTab = () => {
 
         {/* MESSAGES */}
         <div className="flex-1 p-6 space-y-4 overflow-y-auto">
-          {messages.map((m) => (
-            <div key={m.id} className="flex gap-3">
-              <div className="bg-gray-100 p-2 rounded-full">
-                <User className="h-4 w-4 text-gray-600" />
+          {loading && (
+            <p className="text-sm text-gray-400">Loading messages...</p>
+          )}
+
+          {!loading && messages.length === 0 && (
+            <p className="text-sm text-gray-400">
+              No messages yet. Start the discussion.
+            </p>
+          )}
+
+          {messages.map((m) => {
+            const isOwn = m.sender?._id === user._id;
+
+            return (
+              <div
+                key={m._id}
+                className={`flex gap-3 ${
+                  isOwn ? "justify-end" : "justify-start"
+                }`}
+              >
+                {!isOwn && (
+                  <div className="bg-gray-100 p-2 rounded-full">
+                    <User className="h-4 w-4 text-gray-600" />
+                  </div>
+                )}
+
+                <div
+                  className={`max-w-[70%] rounded-lg px-4 py-2 text-sm ${
+                    isOwn
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-100 text-gray-800"
+                  }`}
+                >
+                  {!isOwn && (
+                    <p className="text-xs font-semibold mb-1">
+                      {m.sender?.fullname}
+                    </p>
+                  )}
+                  <p>{m.message}</p>
+                  <p className="text-[10px] opacity-70 mt-1 text-right">
+                    {new Date(m.createdAt).toLocaleTimeString()}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm font-medium">{m.user}</p>
-                <p className="text-sm text-gray-700">{m.message}</p>
-                <p className="text-xs text-gray-400">{m.time}</p>
-              </div>
-            </div>
-          ))}
+            );
+          })}
+
+          <div ref={messagesEndRef} />
         </div>
 
         {/* INPUT */}
@@ -138,11 +151,21 @@ const CollaborationTab = () => {
           <input
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="Type a message, use @ to mention..."
-            className="flex-1 border rounded-lg px-3 py-2 text-sm"
+            placeholder={
+              canSend
+                ? "Type a message..."
+                : "You have read-only access"
+            }
+            disabled={!canSend}
+            className="flex-1 border rounded-lg px-3 py-2 text-sm disabled:bg-gray-100"
+            onKeyDown={(e) => e.key === "Enter" && handleSend()}
           />
 
-          <button className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700">
+          <button
+            onClick={handleSend}
+            disabled={!canSend}
+            className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
             <Send className="h-4 w-4" />
           </button>
         </div>

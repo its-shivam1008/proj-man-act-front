@@ -141,6 +141,7 @@ function App() {
                 path="/inventory/rawmaterials"
                 element={<RawMaterialMaster />}
               />
+              
               <Route
                 path="/inventory/warehouses"
                 element={<WarehouseManagement />}

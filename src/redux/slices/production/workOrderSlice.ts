@@ -6,6 +6,8 @@ import axios from "@/utils/axiosApi";
 export interface WorkOrder {
   _id: string;
   id?: string; // For compatibility
+  batchNo:string;
+  batchId:string;
   orderNo: string;
   productId: string;
   productName?: string;
@@ -19,7 +21,7 @@ export interface WorkOrder {
   location?: string; // ✅ ADD LOCATION FIELD
   plannedHours?: number; // ✅ ADD PLANNED HOURS
   createdAt?: string;
-  producedQuantity?: number; 
+  producedQuantity?: number;
   updatedAt?: string;
 }
 
@@ -90,16 +92,29 @@ export const createWorkOrder = createAsyncThunk(
 );
 
 export const updateWorkOrder = createAsyncThunk(
-  "workOrder/update",
-  async ({ id, data }: { id: string; data: Partial<WorkOrder> }, { rejectWithValue }) => {
-    try {
-      const res = await axios.put(`/work-order/${id}`, data);
-      return res.data.data;
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.message || "Update failed");
+  "workOrders/update",
+  async ({ id, data }: { id: string; data: any }) => {
+    // 🔥 IMPORTANT FIX
+    if (!data.productId) {
+      delete data.productId;
     }
+
+    const res = await axios.put(`/work-order/${id}`, data);
+    return res.data;
   }
 );
+
+// export const updateWorkOrder = createAsyncThunk(
+//   "workOrder/update",
+//   async ({ id, data }: { id: string; data: Partial<WorkOrder> }, { rejectWithValue }) => {
+//     try {
+//       const res = await axios.put(`/work-order/${id}`, data);
+//       return res.data.data;
+//     } catch (err: any) {
+//       return rejectWithValue(err.response?.data?.message || "Update failed");
+//     }
+//   }
+// );
 
 export const deleteWorkOrder = createAsyncThunk(
   "workOrder/delete",
@@ -154,26 +169,32 @@ const workOrderSlice = createSlice({
 
       /* UPDATE */
       .addCase(updateWorkOrder.fulfilled, (state, action) => {
-        const idx = state.list.findIndex(w => w._id === action.payload._id);
-        if (idx !== -1) state.list[idx] = action.payload;
-      })
+        const updated = action.payload.data;
 
+        const index = state.list.findIndex(
+          (wo) => wo._id === updated._id
+        );
+
+        if (index !== -1) {
+          state.list[index] = updated; // ✅ update UI instantly
+        }
+      })
       /* DELETE */
       .addCase(deleteWorkOrder.fulfilled, (state, action) => {
         state.list = state.list.filter(w => w._id !== action.payload);
       })/* TOTAL PRODUCED */
-      .addCase(fetchTotalProduced.pending, (state) => {
-        state.loading = true;
-      })
-      .addCase(fetchTotalProduced.fulfilled, (state, action) => {
-        state.loading = false;
-        state.totalProduced = action.payload; // ✅ STORE VALUE
-      })
-      .addCase(fetchTotalProduced.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.error.message || "Failed to load total production";
-      });
-  },
+    .addCase(fetchTotalProduced.pending, (state) => {
+      state.loading = true;
+    })
+    .addCase(fetchTotalProduced.fulfilled, (state, action) => {
+      state.loading = false;
+      state.totalProduced = action.payload; // ✅ STORE VALUE
+    })
+    .addCase(fetchTotalProduced.rejected, (state, action) => {
+      state.loading = false;
+      state.error = action.error.message || "Failed to load total production";
+    });
+},
 });
 
 export default workOrderSlice.reducer;

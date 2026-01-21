@@ -72,13 +72,15 @@ export const deleteMilestone = createAsyncThunk(
 --------------------------------------------------- */
 export const fetchInvoices = createAsyncThunk(
   "billing/fetchInvoices",
-  async () => {
-    const res = await api.get(`/get/invoice`, {
-      params: { organisationId: getOrg() },
+  async ({ organisationId }: { organisationId: string }) => {
+    const res = await api.get("/get/invoice", {
+      params: { organisationId },
     });
-    return res.data.data as Invoice[];
+
+    return res.data.data;
   }
 );
+
 
 /* ---------------------------------------------------
    CREATE INVOICE

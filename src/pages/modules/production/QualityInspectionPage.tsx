@@ -18,6 +18,11 @@ import {
   PopoverTrigger,
   PopoverContent,
 } from "@/components/ui/popover";
+// import { fetchPendingQCBatches } from "@/redux/slices/production/grnSlice";
+// import { fetchPendingQCBatches } from "@/redux/slices/production/grnSlice";
+// import { fetchPendingQC } from "@/redux/slices/production/grnSlice";
+import { fetchPendingQC, updateQC } from "@/redux/slices/production/grnSlice";
+
 import {
   Command,
   CommandInput,
@@ -78,26 +83,21 @@ import {
   updateCAPA,
   updateNCR,
   deleteInspection,
-  updateInspection
+  updateInspection,
+  fetchPendingQCBatches
 } from "../../../redux/slices/production/qualitySlice";
+import axios from "@/utils/axiosApi";
 
 
-/**
- * QUALITY INSPECTION (Integrated with GRN)
- *
- * - Reads GRNs from STORAGE_KEYS.GRNS
- * - Displays Pending QC batches (from GRNs) in Inspections tab
- * - Accept / Reject flows update GRN item status, inventory, WIP, and create NCR/CAPA as needed
- */
 
 export default function QualityInspectionPage() {
   const dispatch = useDispatch();
   const qualityState = useSelector((state: any) => state.quality || {});
-  const { 
-    plans = [], 
-    inspections = [], 
-    ncrs = [], 
-    capas = [], 
+  const {
+    plans = [],
+    inspections = [],
+    ncrs = [],
+    capas = [],
     loading = false,
     plansPagination = { currentPage: 1, totalPages: 1, totalItems: 0, itemsPerPage: 10 },
     inspectionsPagination = { currentPage: 1, totalPages: 1, totalItems: 0, itemsPerPage: 10 },
@@ -108,7 +108,7 @@ export default function QualityInspectionPage() {
   // Check authentication state
   const authState = useSelector((state: any) => state.auth || {});
   const { organisationId, isAuthenticated, userProfile } = authState;
-  
+
   // Master data for locations
   const { locations } = useSelector((state: any) => state.masterData);
 
@@ -121,16 +121,25 @@ export default function QualityInspectionPage() {
   const [locationFilter, setLocationFilter] = useState("all");
   const [locationOpen, setLocationOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  
+
   // Pagination search states for each table
   const [plansSearch, setPlansSearch] = useState("");
   const [inspectionsSearch, setInspectionsSearch] = useState("");
   const [ncrsSearch, setNcrsSearch] = useState("");
   const [capasSearch, setCapasSearch] = useState("");
-  
+
+  const {
+    pendingQCBatches,
+    pendingQCPagination,
+    loading: pendingQCLoader,
+  } = useSelector((state: any) => state.grn);
+
+
+
+
   // Location restriction logic
-  const isLocationRestricted = 
-    userProfile?.role !== 'admin' && 
+  const isLocationRestricted =
+    userProfile?.role !== 'admin' &&
     !!userProfile?.location;
 
   if (!canView) {
@@ -161,8 +170,42 @@ export default function QualityInspectionPage() {
       </div>
     );
   }
+  const handlePendingQCPageChange = (page: number) => {
+    dispatch(
+      fetchPendingQC({
+        location: locationFilter !== "all" ? locationFilter : undefined,
+        page,
+        limit: pendingQCPagination.itemsPerPage,
+      }) as any
+    );
+  };
 
-  // Load data on mount
+  const handlePendingQCItemsPerPageChange = (limit: number) => {
+    dispatch(
+      fetchPendingQC({
+        location: locationFilter !== "all" ? locationFilter : undefined,
+        page: 1,
+        limit,
+      }) as any
+    );
+  };
+
+  useEffect(() => {
+    if (organisationId) {
+      dispatch(
+        fetchPendingQC({
+          location: locationFilter !== "all" ? locationFilter : undefined,
+          page: pendingQCPagination.currentPage,
+          limit: pendingQCPagination.itemsPerPage,
+        }) as any
+      );
+    }
+  }, [organisationId, locationFilter, pendingQCPagination.currentPage]);
+
+  useEffect(() => {
+    console.log("Pending QC Batches:", pendingQCBatches);
+  }, [pendingQCBatches]);
+
   useEffect(() => {
     if (isAuthenticated && organisationId) {
       console.log("Quality: Loading data...");
@@ -320,95 +363,164 @@ export default function QualityInspectionPage() {
     // Placeholder - will be implemented when GRN backend is integrated
     return [];
   }, []);
+  // const acceptGrnBatch = async (
+  //   grnId: string,
+  //   batchNo: string,
+  //   inspectedQty: number
+  // ) => {
+  //   try {
+  //     if (!grnId || !batchNo) {
+  //       toast.error("Invalid GRN or Batch");
+  //       return;
+  //     }
 
-  const acceptGrnBatch = (grnId: string, productId: string, batchNo: string) => {
-    // TODO: Implement with backend API
-    toast.info("GRN integration will be implemented with backend");
+  //     const payload = {
+  //       grnId,
+  //       batchNo,
+  //       acceptedQty: inspectedQty,
+  //       rejectedQty: 0,
+  //       result: "Pass",
+  //     };
+
+  //     console.log("QC PASS payload:", payload);
+
+  //     await axios.post("/grn/qc", payload);
+
+  //     toast.success("QC Passed successfully");
+
+  //     // ✅ refresh PENDING GRN QC list (NOT inspections)
+  //     dispatch(fetchPendingQCBatches());
+  //   } catch (err: any) {
+  //     toast.error(err.response?.data?.message || "QC Pass failed");
+  //   }
+  // };
+  const acceptGrnBatch = async (grnId: string, batchNo: string) => {
+    await dispatch(
+      updateQC({
+        grnId,
+        batchNo,
+        result: "Accepted",
+      }) as any
+    );
+
+    toast.success("Batch Accepted");
+
+    dispatch(
+      fetchPendingQC({
+        location: locationFilter !== "all" ? locationFilter : undefined,
+      }) as any
+    );
   };
 
-  const rejectGrnBatch = (grnId: string, productId: string, batchNo: string) => {
-    // TODO: Implement with backend API  
-    toast.info("GRN integration will be implemented with backend");
+
+  const rejectGrnBatch = async (grnId: string, batchNo: string) => {
+    await dispatch(
+      updateQC({
+        grnId,
+        batchNo,
+        result: "Rejected",
+      }) as any
+    );
+
+    toast.success("Batch Rejected");
+
+    dispatch(
+      fetchPendingQC({
+        location: locationFilter !== "all" ? locationFilter : undefined,
+      }) as any
+    );
   };
+
+
+
+  // const acceptGrnBatch = (grnId: string, productId: string, batchNo: string) => {
+  //   // TODO: Implement with backend API
+  //   toast.info("GRN integration will be implemented with backend");
+  // };
+
+  // const rejectGrnBatch = (grnId: string, productId: string, batchNo: string) => {
+  //   // TODO: Implement with backend API  
+  //   toast.info("GRN integration will be implemented with backend");
+  // };
 
   /* ---------- Pagination handlers ---------- */
   const handlePlansPageChange = (page: number) => {
     const locationParam = locationFilter !== "all" ? locationFilter : undefined;
-    (dispatch as any)(fetchPlans({ 
-      location: locationParam, 
-      page, 
-      limit: plansPagination.itemsPerPage, 
-      search: plansSearch 
+    (dispatch as any)(fetchPlans({
+      location: locationParam,
+      page,
+      limit: plansPagination.itemsPerPage,
+      search: plansSearch
     }));
   };
 
   const handlePlansItemsPerPageChange = (itemsPerPage: number) => {
     const locationParam = locationFilter !== "all" ? locationFilter : undefined;
-    (dispatch as any)(fetchPlans({ 
-      location: locationParam, 
-      page: 1, 
-      limit: itemsPerPage, 
-      search: plansSearch 
+    (dispatch as any)(fetchPlans({
+      location: locationParam,
+      page: 1,
+      limit: itemsPerPage,
+      search: plansSearch
     }));
   };
 
   const handleInspectionsPageChange = (page: number) => {
     const locationParam = locationFilter !== "all" ? locationFilter : undefined;
-    (dispatch as any)(fetchInspections({ 
-      location: locationParam, 
-      page, 
-      limit: inspectionsPagination.itemsPerPage, 
-      search: inspectionsSearch 
+    (dispatch as any)(fetchInspections({
+      location: locationParam,
+      page,
+      limit: inspectionsPagination.itemsPerPage,
+      search: inspectionsSearch
     }));
   };
 
   const handleInspectionsItemsPerPageChange = (itemsPerPage: number) => {
     const locationParam = locationFilter !== "all" ? locationFilter : undefined;
-    (dispatch as any)(fetchInspections({ 
-      location: locationParam, 
-      page: 1, 
-      limit: itemsPerPage, 
-      search: inspectionsSearch 
+    (dispatch as any)(fetchInspections({
+      location: locationParam,
+      page: 1,
+      limit: itemsPerPage,
+      search: inspectionsSearch
     }));
   };
 
   const handleNCRsPageChange = (page: number) => {
     const locationParam = locationFilter !== "all" ? locationFilter : undefined;
-    (dispatch as any)(fetchNCRs({ 
-      location: locationParam, 
-      page, 
-      limit: ncrsPagination.itemsPerPage, 
-      search: ncrsSearch 
+    (dispatch as any)(fetchNCRs({
+      location: locationParam,
+      page,
+      limit: ncrsPagination.itemsPerPage,
+      search: ncrsSearch
     }));
   };
 
   const handleNCRsItemsPerPageChange = (itemsPerPage: number) => {
     const locationParam = locationFilter !== "all" ? locationFilter : undefined;
-    (dispatch as any)(fetchNCRs({ 
-      location: locationParam, 
-      page: 1, 
-      limit: itemsPerPage, 
-      search: ncrsSearch 
+    (dispatch as any)(fetchNCRs({
+      location: locationParam,
+      page: 1,
+      limit: itemsPerPage,
+      search: ncrsSearch
     }));
   };
 
   const handleCAPAsPageChange = (page: number) => {
     const locationParam = locationFilter !== "all" ? locationFilter : undefined;
-    (dispatch as any)(fetchCAPAs({ 
-      location: locationParam, 
-      page, 
-      limit: capasPagination.itemsPerPage, 
-      search: capasSearch 
+    (dispatch as any)(fetchCAPAs({
+      location: locationParam,
+      page,
+      limit: capasPagination.itemsPerPage,
+      search: capasSearch
     }));
   };
 
   const handleCAPAsItemsPerPageChange = (itemsPerPage: number) => {
     const locationParam = locationFilter !== "all" ? locationFilter : undefined;
-    (dispatch as any)(fetchCAPAs({ 
-      location: locationParam, 
-      page: 1, 
-      limit: itemsPerPage, 
-      search: capasSearch 
+    (dispatch as any)(fetchCAPAs({
+      location: locationParam,
+      page: 1,
+      limit: itemsPerPage,
+      search: capasSearch
     }));
   };
 
@@ -416,11 +528,11 @@ export default function QualityInspectionPage() {
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       const locationParam = locationFilter !== "all" ? locationFilter : undefined;
-      (dispatch as any)(fetchPlans({ 
-        location: locationParam, 
-        page: 1, 
-        limit: plansPagination.itemsPerPage, 
-        search: plansSearch 
+      (dispatch as any)(fetchPlans({
+        location: locationParam,
+        page: 1,
+        limit: plansPagination.itemsPerPage,
+        search: plansSearch
       }));
     }, 300);
     return () => clearTimeout(timeoutId);
@@ -429,11 +541,11 @@ export default function QualityInspectionPage() {
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       const locationParam = locationFilter !== "all" ? locationFilter : undefined;
-      (dispatch as any)(fetchInspections({ 
-        location: locationParam, 
-        page: 1, 
-        limit: inspectionsPagination.itemsPerPage, 
-        search: inspectionsSearch 
+      (dispatch as any)(fetchInspections({
+        location: locationParam,
+        page: 1,
+        limit: inspectionsPagination.itemsPerPage,
+        search: inspectionsSearch
       }));
     }, 300);
     return () => clearTimeout(timeoutId);
@@ -442,11 +554,11 @@ export default function QualityInspectionPage() {
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       const locationParam = locationFilter !== "all" ? locationFilter : undefined;
-      (dispatch as any)(fetchNCRs({ 
-        location: locationParam, 
-        page: 1, 
-        limit: ncrsPagination.itemsPerPage, 
-        search: ncrsSearch 
+      (dispatch as any)(fetchNCRs({
+        location: locationParam,
+        page: 1,
+        limit: ncrsPagination.itemsPerPage,
+        search: ncrsSearch
       }));
     }, 300);
     return () => clearTimeout(timeoutId);
@@ -455,15 +567,24 @@ export default function QualityInspectionPage() {
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       const locationParam = locationFilter !== "all" ? locationFilter : undefined;
-      (dispatch as any)(fetchCAPAs({ 
-        location: locationParam, 
-        page: 1, 
-        limit: capasPagination.itemsPerPage, 
-        search: capasSearch 
+      (dispatch as any)(fetchCAPAs({
+        location: locationParam,
+        page: 1,
+        limit: capasPagination.itemsPerPage,
+        search: capasSearch
       }));
     }, 300);
     return () => clearTimeout(timeoutId);
   }, [capasSearch, capasPagination.itemsPerPage, locationFilter, dispatch]);
+  useEffect(() => {
+    if (organisationId) {
+      dispatch(
+        fetchPendingQCBatches({
+          location: locationFilter !== "all" ? locationFilter : undefined,
+        }) as any
+      );
+    }
+  }, [organisationId, locationFilter]);
 
   const renderFormFields = () => {
     switch (tab) {
@@ -483,7 +604,7 @@ export default function QualityInspectionPage() {
                 <SelectItem value="Final">Final</SelectItem>
               </SelectContent>
             </Select>
-            
+
             {/* Location Field */}
             <Label>Location</Label>
             <Popover open={locationOpen} onOpenChange={setLocationOpen}>
@@ -500,7 +621,7 @@ export default function QualityInspectionPage() {
                   <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
                 </Button>
               </PopoverTrigger>
-              
+
               {!isLocationRestricted && (
                 <PopoverContent className="w-full p-0">
                   <Command>
@@ -537,7 +658,7 @@ export default function QualityInspectionPage() {
                 *Location is fixed based on your permissions.
               </p>
             )}
-            
+
             <Label>Sampling Procedure</Label>
             <Input value={form.sampling || ""} onChange={(e) => setForm({ ...form, sampling: e.target.value })} />
             <Label>Acceptance Criteria</Label>
@@ -546,20 +667,98 @@ export default function QualityInspectionPage() {
         );
       case "inspections":
         return (
-          <>
+          <div className="overflow-y-scroll h-[500px]">
+            {/* 🔹 Inspection Plan */}
             <Label>Inspection Plan</Label>
-            <Select value={form.planId || ""} onValueChange={(value) => setForm({ ...form, planId: value })}>
+            <Select
+              value={form.planId || ""}
+              onValueChange={(value) =>
+                setForm({ ...form, planId: value })
+              }
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Select Plan" />
               </SelectTrigger>
               <SelectContent>
                 {plans.map((p: any) => (
-                  <SelectItem key={p._id} value={p._id}>{p.name}</SelectItem>
+                  <SelectItem key={p._id} value={p._id}>
+                    {p.name}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            
-            {/* Location Field */}
+
+            {/* 🔹 Receipt / GRN */}
+            <Label>Receipt (GRN)</Label>
+
+            <Select
+              value={form.receiptId || ""}
+              onValueChange={(receiptId) => {
+                const selected = pendingQCBatches.find(
+                  (b: any) => b.grnId?._id === receiptId
+                );
+
+                if (!selected) return;
+
+                setForm({
+                  ...form,
+                  receiptId: selected.grnId._id, // ✅ CORRECT
+                  productId: selected.productId._id,
+                  productName: selected.productId.name,
+                  batchNo: selected.batchNo,
+                  inspectedQty: selected.qty,
+                  location: selected.location,
+                });
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select GRN Receipt" />
+              </SelectTrigger>
+
+              <SelectContent>
+                {pendingQCBatches.map((b: any) => (
+                  <SelectItem key={b.batchNo} value={b.grnId._id}>
+                    {b.grnId.grnNo} — {b.productId.name} (Batch: {b.batchNo})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+
+            {/* 🔹 Product */}
+            <Label>Product</Label>
+            <Input
+              value={form.productName || ""}
+              disabled
+              placeholder="Product auto-filled from GRN"
+            />
+
+
+            {/* 🔹 Batch No */}
+            <Label>Batch No</Label>
+            <Input
+              placeholder="Enter Batch No"
+              value={form.batchNo || ""}
+              onChange={(e) =>
+                setForm({ ...form, batchNo: e.target.value })
+              }
+            />
+
+            {/* 🔹 Inspected Quantity */}
+            <Label>Inspected Quantity</Label>
+            <Input
+              type="number"
+              placeholder="Enter inspected quantity"
+              value={form.inspectedQty || ""}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  inspectedQty: Number(e.target.value),
+                })
+              }
+            />
+
+            {/* 🔹 Location (unchanged) */}
             <Label>Location</Label>
             <Popover open={locationOpen} onOpenChange={setLocationOpen}>
               <PopoverTrigger asChild>
@@ -570,12 +769,14 @@ export default function QualityInspectionPage() {
                   disabled={isLocationRestricted}
                 >
                   {form.location
-                    ? (locations || []).find((l: any) => l._id === form.location)?.name
+                    ? (locations || []).find(
+                      (l: any) => l._id === form.location
+                    )?.name
                     : "Select Location"}
                   <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
                 </Button>
               </PopoverTrigger>
-              
+
               {!isLocationRestricted && (
                 <PopoverContent className="w-full p-0">
                   <Command>
@@ -595,7 +796,9 @@ export default function QualityInspectionPage() {
                             <Check
                               className={cn(
                                 "mr-2 h-4 w-4",
-                                form.location === l._id ? "opacity-100" : "opacity-0"
+                                form.location === l._id
+                                  ? "opacity-100"
+                                  : "opacity-0"
                               )}
                             />
                             {l.name}
@@ -607,16 +810,30 @@ export default function QualityInspectionPage() {
                 </PopoverContent>
               )}
             </Popover>
+
             {isLocationRestricted && (
               <p className="text-[10px] text-muted-foreground">
                 *Location is fixed based on your permissions.
               </p>
             )}
-            
+
+            {/* 🔹 Inspector */}
             <Label>Inspector</Label>
-            <Input value={form.inspector || ""} onChange={(e) => setForm({ ...form, inspector: e.target.value })} />
+            <Input
+              value={form.inspector || ""}
+              onChange={(e) =>
+                setForm({ ...form, inspector: e.target.value })
+              }
+            />
+
+            {/* 🔹 Result */}
             <Label>Result</Label>
-            <Select value={form.result || ""} onValueChange={(value) => setForm({ ...form, result: value })}>
+            <Select
+              value={form.result || ""}
+              onValueChange={(value) =>
+                setForm({ ...form, result: value })
+              }
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Select Result" />
               </SelectTrigger>
@@ -625,10 +842,18 @@ export default function QualityInspectionPage() {
                 <SelectItem value="Fail">Fail</SelectItem>
               </SelectContent>
             </Select>
+
+            {/* 🔹 Remarks */}
             <Label>Remarks</Label>
-            <Input value={form.remarks || ""} onChange={(e) => setForm({ ...form, remarks: e.target.value })} />
-          </>
+            <Input
+              value={form.remarks || ""}
+              onChange={(e) =>
+                setForm({ ...form, remarks: e.target.value })
+              }
+            />
+          </div>
         );
+
       case "ncrs":
         return (
           <>
@@ -645,7 +870,7 @@ export default function QualityInspectionPage() {
                 <SelectItem value="Critical">Critical</SelectItem>
               </SelectContent>
             </Select>
-            
+
             {/* Location Field */}
             <Label>Location</Label>
             <Popover open={locationOpen} onOpenChange={setLocationOpen}>
@@ -662,7 +887,7 @@ export default function QualityInspectionPage() {
                   <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
                 </Button>
               </PopoverTrigger>
-              
+
               {!isLocationRestricted && (
                 <PopoverContent className="w-full p-0">
                   <Command>
@@ -699,7 +924,7 @@ export default function QualityInspectionPage() {
                 *Location is fixed based on your permissions.
               </p>
             )}
-            
+
             <Label>Responsible Department</Label>
             <Input value={form.responsibleDept || ""} onChange={(e) => setForm({ ...form, responsibleDept: e.target.value })} />
           </>
@@ -728,7 +953,7 @@ export default function QualityInspectionPage() {
                 <SelectItem value="Preventive">Preventive</SelectItem>
               </SelectContent>
             </Select>
-            
+
             {/* Location Field */}
             <Label>Location</Label>
             <Popover open={locationOpen} onOpenChange={setLocationOpen}>
@@ -745,7 +970,7 @@ export default function QualityInspectionPage() {
                   <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
                 </Button>
               </PopoverTrigger>
-              
+
               {!isLocationRestricted && (
                 <PopoverContent className="w-full p-0">
                   <Command>
@@ -782,7 +1007,7 @@ export default function QualityInspectionPage() {
                 *Location is fixed based on your permissions.
               </p>
             )}
-            
+
             <Label>Action</Label>
             <Input value={form.action || ""} onChange={(e) => setForm({ ...form, action: e.target.value })} />
             <Label>Owner</Label>
@@ -825,9 +1050,9 @@ export default function QualityInspectionPage() {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <Select 
-          disabled={isLocationRestricted} 
-          value={locationFilter} 
+        <Select
+          disabled={isLocationRestricted}
+          value={locationFilter}
           onValueChange={handleLocationFilterChange}
         >
           <SelectTrigger className="w-full md:w-48">
@@ -942,15 +1167,16 @@ export default function QualityInspectionPage() {
                   )}
                 </TableBody>
               </Table>
-              
+
               <Pagination
-                currentPage={plansPagination.currentPage}
-                totalPages={plansPagination.totalPages}
-                totalItems={plansPagination.totalItems}
-                itemsPerPage={plansPagination.itemsPerPage}
-                onPageChange={handlePlansPageChange}
-                onItemsPerPageChange={handlePlansItemsPerPageChange}
+                currentPage={pendingQCPagination.currentPage}
+                totalPages={pendingQCPagination.totalPages}
+                totalItems={pendingQCPagination.totalItems}
+                itemsPerPage={pendingQCPagination.itemsPerPage}
+                onPageChange={handlePendingQCPageChange}
+                onItemsPerPageChange={handlePendingQCItemsPerPageChange}
               />
+
             </CardContent>
           </Card>
         </TabsContent>
@@ -1056,7 +1282,7 @@ export default function QualityInspectionPage() {
                     )}
                   </TableBody>
                 </Table>
-                
+
                 <Pagination
                   currentPage={inspectionsPagination.currentPage}
                   totalPages={inspectionsPagination.totalPages}
@@ -1069,11 +1295,15 @@ export default function QualityInspectionPage() {
             </Card>
 
             {/* Pending QC batches sourced from GRNs */}
+            {/* Change 'pendingGrnItems' to 'pendingQCBatches' */}
             <Card>
               <CardHeader><CardTitle>Pending QC — GRN Batches</CardTitle></CardHeader>
               <CardContent>
-                {pendingGrnItems.length === 0 ? (
-                  <div className="py-6 text-center text-muted-foreground">No pending GRN batches awaiting QC.</div>
+                {/* Use the actual Redux state here */}
+                {pendingQCBatches.length === 0 ? (
+                  <div className="py-6 text-center text-muted-foreground">
+                    No pending GRN batches awaiting QC.
+                  </div>
                 ) : (
                   <Table>
                     <TableHeader>
@@ -1085,25 +1315,34 @@ export default function QualityInspectionPage() {
                         <TableHead>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
+
                     <TableBody>
-                      {pendingGrnItems.map((it: any) => (
+                      {pendingQCBatches.map((it: any) => (
                         <TableRow key={it.batchNo}>
-                          <TableCell>{it.grnId}</TableCell>
-                          <TableCell>{it.productId}</TableCell>
+                          <TableCell>
+                            {it.grnId?.grnNo || it.grnId?._id}
+                          </TableCell>
+
+                          <TableCell>
+                            {it.productId?.name || it.productId?._id}
+                          </TableCell>
+
                           <TableCell>{it.batchNo}</TableCell>
                           <TableCell>{it.qty}</TableCell>
+
                           <TableCell className="grid grid-cols-2 gap-2">
                             <Button
                               disabled={!canEdit}
-                              onClick={() => canEdit && acceptGrnBatch(it.grnId, it.productId, it.batchNo)}
-                              className={`${!canEdit ? "opacity-50 cursor-not-allowed" : "bg-green-600"} w-full bg-green-600`}
+                              onClick={() => acceptGrnBatch(it.grnId, it.batchNo)}
+                              className="bg-green-600 w-full"
                             >
                               <Check className="mr-2 h-4 w-4" /> Accept
                             </Button>
+
                             <Button
                               disabled={!canEdit}
-                              onClick={() => canEdit && rejectGrnBatch(it.grnId, it.productId, it.batchNo)}
-                              className={`${!canEdit ? "opacity-50 cursor-not-allowed" : "bg-red-600"} w-full bg-red-600`}
+                              onClick={() => rejectGrnBatch(it.grnId, it.batchNo)}
+                              className="bg-red-600 w-full"
                             >
                               <XCircle className="mr-2 h-4 w-4" /> Reject
                             </Button>
@@ -1113,6 +1352,7 @@ export default function QualityInspectionPage() {
                     </TableBody>
                   </Table>
                 )}
+
               </CardContent>
             </Card>
 
@@ -1211,7 +1451,7 @@ export default function QualityInspectionPage() {
                   )}
                 </TableBody>
               </Table>
-              
+
               <Pagination
                 currentPage={ncrsPagination.currentPage}
                 totalPages={ncrsPagination.totalPages}
@@ -1317,7 +1557,7 @@ export default function QualityInspectionPage() {
                   )}
                 </TableBody>
               </Table>
-              
+
               <Pagination
                 currentPage={capasPagination.currentPage}
                 totalPages={capasPagination.totalPages}

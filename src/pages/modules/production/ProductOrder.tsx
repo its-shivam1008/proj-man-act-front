@@ -1,6 +1,8 @@
 import { usePermission } from "@/hooks/userPermission";
 import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import { Pagination } from "@/components/ui/pagination";
+import { fetchRoutings } from "@/redux/slices/production/routingSlice";
+
 import {
   Select,
   SelectTrigger,
@@ -22,7 +24,7 @@ import {
   CommandGroup,
   CommandItem,
 } from "@/components/ui/command";
-import { Check, ChevronsUpDown, Search, MapPin } from "lucide-react";
+import { Check, ChevronsUpDown, Search, MapPin, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import { useEffect, useState } from "react";
@@ -43,7 +45,7 @@ import {
   Download, Plus, Trash2,
   ShieldAlert,
 } from "lucide-react";
-import { useDispatch, useSelector } from "react-redux";
+import { batch, useDispatch, useSelector } from "react-redux";
 import type { RootState, AppDispatch } from "@/redux/store";
 import {
   fetchWorkOrders,
@@ -52,6 +54,7 @@ import {
   deleteWorkOrder,
 } from "@/redux/slices/production/workOrderSlice";
 import { fetchProducts } from "@/redux/slices/productSlice";
+import { fetchBatches } from "@/redux/slices/production/batchSlice";
 /* -----------------------------------
    Type Definitions
 ----------------------------------- */
@@ -59,12 +62,13 @@ type WorkOrder = {
   _id?: string;
   id?: string;
   orderNo: string;
+  batchNo?: string;
+  batchSize: number;
   bomId: string;
   productCode?: string;
   productName?: string;
   productId?: string;
   quantity: number;
-  batchNo?: string;
   routingId?: string;
   workCenterId?: string;
   operators?: string[];
@@ -101,9 +105,36 @@ export default function WorkOrdersAdvanced() {
     (state: RootState) => state.bom
   );
 
+
+  const suggestBatchSize = (quantity: number) => {
+    if (!quantity || quantity <= 0) return 0;
+
+    const STANDARD_BATCH_SIZES = [500, 250, 200, 100, 50];
+
+    for (const size of STANDARD_BATCH_SIZES) {
+      const batches = Math.ceil(quantity / size);
+      if (batches >= 2 && batches <= 10) {
+        return size;
+      }
+    }
+
+    // fallback: divide into ~5 batches
+    return Math.ceil(quantity / 5);
+  };
+
+  ;
+
+
   const { products } = useSelector((state: RootState) => state.products);
   const { locations } = useSelector((state: RootState) => state.masterData);
   const { userProfile } = useSelector((state: RootState) => state.auth);
+
+  const { routings = [] } = useSelector(
+    (state: RootState) => state.routing
+  );
+
+
+
 
   const canView = usePermission("productOrders", "view");
   const canCreate = usePermission("productOrders", "create");
@@ -138,6 +169,33 @@ export default function WorkOrdersAdvanced() {
     );
   }
 
+  const generateBatchPreview = (
+    quantity: number,
+    batchSize: number,
+    batchPrefix: string
+  ) => {
+    if (!quantity || !batchSize || batchSize <= 0) return [];
+
+    const batches = [];
+    let remaining = quantity;
+    let index = 1;
+
+    while (remaining > 0) {
+      const qty = remaining >= batchSize ? batchSize : remaining;
+
+      batches.push({
+        batchNo: `${batchPrefix}-${index}`,
+        quantity: qty,
+      });
+
+      remaining -= qty;
+      index++;
+    }
+
+    return batches;
+  };
+
+
 
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -147,6 +205,7 @@ export default function WorkOrdersAdvanced() {
     productName: "",
     quantity: 0,
     bomId: "",
+    batchSize: 0,
     batchNo: "",
     routingId: "",
     workCenterId: "",
@@ -169,8 +228,10 @@ export default function WorkOrdersAdvanced() {
   useEffect(() => {
     if (orgID) {
       (dispatch as any)(fetchProducts({ page: 1, limit: 100 }));
+      dispatch(fetchRoutings({ page: 1, limit: 100, organisationId: orgID }));
       dispatch(fetchBOMs({ page: 1, limit: 100 }) as any);
     }
+    dispatch(fetchBatches({ page: 1, limit: 10 }));
 
     // Fetch master data for locations
     (dispatch as any)(fetchMasterData("location"));
@@ -201,20 +262,26 @@ export default function WorkOrdersAdvanced() {
     setCurrentPage(1); // Reset to first page when changing location
   };
 
- const getBOMName = (bomId?: string) => {
-  if (!bomId) return "—";
+  const getBOMName = (bomId?: string) => {
+    if (!bomId) return "—";
 
-  const bom = boms.find((b: any) => b._id === bomId);
-  if (!bom) return "Unknown BOM";
+    const bom = boms.find((b: any) => b._id === bomId);
+    if (!bom) return "Unknown BOM";
 
-  const product = products.find(
-    (p: any) => p._id === bom.productId
-  );
+    ;
 
-  return `${product?.name || "Unknown Product"} (v${bom.version})`;
-};
+    return `(v${bom.version})`;
+  };
 
-
+  useEffect(() => {
+    if (form.quantity && form.quantity > 0) {
+      const suggested = suggestBatchSize(form.quantity);
+      setForm((prev) => ({
+        ...prev,
+        batchSize: suggested,
+      }));
+    }
+  }, [form.quantity])
 
   // Helper to get location name
   const getLocationName = (locData: string | { _id: string; name: string } | undefined) => {
@@ -223,6 +290,16 @@ export default function WorkOrdersAdvanced() {
     const found = locations.find((l: any) => l._id === locData);
     return found ? found.name : "Unknown Location";
   };
+
+  const previewBatchPrefix = (() => {
+    const date = new Date();
+    const month = date
+      .toLocaleString("default", { month: "short" })
+      .toUpperCase();
+    const year = date.getFullYear().toString().slice(-2);
+
+    return `${form.productName || "PROD"}-${form.location || "LOC"}-${month}-${year}-BXXX`;
+  })();
 
   // Pagination handlers
   const handlePageChange = (page: number) => {
@@ -276,21 +353,49 @@ export default function WorkOrdersAdvanced() {
       return;
     }
 
+    // const payload: any = {
+    //   productId: form.productId,
+    //   bomId: form.bomId,
+    //   productName: form.productName,
+    //   quantity: Number(form.quantity),
+    //   batchNo: form.batchNo,
+    //   startDate: form.startDate,
+    //   endDate: form.endDate,
+    //   dueDate: form.dueDate,
+    //   status: form.status || "planned",
+    //   location: form.location,
+    //   notes: form.notes,
+    //   imageUrl: form.imageUrl,
+    //   plannedHours: Number(form.plannedHours) || 0,
+    // };
     const payload: any = {
-      productId: form.productId,
+      routingId: form.routingId,
       bomId: form.bomId,
+      batchNo: form.batchNo,
       productName: form.productName,
       quantity: Number(form.quantity),
-      batchNo: form.batchNo,
+      batchSize: Number(form.batchSize),
+      // batchNo: form.batchNo,
       startDate: form.startDate,
       endDate: form.endDate,
       dueDate: form.dueDate,
-      status: form.status || "planned",
       location: form.location,
       notes: form.notes,
       imageUrl: form.imageUrl,
       plannedHours: Number(form.plannedHours) || 0,
     };
+
+    // ✅ only include status if present
+    if (form.status) {
+      payload.status = form.status;
+    }
+
+    // ✅ only include productId if string
+    if (typeof form.productId === "string") {
+      payload.productId = form.productId;
+    }
+
+
 
     if (editing?._id || editing?.id) {
       dispatch(updateWorkOrder({ id: editing._id || editing.id || '', data: payload }));
@@ -299,6 +404,12 @@ export default function WorkOrdersAdvanced() {
     }
 
     setDialogOpen(false);
+  };
+  const getRoutingName = (routingId?: string) => {
+    if (!routingId) return "—";
+
+    const routing = routings.find((r: any) => r._id === routingId);
+    return routing ? routing.routingName : "Unknown Routing";
   };
 
 
@@ -420,6 +531,10 @@ export default function WorkOrdersAdvanced() {
                 <TableHead>Product</TableHead>
                 <TableHead>Location</TableHead>
                 <TableHead>Qty</TableHead>
+                <TableHead>Batch</TableHead>
+                <TableHead>Routing</TableHead>
+
+
                 {/* <TableHead>Work Center</TableHead> */}
                 <TableHead>Status</TableHead>
                 <TableHead>Planned Hrs</TableHead>
@@ -451,8 +566,26 @@ export default function WorkOrdersAdvanced() {
                       </span>
                     </TableCell>
                     <TableCell>{wo.quantity}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">
+                        {wo.batchNo}
+                      </Badge>
+                    </TableCell>
+
+
+
                     {/* <TableCell>{wo.workCenterId || "—"}</TableCell> */}
-                    <TableCell><Badge>{wo.status}</Badge></TableCell>
+                    <TableCell>
+                      <span className="text-sm font-medium">
+                        {getRoutingName(wo.routingId)}
+                      </span>
+                    </TableCell>
+
+                    <TableCell>
+                      <Badge>{wo.status}</Badge>
+                    </TableCell>
+
+
                     <TableCell>{wo.plannedHours ?? "—"}</TableCell>
 
                     {/* Image Column */}
@@ -500,7 +633,7 @@ export default function WorkOrdersAdvanced() {
                           onClick={() => canEdit && openEdit(wo)}
                           className={!canEdit ? "opacity-50 cursor-not-allowed" : ""}
                         >
-                          ✏️
+                          <Pencil />
                         </Button>
 
                         <Button
@@ -595,12 +728,94 @@ export default function WorkOrdersAdvanced() {
               </Select>
             </div>
 
+            <div>
+              <Label>Routing</Label>
+              <Select
+                value={form.routingId || ""}
+                onValueChange={(value) =>
+                  setForm({ ...form, routingId: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Routing" />
+                </SelectTrigger>
+
+                <SelectContent>
+                  {routings
+                    .filter(r => r.status === "ACTIVE")
+                    .map((routing) => (
+                      <SelectItem key={routing._id} value={routing._id}>
+                        {routing.routingName}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+
 
 
             <div>
               <Label>Quantity</Label>
               <Input type="number" value={form.quantity ?? 0} onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })} />
             </div>
+            <div>
+              <Label>
+                Batch Size
+                <span className="text-xs text-muted-foreground ml-2">
+                  (auto-suggested)
+                </span>
+              </Label>
+
+              <Input
+                type="number"
+                value={form.batchSize ?? ""}
+                onChange={(e) =>
+                  setForm({ ...form, batchSize: Number(e.target.value) })
+                }
+              />
+
+              {form.batchSize && form.quantity ? (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {Math.ceil(form.quantity / form.batchSize)} batches will be created
+                </p>
+              ) : null}
+            </div>
+            {form.quantity &&
+              form.batchSize &&
+              form.batchSize > 0 &&
+              form.batchSize <= form.quantity ? (
+              <div className="col-span-2 mt-3 rounded-md border bg-muted/30 p-3">
+                <p className="text-sm font-medium mb-2">
+                  Batch Preview ({Math.ceil(form.quantity / form.batchSize)} batches)
+                </p>
+
+                <div className="space-y-1 text-xs font-mono">
+                  {generateBatchPreview(
+                    form.quantity,
+                    form.batchSize,
+                    previewBatchPrefix
+                  ).map((b, i) => (
+                    <div key={i} className="flex justify-between">
+                      <span>{b.batchNo}</span>
+                      <span>
+                        {b.quantity}
+                        {b.quantity !== form.batchSize && (
+                          <span className="ml-1 text-orange-600">(last)</span>
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                <p className="text-[11px] text-muted-foreground mt-2">
+                  * Batch numbers shown are preview only. Final numbers are assigned on save.
+                </p>
+              </div>
+            ) : null}
+
+
+
+
             {/* <div>
               <Label>Work Center</Label>
               <Input value={form.workCenterId || ""} onChange={(e) => setForm({ ...form, workCenterId: e.target.value })} />
@@ -744,11 +959,19 @@ export default function WorkOrdersAdvanced() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button
-              disabled={editing ? !canEdit : !canCreate}
+              disabled={
+                editing
+                  ? !canEdit
+                  : !canCreate ||
+                  !form.batchSize ||
+                  form.batchSize <= 0 ||
+                  form.batchSize > (form.quantity ?? 0)
+              }
               onClick={() => (editing ? canEdit : canCreate) && save()}
             >
               Save
             </Button>
+
 
           </DialogFooter>
         </DialogContent>

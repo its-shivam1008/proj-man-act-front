@@ -34,7 +34,6 @@ interface RoutingState {
   selectedRouting: Routing | null;
   status: "idle" | "loading" | "succeeded" | "failed";
   error: string | null;
-
   pagination: {
     page: number;
     limit: number;
@@ -58,18 +57,21 @@ const initialState: RoutingState = {
 
 /* ================= THUNKS ================= */
 
-/* FETCH ROUTINGS */
+/* FETCH ROUTINGS (LIST) */
+/* FETCH ROUTINGS (LIST) */
 export const fetchRoutings = createAsyncThunk(
   "routing/fetchRoutings",
   async (
-    { page = 1, limit = 10 }: { page?: number; limit?: number },
+    // ✅ 1. Update type to include organisationId (optional or required based on your backend)
+    { page, limit, organisationId }: { page: number; limit: number; organisationId?: string },
     { rejectWithValue }
   ) => {
     try {
-      const res = await api.get(
-        `/get/routing?page=${page}&limit=${limit}`
-      );
-      return res.data;
+      const res = await api.get("/get/routing", {
+        // ✅ 2. Pass organisationId to the backend
+        params: { page, limit, organisationId },
+      });
+      return res.data; 
     } catch (err: any) {
       return rejectWithValue(
         err.response?.data?.message || "Failed to fetch routings"
@@ -116,7 +118,7 @@ export const updateRouting = createAsyncThunk(
     { rejectWithValue }
   ) => {
     try {
-      const res = await api.put(`/update/routins/${id}`, data);
+      const res = await api.put(`/update/routing/${id}`, data);
       return res.data.data;
     } catch (err: any) {
       return rejectWithValue(
@@ -160,7 +162,7 @@ const routingSlice = createSlice({
       })
       .addCase(fetchRoutings.fulfilled, (state, action) => {
         state.status = "succeeded";
-        state.routings = action.payload.items;
+        state.routings = action.payload.items; // ✅ CORRECT
         state.pagination = action.payload.pagination;
       })
       .addCase(fetchRoutings.rejected, (state, action) => {

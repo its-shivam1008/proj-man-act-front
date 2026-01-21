@@ -21,6 +21,15 @@ export const fetchCAPAs = createAsyncThunk("quality/capas", async (params: { loc
   const res = await axios.get("/quality/capas", { params });
   return res.data;
 });
+export const fetchPendingQCBatches = createAsyncThunk(
+  "quality/fetchPendingQCBatches",
+  async ({ location }: { location?: string }) => {
+    const res = await axios.get("/grn/pending-qc", {
+      params: { location },
+    });
+    return res.data.data;
+  }
+);
 
 export const createInspection = createAsyncThunk(
   "quality/inspection/create",
@@ -123,6 +132,7 @@ const slice = createSlice({
     inspections: [],
     ncrs: [],
     capas: [],
+    pendingGrnItems: [],
     loading: false,
     // Pagination metadata
     plansPagination: {
@@ -153,8 +163,8 @@ const slice = createSlice({
   reducers: {},
   extraReducers: (b) => {
     // All addCase calls must come before addMatcher calls
-    b.addCase(fetchPlans.fulfilled, (s, a) => { 
-      s.plans = a.payload.data; 
+    b.addCase(fetchPlans.fulfilled, (s, a) => {
+      s.plans = a.payload.data;
       s.plansPagination = {
         currentPage: a.payload.currentPage,
         totalPages: a.payload.totalPages,
@@ -162,8 +172,8 @@ const slice = createSlice({
         itemsPerPage: a.payload.itemsPerPage
       };
     });
-    b.addCase(fetchInspections.fulfilled, (s, a) => { 
-      s.inspections = a.payload.data; 
+    b.addCase(fetchInspections.fulfilled, (s, a) => {
+      s.inspections = a.payload.data;
       s.inspectionsPagination = {
         currentPage: a.payload.currentPage,
         totalPages: a.payload.totalPages,
@@ -171,8 +181,8 @@ const slice = createSlice({
         itemsPerPage: a.payload.itemsPerPage
       };
     });
-    b.addCase(fetchNCRs.fulfilled, (s, a) => { 
-      s.ncrs = a.payload.data; 
+    b.addCase(fetchNCRs.fulfilled, (s, a) => {
+      s.ncrs = a.payload.data;
       s.ncrsPagination = {
         currentPage: a.payload.currentPage,
         totalPages: a.payload.totalPages,
@@ -180,8 +190,8 @@ const slice = createSlice({
         itemsPerPage: a.payload.itemsPerPage
       };
     });
-    b.addCase(fetchCAPAs.fulfilled, (s, a) => { 
-      s.capas = a.payload.data; 
+    b.addCase(fetchCAPAs.fulfilled, (s, a) => {
+      s.capas = a.payload.data;
       s.capasPagination = {
         currentPage: a.payload.currentPage,
         totalPages: a.payload.totalPages,
@@ -240,7 +250,10 @@ const slice = createSlice({
         state.inspections = state.inspections.filter(
           (i: any) => i._id !== action.payload
         );
+      }).addCase(fetchPendingQCBatches.fulfilled, (state, action) => {
+        state.pendingGrnItems = action.payload;
       });
+    ;
 
 
 

@@ -7,25 +7,38 @@ import axios from "@/utils/axiosApi";
 export const fetchGRNs = createAsyncThunk("grn/fetchAll", async ({ location, page = 1, limit = 10, search = "" }: { location?: string; page?: number; limit?: number; search?: string } = {}) => {
   const params: any = { page, limit, search };
   if (location) params.location = location;
-  
+
   const res = await axios.get("/grn", { params });
   // ✅ FIXED: Return full response structure
   return res.data;
 });
 
-export const fetchPendingQC = createAsyncThunk("grn/fetchPendingQC", async ({ location, page = 1, limit = 10, search = "" }: { location?: string; page?: number; limit?: number; search?: string } = {}) => {
-  const params: any = { page, limit, search };
-  if (location) params.location = location;
-  
-  const res = await axios.get("/grn/pending-qc", { params });
-  // ✅ FIXED: Return full response structure
-  return res.data;
-});
+export const fetchPendingQC = createAsyncThunk(
+  "grn/fetchPendingQC",
+  async ({ location }: { location?: string }, { rejectWithValue }) => {
+    try {
+      console.log("🔵 fetchPendingQC called");
+      console.log("➡ location param:", location);
+
+      const res = await axios.get("/grn/pending-qc", {
+        params: { location },
+      });
+
+
+      console.log("🟢 fetchPendingQC RAW RESPONSE:", res.data);
+
+      return res.data.data; // expected to be array
+    } catch (err: any) {
+      console.error("🔴 fetchPendingQC ERROR:", err.response?.data || err.message);
+      return rejectWithValue(err.response?.data);
+    }
+  }
+);
 
 export const createGRN = createAsyncThunk("grn/create", async (data: any) => {
   console.log('=== REDUX CREATE GRN DEBUG ===');
   console.log('Data being sent:', JSON.stringify(data, null, 2));
-  
+
   try {
     const res = await axios.post("/grn", data);
     console.log('Response received:', res.data);
@@ -39,11 +52,31 @@ export const createGRN = createAsyncThunk("grn/create", async (data: any) => {
 
 export const updateQC = createAsyncThunk(
   "grn/updateQC",
-  async (data: { productId: string; batchNo: string; action: "Accepted" | "Rejected" }) => {
-    await axios.post("/grn/qc", data);
-    return data;
+  async (
+    { grnId, batchNo, result }: { grnId: string; batchNo: string; result: "Accepted" | "Rejected" },
+    { rejectWithValue }
+  ) => {
+    try {
+      const res = await axios.post("/grn/qc", {
+        grnId,
+        batchNo,
+        result, // ✅ MATCHES BACKEND
+      });
+
+      return res.data;
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data);
+    }
   }
 );
+
+// export const updateQC = createAsyncThunk(
+//   "grn/updateQC",
+//   async (data: { productId: string; batchNo: string; action: "Accepted" | "Rejected" }) => {
+//     await axios.post("/grn/qc", data);
+//     return data;
+//   }
+// );
 
 export const fetchGRNTrend = createAsyncThunk(
   "grn/valueTrend",
@@ -63,6 +96,7 @@ const slice = createSlice({
   name: "grn",
   initialState: {
     grns: [],
+    pendingQCBatches: [],
     pendingQC: [],
     trend: [],
     wipTrend: [],
@@ -103,20 +137,34 @@ const slice = createSlice({
           };
         }
       })
-
       /* Pending QC */
       .addCase(fetchPendingQC.fulfilled, (state, action) => {
-        // ✅ FIXED: Properly handle backend response structure
-        state.pendingQC = action.payload.data || [];
-        if (action.payload.pagination) {
-          state.pendingQCPagination = {
-            currentPage: action.payload.pagination.currentPage,
-            totalPages: action.payload.pagination.totalPages,
-            totalItems: action.payload.pagination.totalItems,
-            itemsPerPage: action.payload.pagination.itemsPerPage
-          };
-        }
+        state.loading = false;
+
+        console.log("🟢 fetchPendingQC.fulfilled PAYLOAD:", action.payload);
+
+        const rawData = action.payload || [];
+        console.log("🟢 rawData length:", rawData.length);
+
+        state.pendingQC = rawData;
+        state.pendingQCBatches = rawData; // ✅ FIX
       })
+
+
+
+      /* Pending QC */
+      // .addCase(fetchPendingQC.fulfilled, (state, action) => {
+      //   // ✅ FIXED: Properly handle backend response structure
+      //   state.pendingQC = action.payload.data || [];
+      //   if (action.payload.pagination) {
+      //     state.pendingQCPagination = {
+      //       currentPage: action.payload.pagination.currentPage,
+      //       totalPages: action.payload.pagination.totalPages,
+      //       totalItems: action.payload.pagination.totalItems,
+      //       itemsPerPage: action.payload.pagination.itemsPerPage
+      //     };
+      //   }
+      // })
 
       /* Create GRN */
       .addCase(createGRN.fulfilled, (state, action) => {
@@ -138,7 +186,19 @@ const slice = createSlice({
       .addCase(fetchGRNs.rejected, (state, action) => {
         state.loading = false;
         state.error = action.error.message || "Something went wrong";
+      })
+      .addCase(fetchPendingQC.pending, (state) => {
+        state.loading = true;
+      })
+      // .addCase(fetchPendingQC.fulfilled, (state, action) => {
+      //   state.loading = false;
+      //   state.pendingQCBatches = action.payload;
+      // })
+      .addCase(fetchPendingQC.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message;
       });
+    ;
   },
 });
 
