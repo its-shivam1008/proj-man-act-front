@@ -774,7 +774,7 @@ const StoresManagement: React.FC = () => {
                 </div>
                 <div className="col-span-2 text-right">
                   <div className="text-2xl font-bold text-green-600">
-                    ₹{store.dailySales.toLocaleString()}
+                    ₹{store?.dailySales?.toLocaleString()}
                   </div>
                   <div className="text-xs text-gray-500">daily avg</div>
                 </div>
@@ -834,7 +834,7 @@ const StoresManagement: React.FC = () => {
                 <div>
                   <h4 className="font-bold text-green-700 mb-4">Fast Moving</h4>
                   <ul className="space-y-2">
-                    {store.fastMoving.map((item, i) => (
+                    {store?.fastMoving?.map((item, i) => (
                       <li
                         key={i}
                         className="flex items-center gap-2 text-green-600"
@@ -850,7 +850,7 @@ const StoresManagement: React.FC = () => {
                     Slow Moving
                   </h4>
                   <ul className="space-y-2">
-                    {store.slowMoving.map((item, i) => (
+                    {store?.slowMoving?.map((item, i) => (
                       <li
                         key={i}
                         className="flex items-center gap-2 text-orange-600"
@@ -862,7 +862,7 @@ const StoresManagement: React.FC = () => {
                 </div>
               </div>
 
-              {store.lowStockAlerts.length > 0 && (
+              {store?.lowStockAlerts?.length > 0 && (
                 <div className="mt-8 p-4 bg-red-50 border border-red-200 rounded-lg">
                   <h4 className="font-bold text-red-700 mb-3 flex items-center gap-2">
                     <AlertCircle className="w-5 h-5" /> Low Stock Alerts
@@ -881,7 +881,7 @@ const StoresManagement: React.FC = () => {
                 <div>
                   <h4 className="font-semibold mb-2">Recent Transfers</h4>
                   <ul className="space-y-2">
-                    {store.transferHistory.map((t, i) => (
+                    {store?.transferHistory?.map((t, i) => (
                       <li key={i} className="text-gray-600">
                         {t.date} → +{t.qty} from <strong>{t.from}</strong>
                       </li>
@@ -891,7 +891,7 @@ const StoresManagement: React.FC = () => {
                 <div>
                   <h4 className="font-semibold mb-2">Last 7 Days Sales</h4>
                   <div className="space-y-1 text-right font-mono text-sm">
-                    {store.last7DaysSales.map((sale, i) => (
+                    {store?.last7DaysSales?.map((sale, i) => (
                       <div key={i}>
                         Day {i + 1}: ₹{sale.toLocaleString()}
                       </div>

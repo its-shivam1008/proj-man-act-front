@@ -541,7 +541,7 @@ export default function ProductionExecution() {
             const operatorData = {
               id: person.resourceId,
               resourceId: person.resourceId,
-              name: person.personalInfo?.name || person.resourceId,
+              name: person.personalInfo?.firstName + " " + person.personalInfo?.lastName || person.resourceId,
               type: person.type,
               personalInfo: person.personalInfo,
               employment: person.employment,

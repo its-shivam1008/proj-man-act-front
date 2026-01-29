@@ -217,7 +217,7 @@ const Layout: React.FC = () => {
       <div className="fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg overflow-y-auto ">
         <div className="flex h-full flex-col">
           <div className="flex h-fit items-center justify-center border-b border-gray-200">
-            <h1 className="text-xl py-4 font-bold text-gray-900"></h1>
+            <h1 className="text-xl py-4 font-bold text-gray-900">SCM Pro</h1>
           </div>
 
           <nav className="flex-1 space-y-1 px-2 py-4">
