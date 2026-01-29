@@ -6,7 +6,7 @@ export interface Store {
   _id: string;
   organisationId: string;
   name: string;
-  location: string;
+  location: string | { _id: string; name: string };
   dailySales: number;
   stock: number;
   fastMoving: string[];
@@ -17,18 +17,46 @@ export interface Store {
   scrap: number;
   transferHistory: { date: string; qty: number; from: string }[];
   lowStockAlerts: string[];
+  isDeleted?: boolean;
+}
+
+interface FetchStoresParams {
+  page?: number;
+  limit?: number;
+  location?: string;
+  search?: string;
+  sortBy?: string;
+  sortOrder?: string;
 }
 
 export const fetchStores = createAsyncThunk(
   "storages/fetch",
-  async ({ page = 1, limit = 100, location = "" }: { page?: number, limit?: number, location?: string } = {}, { rejectWithValue }) => {
+  async (params: FetchStoresParams = {}, { rejectWithValue }) => {
     try {
       const organisationId = localStorage.getItem("organisationId");
 
       if (!organisationId)
         return rejectWithValue("No organisationId found");
 
-      const res = await api.get(`/storage/all/${organisationId}?location=${location}`); // [!code ++]
+      const {
+        page = 1,
+        limit = 10,
+        location = "",
+        search = "",
+        sortBy = "createdAt",
+        sortOrder = "desc"
+      } = params;
+
+      const queryParams = new URLSearchParams({
+        page: page.toString(),
+        limit: limit.toString(),
+        location: location || "",
+        search: search || "",
+        sortBy,
+        sortOrder
+      });
+
+      const res = await api.get(`/storage/all/${organisationId}?${queryParams}`);
       return res.data;
     } catch (error: any) {
       return rejectWithValue(error?.response?.data?.message || "Failed to fetch stores");
@@ -90,6 +118,8 @@ interface StorageState {
   currentPage: number;
   totalPages: number;
   totalStores: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
 }
 
 const initialState: StorageState = {
@@ -99,12 +129,21 @@ const initialState: StorageState = {
   currentPage: 1,
   totalPages: 1,
   totalStores: 0,
+  hasNextPage: false,
+  hasPrevPage: false,
 };
 
 const storageSlice = createSlice({
   name: "storages",
   initialState,
-  reducers: {},
+  reducers: {
+    resetStores: (state) => {
+      state.stores = [];
+      state.currentPage = 1;
+      state.totalPages = 1;
+      state.totalStores = 0;
+    }
+  },
   extraReducers: (builder) => {
     builder
       .addCase(fetchStores.pending, (state) => {
@@ -117,6 +156,8 @@ const storageSlice = createSlice({
         state.currentPage = action.payload.currentPage || 1;
         state.totalPages = action.payload.totalPages || 1;
         state.totalStores = action.payload.totalStores || 0;
+        state.hasNextPage = action.payload.hasNextPage || false;
+        state.hasPrevPage = action.payload.hasPrevPage || false;
       })
       .addCase(fetchStores.rejected, (state, action) => {
         state.loading = false;
@@ -127,7 +168,8 @@ const storageSlice = createSlice({
         }
       })
       .addCase(addStore.fulfilled, (state, action) => {
-        state.stores.push(action.payload);
+        state.stores.unshift(action.payload);
+        state.totalStores += 1;
       })
       .addCase(updateStore.fulfilled, (state, action) => {
         const index = state.stores.findIndex((s) => s._id === action.payload._id);
@@ -135,8 +177,10 @@ const storageSlice = createSlice({
       })
       .addCase(deleteStore.fulfilled, (state, action) => {
         state.stores = state.stores.filter((s) => s._id !== action.payload);
+        state.totalStores -= 1;
       });
   },
 });
 
+export const { resetStores } = storageSlice.actions;
 export default storageSlice.reducer;

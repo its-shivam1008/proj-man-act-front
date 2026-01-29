@@ -76,6 +76,9 @@ import MasterDataPage from "./pages/modules/project-management/MasterData";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import VerifyOtp from "./pages/VerifyOtp";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
+import UserProfile from "./pages/UserProfile";
 import RFQ from "./pages/modules/purchase/RFQ";
 import PurchaseOrder from "./pages/modules/purchase/PurchaseOrder";
 import PurchaseOverview from "./pages/modules/purchase/PurchaseOverview";
@@ -115,6 +118,8 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/verify-otp" element={<VerifyOtp />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             {/* <Route path="/login" element={<Login />} /> */}
             <Route
               element={
@@ -128,6 +133,7 @@ function App() {
               <Route path="/" element={<Dashboard />} />
               <Route path="/drawing" element={<Drawing />} />
               <Route path="/permissions" element={<UserPermissionsPage />} />
+              <Route path="/profile" element={<UserProfile />} />
               <Route path="/purchase" element={<Purchase />} />
               <Route path="/quality" element={<Quality />} />
               <Route path="/product-lifecycle" element={<ProductLifecycle />} />
@@ -141,15 +147,15 @@ function App() {
                 path="/inventory/rawmaterials"
                 element={<RawMaterialMaster />}
               />
-              
+
               <Route
                 path="/inventory/warehouses"
                 element={<WarehouseManagement />}
               />
               <Route path="/inventory/stores" element={<StoresManagement />} />
-            
+
               <Route path="/inventory/form-builder" element={<FormBuilder />} />
-              <Route path="/inventory/masterdata" element={<InventoryMasterData/>} />
+              <Route path="/inventory/masterdata" element={<InventoryMasterData />} />
 
               {/* <Route path="/inventory/manufacturing" element={<Manufacturing />} /> */}
               {/* <Route path="/inventory/maintenance" element={<Maintenance />} /> */}
@@ -185,7 +191,7 @@ function App() {
                 path="/production/productionexecution"
                 element={<ProductionExecution />}
               />
-              <Route path="/production/routing" element={<RoutingMaster/>}/>
+              <Route path="/production/routing" element={<RoutingMaster />} />
               <Route
                 path="/production/materialissue"
                 element={<MaterialIssue />}
@@ -310,7 +316,7 @@ function App() {
               />
               <Route
                 path="/plant-machinery/costing"
-                element={<EquipmentCostingPage />}  
+                element={<EquipmentCostingPage />}
               />
               <Route
                 path="/plant-machinery/reports"

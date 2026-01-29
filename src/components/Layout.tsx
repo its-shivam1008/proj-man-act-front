@@ -52,7 +52,7 @@ interface NavLink {
   name: string;
   href: string;
   icon: React.ElementType;
-  key?: string; 
+  key?: string;
 }
 
 const Layout: React.FC = () => {
@@ -93,7 +93,7 @@ const Layout: React.FC = () => {
     { name: "Production Dashboard", href: "/production", icon: LayoutDashboard, key: "productionDashboard" },
     { name: "PPC", href: "/production/ppc", icon: Factory, key: "ppc" },
     { name: "Item Master", href: "/production/item-master", icon: Package, key: "itemMaster" },
-    {name:'Routing' , href:'/production/routing' , icon:Package , key:'routing'},
+    { name: 'Routing', href: '/production/routing', icon: Package, key: 'routing' },
     { name: "BOM Management", href: "/production/bom-management", icon: FactoryIcon, key: "bomManagement" },
     { name: "Product Orders", href: "/production/product-orders", icon: ShoppingCart, key: "productOrders" },
     { name: "Work Center Mgt", href: "/production/work-center-management", icon: Factory, key: "workCenterMgt" },
@@ -184,9 +184,9 @@ const Layout: React.FC = () => {
     if (location.pathname === "/" && !hasViewAccess("dashboard")) {
       const findFirstAllowedRoute = () => {
         for (const item of mainLinks) {
-          
+
           let subLinks: NavLink[] | undefined;
-          
+
           if (item.name === "Project") subLinks = projectLinks.slice(1);
           else if (item.name === "Production") subLinks = productionLinks.slice(1);
           else if (item.name === "Plant & Machinery") subLinks = plantLinks.slice(1);
@@ -197,7 +197,7 @@ const Layout: React.FC = () => {
             // Check children only
             const firstChild = subLinks.find((sub) => hasViewAccess(sub.key));
             if (firstChild) return firstChild.href;
-          } 
+          }
           else {
             if (hasViewAccess(item.key)) return item.href;
           }
@@ -274,9 +274,8 @@ const Layout: React.FC = () => {
                             <Link
                               key={subItem.name}
                               to={subItem.href}
-                              className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors w-full ${
-                                isSubActive ? "bg-blue-50 text-blue-700" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                              }`}
+                              className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors w-full ${isSubActive ? "bg-blue-50 text-blue-700" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                                }`}
                             >
                               <SubIcon className={`mr-3 h-5 w-5 transition-colors ${isSubActive ? "text-blue-500" : "text-gray-400 group-hover:text-gray-500"}`} />
                               {subItem.name}
@@ -296,9 +295,8 @@ const Layout: React.FC = () => {
                   <Link
                     key={item.name}
                     to={item.href}
-                    className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors ${
-                      isActive ? "bg-blue-50 text-blue-700" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                    }`}
+                    className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors ${isActive ? "bg-blue-50 text-blue-700" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                      }`}
                   >
                     <Icon className={`mr-3 h-5 w-5 transition-colors ${isActive ? "text-blue-500" : "text-gray-400 group-hover:text-gray-500"}`} />
                     {item.name}
@@ -307,20 +305,23 @@ const Layout: React.FC = () => {
               })}
             </Accordion>
           </nav>
-          
-          <div className="border-t border-gray-200 p-4 grid grid-cols-2 ">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <User className="h-8 w-8 text-gray-400" />
+
+          <div className="border-t border-gray-200 p-4 space-y-3">
+            <Link
+              to="/profile"
+              className="flex items-center p-2 rounded-lg hover:bg-gray-50 transition-colors group"
+            >
+              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-br from-purple-100 to-indigo-100 flex items-center justify-center">
+                <User className="h-5 w-5 text-purple-600" />
               </div>
-              <div className="ml-3">
-                <p className="text-xs text-gray-500">{email || "No email"}</p>
-                <p className="text-xs text-gray-500">Logged In</p>
+              <div className="ml-3 flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-900 truncate">{userProfile?.fullname || "User"}</p>
+                <p className="text-xs text-gray-500 truncate">{email || "No email"}</p>
               </div>
-            </div>
+            </Link>
             <button
               onClick={handleLogout}
-              className="mt-3 w-full flex items-center px-2 py-2 text-sm font-medium text-gray-600 rounded-md"
+              className="w-full flex items-center px-3 py-2 text-sm font-medium text-gray-600 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors"
             >
               <LogOut className="mr-3 h-4 w-4" />
               Sign Out

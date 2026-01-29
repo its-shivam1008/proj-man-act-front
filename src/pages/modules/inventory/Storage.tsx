@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Store,
   Plus,
@@ -10,8 +10,12 @@ import {
   XCircle,
   ShieldAlert,
   Calendar,
-  User,
   Hash,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  Filter,
+  RefreshCw,
 } from "lucide-react";
 import {
   Accordion,
@@ -40,8 +44,15 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import {
   fetchStores,
   addStore,
@@ -87,17 +98,26 @@ interface MaterialIssueItem {
   status: 'accepted';
 }
 
+const ITEMS_PER_PAGE_OPTIONS = [5, 10, 20, 50];
+
 const StoresManagement: React.FC = () => {
   const canView = usePermission("stores", "view");
   const canCreate = usePermission("stores", "create");
   const canEdit = usePermission("stores", "edit");
   const canDelete = usePermission("stores", "delete");
+
   const [showStoreForm, setShowStoreForm] = useState(false);
   const [editingStoreId, setEditingStoreId] = useState<string | null>(null);
   const [materialIssues, setMaterialIssues] = useState<MaterialIssueItem[]>([]);
   const [selectedIssueItems, setSelectedIssueItems] = useState<MaterialIssueItem | null>(null);
   const [showItemsDialog, setShowItemsDialog] = useState(false);
-  
+
+  // Pagination and Search State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
   if (!canView) {
     return (
       <div className="text-center py-20">
@@ -108,8 +128,9 @@ const StoresManagement: React.FC = () => {
       </div>
     );
   }
+
   const dispatch = useDispatch<AppDispatch>();
-  const { stores, loading } = useSelector((state: RootState) => state.storages);
+  const { stores, loading, totalPages, totalStores, hasNextPage, hasPrevPage } = useSelector((state: RootState) => state.storages);
   const { userProfile } = useSelector((state: RootState) => state.auth);
   const { locations } = useSelector((state: RootState) => state.masterData);
 
@@ -123,42 +144,59 @@ const StoresManagement: React.FC = () => {
     return found ? found.name : loc;
   };
 
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setCurrentPage(1); // Reset to first page on search
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Fetch stores with pagination
+  const loadStores = useCallback(() => {
+    dispatch(fetchStores({
+      page: currentPage,
+      limit: itemsPerPage,
+      location: locationFilter,
+      search: debouncedSearch
+    }));
+  }, [dispatch, currentPage, itemsPerPage, locationFilter, debouncedSearch]);
+
   useEffect(() => {
     dispatch(fetchMasterData("location"));
-    dispatch(fetchStores({ page: 1, limit: 100, location: locationFilter }));
-    
-    // Load material issues from localStorage
+  }, [dispatch]);
+
+  useEffect(() => {
+    loadStores();
+  }, [loadStores]);
+
+  // Load material issues from localStorage
+  useEffect(() => {
     const loadMaterialIssues = () => {
       const stored = localStorage.getItem('acceptedMaterialIssues');
       if (stored) {
         try {
           const parsed = JSON.parse(stored);
-          // Filter out any sample data (data with IDs starting with 'sample-')
           const realData = parsed.filter((item: MaterialIssueItem) => !item._id.startsWith('sample-'));
           setMaterialIssues(realData);
-          
-          // Update localStorage with only real data
+
           if (realData.length !== parsed.length) {
             localStorage.setItem('acceptedMaterialIssues', JSON.stringify(realData));
           }
         } catch (error) {
           console.error('Error parsing stored material issues:', error);
-          // Clear corrupted data
           localStorage.removeItem('acceptedMaterialIssues');
         }
       }
     };
-    
+
     loadMaterialIssues();
-    
-    console.log('🏪 Store page loaded, current material issues:', materialIssues.length);
-    
+
     // Listen for material issue acceptance events
     const handleMaterialIssueAccepted = (event: CustomEvent) => {
       const issueData = event.detail;
-      console.log('🎯 Material issue accepted in store page:', issueData);
-      
-      // Create new material issue entry
+
       const newIssue: MaterialIssueItem = {
         _id: issueData.issueSlipId || `issue-${Date.now()}`,
         workOrderCode: issueData.workOrderCode,
@@ -168,25 +206,20 @@ const StoresManagement: React.FC = () => {
         acceptedDate: new Date().toISOString(),
         status: 'accepted'
       };
-      
-      console.log('📦 Adding new material issue to store table:', newIssue);
-      
+
       setMaterialIssues(prev => {
         const updated = [newIssue, ...prev];
-        // Save to localStorage
         localStorage.setItem('acceptedMaterialIssues', JSON.stringify(updated));
-        console.log('✅ Material issue saved to localStorage, total issues:', updated.length);
         return updated;
       });
     };
-    
-    // Add event listener
+
     window.addEventListener('materialIssueAccepted', handleMaterialIssueAccepted as EventListener);
-    
+
     return () => {
       window.removeEventListener('materialIssueAccepted', handleMaterialIssueAccepted as EventListener);
     };
-  }, [dispatch, locationFilter]);
+  }, []);
 
   const handleAdd = () => {
     setEditingStoreId(null);
@@ -213,7 +246,6 @@ const StoresManagement: React.FC = () => {
     if (window.confirm("Are you sure you want to clear all material issues? This action cannot be undone.")) {
       setMaterialIssues([]);
       localStorage.removeItem('acceptedMaterialIssues');
-      console.log('✅ All material issues cleared from store page');
     }
   };
 
@@ -222,17 +254,37 @@ const StoresManagement: React.FC = () => {
     setShowItemsDialog(true);
   };
 
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage);
+    }
+  };
+
+  const handleItemsPerPageChange = (value: string) => {
+    setItemsPerPage(Number(value));
+    setCurrentPage(1); // Reset to first page
+  };
+
+  const handleLocationChange = (value: string) => {
+    setLocationFilter(value);
+    setCurrentPage(1); // Reset to first page
+  };
+
+  const handleRefresh = () => {
+    loadStores();
+  };
+
   const handleSubmit = (formData: any) => {
     const payload: Partial<StoreData> = {
       name: formData.name || "New Store",
-      location: formData.location || "N/A",
+      location: formData.location || "",
       dailySales: Number(formData.dailySales) || 0,
       stock: Number(formData.stock) || 0,
       last7DaysSales: formData.last7DaysSales
         ? formData.last7DaysSales
-            .split(",")
-            .map((v: string) => Number(v.trim()))
-            .filter(Boolean)
+          .split(",")
+          .map((v: string) => Number(v.trim()))
+          .filter(Boolean)
         : [0, 0, 0, 0, 0, 0, 0],
       fastMoving:
         formData.fastMoving
@@ -268,7 +320,7 @@ const StoresManagement: React.FC = () => {
   const StoreForm = ({ initialData }: { initialData?: StoreData }) => {
     const [formData, setFormData] = useState({
       name: initialData?.name || "",
-      location: initialData?.location 
+      location: initialData?.location
         ? (typeof initialData.location === 'object' ? initialData.location._id : initialData.location)
         : (isLocationRestricted ? userProfile.location : ""),
       dailySales: initialData?.dailySales?.toString() || "0",
@@ -287,22 +339,10 @@ const StoresManagement: React.FC = () => {
 
     const handleChange =
       (field: string) =>
-      (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-        setFormData((prev) => ({ ...prev, [field]: e.target.value }));
-      };
-    if (!canView) {
-      return (
-        <div className="text-center py-12 px-4">
-          <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h3 className="text-xl font-semibold text-gray-900 mb-2">
-            Access Denied
-          </h3>
-          <p className="text-gray-600">
-            You do not have the necessary permissions to view this page.
-          </p>
-        </div>
-      );
-    }
+        (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+          setFormData((prev) => ({ ...prev, [field]: e.target.value }));
+        };
+
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
         <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto p-8">
@@ -341,18 +381,17 @@ const StoresManagement: React.FC = () => {
                 <label className="block text-sm font-medium mb-2">
                   Location *
                 </label>
-                {/* [!code ++] Replaced input with Select */}
                 <select
                   required
                   value={formData.location}
-                  onChange={(e) => setFormData(prev => ({...prev, location: e.target.value}))}
+                  onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
                   disabled={isLocationRestricted}
                   className="w-full px-4 py-3 border rounded-lg bg-white disabled:bg-gray-100"
                 >
-                    <option value="">Select Location</option>
-                    {locations.map(l => (
-                        <option key={l._id} value={l._id}>{l.name}</option>
-                    ))}
+                  <option value="">Select Location</option>
+                  {locations.map((l: any) => (
+                    <option key={l._id} value={l._id}>{l.name}</option>
+                  ))}
                 </select>
               </div>
               <div>
@@ -466,19 +505,6 @@ const StoresManagement: React.FC = () => {
               />
             </div>
 
-            {/* <div>
-              <label className="block text-sm font-medium mb-2">
-                Transfer History (JSON - optional)
-              </label>
-              <textarea
-                rows={4}
-                value={formData.transferHistory}
-                onChange={handleChange("transferHistory")}
-                className="w-full px-4 py-3 border rounded-lg font-mono text-xs"
-                placeholder='[{"date": "10 Jan 2025", "qty": 20, "from": "Main Warehouse"}]'
-              />
-            </div> */}
-
             <div className="flex justify-end gap-4 pt-6">
               <Button type="button" variant="outline" onClick={handleCloseForm}>
                 Cancel
@@ -493,6 +519,83 @@ const StoresManagement: React.FC = () => {
     );
   };
 
+  // Pagination component
+  const Pagination = () => {
+    const startItem = (currentPage - 1) * itemsPerPage + 1;
+    const endItem = Math.min(currentPage * itemsPerPage, totalStores);
+
+    return (
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6 p-4 bg-white rounded-lg border">
+        <div className="flex items-center gap-2 text-sm text-gray-600">
+          <span>Showing</span>
+          <Select value={itemsPerPage.toString()} onValueChange={handleItemsPerPageChange}>
+            <SelectTrigger className="w-[70px] h-8">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {ITEMS_PER_PAGE_OPTIONS.map(option => (
+                <SelectItem key={option} value={option.toString()}>{option}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span>of {totalStores} stores</span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-600">
+            {totalStores > 0 ? `${startItem}-${endItem}` : '0'} of {totalStores}
+          </span>
+
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handlePageChange(1)}
+              disabled={!hasPrevPage || loading}
+              className="h-8 w-8 p-0"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              <ChevronLeft className="h-4 w-4 -ml-2" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={!hasPrevPage || loading}
+              className="h-8 w-8 p-0"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+
+            <span className="px-3 py-1 text-sm font-medium">
+              Page {currentPage} of {totalPages || 1}
+            </span>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={!hasNextPage || loading}
+              className="h-8 w-8 p-0"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handlePageChange(totalPages)}
+              disabled={!hasNextPage || loading}
+              className="h-8 w-8 p-0"
+            >
+              <ChevronRight className="h-4 w-4" />
+              <ChevronRight className="h-4 w-4 -ml-2" />
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex justify-between items-center">
@@ -501,8 +604,8 @@ const StoresManagement: React.FC = () => {
           Retail Stores & Branches
         </h1>
         <div className="flex gap-2">
-          <NotificationCenter 
-            destination="inventory.store" 
+          <NotificationCenter
+            destination="inventory.store"
             title="Store Notifications"
           />
           <Button
@@ -541,44 +644,6 @@ const StoresManagement: React.FC = () => {
                 Clear All
               </Button>
             )}
-            
-            {/* Test Button for Development */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const testData = {
-                  issueSlipId: `test-${Date.now()}`,
-                  workOrderCode: `WO-TEST-${Math.floor(Math.random() * 1000)}`,
-                  issueDate: new Date().toISOString(),
-                  totalValue: 12500,
-                  items: [
-                    {
-                      itemName: 'Test Material A',
-                      issueQty: 10,
-                      unit: 'kg',
-                      rate: 500,
-                      lineValue: 5000
-                    },
-                    {
-                      itemName: 'Test Material B',
-                      issueQty: 15,
-                      unit: 'pcs',
-                      rate: 500,
-                      lineValue: 7500
-                    }
-                  ]
-                };
-                
-                const event = new CustomEvent('materialIssueAccepted', { detail: testData });
-                window.dispatchEvent(event);
-                console.log('🧪 Test material issue event dispatched');
-              }}
-              className="text-blue-600 border-blue-200 hover:bg-blue-50"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Test Add
-            </Button>
           </div>
         </CardHeader>
         <CardContent>
@@ -653,14 +718,7 @@ const StoresManagement: React.FC = () => {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => {
-                            // Show detailed view of items
-                            const itemsList = issue.items.map(item => 
-                              `• ${item.itemName}: ${item.issueQty} ${item.unit} @ ₹${item.rate} = ₹${item.lineValue}`
-                            ).join('\n');
-                            
-                            alert(`Material Issue Details:\n\nWork Order: ${issue.workOrderCode}\nTotal Value: ₹${issue.totalValue}\n\nItems:\n${itemsList}`);
-                          }}
+                          onClick={() => handleShowItems(issue)}
                         >
                           View Details
                         </Button>
@@ -683,7 +741,7 @@ const StoresManagement: React.FC = () => {
               Material Issue Items - {selectedIssueItems?.workOrderCode}
             </DialogTitle>
           </DialogHeader>
-          
+
           {selectedIssueItems && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
@@ -704,13 +762,13 @@ const StoresManagement: React.FC = () => {
                   <p className="font-semibold">{new Date(selectedIssueItems.acceptedDate).toLocaleDateString()}</p>
                 </div>
               </div>
-              
+
               <div>
                 <h4 className="font-semibold text-lg mb-3 flex items-center gap-2">
                   <Package className="w-5 h-5 text-blue-600" />
                   Items Details ({selectedIssueItems.items.length} items)
                 </h4>
-                
+
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
@@ -739,7 +797,7 @@ const StoresManagement: React.FC = () => {
                     </TableBody>
                   </Table>
                 </div>
-                
+
                 <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
                   <div className="flex justify-between items-center">
                     <span className="font-semibold text-green-800">Total Value:</span>
@@ -754,155 +812,234 @@ const StoresManagement: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {loading && <p className="text-center py-10">Loading stores...</p>}
+      {/* Search & Filter Section */}
+      <Card className="shadow-lg">
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <CardTitle className="flex items-center gap-3 text-xl">
+              <Store className="text-green-600" />
+              Stores
+              <Badge variant="secondary" className="ml-2">
+                {totalStores} Total
+              </Badge>
+            </CardTitle>
 
-      <Accordion type="single" collapsible className="space-y-6">
-        {stores.map((store) => (
-          <AccordionItem
-            key={store._id}
-            value={store._id}
-            className="border rounded-xl shadow-lg overflow-hidden bg-white"
-          >
-            <AccordionTrigger className="px-8 py-6 hover:bg-green-50 transition-colors">
-              <div className="grid grid-cols-12 w-full items-center text-left gap-6">
-                <div className="col-span-4 font-bold text-lg flex items-center gap-3">
-                  <Store className="text-green-600" />
-                  {store.name}
-                </div>
-                <div className="col-span-3 text-gray-600 flex items-center gap-2">
-                  <Package className="w-4 h-4" /> {getLocationName(store.location)}
-                </div>
-                <div className="col-span-2 text-right">
-                  <div className="text-2xl font-bold text-green-600">
-                    ₹{store?.dailySales?.toLocaleString()}
-                  </div>
-                  <div className="text-xs text-gray-500">daily avg</div>
-                </div>
-                <div className="col-span-2 text-right font-semibold">
-                  {store.stock} items
-                </div>
-                <div className="col-span-1">
-                  <div className="w-20 bg-gray-200 h-3 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-green-600 transition-all"
-                      style={{
-                        width: `${Math.min((store.stock / 200) * 100, 100)}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-            </AccordionTrigger>
-
-            <AccordionContent className="px-8 py-8 bg-gradient-to-b from-green-50 to-white border-t">
-              <div className="flex justify-end gap-3 mb-6">
-                <Button
-                  disabled={!canEdit}
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handleEdit(store._id)}
-                >
-                  <Edit className="w-4 h-4 mr-2" /> Edit
-                </Button>
-                <Button
-                  disabled={!canDelete}
-                  size="sm"
-                  variant="destructive"
-                  onClick={() => handleDelete(store._id)}
-                >
-                  <Trash2 className="w-4 h-4 mr-2" /> Delete
-                </Button>
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Search Bar */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  placeholder="Search stores..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10 w-[200px]"
+                />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div>
-                  <h4 className="font-bold text-green-700 mb-4 flex items-center gap-2">
-                    <TrendingUp className="w-5 h-5" /> Performance
-                  </h4>
-                  <p>
-                    Manager: <strong>{store.manager}</strong>
-                  </p>
-                  <p>
-                    Returns:{" "}
-                    <Badge variant="destructive">{store.returns}</Badge>
-                  </p>
-                  <p>
-                    Scrap: <Badge variant="secondary">{store.scrap}</Badge>
-                  </p>
-                </div>
-
-                <div>
-                  <h4 className="font-bold text-green-700 mb-4">Fast Moving</h4>
-                  <ul className="space-y-2">
-                    {store?.fastMoving?.map((item, i) => (
-                      <li
-                        key={i}
-                        className="flex items-center gap-2 text-green-600"
-                      >
-                        <span className="text-xs">✔</span> {item}
-                      </li>
+              {/* Location Filter */}
+              {!isLocationRestricted && (
+                <Select value={locationFilter} onValueChange={handleLocationChange}>
+                  <SelectTrigger className="w-[150px]">
+                    <Filter className="h-4 w-4 mr-2" />
+                    <SelectValue placeholder="Location" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Locations</SelectItem>
+                    {locations.map((loc: any) => (
+                      <SelectItem key={loc._id} value={loc._id}>{loc.name}</SelectItem>
                     ))}
-                  </ul>
-                </div>
-
-                <div>
-                  <h4 className="font-bold text-orange-700 mb-4">
-                    Slow Moving
-                  </h4>
-                  <ul className="space-y-2">
-                    {store?.slowMoving?.map((item, i) => (
-                      <li
-                        key={i}
-                        className="flex items-center gap-2 text-orange-600"
-                      >
-                        <span className="text-xs">⚠</span> {item}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-
-              {store?.lowStockAlerts?.length > 0 && (
-                <div className="mt-8 p-4 bg-red-50 border border-red-200 rounded-lg">
-                  <h4 className="font-bold text-red-700 mb-3 flex items-center gap-2">
-                    <AlertCircle className="w-5 h-5" /> Low Stock Alerts
-                  </h4>
-                  <div className="flex flex-wrap gap-2">
-                    {store.lowStockAlerts.map((alert, i) => (
-                      <Badge key={i} variant="destructive">
-                        {alert}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
+                  </SelectContent>
+                </Select>
               )}
 
-              <div className="mt-8 grid md:grid-cols-2 gap-8 text-sm">
-                <div>
-                  <h4 className="font-semibold mb-2">Recent Transfers</h4>
-                  <ul className="space-y-2">
-                    {store?.transferHistory?.map((t, i) => (
-                      <li key={i} className="text-gray-600">
-                        {t.date} → +{t.qty} from <strong>{t.from}</strong>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div>
-                  <h4 className="font-semibold mb-2">Last 7 Days Sales</h4>
-                  <div className="space-y-1 text-right font-mono text-sm">
-                    {store?.last7DaysSales?.map((sale, i) => (
-                      <div key={i}>
-                        Day {i + 1}: ₹{sale.toLocaleString()}
+              {/* Refresh Button */}
+              <Button variant="outline" size="sm" onClick={handleRefresh} disabled={loading}>
+                <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loading && stores.length === 0 ? (
+            <div className="text-center py-10">
+              <RefreshCw className="w-8 h-8 animate-spin mx-auto text-gray-400 mb-2" />
+              <p className="text-gray-500">Loading stores...</p>
+            </div>
+          ) : stores.length === 0 ? (
+            <div className="text-center py-10 text-gray-500">
+              <Store className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+              <p className="text-lg font-medium">No stores found</p>
+              <p className="text-sm">
+                {searchQuery ? `No stores match "${searchQuery}"` : "Click 'Add Store' to create your first store"}
+              </p>
+            </div>
+          ) : (
+            <Accordion type="single" collapsible className="space-y-4">
+              {stores.map((store) => (
+                <AccordionItem
+                  key={store._id}
+                  value={store._id}
+                  className="border rounded-xl shadow-sm overflow-hidden bg-white"
+                >
+                  <AccordionTrigger className="px-6 py-4 hover:bg-green-50 transition-colors">
+                    <div className="grid grid-cols-12 w-full items-center text-left gap-4">
+                      <div className="col-span-4 font-bold text-base flex items-center gap-3">
+                        <Store className="text-green-600 w-5 h-5" />
+                        {store.name || "Unnamed Store"}
                       </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </AccordionContent>
-          </AccordionItem>
-        ))}
-      </Accordion>
+                      <div className="col-span-3 text-gray-600 flex items-center gap-2 text-sm">
+                        <Package className="w-4 h-4" /> {getLocationName(store.location)}
+                      </div>
+                      <div className="col-span-2 text-right">
+                        <div className="text-xl font-bold text-green-600">
+                          ₹{(store.dailySales || 0).toLocaleString()}
+                        </div>
+                        <div className="text-xs text-gray-500">daily avg</div>
+                      </div>
+                      <div className="col-span-2 text-right font-semibold text-sm">
+                        {store.stock || 0} items
+                      </div>
+                      <div className="col-span-1">
+                        <div className="w-16 bg-gray-200 h-2 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-green-600 transition-all"
+                            style={{
+                              width: `${Math.min(((store.stock || 0) / 200) * 100, 100)}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </AccordionTrigger>
+
+                  <AccordionContent className="px-6 py-6 bg-gradient-to-b from-green-50 to-white border-t">
+                    <div className="flex justify-end gap-3 mb-6">
+                      <Button
+                        disabled={!canEdit}
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleEdit(store._id)}
+                      >
+                        <Edit className="w-4 h-4 mr-2" /> Edit
+                      </Button>
+                      <Button
+                        disabled={!canDelete}
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => handleDelete(store._id)}
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" /> Delete
+                      </Button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                      <div>
+                        <h4 className="font-bold text-green-700 mb-4 flex items-center gap-2">
+                          <TrendingUp className="w-5 h-5" /> Performance
+                        </h4>
+                        <p>
+                          Manager: <strong>{store.manager || "Unassigned"}</strong>
+                        </p>
+                        <p>
+                          Returns:{" "}
+                          <Badge variant="destructive">{store.returns || 0}</Badge>
+                        </p>
+                        <p>
+                          Scrap: <Badge variant="secondary">{store.scrap || 0}</Badge>
+                        </p>
+                      </div>
+
+                      <div>
+                        <h4 className="font-bold text-green-700 mb-4">Fast Moving</h4>
+                        <ul className="space-y-2">
+                          {(store.fastMoving || []).map((item, i) => (
+                            <li
+                              key={i}
+                              className="flex items-center gap-2 text-green-600"
+                            >
+                              <span className="text-xs">✔</span> {item}
+                            </li>
+                          ))}
+                          {(!store.fastMoving || store.fastMoving.length === 0) && (
+                            <li className="text-gray-400 text-sm">No items</li>
+                          )}
+                        </ul>
+                      </div>
+
+                      <div>
+                        <h4 className="font-bold text-orange-700 mb-4">
+                          Slow Moving
+                        </h4>
+                        <ul className="space-y-2">
+                          {(store.slowMoving || []).map((item, i) => (
+                            <li
+                              key={i}
+                              className="flex items-center gap-2 text-orange-600"
+                            >
+                              <span className="text-xs">⚠</span> {item}
+                            </li>
+                          ))}
+                          {(!store.slowMoving || store.slowMoving.length === 0) && (
+                            <li className="text-gray-400 text-sm">No items</li>
+                          )}
+                        </ul>
+                      </div>
+                    </div>
+
+                    {store.lowStockAlerts && store.lowStockAlerts.length > 0 && (
+                      <div className="mt-8 p-4 bg-red-50 border border-red-200 rounded-lg">
+                        <h4 className="font-bold text-red-700 mb-3 flex items-center gap-2">
+                          <AlertCircle className="w-5 h-5" /> Low Stock Alerts
+                        </h4>
+                        <div className="flex flex-wrap gap-2">
+                          {store.lowStockAlerts.map((alert, i) => (
+                            <Badge key={i} variant="destructive">
+                              {alert}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="mt-8 grid md:grid-cols-2 gap-8 text-sm">
+                      <div>
+                        <h4 className="font-semibold mb-2">Recent Transfers</h4>
+                        <ul className="space-y-2">
+                          {(store.transferHistory || []).map((t, i) => (
+                            <li key={i} className="text-gray-600">
+                              {t.date} → +{t.qty} from <strong>{t.from}</strong>
+                            </li>
+                          ))}
+                          {(!store.transferHistory || store.transferHistory.length === 0) && (
+                            <li className="text-gray-400">No transfers</li>
+                          )}
+                        </ul>
+                      </div>
+                      <div>
+                        <h4 className="font-semibold mb-2">Last 7 Days Sales</h4>
+                        <div className="space-y-1 text-right font-mono text-sm">
+                          {(store.last7DaysSales || []).map((sale, i) => (
+                            <div key={i}>
+                              Day {i + 1}: ₹{(sale || 0).toLocaleString()}
+                            </div>
+                          ))}
+                          {(!store.last7DaysSales || store.last7DaysSales.length === 0) && (
+                            <div className="text-gray-400 text-left">No data</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
+          )}
+
+          {/* Pagination */}
+          {totalStores > 0 && <Pagination />}
+        </CardContent>
+      </Card>
     </div>
   );
 };
