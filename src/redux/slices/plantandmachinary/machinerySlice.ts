@@ -38,6 +38,38 @@ export interface Machinery {
   status?: string;
   documents?: StoredFile[];
   createdAt: string;
+
+  // Pricing & GST
+  basicCost?: number;
+  cgst?: number;
+  igst?: number;
+  sgst?: number;
+  totalCost?: number;
+  invoiceNumber?: string;
+
+  // Insurance & Compliance dates
+  insuranceDate?: string;
+  insuranceExpiry?: string;
+  puDate?: string;
+  puDateExpiry?: string;
+  vTaxPayment?: number;
+
+  // Allocation tracking
+  allocatedQuantity?: number;
+  availableQuantity?: number;
+  hasChildren?: boolean;
+
+  // Parent-Child System
+  isParent?: boolean;
+  parentId?: string;
+  childIndex?: number;
+  allocationStatus?: "available" | "allocated";
+  allocatedTo?: {
+    projectName?: string;
+    siteName?: string;
+    startDate?: string;
+    endDate?: string;
+  };
 }
 
 /* STATE */
@@ -71,13 +103,13 @@ export const fetchMachineries = createAsyncThunk(
   ) => {
     try {
       const organisationId = localStorage.getItem("organisationId");
-      
+
       // [!code ++] Add location param
       const res = await api.get(
         `/machinery?page=${page}&limit=${limit}&organisationId=${organisationId}&location=${location || ""}`
       );
 
-      return res.data; 
+      return res.data;
     } catch (err: any) {
       return thunkAPI.rejectWithValue(err.response?.data?.message || "Failed");
     }
@@ -124,6 +156,19 @@ export const deleteMachinery = createAsyncThunk(
       return id;
     } catch (err: any) {
       return thunkAPI.rejectWithValue(err.response?.data?.message || "Failed");
+    }
+  }
+);
+
+// FETCH CHILDREN (for parent-child system)
+export const fetchMachineryChildren = createAsyncThunk(
+  "machinery/fetchChildren",
+  async (parentId: string, thunkAPI) => {
+    try {
+      const res = await api.get(`/machinery/children/${parentId}`);
+      return { parentId, children: res.data.data };
+    } catch (err: any) {
+      return thunkAPI.rejectWithValue(err.response?.data?.message || "Failed to fetch children");
     }
   }
 );

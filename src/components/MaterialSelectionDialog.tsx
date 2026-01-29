@@ -743,7 +743,7 @@ export default function MaterialSelectionDialog({
                           </div>
                           </div>
 
-                          <div className="flex gap-2">
+                          {/* <div className="flex gap-2">
                             {materialStatus === 'received' && (
                               <Button
                                 variant="outline"
@@ -756,7 +756,7 @@ export default function MaterialSelectionDialog({
                                 Return
                               </Button>
                             )}
-                          </div>
+                          </div> */}
                         </div>
                       </div>
                     );

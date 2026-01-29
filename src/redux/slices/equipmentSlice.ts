@@ -33,6 +33,34 @@ export interface Equipment {
   depreciation?: string;
   documents?: StoredFile[];
   createdAt: string;
+
+  // Quantity
+  quantity?: number;
+
+  // Pricing & GST
+  basicCost?: number;
+  cgst?: number;
+  igst?: number;
+  sgst?: number;
+  totalCost?: number;
+  invoiceNumber?: string;
+
+  // Allocation tracking
+  allocatedQuantity?: number;
+  availableQuantity?: number;
+  hasChildren?: boolean;
+
+  // Parent-Child
+  isParent?: boolean;
+  parentId?: string;
+  childIndex?: number;
+  allocationStatus?: string;
+  allocatedTo?: {
+    projectName?: string;
+    siteName?: string;
+    startDate?: string;
+    endDate?: string;
+  };
 }
 
 /* STATE */
@@ -72,8 +100,8 @@ export const fetchEquipments = createAsyncThunk(
   ) => {
     try {
       const organisationId = localStorage.getItem("organisationId");
-      const res = await api.get("/equipment", { 
-        params: { ...params, organisationId } 
+      const res = await api.get("/equipment", {
+        params: { ...params, organisationId }
       });
       return res.data;
     } catch (err: any) {
@@ -121,6 +149,19 @@ export const deleteEquipment = createAsyncThunk(
       return id;
     } catch (err: any) {
       return thunkAPI.rejectWithValue(err.response?.data?.message || "Failed");
+    }
+  }
+);
+
+// FETCH CHILDREN (for parent-child system)
+export const fetchEquipmentChildren = createAsyncThunk(
+  "equipment/fetchChildren",
+  async (parentId: string, thunkAPI) => {
+    try {
+      const res = await api.get(`/equipment/children/${parentId}`);
+      return { parentId, children: res.data.data };
+    } catch (err: any) {
+      return thunkAPI.rejectWithValue(err.response?.data?.message || "Failed to fetch children");
     }
   }
 );

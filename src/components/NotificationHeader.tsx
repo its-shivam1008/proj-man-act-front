@@ -31,13 +31,13 @@ export default function NotificationHeader() {
   const location = useLocation();
   const { list: notifications, loading } = useSelector((state: RootState) => state.notification);
   const { userProfile } = useSelector((state: RootState) => state.auth);
-  
+
   const [cooldown, setCooldown] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
   const [hasAutoOpened, setHasAutoOpened] = useState(false);
   const [clearingAll, setClearingAll] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  
+
   const organisationId = localStorage.getItem("organisationId");
 
   // Determine destination based on current page
@@ -50,11 +50,11 @@ export default function NotificationHeader() {
     if (path.includes("/wbs")) return "wbs";
     if (path.includes("/scheduling")) return "scheduling";
     // Add MRS page destination mapping - check for various MRS related paths
-    if (path.includes("/procurement") || 
-        path.includes("/material-request") || 
-        path.includes("/mrs") ||
-        path.includes("/material") ||
-        path.toLowerCase().includes("procurement")) return "mrs.material-requests";
+    if (path.includes("/procurement") ||
+      path.includes("/material-request") ||
+      path.includes("/mrs") ||
+      path.includes("/material") ||
+      path.toLowerCase().includes("procurement")) return "mrs.material-requests";
     return null;
   }, [location.pathname]);
 
@@ -64,7 +64,7 @@ export default function NotificationHeader() {
       console.log('❌ No user profile found');
       return;
     }
-    
+
     console.log('🔔 Fetching notifications for user:', userProfile._id, 'org:', organisationId, 'on page:', currentDestination);
     console.log('🌐 Current path:', location.pathname);
     console.log('👤 Full user profile:', {
@@ -73,18 +73,18 @@ export default function NotificationHeader() {
       name: userProfile.fullname,
       organisationId: userProfile.organisationId
     });
-    
+
     // Make a single call that gets both invite notifications and page-specific notifications
     const filters: any = { status: "unread" };
-    
+
     // Add user ID to get invite notifications for this user
     filters.receiverId = userProfile._id;
-    
+
     // Add destination filter if on a specific page
     if (currentDestination) {
       filters.destination = currentDestination;
     }
-    
+
     console.log('📍 Fetching notifications with filters:', filters);
     dispatch(fetchNotifications(filters));
   };
@@ -118,15 +118,15 @@ export default function NotificationHeader() {
     console.log('🔍 Filtering notifications:', {
       total: notifications.length,
       currentDestination,
-      notifications: notifications.map(n => ({ 
-        id: n._id, 
-        type: n.type, 
-        destination: n.destination, 
+      notifications: notifications.map(n => ({
+        id: n._id,
+        type: n.type,
+        destination: n.destination,
         status: n.status,
-        title: n.title || n.itemName 
+        title: n.title || n.itemName
       }))
     });
-    
+
     // Show only page-specific notifications
     if (currentDestination) {
       // On Purchase Order pages: show only meaningful notifications (not empty ones)
@@ -138,29 +138,29 @@ export default function NotificationHeader() {
             const hasMaterialData = n.materialData && Object.keys(n.materialData).length > 0;
             const isRfqToPo = n.type === "rfqToPurchaseOrder" && hasMaterialData;
             const isMaterialAvailable = n.type === "material_available";
-            
+
             // Only show notifications with actual content - this excludes empty ones
             return (isRfqToPo || isMaterialAvailable);
           }
           return false;
         });
       }
-      
+
       // On specific pages: show ONLY that page's notifications
       const pageNotifications = notifications.filter(n => n.destination === currentDestination);
-      
+
       // Also show material_available notifications on dashboard for visibility
       if (currentDestination === "dashboard") {
         const materialNotifications = notifications.filter(n => n.type === "material_available");
-        return [...pageNotifications, ...materialNotifications].filter((notification, index, self) => 
+        return [...pageNotifications, ...materialNotifications].filter((notification, index, self) =>
           index === self.findIndex(n => n._id === notification._id)
         );
       }
-      
+
       return pageNotifications;
     } else {
       // On dashboard/general pages: show general notifications + material_available notifications
-      return notifications.filter(n => 
+      return notifications.filter(n =>
         !n.destination || n.destination === "dashboard" || n.type === "material_available"
       );
     }
@@ -201,12 +201,12 @@ export default function NotificationHeader() {
   const handleInviteResponse = async (notificationId: string, response: "accepted" | "rejected") => {
     try {
       const result = await dispatch(respondToInvite({ notificationId, response })).unwrap();
-      
+
       // If invite was accepted and we got updated user data, update the auth state
       if (response === "accepted" && result.updatedUser) {
         dispatch(updateUserProfile({ updatedUser: result.updatedUser }));
       }
-      
+
       // Refresh notifications to update the UI
       fetchNotificationHelper();
     } catch (error) {
@@ -230,20 +230,20 @@ export default function NotificationHeader() {
 
       if (res.ok) {
         const result = await res.json();
-        
+
         if (response === "accepted") {
           console.log("✅ RFQ to PO notification accepted successfully");
-          
+
           // Close the notification center first
           setIsOpen(false);
-          
+
           // Dispatch custom event for Purchase Order autofill
           if (result.materialData) {
             const autoFillEvent = new CustomEvent('rfq_to_po_autofill', {
               detail: result.materialData
             });
             window.dispatchEvent(autoFillEvent);
-            
+
             console.log("🎯 RFQ to PO autofill event dispatched with material data");
           } else {
             console.warn("⚠️ No material data found in RFQ notification");
@@ -253,7 +253,7 @@ export default function NotificationHeader() {
           console.log("❌ RFQ to PO notification rejected");
           alert("RFQ notification rejected successfully.");
         }
-        
+
         // Refresh notifications to update the UI
         fetchNotificationHelper();
       } else {
@@ -270,13 +270,13 @@ export default function NotificationHeader() {
   const handleMaterialRequestResponse = async (notificationId: string, response: "accepted" | "rejected") => {
     try {
       const result = await dispatch(respondToMaterialRequest({ notificationId, response })).unwrap();
-      
+
       if (response === "accepted") {
         // Show success message
-        
+
         // Close the notification center first
         setIsOpen(false);
-        
+
         // Fetch the notification data directly from database and trigger auto-fill
         try {
           const apiUrl = BASE_URL || 'http://localhost:4000';
@@ -286,10 +286,10 @@ export default function NotificationHeader() {
               'Content-Type': 'application/json'
             }
           });
-          
+
           if (notificationResponse.ok) {
             const notificationData = await notificationResponse.json();
-            
+
             if (notificationData.materialData) {
               // Dispatch a custom event to trigger immediate auto-fill
               const autoFillEvent = new CustomEvent('rfqAutoFill', {
@@ -308,7 +308,7 @@ export default function NotificationHeader() {
       } else {
         alert("Material request rejected successfully.");
       }
-      
+
       // Refresh notifications to update the UI
       fetchNotificationHelper();
     } catch (error) {
@@ -330,7 +330,7 @@ export default function NotificationHeader() {
 
       // Get all notification IDs that are currently visible in the modal
       const visibleNotificationIds = allNotifications.map(notification => notification._id);
-      
+
       console.log('📋 Marking these notifications as read:', {
         count: visibleNotificationIds.length,
         ids: visibleNotificationIds
@@ -349,9 +349,9 @@ export default function NotificationHeader() {
           console.error('❌ Error marking notification as read:', notificationId, error);
         }
       }
-      
+
       console.log('✅ Finished marking all notifications as read');
-      
+
       // Refresh notifications to update the UI
       setTimeout(() => {
         fetchNotificationHelper();
@@ -388,7 +388,7 @@ export default function NotificationHeader() {
   // Debug: Show real notifications only
   const allNotifications = filteredNotifications;
   const unreadCount = allNotifications.filter((n: any) => n.status === "unread").length;
-  
+
   console.log('🔔 NotificationHeader Debug:', {
     currentPath: location.pathname,
     currentDestination,
@@ -416,7 +416,7 @@ export default function NotificationHeader() {
           )}
         </Button>
       </DialogTrigger>
-      
+
       <DialogContent className="sm:max-w-[500px] flex flex-col h-[85vh] sm:h-[650px] p-0 gap-0 bg-white rounded-xl shadow-2xl">
         <DialogHeader className="p-5 border-b bg-gradient-to-r from-blue-50 to-indigo-50 rounded-t-xl">
           <div className="flex items-center justify-between w-full">
@@ -431,7 +431,7 @@ export default function NotificationHeader() {
                 )}
               </div>
             </div>
-            
+
             <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
@@ -469,9 +469,8 @@ export default function NotificationHeader() {
                 title={cooldown > 0 ? `Wait ${cooldown}s` : "Refresh"}
               >
                 <RefreshCcw
-                  className={`h-4 w-4 ${loading ? "animate-spin text-blue-600" : ""} ${
-                    cooldown > 0 ? "text-gray-400" : "text-gray-700"
-                  }`}
+                  className={`h-4 w-4 ${loading ? "animate-spin text-blue-600" : ""} ${cooldown > 0 ? "text-gray-400" : "text-gray-700"
+                    }`}
                 />
               </Button>
             </div>
@@ -501,43 +500,80 @@ export default function NotificationHeader() {
                 const isMaterialAvailable = notification.type === 'material_available';
                 const isRfqToPoNotification = notification.type === 'rfqToPurchaseOrder';
                 const isPendingRfqToPoNotification = isRfqToPoNotification && notification.inviteResponse === 'pending';
+                const isResourceReleased = notification.type === 'resource_released' || notification.type === 'resource_available';
                 return (
                   <div
                     key={notification._id}
-                    className={`p-4 transition-all duration-200 border-l-4 ${
-                      notification.status === "unread" 
-                        ? "bg-blue-50/50 border-blue-500 hover:bg-blue-50" 
-                        : "bg-white border-transparent hover:bg-gray-50"
-                    }`}
+                    className={`p-4 transition-all duration-200 border-l-4 ${notification.status === "unread"
+                      ? "bg-blue-50/50 border-blue-500 hover:bg-blue-50"
+                      : "bg-white border-transparent hover:bg-gray-50"
+                      }`}
                   >
                     <div className="flex items-start gap-3">
                       {/* Icon Section */}
-                      <div className={`mt-0.5 p-2.5 rounded-xl shrink-0 shadow-sm ${
-                          isInvite ? "bg-gradient-to-br from-purple-100 to-purple-200 text-purple-700" :
-                          notification.type === "deadline_reminder" ? "bg-gradient-to-br from-red-100 to-red-200 text-red-700" :
-                          // Material Request styling - only show on RFQ pages, not Purchase Order pages
-                          isMaterialRequest && currentDestination === "rfq.purchase" ? "bg-gradient-to-br from-indigo-100 to-indigo-200 text-indigo-700" :
-                          isMaterialAvailable ? "bg-gradient-to-br from-emerald-100 to-emerald-200 text-emerald-700" :
-                          // RFQ to PO styling - only show on RFQ pages, not Purchase Order pages  
-                          isRfqToPoNotification && currentDestination === "rfq.purchase" ? "bg-gradient-to-br from-green-100 to-green-200 text-green-700" :
-                          notification.source?.includes("procurement") ? "bg-gradient-to-br from-orange-100 to-orange-200 text-orange-700" :
-                          notification.source?.includes("purchase") ? "bg-gradient-to-br from-blue-100 to-blue-200 text-blue-700" :
-                          notification.source?.includes("delivery") ? "bg-gradient-to-br from-green-100 to-green-200 text-green-700" :
-                          "bg-gradient-to-br from-gray-100 to-gray-200 text-gray-700"
-                      }`}>
-                        {isInvite ? <UserPlus className="h-4 w-4" /> : 
-                         notification.type === "deadline_reminder" ? <Bell className="h-4 w-4" /> :
-                         // Package Icon - only show on RFQ pages, not Purchase Order pages
-                         isMaterialRequest && currentDestination === "rfq.purchase" ? <Package className="h-4 w-4" /> :
-                         isMaterialAvailable ? <CheckCircle className="h-4 w-4" /> :
-                         // RFQ to PO Icon - only show on RFQ pages, not Purchase Order pages
-                         isRfqToPoNotification && currentDestination === "rfq.purchase" ? <Package className="h-4 w-4" /> :
-                         <AlertCircle className="h-4 w-4" />}
+                      <div className={`mt-0.5 p-2.5 rounded-xl shrink-0 shadow-sm ${isInvite ? "bg-gradient-to-br from-purple-100 to-purple-200 text-purple-700" :
+                        notification.type === "deadline_reminder" ? "bg-gradient-to-br from-red-100 to-red-200 text-red-700" :
+                          // Resource released styling
+                          isResourceReleased ? "bg-gradient-to-br from-teal-100 to-teal-200 text-teal-700" :
+                            // Material Request styling - only show on RFQ pages, not Purchase Order pages
+                            isMaterialRequest && currentDestination === "rfq.purchase" ? "bg-gradient-to-br from-indigo-100 to-indigo-200 text-indigo-700" :
+                              isMaterialAvailable ? "bg-gradient-to-br from-emerald-100 to-emerald-200 text-emerald-700" :
+                                // RFQ to PO styling - only show on RFQ pages, not Purchase Order pages  
+                                isRfqToPoNotification && currentDestination === "rfq.purchase" ? "bg-gradient-to-br from-green-100 to-green-200 text-green-700" :
+                                  notification.source?.includes("procurement") ? "bg-gradient-to-br from-orange-100 to-orange-200 text-orange-700" :
+                                    notification.source?.includes("purchase") ? "bg-gradient-to-br from-blue-100 to-blue-200 text-blue-700" :
+                                      notification.source?.includes("delivery") ? "bg-gradient-to-br from-green-100 to-green-200 text-green-700" :
+                                        "bg-gradient-to-br from-gray-100 to-gray-200 text-gray-700"
+                        }`}>
+                        {isInvite ? <UserPlus className="h-4 w-4" /> :
+                          notification.type === "deadline_reminder" ? <Bell className="h-4 w-4" /> :
+                            // Resource released icon
+                            isResourceReleased ? <CheckCircle className="h-4 w-4" /> :
+                              // Package Icon - only show on RFQ pages, not Purchase Order pages
+                              isMaterialRequest && currentDestination === "rfq.purchase" ? <Package className="h-4 w-4" /> :
+                                isMaterialAvailable ? <CheckCircle className="h-4 w-4" /> :
+                                  // RFQ to PO Icon - only show on RFQ pages, not Purchase Order pages
+                                  isRfqToPoNotification && currentDestination === "rfq.purchase" ? <Package className="h-4 w-4" /> :
+                                    <AlertCircle className="h-4 w-4" />}
                       </div>
 
                       {/* Content */}
                       <div className="flex-1 space-y-2 min-w-0">
-                        
+
+                        {/* Notification Title and Message for resource_released */}
+                        {isResourceReleased && (
+                          <>
+                            {notification.title && (
+                              <div className="font-semibold text-sm text-gray-900">{notification.title}</div>
+                            )}
+                            {notification.message && (
+                              <div className="text-xs text-gray-600">{notification.message}</div>
+                            )}
+                            {notification.metadata && (
+                              <div className="mt-2 p-3 bg-teal-50 rounded-lg border border-teal-200">
+                                <div className="text-xs text-teal-900 space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <CheckCircle className="h-3 w-3" />
+                                    <span className="font-semibold text-teal-800">🔓 Resource Now Available</span>
+                                  </div>
+                                  {notification.metadata.resourceName && (
+                                    <div><strong>Resource:</strong> {notification.metadata.resourceName}</div>
+                                  )}
+                                  {notification.metadata.resourceType && (
+                                    <div><strong>Type:</strong> {notification.metadata.resourceType}</div>
+                                  )}
+                                  {notification.metadata.projectName && (
+                                    <div><strong>Released From:</strong> {notification.metadata.projectName}</div>
+                                  )}
+                                  {notification.metadata.releasedCount > 0 && (
+                                    <div><strong>Units Available:</strong> {notification.metadata.releasedCount}</div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        )}
+
                         {/* Material Available Information */}
                         {isMaterialAvailable && notification.materialData && (
                           <div className="mt-2 p-3 bg-emerald-50 rounded-lg border border-emerald-200">
@@ -612,7 +648,7 @@ export default function NotificationHeader() {
                             </div>
                           </div>
                         )}
-                       
+
 
                         {/* RFQ to PO Information */}
                         {notification.materialData && notification.type === "rfqToPurchaseOrder" && (
@@ -652,18 +688,18 @@ export default function NotificationHeader() {
 
                         {/* Legacy Material Request Metadata */}
                         {isMaterialRequest && notification.metadata && !notification.materialData && (
-                           <div className="mt-2 p-2 bg-indigo-50 rounded-lg border border-indigo-100">
-                             <div className="text-xs text-indigo-900 space-y-1">
-                               <div className="flex justify-between">
-                                 <span><strong>WBS:</strong> {notification.metadata.wbsName}</span>
-                                 <span><strong>Quantity:</strong> {notification.metadata.requestedQty} {notification.metadata.requestedUnit || 'units'}</span>
-                               </div>
-                               <div><strong>Requester:</strong> {notification.metadata.requestedBy}</div>
-                               {notification.metadata.remarks && (
-                                 <div><strong>Remarks:</strong> {notification.metadata.remarks}</div>
-                               )}
-                             </div>
-                           </div>
+                          <div className="mt-2 p-2 bg-indigo-50 rounded-lg border border-indigo-100">
+                            <div className="text-xs text-indigo-900 space-y-1">
+                              <div className="flex justify-between">
+                                <span><strong>WBS:</strong> {notification.metadata.wbsName}</span>
+                                <span><strong>Quantity:</strong> {notification.metadata.requestedQty} {notification.metadata.requestedUnit || 'units'}</span>
+                              </div>
+                              <div><strong>Requester:</strong> {notification.metadata.requestedBy}</div>
+                              {notification.metadata.remarks && (
+                                <div><strong>Remarks:</strong> {notification.metadata.remarks}</div>
+                              )}
+                            </div>
+                          </div>
                         )}
 
                         {/* Stock Alert for low stock materials */}
@@ -678,16 +714,16 @@ export default function NotificationHeader() {
                         {/* Invite Actions */}
                         {isPendingInvite && (
                           <div className="flex gap-2 mt-3">
-                            <Button 
-                              size="sm" 
+                            <Button
+                              size="sm"
                               className="h-7 px-3 bg-green-600 hover:bg-green-700 text-white"
                               onClick={() => handleInviteResponse(notification._id, "accepted")}
                             >
                               <Check className="h-3 w-3 mr-1" /> Accept
                             </Button>
-                            <Button 
-                              size="sm" 
-                              variant="outline" 
+                            <Button
+                              size="sm"
+                              variant="outline"
                               className="h-7 px-3 text-red-600 border-red-200 hover:bg-red-50"
                               onClick={() => handleInviteResponse(notification._id, "rejected")}
                             >
@@ -695,21 +731,21 @@ export default function NotificationHeader() {
                             </Button>
                           </div>
                         )}
-                        
+
 
                         {/* Material Request Actions - Only show on RFQ pages, not Purchase Order pages */}
                         {isPendingMaterialRequest && currentDestination === "rfq.purchase" && (
                           <div className="flex gap-2 mt-3">
-                            <Button 
-                              size="sm" 
+                            <Button
+                              size="sm"
                               className="h-7 px-3 bg-green-600 hover:bg-green-700 text-white"
                               onClick={() => handleMaterialRequestResponse(notification._id, "accepted")}
                             >
                               <Check className="h-3 w-3 mr-1" /> Accept & Auto-fill RFQ
                             </Button>
-                            <Button 
-                              size="sm" 
-                              variant="outline" 
+                            <Button
+                              size="sm"
+                              variant="outline"
                               className="h-7 px-3 text-red-600 border-red-200 hover:bg-red-50"
                               onClick={() => handleMaterialRequestResponse(notification._id, "rejected")}
                             >
@@ -719,29 +755,29 @@ export default function NotificationHeader() {
                         )}
 
                         {isInvite && !isPendingInvite && (
-                           <div className="mt-2">
-                             <Badge variant={notification.inviteResponse === 'accepted' ? 'default' : 'destructive'} className="text-[10px]">
-                               {notification.inviteResponse === 'accepted' ? 'Accepted' : 'Rejected'}
-                             </Badge>
-                           </div>
+                          <div className="mt-2">
+                            <Badge variant={notification.inviteResponse === 'accepted' ? 'default' : 'destructive'} className="text-[10px]">
+                              {notification.inviteResponse === 'accepted' ? 'Accepted' : 'Rejected'}
+                            </Badge>
+                          </div>
                         )}
 
                         {isRfqToPoNotification && !isPendingRfqToPoNotification && (
-                           <div className="mt-2">
-                             <Badge variant={notification.inviteResponse === 'accepted' ? 'default' : 'destructive'} className="text-[10px]">
-                               {notification.inviteResponse === 'accepted' ? 'Accepted - PO Ready' : 'Rejected'}
-                             </Badge>
-                           </div>
+                          <div className="mt-2">
+                            <Badge variant={notification.inviteResponse === 'accepted' ? 'default' : 'destructive'} className="text-[10px]">
+                              {notification.inviteResponse === 'accepted' ? 'Accepted - PO Ready' : 'Rejected'}
+                            </Badge>
+                          </div>
                         )}
 
                         {isMaterialRequest && !isPendingMaterialRequest && (
-                           <div className="mt-2">
-                             <Badge variant={notification.inviteResponse === 'accepted' ? 'default' : 'destructive'} className="text-[10px]">
-                               {notification.inviteResponse === 'accepted' ? 'Accepted - RFQ Ready' : 'Rejected'}
-                             </Badge>
-                           </div>
+                          <div className="mt-2">
+                            <Badge variant={notification.inviteResponse === 'accepted' ? 'default' : 'destructive'} className="text-[10px]">
+                              {notification.inviteResponse === 'accepted' ? 'Accepted - RFQ Ready' : 'Rejected'}
+                            </Badge>
+                          </div>
                         )}
-                        
+
                         {!isInvite && !isRfqToPoNotification && !isMaterialRequest && (
                           <div className="flex items-center justify-between gap-2 mt-2">
                             {notification.source && (

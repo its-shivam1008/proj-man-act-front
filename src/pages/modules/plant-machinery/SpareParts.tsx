@@ -6,12 +6,14 @@ import {
   createSparePart,
   updateSparePart,
   deleteSparePart,
+  fetchSparePartChildren,
 } from "@/redux/slices/plantandmachinary/sparePartsSlice";
 import { fetchVendors } from "@/redux/slices/purchase/vendorSlice";
 import { fetchStores } from "@/redux/slices/storageSlice";
 import { fetchMasterData } from "@/redux/slices/masterDataSlice";
+import * as XLSX from "xlsx";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
 import {
   Plus,
@@ -23,6 +25,8 @@ import {
   UploadCloud,
   FilePlus,
   AlertTriangle,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,6 +55,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import {
   ResponsiveContainer,
   BarChart,
@@ -71,7 +76,7 @@ interface SparePart {
   name: string;
   equipmentLink?: string;
   vendor?: string;
-  location?: string;
+  location?: string | { _id: string; name: string };
   quantity: number;
   unit: string;
   reorderLevel: number;
@@ -80,6 +85,30 @@ interface SparePart {
   notes?: string;
   createdAt: string;
   updatedAt?: string;
+  // GST and pricing fields
+  basicCost?: number;
+  cgst?: number;
+  igst?: number;
+  sgst?: number;
+  totalCost?: number;
+  invoiceNumber?: string;
+  purchaseDate?: string;
+  // Parent-child relationship fields
+  isParent?: boolean;
+  parentId?: string;
+  childIndex?: number;
+  hasChildren?: boolean;
+  availableQuantity?: number;
+  allocatedQuantity?: number;
+  // Allocation fields
+  allocationStatus?: "available" | "allocated";
+  allocatedTo?: {
+    projectId?: string;
+    projectName?: string;
+    siteName?: string;
+    startDate?: string;
+    endDate?: string;
+  };
 }
 
 interface IssueSlip {
@@ -118,6 +147,7 @@ export default function SparePartsInventory() {
     loading,
     page,
     totalPages,
+    total,
   } = useSelector((state: RootState) => state.spareParts);
 
   const { vendors, loading: vendorsLoading, error: vendorsError } = useSelector((state: RootState) => state.vendors);
@@ -125,6 +155,15 @@ export default function SparePartsInventory() {
   const { locations } = useSelector((state: RootState) => state.masterData);
 
   const [slips, setSlips] = useState<IssueSlip[]>([]);
+
+  // Expandable rows for children
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [childrenData, setChildrenData] = useState<Record<string, SparePart[]>>({});
+  const [loadingChildren, setLoadingChildren] = useState<Set<string>>(new Set());
+
+  // Bulk import state
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
 
   // UI state
   const [query, setQuery] = useState("");
@@ -138,9 +177,15 @@ export default function SparePartsInventory() {
   const [editingPart, setEditingPart] = useState<SparePart | null>(null);
   const [partForm, setPartForm] = useState<Partial<SparePart>>({
     unit: "pcs",
-    quantity: 0,
+    quantity: 1,
     reorderLevel: 1,
     costPerUnit: 0,
+    basicCost: 0,
+    cgst: 0,
+    igst: 0,
+    sgst: 0,
+    totalCost: 0,
+    invoiceNumber: "",
   });
 
   const [slipDialogOpen, setSlipDialogOpen] = useState(false);
@@ -156,22 +201,175 @@ export default function SparePartsInventory() {
     dispatch(
       fetchSpareParts({
         organisationId,
-        page,
-        limit: 12,
+        page: 1,
+        limit: 10,
         // Note: You should update your slice to accept 'query' here for server-side search
       })
     );
     dispatch(fetchVendors({})).catch(console.error);
     dispatch(fetchStores({})).catch(console.error);
     dispatch(fetchMasterData("location")).catch(console.error);
-  }, [dispatch, organisationId, page]); // Add query here if you implement server-side search
+  }, [dispatch, organisationId]); // Add query here if you implement server-side search
+
+  // Auto-calculate total cost when GST fields change
+  useEffect(() => {
+    const total = (partForm.basicCost || 0) + (partForm.cgst || 0) + (partForm.igst || 0) + (partForm.sgst || 0);
+    setPartForm(prev => ({ ...prev, totalCost: total }));
+  }, [partForm.basicCost, partForm.cgst, partForm.igst, partForm.sgst]);
+
+  // Toggle row expansion and fetch children
+  const toggleRowExpansion = async (partId: string) => {
+    const newExpanded = new Set(expandedRows);
+    if (newExpanded.has(partId)) {
+      newExpanded.delete(partId);
+    } else {
+      newExpanded.add(partId);
+      // Fetch children if not already loaded
+      if (!childrenData[partId]) {
+        setLoadingChildren(prev => new Set(prev).add(partId));
+        try {
+          const result = await dispatch(fetchSparePartChildren(partId)).unwrap();
+          setChildrenData(prev => ({ ...prev, [partId]: result.children || [] }));
+        } catch (error) {
+          console.error("Failed to fetch children:", error);
+          toast.error("Failed to load child spare parts");
+        } finally {
+          setLoadingChildren(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(partId);
+            return newSet;
+          });
+        }
+      }
+    }
+    setExpandedRows(newExpanded);
+  };
+
+  // Bulk import template download
+  const handleDownloadTemplate = () => {
+    const headers = [[
+      "Code (SKU)",
+      "Name",
+      "Vendor",
+      "Location",
+      "Quantity",
+      "Reorder Level",
+      "Basic Cost",
+      "CGST",
+      "IGST",
+      "SGST",
+      "Invoice Number",
+      "Purchase Date",
+      "Notes"
+    ]];
+    const exampleRow = [
+      "SP-2026-0001 (Optional)",
+      "Bearing 6205 (Required)",
+      "ABC Suppliers",
+      "Main Store (Required)",
+      "10 (Required)",
+      "5",
+      "1000",
+      "90",
+      "0",
+      "90",
+      "INV-001",
+      "2026-01-15",
+      "High quality bearing"
+    ];
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([headers[0], exampleRow]);
+    ws['!cols'] = headers[0].map(() => ({ wch: 18 }));
+    XLSX.utils.book_append_sheet(wb, ws, "SpareParts_Template");
+    XLSX.writeFile(wb, "SpareParts_Import_Template.xlsx");
+    toast.success("Template downloaded! Fields marked (Required) are mandatory.");
+  };
+
+  // Bulk import file upload handler
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImporting(true);
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const data = evt.target?.result;
+        const workbook = XLSX.read(data, { type: "binary" });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+
+        // Skip header row
+        const rows = jsonData.slice(1).filter(row => row.length > 0 && row[1]);
+        
+        let successCount = 0;
+        let failedCount = 0;
+        const errors: string[] = [];
+
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i];
+          try {
+            const sparePartData = {
+              code: row[0] || `SP-${Date.now()}-${i}`,
+              name: row[1],
+              vendor: row[2] || "",
+              location: row[3] || "",
+              quantity: parseInt(row[4]) || 1,
+              // unit removed (default "pcs" in backend/model if needed, or handled as implicit)
+              reorderLevel: parseInt(row[5]) || 1,
+              basicCost: parseFloat(row[6]) || 0,
+              cgst: parseFloat(row[7]) || 0,
+              igst: parseFloat(row[8]) || 0,
+              sgst: parseFloat(row[9]) || 0,
+              totalCost: (parseFloat(row[6]) || 0) + (parseFloat(row[7]) || 0) + (parseFloat(row[8]) || 0) + (parseFloat(row[9]) || 0),
+              invoiceNumber: row[10] || "",
+              purchaseDate: row[11] || "",
+              notes: row[12] || "",
+            };
+
+            await dispatch(createSparePart(sparePartData)).unwrap();
+            successCount++;
+          } catch (err: any) {
+            failedCount++;
+            errors.push(`Row ${i + 2}: ${err.message || "Import failed"}`);
+          }
+        }
+
+        toast.success(`Import complete: ${successCount} success, ${failedCount} failed`);
+        if (errors.length > 0) {
+          console.error("Import errors:", errors);
+        }
+        // Refresh the list
+        dispatch(fetchSpareParts({ organisationId, page, limit: 12 }));
+      } catch (error) {
+        toast.error("Failed to parse import file");
+      } finally {
+        setImporting(false);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
 
   /* ----------------------------
      Part CRUD
      ---------------------------- */
   function openAddPart() {
     setEditingPart(null);
-    setPartForm({ unit: "pcs", quantity: 0, reorderLevel: 1, costPerUnit: 0 });
+    setPartForm({ 
+      quantity: 1, 
+      reorderLevel: 1, 
+      costPerUnit: 0,
+      basicCost: 0,
+      cgst: 0,
+      igst: 0,
+      sgst: 0,
+      totalCost: 0,
+      invoiceNumber: "",
+    });
     setPartDialogOpen(true);
   }
   function openEditPart(p: SparePart) {
@@ -361,6 +559,26 @@ export default function SparePartsInventory() {
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Spare Parts & Inventory</h1>
         <div className="flex items-center gap-2">
+          {/* Bulk Excel Import */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            onChange={handleFileUpload}
+          />
+          <Button variant="outline" onClick={handleDownloadTemplate}>
+            <DownloadCloud className="mr-2 h-4 w-4" /> Download Template
+          </Button>
+          <Button 
+            variant="outline" 
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+          >
+            <UploadCloud className="mr-2 h-4 w-4" /> 
+            {importing ? "Importing..." : "Bulk Import"}
+          </Button>
+          {/* Legacy JSON import */}
           <input
             id="import-all"
             type="file"
@@ -368,11 +586,8 @@ export default function SparePartsInventory() {
             className="hidden"
             onChange={(e) => importAll(e.target.files?.[0] || null)}
           />
-          <Button variant="outline" onClick={() => document.getElementById("import-all")?.click()}>
-            <UploadCloud className="mr-2 h-4 w-4" /> Import
-          </Button>
           <Button variant="outline" onClick={exportAll}>
-            <DownloadCloud className="mr-2 h-4 w-4" /> Export
+            <DownloadCloud className="mr-2 h-4 w-4" /> Export JSON
           </Button>
           <Button onClick={openAddPart}>
             <Plus className="mr-2 h-4 w-4" /> Add Part
@@ -511,68 +726,146 @@ export default function SparePartsInventory() {
                 <TableRow>
                   <TableHead>Code</TableHead>
                   <TableHead>Name</TableHead>
-                  <TableHead>Equip. Link</TableHead>
-                  <TableHead>Qty</TableHead>
+                  <TableHead className="text-center">Qty</TableHead>
+                  <TableHead className="text-center text-orange-600">Allocated</TableHead>
+                  <TableHead className="text-center text-green-600">Available</TableHead>
                   <TableHead>Unit</TableHead>
                   <TableHead>Reorder</TableHead>
-                  <TableHead>Cost/unit</TableHead>
+                  <TableHead className="text-right">Total Cost</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredParts.map((p) => (
-                  <TableRow key={p._id}>
-                    <TableCell>{p.code}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <div>{p.name}</div>
-                        {p.critical && (
-                          <span className="text-xs px-1 rounded bg-yellow-100 text-yellow-800">
-                            CRITICAL
-                          </span>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>{p.equipmentLink}</TableCell>
-                    <TableCell>{p.quantity}</TableCell>
-                    <TableCell>{p.unit}</TableCell>
-                    <TableCell>
-                      <div
-                        className={`inline-block px-2 py-0.5 rounded text-sm ${
-                          p.quantity <= p.reorderLevel
-                            ? "bg-red-100 text-red-800"
-                            : "bg-green-100 text-green-800"
-                        }`}
-                      >
-                        {p.quantity} / {p.reorderLevel}
-                      </div>
-                    </TableCell>
-                    <TableCell>₹{(p.costPerUnit || 0).toFixed(2)}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="ghost" onClick={() => openEditPart(p)}>
-                          <Edit2 className="w-4 h-4" />
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => openAddSlip(p, "ISSUE")}>
-                          <ArchiveRestore className="w-4 h-4" />
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => openAddSlip(p, "RETURN")}>
-                          <ArchiveRestore className="w-4 h-4 rotate-180" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => toggleCritical(p)}
-                          title="Toggle critical"
+                  <React.Fragment key={p._id}>
+                    <TableRow
+                      className={p.hasChildren ? "cursor-pointer hover:bg-gray-50" : ""}
+                      onClick={() => p.hasChildren && toggleRowExpansion(p._id)}
+                    >
+                      <TableCell className="font-mono text-xs">
+                        <div className="flex items-center gap-1">
+                          {p.hasChildren && (
+                            expandedRows.has(p._id)
+                              ? <ChevronDown className="w-4 h-4 text-blue-500" />
+                              : <ChevronRight className="w-4 h-4 text-gray-400" />
+                          )}
+                          {p.code}
+                          {p.hasChildren && (
+                            <Badge variant="outline" className="ml-2 text-xs">
+                              {p.quantity || 1} units
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <div>{p.name}</div>
+                          {p.critical && (
+                            <span className="text-xs px-1 rounded bg-yellow-100 text-yellow-800">
+                              CRITICAL
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center font-semibold">{p.quantity || 1}</TableCell>
+                      <TableCell className="text-center text-orange-600 font-medium">{p.allocatedQuantity || 0}</TableCell>
+                      <TableCell className="text-center text-green-600 font-bold">
+                        {p.availableQuantity !== undefined ? p.availableQuantity : (p.quantity || 1)}
+                      </TableCell>
+                      <TableCell>{p.unit}</TableCell>
+                      <TableCell>
+                        <div
+                          className={`inline-block px-2 py-0.5 rounded text-sm ${
+                            p.quantity <= p.reorderLevel
+                              ? "bg-red-100 text-red-800"
+                              : "bg-green-100 text-green-800"
+                          }`}
                         >
-                          <Award className="w-4 h-4" />
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => deletePart(p._id)}>
-                          <Trash2 className="w-4 h-4 text-red-500" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                          {p.quantity} / {p.reorderLevel}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        ₹{(p.totalCost || p.costPerUnit * (p.quantity || 1) || 0).toLocaleString()}
+                      </TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="ghost" onClick={() => openEditPart(p)}>
+                            <Edit2 className="w-4 h-4" />
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => openAddSlip(p, "ISSUE")}>
+                            <ArchiveRestore className="w-4 h-4" />
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => openAddSlip(p, "RETURN")}>
+                            <ArchiveRestore className="w-4 h-4 rotate-180" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => toggleCritical(p)}
+                            title="Toggle critical"
+                          >
+                            <Award className="w-4 h-4" />
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => deletePart(p._id)}>
+                            <Trash2 className="w-4 h-4 text-red-500" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+
+                    {/* Expanded Children Rows */}
+                    {expandedRows.has(p._id) && (
+                      <TableRow className="bg-gray-50">
+                        <TableCell colSpan={10} className="p-0">
+                          <div className="p-4 pl-10">
+                            {loadingChildren.has(p._id) ? (
+                              <div className="text-center py-4 text-gray-500">Loading children...</div>
+                            ) : childrenData[p._id]?.length > 0 ? (
+                              <div className="border rounded-md overflow-hidden">
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow className="bg-gray-100">
+                                      <TableHead className="text-xs">Child ID</TableHead>
+                                      <TableHead className="text-xs">Status</TableHead>
+                                      <TableHead className="text-xs">Allocated To</TableHead>
+                                      <TableHead className="text-xs">Duration</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {childrenData[p._id]?.map((child) => (
+                                      <TableRow key={child._id} className="text-sm">
+                                        <TableCell className="font-mono text-xs">{child.code}-{child.childIndex}</TableCell>
+                                        <TableCell>
+                                          <Badge 
+                                            variant={child.allocationStatus === "available" ? "outline" : "default"}
+                                            className={child.allocationStatus === "available" 
+                                              ? "bg-green-100 text-green-800 border-green-300" 
+                                              : "bg-orange-100 text-orange-800 border-orange-300"
+                                            }
+                                          >
+                                            {child.allocationStatus || "available"}
+                                          </Badge>
+                                        </TableCell>
+                                        <TableCell>{child.allocatedTo?.projectName || "-"}</TableCell>
+                                        <TableCell>
+                                          {child.allocatedTo?.startDate && child.allocatedTo?.endDate
+                                            ? `${new Date(child.allocatedTo.startDate).toLocaleDateString()} - ${new Date(child.allocatedTo.endDate).toLocaleDateString()}`
+                                            : "-"
+                                          }
+                                        </TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                            ) : (
+                              <div className="text-center py-4 text-gray-500">No child spare parts found</div>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </React.Fragment>
                 ))}
               </TableBody>
             </Table>
@@ -580,16 +873,39 @@ export default function SparePartsInventory() {
           {/* Pagination */}
           <div className="flex items-center justify-between mt-4">
             <div className="text-sm text-muted-foreground">
-              Page {page} / {totalPages}
+              Page {page} / {totalPages} (Total: {total || 0})
             </div>
-            {/* Note: You need a setPage logic here that dispatches fetchSpareParts with the new page */}
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const newPage = Math.max(1, page - 1);
+                  dispatch(fetchSpareParts({ organisationId, page: newPage, limit: 10 }));
+                }}
+                disabled={page <= 1}
+              >
+                Prev
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const newPage = Math.min(totalPages, page + 1);
+                  dispatch(fetchSpareParts({ organisationId, page: newPage, limit: 10 }));
+                }}
+                disabled={page >= totalPages}
+              >
+                Next
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
 
       {/* Part Dialog */}
       <Dialog open={partDialogOpen} onOpenChange={setPartDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingPart ? "Edit Part" : "Add Part"}</DialogTitle>
           </DialogHeader>
@@ -606,13 +922,6 @@ export default function SparePartsInventory() {
               <Input
                 value={partForm.name || ""}
                 onChange={(e) => setPartForm((f) => ({ ...f, name: e.target.value }))}
-              />
-            </div>
-            <div>
-              <Label>Equipment Link</Label>
-              <Input
-                value={partForm.equipmentLink || ""}
-                onChange={(e) => setPartForm((f) => ({ ...f, equipmentLink: e.target.value }))}
               />
             </div>
             <div>
@@ -645,13 +954,7 @@ export default function SparePartsInventory() {
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label>Unit</Label>
-              <Input
-                value={partForm.unit || "pcs"}
-                onChange={(e) => setPartForm((f) => ({ ...f, unit: e.target.value }))}
-              />
-            </div>
+            {/* Unit field removed */}
             <div>
               <Label>Quantity</Label>
               <Input
@@ -668,14 +971,69 @@ export default function SparePartsInventory() {
                 onChange={(e) => setPartForm((f) => ({ ...f, reorderLevel: Number(e.target.value) }))}
               />
             </div>
+            
+            {/* GST Pricing Section */}
+            <div className="col-span-2 mt-4 mb-2">
+              <h3 className="text-sm font-semibold text-gray-700 border-b pb-2">GST & Pricing Details</h3>
+            </div>
             <div>
-              <Label>Cost per unit</Label>
+              <Label>Basic Cost (₹)</Label>
               <Input
                 type="number"
-                value={partForm.costPerUnit || 0}
-                onChange={(e) => setPartForm((f) => ({ ...f, costPerUnit: Number(e.target.value) }))}
+                value={partForm.basicCost || 0}
+                onChange={(e) => setPartForm((f) => ({ ...f, basicCost: Number(e.target.value) }))}
               />
             </div>
+            <div>
+              <Label>CGST (₹)</Label>
+              <Input
+                type="number"
+                value={partForm.cgst || 0}
+                onChange={(e) => setPartForm((f) => ({ ...f, cgst: Number(e.target.value) }))}
+              />
+            </div>
+            <div>
+              <Label>IGST (₹)</Label>
+              <Input
+                type="number"
+                value={partForm.igst || 0}
+                onChange={(e) => setPartForm((f) => ({ ...f, igst: Number(e.target.value) }))}
+              />
+            </div>
+            <div>
+              <Label>SGST (₹)</Label>
+              <Input
+                type="number"
+                value={partForm.sgst || 0}
+                onChange={(e) => setPartForm((f) => ({ ...f, sgst: Number(e.target.value) }))}
+              />
+            </div>
+            <div>
+              <Label>Total Cost (₹)</Label>
+              <Input
+                type="number"
+                value={partForm.totalCost || 0}
+                disabled
+                className="bg-gray-100"
+              />
+            </div>
+            <div>
+              <Label>Invoice Number</Label>
+              <Input
+                value={partForm.invoiceNumber || ""}
+                onChange={(e) => setPartForm((f) => ({ ...f, invoiceNumber: e.target.value }))}
+                placeholder="INV-001"
+              />
+            </div>
+            <div>
+              <Label>Purchase Date</Label>
+              <Input
+                type="date"
+                value={partForm.purchaseDate || ""}
+                onChange={(e) => setPartForm((f) => ({ ...f, purchaseDate: e.target.value }))}
+              />
+            </div>
+
             <div className="col-span-2">
               <Label>Notes</Label>
               <Input

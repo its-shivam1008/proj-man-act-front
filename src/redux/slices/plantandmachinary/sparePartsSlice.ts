@@ -10,13 +10,47 @@ export interface SparePart {
   name: string;
   equipmentLink?: string;
   vendor?: string;
-  location?: string;
+  location?: string | { _id: string; name: string };
+
+  // Quantity
   quantity: number;
   unit: string;
   reorderLevel: number;
+
+  // Pricing & GST
+  basicCost?: number;
+  cgst?: number;
+  igst?: number;
+  sgst?: number;
+  totalCost?: number;
   costPerUnit: number;
+
+  // Purchase & Invoice
+  purchaseDate?: string;
+  invoiceNumber?: string;
+
   critical?: boolean;
   notes?: string;
+
+  // Parent-Child
+  isParent?: boolean;
+  parentId?: string;
+  childIndex?: number;
+  hasChildren?: boolean;
+  allocatedQuantity?: number;
+  availableQuantity?: number;
+
+  // Allocation (for children)
+  allocationStatus?: "available" | "allocated";
+  allocatedTo?: {
+    projectId?: string;
+    projectName?: string;
+    siteName?: string;
+    startDate?: string;
+    endDate?: string;
+    resourceAllocationId?: string;
+  };
+
   isDeleted: boolean;
   createdAt: string;
   updatedAt: string;
@@ -113,6 +147,19 @@ export const deleteSparePart = createAsyncThunk(
     try {
       await api.delete(`/spare-parts/delete/${id}`);
       return id;
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.message);
+    }
+  }
+);
+
+// Fetch children of a parent spare part
+export const fetchSparePartChildren = createAsyncThunk(
+  "spareParts/fetchChildren",
+  async (parentId: string, { rejectWithValue }) => {
+    try {
+      const res = await api.get(`/spare-parts/children/${parentId}`);
+      return { parentId, children: res.data.data };
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message);
     }

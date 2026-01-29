@@ -7,10 +7,11 @@ import {
   updateEquipment,
   deleteEquipment,
   fetchEquipments,
+  fetchEquipmentChildren,
 } from "@/redux/slices/equipmentSlice";
 import { fetchMasterData } from "@/redux/slices/masterDataSlice";
-import { Save, Plus, Edit2, Trash2, Search, X, ShieldAlert, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, AlertCircle } from "lucide-react";
-import * as XLSX from "xlsx"; // Requires: npm install xlsx
+import { Save, Plus, Edit2, Trash2, Search, X, ShieldAlert, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
+import * as XLSX from "xlsx";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +24,13 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 import {
   Table,
@@ -35,13 +43,10 @@ import {
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
 
 // ---------- TYPES ----------
-type DepreciationMethod = "Straight-line" | "WDV";
-type MaintenanceFrequency = "Monthly" | "Quarterly" | "Yearly";
-
 interface StoredFile {
   id: string;
   name: string;
@@ -54,24 +59,51 @@ interface Equipment {
   _id?: string;
   code: string;
   name: string;
-  model: string;
+  model?: string;
+  manufacturer?: string;
   supplier?: string;
   warranty?: string;
-  purchaseDate?: string;
-  cost?: number;
   category?: string;
   serialNumber?: string;
-  location?: string | { _id: string, name: string };
+  location?: string | { _id: string; name: string };
   capacity?: string;
-  frequency?: MaintenanceFrequency;
+  quantity?: number;
+
+  // Pricing & GST
+  basicCost?: number;
+  cgst?: number;
+  igst?: number;
+  sgst?: number;
+  totalCost?: number;
+  cost?: number; // Legacy
+
+  // Dates
+  purchaseDate?: string;
+  invoiceNumber?: string;
+
+  // Maintenance
+  frequency?: string;
   insurance?: string;
-  depreciation?: DepreciationMethod;
+  depreciation?: string;
   documents?: StoredFile[];
   createdAt: string;
-  // Inventory Fields
-  quantity?: number;
+
+  // Allocation tracking
   allocatedQuantity?: number;
   availableQuantity?: number;
+  hasChildren?: boolean;
+
+  // Parent-Child
+  isParent?: boolean;
+  parentId?: string;
+  childIndex?: number;
+  allocationStatus?: string;
+  allocatedTo?: {
+    projectName?: string;
+    siteName?: string;
+    startDate?: string;
+    endDate?: string;
+  };
 }
 
 interface ImportSummary {
@@ -84,13 +116,7 @@ interface ImportSummary {
 // ---------- HELPERS ----------
 function generateEquipmentCode(): string {
   const year = new Date().getFullYear();
-  const suffix = Math.floor(1000 + Math.random() * 9000).toString();
-  return `EQP-${year}-${suffix}`;
-}
-
-function generateUniqueEquipmentCode(): string {
-  const year = new Date().getFullYear();
-  const uniqueSuffix = Date.now().toString().slice(-6); 
+  const uniqueSuffix = Date.now().toString().slice(-6);
   const random = Math.floor(Math.random() * 99).toString().padStart(2, '0');
   return `EQP-${year}-${uniqueSuffix}${random}`;
 }
@@ -112,9 +138,8 @@ export default function EquipmentMasterPage() {
   const canDelete = usePermission("equipmentMaster", "delete");
 
   const dispatch = useDispatch<AppDispatch>();
-  const equipments = useSelector(
-    (state: RootState) => state.equipment.equipments
-  );
+  const { equipments, page, total, limit } = useSelector((state: RootState) => state.equipment);
+  const totalPages = Math.ceil(total / limit) || 1;
 
   // User & Location Data
   const { userProfile } = useSelector((state: any) => state.auth);
@@ -123,7 +148,7 @@ export default function EquipmentMasterPage() {
   const isLocationRestricted = userProfile?.role !== 'admin' && !!userProfile?.location;
   const [locationFilter, setLocationFilter] = useState(isLocationRestricted ? userProfile.location : "All");
 
-  // File Upload Ref
+  // File Upload & Import States
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
@@ -132,29 +157,69 @@ export default function EquipmentMasterPage() {
     if (!loc) return "N/A";
     if (typeof loc === 'object') return loc.name || "N/A";
     const found = masterLocations.find((l: any) => l._id === loc);
-    return found ? found.name : loc; 
+    return found ? found.name : loc;
   };
 
   useEffect(() => {
     dispatch(fetchMasterData("location"));
-    dispatch(fetchEquipments({ 
-        page: 1, 
-        limit: 100, 
-        location: locationFilter === "All" ? "" : locationFilter,
+    dispatch(fetchEquipments({
+      page: 1,
+      limit: 10,
+      location: locationFilter === "All" ? "" : locationFilter
     }));
   }, [dispatch, locationFilter]);
 
   // UI states
   const [query, setQuery] = useState("");
-  const [filterCategory, setFilterCategory] = useState("All");
-  
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Equipment | null>(null);
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [childrenData, setChildrenData] = useState<Record<string, Equipment[]>>({});
+  const [loadingChildren, setLoadingChildren] = useState<Set<string>>(new Set());
   const [form, setForm] = useState<Partial<Equipment>>({
     frequency: "Monthly",
     depreciation: "Straight-line",
     quantity: 1,
+    basicCost: 0,
+    cgst: 0,
+    igst: 0,
+    sgst: 0,
+    totalCost: 0,
   });
+
+  // Toggle row expansion and fetch children
+  const toggleRowExpansion = async (equipmentId: string) => {
+    const newExpanded = new Set(expandedRows);
+    if (newExpanded.has(equipmentId)) {
+      newExpanded.delete(equipmentId);
+    } else {
+      newExpanded.add(equipmentId);
+      // Fetch children if not already loaded
+      if (!childrenData[equipmentId]) {
+        setLoadingChildren(prev => new Set(prev).add(equipmentId));
+        try {
+          const result = await dispatch(fetchEquipmentChildren(equipmentId)).unwrap();
+          setChildrenData(prev => ({ ...prev, [equipmentId]: result.children || [] }));
+        } catch (error) {
+          console.error("Failed to fetch children:", error);
+          toast.error("Failed to load child equipment");
+        } finally {
+          setLoadingChildren(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(equipmentId);
+            return newSet;
+          });
+        }
+      }
+    }
+    setExpandedRows(newExpanded);
+  };
+
+  // Auto-calculate total cost
+  useEffect(() => {
+    const total = (form.basicCost || 0) + (form.cgst || 0) + (form.igst || 0) + (form.sgst || 0);
+    setForm(prev => ({ ...prev, totalCost: total }));
+  }, [form.basicCost, form.cgst, form.igst, form.sgst]);
 
   // FILTER + SEARCH
   const visible = useMemo(() => {
@@ -162,11 +227,7 @@ export default function EquipmentMasterPage() {
     if (query.trim()) {
       const q = query.toLowerCase();
       items = items.filter((it) =>
-        [
-          it.code,
-          it.name,
-          it.model,
-        ]
+        [it.code, it.name, it.model]
           .filter(Boolean)
           .some((f) => f!.toLowerCase().includes(q))
       );
@@ -177,23 +238,27 @@ export default function EquipmentMasterPage() {
   // ---------- OPEN ADD ----------
   function openAddDialog() {
     setEditing(null);
-    setForm({ 
-        code: generateUniqueEquipmentCode(),
-        frequency: "Monthly", 
-        depreciation: "Straight-line", 
-        quantity: 1, 
-        location: isLocationRestricted ? userProfile.location : ""
+    setForm({
+      code: generateEquipmentCode(),
+      frequency: "Monthly",
+      depreciation: "Straight-line",
+      quantity: 1,
+      basicCost: 0,
+      cgst: 0,
+      igst: 0,
+      sgst: 0,
+      totalCost: 0,
+      location: isLocationRestricted ? userProfile.location : ""
     });
     setIsDialogOpen(true);
   }
 
   // ---------- OPEN EDIT ----------
-  function openEditDialog(eq: Equipment) {
-    setEditing(eq);
-    // Ensure we use the ID string for the select input
-    setForm({ 
-        ...eq, 
-        location: typeof eq.location === 'object' ? (eq.location as any)._id : eq.location 
+  function openEditDialog(equipment: Equipment) {
+    setEditing(equipment);
+    setForm({
+      ...equipment,
+      location: typeof equipment.location === 'object' ? (equipment.location as any)._id : equipment.location
     });
     setIsDialogOpen(true);
   }
@@ -207,22 +272,14 @@ export default function EquipmentMasterPage() {
 
     try {
       if (editing && editing._id) {
-        await dispatch(
-          updateEquipment({
-            id: editing._id,
-            data: form,
-          })
-        ).unwrap();
+        await dispatch(updateEquipment({ id: editing._id, data: form })).unwrap();
         toast.success("Equipment updated");
-      }
-      else {
+      } else {
         const newEq: Partial<Equipment> = {
           ...form,
-          // Use form code or generate unique
-          code: form.code || generateUniqueEquipmentCode(),
+          code: form.code || generateEquipmentCode(),
           createdAt: new Date().toISOString(),
         };
-
         await dispatch(createEquipment(newEq)).unwrap();
         toast.success("Equipment added");
       }
@@ -234,16 +291,54 @@ export default function EquipmentMasterPage() {
     }
   }
 
-  // ---------- IMPORT LOGIC ----------
+  // ---------- IMPORT FUNCTIONALITY ----------
   const handleDownloadTemplate = () => {
-    // REMOVED Manufacturer and Department
     const headers = [
-      ["Equipment ID", "Name", "Model", "Category", "Location Name", "Total Quantity", "Cost per Unit"]
+      [
+        "Equipment ID",
+        "Name",
+        "Model",
+        "Category",
+        "Location Name",
+        "Quantity",
+        "Basic Cost",
+        "CGST",
+        "IGST",
+        "SGST",
+        "Invoice Number",
+        "Purchase Date",
+        "Supplier",
+        "Manufacturer",
+        "Warranty"
+      ]
+    ];
+    // Add example row
+    const exampleRow = [
+      "EQP-2026-0001 (Optional)",
+      "Power Drill (Required)",
+      "XDR-500",
+      "Hand Tools",
+      "Main Site (Required)",
+      "1 (Required)",
+      "25000",
+      "2250",
+      "0",
+      "2250",
+      "INV-001",
+      "2026-01-15",
+      "Tool Suppliers Ltd",
+      "Bosch",
+      "1 Year"
     ];
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet(headers);
+    const ws = XLSX.utils.aoa_to_sheet([headers[0], exampleRow]);
+
+    // Set column widths
+    ws['!cols'] = headers[0].map(() => ({ wch: 18 }));
+
     XLSX.utils.book_append_sheet(wb, ws, "Equipment_Template");
     XLSX.writeFile(wb, "Equipment_Import_Template.xlsx");
+    toast.success("Template downloaded! Fields marked (Required) are mandatory.");
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -276,59 +371,81 @@ export default function EquipmentMasterPage() {
         for (const [index, row] of (data as any[]).entries()) {
           const rowNum = index + 2;
           const rowName = row["Name"] || `Row ${rowNum}`;
+          const missingFields: string[] = [];
 
           try {
-             // 1. Validation
-             if(!row["Name"]) throw new Error("Missing 'Name' field");
+            // Check required fields
+            if (!row["Name"]) missingFields.push("Name");
 
-             // 2. Resolve Location Name -> ID
-             const locName = row["Location Name"] || row["Location"];
-             let locationId = "";
+            const locName = row["Location Name"] || row["Location"];
+            let locationId = "";
 
-             if (locName) {
-               const foundLoc = masterLocations.find((l: any) => 
-                  l.name.toLowerCase() === locName.toString().trim().toLowerCase()
-               );
-               if (foundLoc) locationId = foundLoc._id;
-             }
+            if (locName) {
+              const foundLoc = masterLocations.find((l: any) =>
+                l.name.toLowerCase() === locName.toString().trim().toLowerCase()
+              );
+              if (foundLoc) locationId = foundLoc._id;
+            }
 
-             // Enforce user location if restricted
-             if (isLocationRestricted) {
-                locationId = userProfile.location;
-             } else if (!locationId) {
-                throw new Error(`Location '${locName || "Empty"}' not found in system.`);
-             }
+            if (isLocationRestricted) {
+              locationId = userProfile.location;
+            } else if (!locationId && !isLocationRestricted) {
+              missingFields.push("Location Name");
+            }
 
-             // 3. Prepare Payload
-             const quantity = Number(row["Total Quantity"] || row["Quantity"] || 1);
-             const cost = Number(row["Cost per Unit"] || row["Cost"] || 0);
+            const quantity = Number(row["Quantity"] || 0);
+            if (quantity < 1) missingFields.push("Quantity (must be >= 1)");
 
-             if (quantity < 1) throw new Error("Quantity must be at least 1");
+            // If any required fields missing, throw error with details
+            if (missingFields.length > 0) {
+              throw new Error(`Missing required fields: ${missingFields.join(", ")}`);
+            }
 
-             // Use Equipment ID from file OR generate unique
-             const equipmentId = row["Equipment ID"] || row["EquipmentID"] || generateUniqueEquipmentCode();
+            // Parse optional numeric fields (default to 0 if empty)
+            const basicCost = Number(row["Basic Cost"]) || 0;
+            const cgst = Number(row["CGST"]) || 0;
+            const igst = Number(row["IGST"]) || 0;
+            const sgst = Number(row["SGST"]) || 0;
 
-             const payload: Partial<Equipment> = {
-               name: row["Name"],
-               code: equipmentId,
-               model: row["Model"]?.toString() || "",
-               category: row["Category"] || "General",
-               location: locationId,
-               quantity: quantity,
-               cost: cost,
-               createdAt: new Date().toISOString(),
-               frequency: "Monthly",
-               depreciation: "Straight-line",
-             };
+            // Parse optional date fields
+            const parseDate = (val: any) => {
+              if (!val) return "";
+              const d = new Date(val);
+              return isNaN(d.getTime()) ? "" : d.toISOString().split('T')[0];
+            };
 
-             await dispatch(createEquipment(payload)).unwrap();
-             successCount++;
+            const equipmentId = row["Equipment ID"] || row["EquipmentID"] || generateEquipmentCode();
+
+            const payload: Partial<Equipment> = {
+              name: row["Name"],
+              code: equipmentId,
+              model: row["Model"] || "",
+              category: row["Category"] || "General",
+              location: locationId,
+              quantity: quantity,
+              basicCost,
+              cgst,
+              igst,
+              sgst,
+              totalCost: basicCost + cgst + igst + sgst,
+              invoiceNumber: row["Invoice Number"] || "",
+              purchaseDate: parseDate(row["Purchase Date"]),
+              supplier: row["Supplier"] || "",
+              manufacturer: row["Manufacturer"] || "",
+              warranty: row["Warranty"] || "",
+              createdAt: new Date().toISOString(),
+              frequency: "Monthly",
+              depreciation: "Straight-line",
+            };
+
+            await dispatch(createEquipment(payload)).unwrap();
+            successCount++;
 
           } catch (err: any) {
-             console.error(err);
-             failCount++;
-             const errMsg = err.message || err || "Unknown Error";
-             errorLog.push(`Row ${rowNum} (${rowName}): ${errMsg}`);
+            console.error(err);
+            failCount++;
+            const errMsg = err.message || err || "Unknown Error";
+            errorLog.push(`Row ${rowNum} (${rowName}): ${errMsg}`);
           }
         }
 
@@ -345,7 +462,7 @@ export default function EquipmentMasterPage() {
         toast.error("Failed to parse file.");
       } finally {
         setImporting(false);
-        if (fileInputRef.current) fileInputRef.current.value = ""; // Reset input
+        if (fileInputRef.current) fileInputRef.current.value = "";
       }
     };
 
@@ -392,66 +509,65 @@ export default function EquipmentMasterPage() {
     <div className="p-6 space-y-6">
       {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <h1 className="text-2xl font-bold">Equipment Management</h1>
-        
-        <div className="flex flex-wrap gap-2">
-           {/* Hidden File Input for Import */}
-           <input 
-              type="file" 
-              ref={fileInputRef} 
-              className="hidden" 
-              accept=".xlsx, .xls, .csv"
-              onChange={handleFileUpload}
-           />
+        <h1 className="text-2xl font-bold">Equipment Master</h1>
 
-           {canCreate && (
-             <>
-               {/* <Button variant="outline" onClick={handleDownloadTemplate} title="Download Excel Template">
-                  <FileSpreadsheet className="mr-2 h-4 w-4 text-green-600"/> Template
-               </Button> */}
-               <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importing}>
-                  <Upload className="mr-2 h-4 w-4"/> {importing ? "Importing..." : "Import"}
-               </Button>
-               <Button onClick={() => openAddDialog()}>
-                  <Plus className="mr-2 h-4 w-4" /> Add Equipment
-               </Button>
-             </>
-           )}
+        <div className="flex flex-wrap gap-2">
+          <input
+            type="file"
+            ref={fileInputRef}
+            className="hidden"
+            accept=".xlsx, .xls, .csv"
+            onChange={handleFileUpload}
+          />
+
+          {canCreate && (
+            <>
+              <Button variant="outline" onClick={handleDownloadTemplate}>
+                <FileSpreadsheet className="mr-2 h-4 w-4" /> Download Template
+              </Button>
+              <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importing}>
+                <Upload className="mr-2 h-4 w-4" /> {importing ? "Importing..." : "Import"}
+              </Button>
+              <Button onClick={() => openAddDialog()}>
+                <Plus className="mr-2 h-4 w-4" /> Add Equipment
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
       {/* TABLE CARD */}
       <Card>
         <CardHeader>
-          <CardTitle>Equipment Inventory</CardTitle>
+          <CardTitle>Registered Equipment</CardTitle>
         </CardHeader>
 
         <CardContent>
           <div className="mb-4 flex flex-col md:flex-row items-center gap-2">
             <div className="relative w-full md:w-auto">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                placeholder="Search equipment..."
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by Name, Model..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 className="pl-8 w-full md:w-64"
-                />
+              />
             </div>
-            
+
             <Select
-                value={locationFilter}
-                onValueChange={setLocationFilter}
-                disabled={isLocationRestricted}
+              value={locationFilter}
+              onValueChange={setLocationFilter}
+              disabled={isLocationRestricted}
             >
-                <SelectTrigger className="w-full md:w-[200px]">
-                    <SelectValue placeholder="Filter Location" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="All">All Locations</SelectItem>
-                    {masterLocations.map((l: any) => (
-                        <SelectItem key={l._id} value={l._id}>{l.name}</SelectItem>
-                    ))}
-                </SelectContent>
+              <SelectTrigger className="w-full md:w-[200px]">
+                <SelectValue placeholder="Filter Location" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All">All Locations</SelectItem>
+                {masterLocations.map((l: any) => (
+                  <SelectItem key={l._id} value={l._id}>{l.name}</SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </div>
 
@@ -467,117 +583,228 @@ export default function EquipmentMasterPage() {
                   <TableHead className="text-center">Total Qty</TableHead>
                   <TableHead className="text-center">In Use</TableHead>
                   <TableHead className="text-center">Available</TableHead>
+                  <TableHead className="text-right">Total Cost</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
 
               <TableBody>
                 {visible.length === 0 ? (
-                    <TableRow>
-                        <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                            No equipment found.
-                        </TableCell>
-                    </TableRow>
+                  <TableRow>
+                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                      No equipment found.
+                    </TableCell>
+                  </TableRow>
                 ) : (
-                    visible.map((eq) => (
-                    <TableRow key={eq._id}>
-                        <TableCell className="font-mono text-xs">{eq.code}</TableCell>
-                        <TableCell className="font-medium">{eq.name}</TableCell>
-                        <TableCell>{eq.model || '-'}</TableCell>
-                        <TableCell>{eq.category}</TableCell>
-                        <TableCell>{getLocationName(eq.location)}</TableCell>
-                        <TableCell className="font-semibold text-center">{eq.quantity || 1}</TableCell>
-                        <TableCell className="text-center text-orange-600 font-medium">{eq.allocatedQuantity || 0}</TableCell>
+                  visible.map((equipment) => (
+                    <React.Fragment key={equipment._id}>
+                      <TableRow
+                        className={equipment.hasChildren ? "cursor-pointer hover:bg-gray-50" : ""}
+                        onClick={() => equipment.hasChildren && equipment._id && toggleRowExpansion(equipment._id)}
+                      >
+                        <TableCell className="font-mono text-xs">
+                          <div className="flex items-center gap-1">
+                            {equipment.hasChildren && (
+                              expandedRows.has(equipment._id || "")
+                                ? <ChevronDown className="w-4 h-4 text-blue-500" />
+                                : <ChevronRight className="w-4 h-4 text-gray-400" />
+                            )}
+                            {equipment.code}
+                            {equipment.hasChildren && (
+                              <Badge variant="outline" className="ml-2 text-xs">
+                                {equipment.quantity || 1} units
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-medium">{equipment.name}</TableCell>
+                        <TableCell>{equipment.model || "-"}</TableCell>
+                        <TableCell>{equipment.category || "-"}</TableCell>
+                        <TableCell>{getLocationName(equipment.location)}</TableCell>
+                        <TableCell className="text-center font-semibold">{equipment.quantity || 1}</TableCell>
+                        <TableCell className="text-center text-orange-600 font-medium">{equipment.allocatedQuantity || 0}</TableCell>
                         <TableCell className="text-center text-green-600 font-bold">
-                            {eq.availableQuantity !== undefined ? eq.availableQuantity : (eq.quantity || 1)}
+                          {equipment.availableQuantity !== undefined ? equipment.availableQuantity : (equipment.quantity || 1)}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          ₹{(equipment.totalCost || equipment.cost || 0).toLocaleString()}
                         </TableCell>
 
-                        <TableCell>
-                        <div className="flex gap-2">
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <div className="flex gap-2">
                             <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={!canEdit}
-                            onClick={() => canEdit && openEditDialog(eq)}
+                              variant="ghost"
+                              size="sm"
+                              disabled={!canEdit}
+                              onClick={() => canEdit && openEditDialog(equipment)}
                             >
-                            <Edit2 className="w-4 h-4" />
+                              <Edit2 className="w-4 h-4" />
                             </Button>
 
                             <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={!canDelete}
-                            onClick={() => {
+                              variant="ghost"
+                              size="sm"
+                              disabled={!canDelete}
+                              onClick={() => {
                                 if (!canDelete) return;
-                                if (!eq._id) {
-                                toast.error("This item is not saved on server");
-                                return;
+                                if (!equipment._id) {
+                                  toast.error("This item is not saved on server");
+                                  return;
                                 }
-                                if(window.confirm("Are you sure? This will not delete historical allocations.")){
-                                    dispatch(deleteEquipment(eq._id));
-                                    toast.success("Deleted successfully");
+                                if (window.confirm("Are you sure? This will delete all child equipment too.")) {
+                                  dispatch(deleteEquipment(equipment._id));
+                                  toast.success("Deleted successfully");
                                 }
-                            }}
+                              }}
                             >
-                            <Trash2 className="w-4 h-4 text-red-500" />
+                              <Trash2 className="w-4 h-4 text-red-500" />
                             </Button>
-                        </div>
+                          </div>
                         </TableCell>
-                    </TableRow>
-                    ))
+                      </TableRow>
+
+                      {/* Expanded Children Rows */}
+                      {expandedRows.has(equipment._id || "") && (
+                        <TableRow className="bg-gray-50">
+                          <TableCell colSpan={10} className="p-0">
+                            <div className="p-4 pl-10">
+                              {loadingChildren.has(equipment._id || "") ? (
+                                <div className="text-center py-4 text-gray-500">Loading children...</div>
+                              ) : childrenData[equipment._id || ""]?.length > 0 ? (
+                                <div className="border rounded-md overflow-hidden">
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow className="bg-gray-100">
+                                        <TableHead className="text-xs">Child ID</TableHead>
+                                        <TableHead className="text-xs">Status</TableHead>
+                                        <TableHead className="text-xs">Allocated To</TableHead>
+                                        <TableHead className="text-xs">Duration</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {childrenData[equipment._id || ""]?.map((child) => {
+                                        console.log("child ====>", child);
+                                        return (
+                                          <TableRow key={child._id} className="text-sm">
+                                            <TableCell className="font-mono text-xs">{child.code}</TableCell>
+                                            <TableCell>
+                                              <Badge
+                                                variant={child.allocationStatus === "allocated" ? "destructive" : "outline"}
+                                                className={child.allocationStatus === "available" ? "bg-green-100 text-green-700" : ""}
+                                              >
+                                                {child.allocationStatus === "allocated" ? "In Use" : "Available"}
+                                              </Badge>
+                                            </TableCell>
+                                            <TableCell>
+                                              {child.allocatedTo?.projectName || "-"}
+                                            </TableCell>
+                                            <TableCell className="text-xs">
+                                              {child.allocatedTo?.startDate && child.allocatedTo?.endDate
+                                                ? `${new Date(child.allocatedTo.startDate).toLocaleDateString()} to ${new Date(child.allocatedTo.endDate).toLocaleDateString()}`
+                                                : "-"
+                                              }
+                                            </TableCell>
+                                          </TableRow>
+                                        )
+                                      })}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                              ) : (
+                                <div className="text-center py-4 text-gray-500">No child units found.</div>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </React.Fragment>
+                  ))
                 )}
               </TableBody>
             </Table>
           </div>
+
+          {/* Pagination */}
+          <div className="flex items-center justify-between mt-4">
+            <div className="text-sm text-muted-foreground">
+              Page {page} / {totalPages} (Total: {total || 0})
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => dispatch(fetchEquipments({
+                  page: Math.max(1, page - 1),
+                  limit,
+                  location: locationFilter === "All" ? "" : locationFilter
+                }))}
+                disabled={page <= 1}
+              >
+                Prev
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => dispatch(fetchEquipments({
+                  page: Math.min(totalPages, page + 1),
+                  limit,
+                  location: locationFilter === "All" ? "" : locationFilter
+                }))}
+                disabled={page >= totalPages}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
-      {/* IMPORT SUMMARY DIALOG */}
+      {/* IMPORT RESULT DIALOG */}
       {importSummary && (
         <Dialog open={!!importSummary} onOpenChange={(open) => !open && setImportSummary(null)}>
-            <DialogContent>
-                <DialogHeader>
-                    <DialogTitle>Import Results</DialogTitle>
-                    <DialogDescription>
-                        Processed {importSummary.total} rows.
-                    </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                     <div className="flex justify-between items-center bg-gray-100 p-3 rounded-md">
-                         <div className="flex items-center gap-2 text-green-600">
-                             <CheckCircle2 className="h-5 w-5"/>
-                             <span className="font-bold">{importSummary.success} Successful</span>
-                         </div>
-                         <div className="flex items-center gap-2 text-red-600">
-                             <AlertTriangle className="h-5 w-5"/>
-                             <span className="font-bold">{importSummary.failed} Failed</span>
-                         </div>
-                     </div>
-                     
-                     {importSummary.failed > 0 && (
-                         <div className="space-y-2">
-                             <Label>Failure Details</Label>
-                             <ScrollArea className="h-[200px] w-full rounded-md border border-red-200 bg-red-50 p-4">
-                                 {importSummary.errors.map((err, i) => (
-                                     <div key={i} className="flex items-start gap-2 text-sm text-red-800 mb-2 last:mb-0">
-                                         <AlertCircle className="h-4 w-4 mt-0.5 shrink-0"/>
-                                         <span>{err}</span>
-                                     </div>
-                                 ))}
-                             </ScrollArea>
-                         </div>
-                     )}
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Import Results</DialogTitle>
+              <DialogDescription>
+                Processed {importSummary.total} rows.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="flex justify-between items-center bg-gray-100 p-3 rounded-md">
+                <div className="flex items-center gap-2 text-green-600">
+                  <CheckCircle2 className="h-5 w-5" />
+                  <span className="font-bold">{importSummary.success} Successful</span>
                 </div>
-                <DialogFooter>
-                    <Button onClick={() => setImportSummary(null)}>Close</Button>
-                </DialogFooter>
-            </DialogContent>
+                <div className="flex items-center gap-2 text-red-600">
+                  <AlertTriangle className="h-5 w-5" />
+                  <span className="font-bold">{importSummary.failed} Failed</span>
+                </div>
+              </div>
+
+              {importSummary.failed > 0 && (
+                <div className="space-y-2">
+                  <Label>Failure Details</Label>
+                  <ScrollArea className="h-[200px] w-full rounded-md border border-red-200 bg-red-50 p-4">
+                    {importSummary.errors.map((err, i) => (
+                      <div key={i} className="flex items-start gap-2 text-sm text-red-800 mb-2 last:mb-0">
+                        <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                        <span>{err}</span>
+                      </div>
+                    ))}
+                  </ScrollArea>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button onClick={() => setImportSummary(null)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
         </Dialog>
       )}
 
       {/* ADD/EDIT DIALOG */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editing ? "Edit Equipment" : "Add Equipment"}
@@ -586,88 +813,201 @@ export default function EquipmentMasterPage() {
 
           {/* FORM FIELDS */}
           <div
-            className="grid grid-cols-1 md:grid-cols-2 gap-4"
+            className="space-y-6"
             style={{
               pointerEvents: editing ? (canEdit ? "auto" : "none") : (canCreate ? "auto" : "none"),
               opacity: editing ? (canEdit ? 1 : 0.6) : (canCreate ? 1 : 0.6),
             }}
           >
-            <div>
-              <Label>Equipment ID</Label>
-              <Input
-                value={form.code || ""}
-                onChange={(e) => setForm({ ...form, code: e.target.value })}
-                placeholder="Auto-generated if empty"
-              />
-              <p className="text-xs text-muted-foreground">Unique ID (e.g., EQP-2026-X83)</p>
+            {/* Basic Info */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <Label>Equipment ID</Label>
+                <Input
+                  value={form.code || ""}
+                  onChange={(e) => setForm({ ...form, code: e.target.value })}
+                  placeholder="Auto-generated if empty"
+                />
+                <p className="text-xs text-muted-foreground">Unique ID (e.g., EQP-2026-X83)</p>
+              </div>
+
+              <div>
+                <Label>Name *</Label>
+                <Input
+                  value={form.name || ""}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <Label>Model</Label>
+                <Input
+                  value={form.model || ""}
+                  onChange={(e) => setForm({ ...form, model: e.target.value })}
+                />
+              </div>
             </div>
 
-            <div>
-              <Label>Name *</Label>
-              <Input
-                value={form.name || ""}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-              />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <Label>Category</Label>
+                <Input
+                  value={form.category || ""}
+                  onChange={(e) => setForm({ ...form, category: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <Label>Location *</Label>
+                <Select
+                  value={form.location as string}
+                  onValueChange={(v) => setForm({ ...form, location: v })}
+                  disabled={isLocationRestricted}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Location" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {masterLocations.map((l: any) => (
+                      <SelectItem key={l._id} value={l._id}>{l.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label>Total Quantity *</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={form.quantity || ""}
+                  onChange={(e) => setForm({ ...form, quantity: parseInt(e.target.value) || 1 })}
+                  placeholder="1"
+                />
+                <p className="text-xs text-muted-foreground">Creates individual units if &gt; 1</p>
+              </div>
             </div>
 
-            <div>
-              <Label>Category</Label>
-              <Input
-                value={form.category || ""}
-                onChange={(e) => setForm({ ...form, category: e.target.value })}
-              />
+            {/* Purchase & Invoice */}
+            <div className="border-t pt-4">
+              <h4 className="font-semibold mb-3 text-gray-700">Purchase Information</h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label>Date of Purchase</Label>
+                  <Input
+                    type="date"
+                    value={form.purchaseDate ? form.purchaseDate.toString().split('T')[0] : ""}
+                    onChange={(e) => setForm({ ...form, purchaseDate: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Invoice Number</Label>
+                  <Input
+                    value={form.invoiceNumber || ""}
+                    onChange={(e) => setForm({ ...form, invoiceNumber: e.target.value })}
+                    placeholder="INV-XXXX"
+                  />
+                </div>
+                <div>
+                  <Label>Supplier</Label>
+                  <Input
+                    value={form.supplier || ""}
+                    onChange={(e) => setForm({ ...form, supplier: e.target.value })}
+                  />
+                </div>
+              </div>
             </div>
 
-            <div>
-              <Label>Location *</Label>
-              <Select
-                value={form.location as string}
-                onValueChange={(v) => setForm({ ...form, location: v })}
-                disabled={isLocationRestricted}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Location" />
-                </SelectTrigger>
-                <SelectContent>
-                  {masterLocations.map((l: any) => (
-                    <SelectItem key={l._id} value={l._id}>{l.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            {/* Pricing & GST */}
+            <div className="border-t pt-4">
+              <h4 className="font-semibold mb-3 text-gray-700">Pricing & GST</h4>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div>
+                  <Label>Basic Cost (₹)</Label>
+                  <Input
+                    type="number"
+                    value={form.basicCost || ""}
+                    onChange={(e) => setForm({ ...form, basicCost: parseFloat(e.target.value) || 0 })}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <Label>CGST (₹)</Label>
+                  <Input
+                    type="number"
+                    value={form.cgst || ""}
+                    onChange={(e) => setForm({ ...form, cgst: parseFloat(e.target.value) || 0 })}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <Label>IGST (₹)</Label>
+                  <Input
+                    type="number"
+                    value={form.igst || ""}
+                    onChange={(e) => setForm({ ...form, igst: parseFloat(e.target.value) || 0 })}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <Label>SGST (₹)</Label>
+                  <Input
+                    type="number"
+                    value={form.sgst || ""}
+                    onChange={(e) => setForm({ ...form, sgst: parseFloat(e.target.value) || 0 })}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <Label>Total Cost (₹)</Label>
+                  <Input
+                    type="number"
+                    value={form.totalCost || 0}
+                    disabled
+                    className="bg-green-50 font-bold text-green-700"
+                  />
+                </div>
+              </div>
             </div>
 
-            <div>
-              <Label>Total Quantity Owned *</Label>
-              <Input
-                type="number"
-                min={1}
-                value={form.quantity}
-                onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })}
-                placeholder="1"
-              />
-              <p className="text-xs text-muted-foreground mt-1">Total count of this equipment item.</p>
-            </div>
-
-            <div>
-              <Label>Cost per Unit</Label>
-              <Input
-                type="number"
-                value={form.cost || ""}
-                onChange={(e) => setForm({ ...form, cost: parseFloat(e.target.value) || 0 })}
-                placeholder="0.00"
-              />
-            </div>
-            
-            <div>
-              <Label>Model</Label>
-              <Input
-                value={form.model || ""}
-                onChange={(e) => setForm({ ...form, model: e.target.value })}
-              />
+            {/* Additional Details */}
+            <div className="border-t pt-4">
+              <h4 className="font-semibold mb-3 text-gray-700">Additional Details</h4>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div>
+                  <Label>Serial Number</Label>
+                  <Input
+                    value={form.serialNumber || ""}
+                    onChange={(e) => setForm({ ...form, serialNumber: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Manufacturer</Label>
+                  <Input
+                    value={form.manufacturer || ""}
+                    onChange={(e) => setForm({ ...form, manufacturer: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Warranty</Label>
+                  <Input
+                    value={form.warranty || ""}
+                    onChange={(e) => setForm({ ...form, warranty: e.target.value })}
+                    placeholder="e.g. 2 Years"
+                  />
+                </div>
+                <div>
+                  <Label>Capacity</Label>
+                  <Input
+                    value={form.capacity || ""}
+                    onChange={(e) => setForm({ ...form, capacity: e.target.value })}
+                  />
+                </div>
+              </div>
             </div>
 
             {/* DOCUMENTS */}
-            <div className="col-span-2">
+            <div className="border-t pt-4">
               <Label>Upload Documents</Label>
               <input
                 type="file"

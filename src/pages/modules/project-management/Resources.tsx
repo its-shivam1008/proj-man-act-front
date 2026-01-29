@@ -32,7 +32,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { AlertTriangle, DollarSign, Pencil, Plus, ShieldAlert, Trash2 } from "lucide-react";
+import { AlertTriangle, DollarSign, Pencil, Plus, ShieldAlert, Trash2, Loader2, CheckSquare, Square } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { fetchWbsByProject } from "@/redux/slices/wbsSlice";
 import {
@@ -43,16 +43,34 @@ import {
 } from "@/redux/slices/resourceSlice";
 import { fetchEquipments } from "@/redux/slices/equipmentSlice";
 import { fetchMachineries } from "@/redux/slices/plantandmachinary/machinerySlice";
+import { fetchSpareParts } from "@/redux/slices/plantandmachinary/sparePartsSlice";
 import { usePermission } from "@/hooks/userPermission";
 import { fetchMasterData } from "@/redux/slices/masterDataSlice";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import api from "@/utils/axiosApi";
 
 // --- Define Types ---
+
+interface ChildItem {
+  _id: string;
+  code: string;
+  name: string;
+  childIndex: number;
+  allocationStatus: string;
+  allocatedTo?: {
+    projectName?: string;
+    siteName?: string;
+    startDate?: string;
+    endDate?: string;
+  };
+}
 
 interface ResourceAllocation {
   id: string;
   projectId: string;
   wbsId: string;
-  resourceType: "equipment" | "machinery";
+  resourceType: "equipment" | "machinery" | "sparePart";
   resourceName: string;
   resourceId: string;
   quantity: string;
@@ -66,6 +84,7 @@ interface ResourceAllocation {
   createdAt?: string;
   startDate?: string;
   endDate?: string;
+  selectedChildren?: string[]; // IDs of selected child items
 }
 
 interface AllocationFormState {
@@ -78,11 +97,11 @@ interface AllocationFormState {
   unit: string;
   duration: string;
   durationUnit: string;
-  startDate: string; 
+  startDate: string;
   endDate: string;
+  selectedChildren: string[]; // IDs of selected child items
 }
 
-// Default resourceType set to "equipment"
 const EMPTY_FORM: AllocationFormState = {
   wbsId: "",
   resourceType: "equipment",
@@ -90,11 +109,12 @@ const EMPTY_FORM: AllocationFormState = {
   resourceId: "",
   quantity: "",
   rate: "",
-  unit: "days", // Default unit for date-based calculation
+  unit: "days",
   duration: "",
   durationUnit: "days",
   startDate: "",
-  endDate: ""
+  endDate: "",
+  selectedChildren: []
 };
 
 const DEFAULT_PROJECT_QUERY = {
@@ -116,6 +136,7 @@ export default function Resources() {
   } = useSelector((state: RootState) => state.resources);
   const { equipments } = useSelector((state: RootState) => state.equipment);
   const { machineries } = useSelector((state: RootState) => state.machinery);
+  const { items: spareParts } = useSelector((state: RootState) => state.spareParts);
   const { userProfile } = useSelector((state: RootState) => state.auth);
   const { locations } = useSelector((state: RootState) => state.masterData);
 
@@ -134,17 +155,21 @@ export default function Resources() {
   const [locationFilter, setLocationFilter] = useState("all");
   const PAGE_SIZE = 10;
 
-  const isLocationRestricted = 
-    userProfile?.role !== 'admin' && 
+  // State for child items
+  const [childItems, setChildItems] = useState<ChildItem[]>([]);
+  const [loadingChildren, setLoadingChildren] = useState(false);
+
+  const isLocationRestricted =
+    userProfile?.role !== 'admin' &&
     !!userProfile?.location;
 
   useEffect(() => {
     if (!projects.length) {
       dispatch(fetchProjects(DEFAULT_PROJECT_QUERY as any));
     }
-    // Fetch equipments and machineries for dropdown (now includes availability data)
     dispatch(fetchEquipments({ page: 1, limit: 100 }));
     dispatch(fetchMachineries({ page: 1, limit: 100 }));
+    dispatch(fetchSpareParts({ organisationId: localStorage.getItem("organisationId") || "", page: 1, limit: 100 }));
     dispatch(fetchMasterData("location"));
   }, [dispatch, projects.length]);
 
@@ -190,27 +215,61 @@ export default function Resources() {
     return wbs.filter((item) => item.projectId === selectedProjectId);
   }, [wbs, selectedProjectId]);
 
+  // Fetch children when resource is selected
+  const fetchChildren = async (parentId: string, resourceType: string) => {
+    console.log("=== FETCH CHILDREN ===");
+    console.log("ParentId:", parentId, "ResourceType:", resourceType);
+    setLoadingChildren(true);
+    setChildItems([]);
+    try {
+      let endpoint = `/equipment/children/${parentId}`;
+      if (resourceType === "machinery") {
+        endpoint = `/machinery/children/${parentId}`;
+      } else if (resourceType === "sparePart") {
+        endpoint = `/spare-parts/children/${parentId}`;
+      }
+      console.log("Calling endpoint:", endpoint);
+      const res = await api.get(endpoint);
+      console.log("Children response:", res.data);
+      setChildItems(res.data.data || []);
+    } catch (error) {
+      console.error("Failed to fetch children:", error);
+      setChildItems([]);
+    } finally {
+      setLoadingChildren(false);
+    }
+  };
+
   // --- Auto-calculate Duration based on Dates ---
   useEffect(() => {
     if (formData.startDate && formData.endDate) {
-        const start = new Date(formData.startDate);
-        const end = new Date(formData.endDate);
-        const diffTime = Math.abs(end.getTime() - start.getTime());
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // Inclusive of start day
-        
-        if (!isNaN(diffDays) && diffDays > 0) {
-            setFormData(prev => ({
-                ...prev,
-                duration: diffDays.toString(),
-                durationUnit: 'days',
-                unit: 'days'
-            }));
-        } else {
-            // Invalid date range logic (optional reset)
-            setFormData(prev => ({ ...prev, duration: "0" }));
-        }
+      const start = new Date(formData.startDate);
+      const end = new Date(formData.endDate);
+      const diffTime = Math.abs(end.getTime() - start.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // Inclusive of start day
+
+      if (!isNaN(diffDays) && diffDays > 0) {
+        setFormData(prev => ({
+          ...prev,
+          duration: diffDays.toString(),
+          durationUnit: 'days',
+          unit: 'days'
+        }));
+      } else {
+        setFormData(prev => ({ ...prev, duration: "0" }));
+      }
     }
   }, [formData.startDate, formData.endDate]);
+
+  // Auto-update quantity based on selected children
+  useEffect(() => {
+    if (formData.selectedChildren.length > 0) {
+      setFormData(prev => ({
+        ...prev,
+        quantity: formData.selectedChildren.length.toString()
+      }));
+    }
+  }, [formData.selectedChildren]);
 
   const calculatedTotalCost = useMemo(() => {
     const quantity = Number(formData.quantity) || 0;
@@ -224,6 +283,7 @@ export default function Resources() {
     setEditingAllocation(null);
     setFormData(EMPTY_FORM);
     setSubmitting(false);
+    setChildItems([]);
   };
 
   const openCreateDialog = () => {
@@ -246,7 +306,12 @@ export default function Resources() {
       durationUnit: allocation.durationUnit,
       startDate: allocation.startDate || "",
       endDate: allocation.endDate || "",
+      selectedChildren: allocation.selectedChildren || []
     });
+    // Fetch children if editing
+    if (allocation.resourceId) {
+      fetchChildren(allocation.resourceId, allocation.resourceType);
+    }
     setIsDialogOpen(true);
   };
 
@@ -255,26 +320,26 @@ export default function Resources() {
 
     // Validation
     if (
-        !formData.wbsId ||
-        !formData.resourceType ||
-        !formData.resourceName.trim() ||
-        !formData.resourceId.trim() ||
-        !formData.quantity ||
-        !formData.startDate || 
-        !formData.endDate
-      ) {
-        toast({
-          title: "Validation error",
-          description: "Please fill all required fields including Start and End dates.",
-          variant: "destructive",
-        });
-        return;
-      }
+      !formData.wbsId ||
+      !formData.resourceType ||
+      !formData.resourceName.trim() ||
+      !formData.resourceId.trim() ||
+      !formData.quantity ||
+      !formData.startDate ||
+      !formData.endDate
+    ) {
+      toast({
+        title: "Validation error",
+        description: "Please fill all required fields including Start and End dates.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     const wbsItem = projectWBSItems.find((w) => w.id === formData.wbsId || w._id === formData.wbsId);
     if (!wbsItem) {
-        toast({ title: "Error", description: "Invalid WBS selected", variant: "destructive" });
-        return;
+      toast({ title: "Error", description: "Invalid WBS selected", variant: "destructive" });
+      return;
     }
 
     const quantity = Number(formData.quantity);
@@ -282,39 +347,45 @@ export default function Resources() {
     const duration = Number(formData.duration);
 
     if (quantity <= 0 || duration <= 0) {
-        toast({ title: "Error", description: "Quantity and Duration must be greater than 0", variant: "destructive" });
-        return;
+      toast({ title: "Error", description: "Quantity and Duration must be greater than 0", variant: "destructive" });
+      return;
     }
 
     const payload = {
-        projectId: selectedProjectId,
-        wbsId: wbsItem.id ?? wbsItem._id,
-        wbsName: wbsItem.name,
-        resourceType: formData.resourceType,
-        resourceName: formData.resourceName.trim(),
-        resourceId: formData.resourceId.trim(),
-        quantity,
-        rate,
-        unit: formData.unit.trim(),
-        duration,
-        durationUnit: formData.durationUnit.trim() || "days",
-        totalCost: quantity * rate * duration,
-        startDate: formData.startDate,
-        endDate: formData.endDate,
-        createdAt: editingAllocation?.createdAt ?? new Date().toISOString(),
+      projectId: selectedProjectId,
+      wbsId: wbsItem.id ?? wbsItem._id,
+      wbsName: wbsItem.name,
+      resourceType: formData.resourceType,
+      resourceName: formData.resourceName.trim(),
+      resourceId: formData.resourceId.trim(),
+      quantity,
+      rate,
+      unit: formData.unit.trim(),
+      duration,
+      durationUnit: formData.durationUnit.trim() || "days",
+      totalCost: quantity * rate * duration,
+      startDate: formData.startDate,
+      endDate: formData.endDate,
+      selectedChildren: formData.selectedChildren,
+      createdAt: editingAllocation?.createdAt ?? new Date().toISOString(),
     };
+
+    console.log("=== FRONTEND SAVE ===");
+    console.log("FormData selectedChildren:", formData.selectedChildren);
+    console.log("ChildItems loaded:", childItems.length);
+    console.log("Full payload:", JSON.stringify(payload, null, 2));
 
     setSubmitting(true);
     try {
-        if (editingAllocation) {
-            await dispatch(updateResource({ id: editingAllocation._id!, data: payload })).unwrap();
-            toast({ title: "Success", description: "Allocation updated successfully." });
-        } else {
-             await dispatch(addResource(payload)).unwrap();
-             toast({ title: "Success", description: "Resource allocated successfully." });
-        }
-        setIsDialogOpen(false);
-        resetForm();
+      if (editingAllocation) {
+        await dispatch(updateResource({ id: editingAllocation._id!, data: payload })).unwrap();
+        toast({ title: "Success", description: "Allocation updated successfully." });
+      } else {
+        await dispatch(addResource(payload)).unwrap();
+        toast({ title: "Success", description: "Resource allocated successfully." });
+      }
+      setIsDialogOpen(false);
+      resetForm();
     } catch (err: any) {
       toast({
         title: "Allocation Failed",
@@ -322,7 +393,7 @@ export default function Resources() {
         variant: "destructive",
       });
     } finally {
-        setSubmitting(false);
+      setSubmitting(false);
     }
   };
 
@@ -348,8 +419,10 @@ export default function Resources() {
       resourceId: "",
       rate: "",
       durationUnit: "days",
-      unit: "days"
+      unit: "days",
+      selectedChildren: []
     }));
+    setChildItems([]);
   };
 
   const handleEquipmentSelect = (equipmentId: string) => {
@@ -358,9 +431,12 @@ export default function Resources() {
       setFormData((prev) => ({
         ...prev,
         resourceName: selectedEquipment.name,
-        resourceId: selectedEquipment._id, // Prefer _id for backend checks
-        rate: selectedEquipment.cost?.toString() || "",
+        resourceId: selectedEquipment._id!,
+        rate: (selectedEquipment as any).totalCost?.toString() || selectedEquipment.cost?.toString() || "",
+        selectedChildren: []
       }));
+      // Fetch children for this equipment
+      fetchChildren(selectedEquipment._id!, "equipment");
     }
   };
 
@@ -370,9 +446,62 @@ export default function Resources() {
       setFormData((prev) => ({
         ...prev,
         resourceName: selectedMachinery.name,
-        resourceId: selectedMachinery._id, // Prefer _id
-        rate: selectedMachinery.unitCost?.toString() || "",
+        resourceId: selectedMachinery._id!,
+        rate: (selectedMachinery as any).totalCost?.toString() || (selectedMachinery as any).unitCost?.toString() || "",
+        selectedChildren: []
       }));
+      // Fetch children for this machinery
+      fetchChildren(selectedMachinery._id!, "machinery");
+    }
+  };
+
+  const handleSparePartSelect = (sparePartId: string) => {
+    const selectedSparePart = spareParts.find((sp: any) => sp._id === sparePartId || sp.code === sparePartId);
+    if (selectedSparePart) {
+      // Calculate unit rate
+      const qty = selectedSparePart.quantity || 1;
+      const totalCost = (selectedSparePart as any).totalCost || 0;
+      const unitRate = qty > 0 ? (totalCost / qty) : 0;
+
+      setFormData((prev) => ({
+        ...prev,
+        resourceName: selectedSparePart.name,
+        resourceId: selectedSparePart._id!,
+        rate: unitRate > 0 ? unitRate.toFixed(2) : ((selectedSparePart as any).costPerUnit?.toString() || ""),
+        selectedChildren: []
+      }));
+      // Fetch children for this spare part
+      fetchChildren(selectedSparePart._id!, "sparePart");
+    }
+  };
+
+  const handleChildToggle = (childId: string) => {
+    setFormData(prev => {
+      const isSelected = prev.selectedChildren.includes(childId);
+      if (isSelected) {
+        return {
+          ...prev,
+          selectedChildren: prev.selectedChildren.filter(id => id !== childId)
+        };
+      } else {
+        return {
+          ...prev,
+          selectedChildren: [...prev.selectedChildren, childId]
+        };
+      }
+    });
+  };
+
+  const handleSelectAllChildren = () => {
+    const availableChildren = childItems.filter(c => c.allocationStatus === "available");
+    const allAvailableIds = availableChildren.map(c => c._id);
+
+    if (formData.selectedChildren.length === availableChildren.length) {
+      // Deselect all
+      setFormData(prev => ({ ...prev, selectedChildren: [] }));
+    } else {
+      // Select all available
+      setFormData(prev => ({ ...prev, selectedChildren: allAvailableIds }));
     }
   };
 
@@ -383,7 +512,7 @@ export default function Resources() {
 
   // Show both Equipment and Machinery in the table
   const allocationsForView = selectedProjectId
-    ? resources.filter((r) => r.resourceType === "equipment" || r.resourceType === "machinery")
+    ? resources.filter((r) => r.resourceType === "equipment" || r.resourceType === "machinery" || r.resourceType === "sparePart")
     : [];
 
   useEffect(() => {
@@ -475,13 +604,13 @@ export default function Resources() {
                 New Allocation
               </Button>}
             </DialogTrigger>
-            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>
                   {editingAllocation ? "Edit allocation" : "Create allocation"}
                 </DialogTitle>
                 <DialogDescription>
-                  Check availability and assign resources for specific dates.
+                  Select equipment/machinery and choose specific units to allocate.
                 </DialogDescription>
               </DialogHeader>
 
@@ -526,111 +655,222 @@ export default function Resources() {
                       <SelectContent>
                         <SelectItem value="equipment">Equipment</SelectItem>
                         <SelectItem value="machinery">Machinery</SelectItem>
+                        <SelectItem value="sparePart">Spare Parts</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
-                  <div className="space-y-2">
-                    <Label>
-                      {formData.resourceType === "machinery" ? "Select Machinery *" : "Select Equipment *"}
-                    </Label>
-                    <Select
-                      value={formData.resourceId || undefined}
-                      onValueChange={formData.resourceType === "machinery" ? handleMachinerySelect : handleEquipmentSelect}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder={formData.resourceType === "machinery" ? "Search Machinery..." : "Search Equipment..."}>
-                          {formData.resourceName || "Select Item"}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {formData.resourceType === "machinery" ? (
-                          machineries.length ? (
-                            machineries.map((machinery) => (
-                              <SelectItem key={machinery._id || machinery.code} value={machinery._id || machinery.code}>
-                                <span className="flex justify-between w-full gap-4">
-                                  <span>{machinery.name}</span>
-                                  <span className="text-muted-foreground text-xs">
-                                     (Avail: {(machinery as any).availableQuantity ?? machinery.quantity ?? '-'})
-                                  </span>
+                <div className="space-y-2">
+                  <Label>
+                    {formData.resourceType === "machinery" ? "Select Machinery *" :
+                      formData.resourceType === "sparePart" ? "Select Spare Part *" : "Select Equipment *"}
+                  </Label>
+                  <Select
+                    value={formData.resourceId || undefined}
+                    onValueChange={
+                      formData.resourceType === "machinery" ? handleMachinerySelect :
+                        formData.resourceType === "sparePart" ? handleSparePartSelect : handleEquipmentSelect
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={
+                        formData.resourceType === "machinery" ? "Search Machinery..." :
+                          formData.resourceType === "sparePart" ? "Search Spare Part..." : "Search Equipment..."
+                      }>
+                        {formData.resourceName || "Select Item"}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {formData.resourceType === "machinery" ? (
+                        machineries.length ? (
+                          machineries.map((machinery) => (
+                            <SelectItem key={machinery._id || machinery.code} value={machinery._id || machinery.code}>
+                              <span className="flex justify-between w-full gap-4">
+                                <span>{machinery.name}</span>
+                                <span className="text-muted-foreground text-xs">
+                                  (Avail: {(machinery as any).availableQuantity ?? machinery.quantity ?? '-'})
                                 </span>
-                              </SelectItem>
-                            ))
-                          ) : (
-                            <div className="p-3 text-sm text-muted-foreground">No machinery available.</div>
-                          )
+                              </span>
+                            </SelectItem>
+                          ))
                         ) : (
-                          equipments.length ? (
-                            equipments.map((equipment) => (
-                              <SelectItem key={equipment._id || equipment.code} value={equipment._id || equipment.code}>
-                                <span className="flex justify-between w-full gap-4">
-                                  <span>{equipment.name}</span>
-                                  <span className="text-muted-foreground text-xs">
-                                    (Avail: {(equipment as any).availableQuantity ?? (equipment as any).quantity ?? '-'})
-                                  </span>
+                          <div className="p-3 text-sm text-muted-foreground">No machinery available.</div>
+                        )
+                      ) : formData.resourceType === "sparePart" ? (
+                        spareParts.length ? (
+                          spareParts.map((sparePart: any) => (
+                            <SelectItem key={sparePart._id || sparePart.code} value={sparePart._id || sparePart.code}>
+                              <span className="flex justify-between w-full gap-4">
+                                <span>{sparePart.name}</span>
+                                <span className="text-muted-foreground text-xs">
+                                  (Avail: {sparePart.availableQuantity ?? sparePart.quantity ?? '-'})
                                 </span>
-                              </SelectItem>
-                            ))
-                          ) : (
-                            <div className="p-3 text-sm text-muted-foreground">No equipment available.</div>
-                          )
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                              </span>
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <div className="p-3 text-sm text-muted-foreground">No spare parts available.</div>
+                        )
+                      ) : (
+                        equipments.length ? (
+                          equipments.map((equipment) => (
+                            <SelectItem key={equipment._id || equipment.code} value={equipment._id || equipment.code}>
+                              <span className="flex justify-between w-full gap-4">
+                                <span>{equipment.name}</span>
+                                <span className="text-muted-foreground text-xs">
+                                  (Avail: {(equipment as any).availableQuantity ?? (equipment as any).quantity ?? '-'})
+                                </span>
+                              </span>
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <div className="p-3 text-sm text-muted-foreground">No equipment available.</div>
+                        )
+                      )}
+                    </SelectContent>
+                  </Select>
                 </div>
+
+                {/* Child Items Selection */}
+                {formData.resourceId && (
+                  <div className="border rounded-lg p-4 bg-gray-50">
+                    <div className="flex items-center justify-between mb-3">
+                      <Label className="text-sm font-semibold">Select Units to Allocate</Label>
+                      {childItems.length > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleSelectAllChildren}
+                        >
+                          {formData.selectedChildren.length === childItems.filter(c => c.allocationStatus === "available").length
+                            ? "Deselect All"
+                            : "Select All Available"}
+                        </Button>
+                      )}
+                    </div>
+
+                    {loadingChildren ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        <span className="text-sm text-muted-foreground">Loading units...</span>
+                      </div>
+                    ) : childItems.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 max-h-48 overflow-y-auto">
+                        {childItems.map((child) => {
+                          const isAllocated = child.allocationStatus === "allocated";
+                          const isSelected = formData.selectedChildren.includes(child._id);
+
+                          return (
+                            <div
+                              key={child._id}
+                              className={`flex items-center gap-2 p-2 rounded border ${isAllocated
+                                ? "bg-red-50 border-red-200 opacity-60"
+                                : isSelected
+                                  ? "bg-green-50 border-green-300"
+                                  : "bg-white border-gray-200 hover:border-blue-300"
+                                }`}
+                            >
+                              <Checkbox
+                                id={child._id}
+                                checked={isSelected}
+                                disabled={isAllocated}
+                                onCheckedChange={() => handleChildToggle(child._id)}
+                              />
+                              <div className="flex-1 min-w-0">
+                                <label
+                                  htmlFor={child._id}
+                                  className={`text-sm font-mono block truncate ${isAllocated ? "text-gray-400" : "cursor-pointer"}`}
+                                >
+                                  {child.code}
+                                </label>
+                                {isAllocated && child.allocatedTo && (
+                                  <span className="text-xs text-red-500">
+                                    {child.allocatedTo.projectName || "Allocated"}
+                                  </span>
+                                )}
+                              </div>
+                              {isAllocated ? (
+                                <Badge variant="destructive" className="text-xs">In Use</Badge>
+                              ) : isSelected ? (
+                                <Badge variant="default" className="text-xs bg-green-500">Selected</Badge>
+                              ) : (
+                                <Badge variant="secondary" className="text-xs">Available</Badge>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground text-center py-2">
+                        No individual units found. This item can be allocated as a whole.
+                      </p>
+                    )}
+
+                    <div className="mt-3 pt-3 border-t flex justify-between text-sm">
+                      <span className="text-muted-foreground">
+                        Selected: <strong className="text-green-600">{formData.selectedChildren.length}</strong>
+                      </span>
+                      <span className="text-muted-foreground">
+                        Available: <strong>{childItems.filter(c => c.allocationStatus === "available").length}</strong> / {childItems.length}
+                      </span>
+                    </div>
+                  </div>
+                )}
 
                 {/* Date Range Selection */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t pt-4 mt-2">
-                    <div className="space-y-2">
-                        <Label>Start Date *</Label>
-                        <Input 
-                            type="date" 
-                            value={formData.startDate} 
-                            onChange={(e) => setFormData(prev => ({...prev, startDate: e.target.value}))}
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <Label>End Date *</Label>
-                        <Input 
-                            type="date" 
-                            value={formData.endDate} 
-                            onChange={(e) => setFormData(prev => ({...prev, endDate: e.target.value}))}
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <Label>Duration (Days)</Label>
-                        <Input 
-                            value={formData.duration} 
-                            disabled 
-                            className="bg-gray-100 font-medium"
-                            placeholder="Auto-calculated"
-                        />
-                    </div>
+                  <div className="space-y-2">
+                    <Label>Start Date *</Label>
+                    <Input
+                      type="date"
+                      value={formData.startDate}
+                      onChange={(e) => setFormData(prev => ({ ...prev, startDate: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>End Date *</Label>
+                    <Input
+                      type="date"
+                      value={formData.endDate}
+                      onChange={(e) => setFormData(prev => ({ ...prev, endDate: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Duration (Days)</Label>
+                    <Input
+                      value={formData.duration}
+                      disabled
+                      className="bg-gray-100 font-medium"
+                      placeholder="Auto-calculated"
+                    />
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
-                    <Label>Quantity Needed *</Label>
+                    <Label>Quantity</Label>
                     <Input
                       type="number"
                       value={formData.quantity}
                       onChange={(e) =>
                         setFormData((prev) => ({ ...prev, quantity: e.target.value }))
                       }
-                      placeholder="e.g. 1"
+                      placeholder="Auto from selection"
+                      disabled={childItems.length > 0}
+                      className={childItems.length > 0 ? "bg-gray-100" : ""}
                     />
+                    {childItems.length > 0 && (
+                      <p className="text-xs text-muted-foreground">Quantity auto-set from selected units</p>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label>Rate (₹) / Day</Label>
                     <Input
                       type="number"
                       value={formData.rate}
-                      disabled
-                      placeholder="Auto-filled"
-                      className="bg-gray-50"
+                      onChange={(e) => setFormData(prev => ({ ...prev, rate: e.target.value }))}
+                      placeholder="Rate per day"
                     />
                   </div>
                   <div className="space-y-2">
@@ -648,12 +888,12 @@ export default function Resources() {
               </div>
 
               <DialogFooter className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={submitting}>
-                    Cancel
-                  </Button>
-                  <Button onClick={handleSave} disabled={submitting}>
-                    {submitting ? "Processing..." : editingAllocation ? "Update Allocation" : "Allocate Resource"}
-                  </Button>
+                <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={submitting}>
+                  Cancel
+                </Button>
+                <Button onClick={handleSave} disabled={submitting}>
+                  {submitting ? "Processing..." : editingAllocation ? "Update Allocation" : "Allocate Resource"}
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -765,10 +1005,10 @@ export default function Resources() {
                     <TableCell>{alloc.resourceName}</TableCell>
                     <TableCell className="capitalize">{alloc.resourceType}</TableCell>
                     <TableCell>
-                         <div className="flex flex-col text-sm">
-                             <span>From: {alloc.startDate || 'N/A'}</span>
-                             <span className="text-muted-foreground">To: {alloc.endDate || 'N/A'}</span>
-                         </div>
+                      <div className="flex flex-col text-sm">
+                        <span>From: {alloc.startDate || 'N/A'}</span>
+                        <span className="text-muted-foreground">To: {alloc.endDate || 'N/A'}</span>
+                      </div>
                     </TableCell>
                     <TableCell>{alloc.quantity}</TableCell>
                     <TableCell>
