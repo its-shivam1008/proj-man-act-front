@@ -66,8 +66,8 @@ const Signup: React.FC = () => {
               <span className="text-white font-bold text-xl">A</span>
             </div>
             <div>
-              <h2 className="text-white font-bold text-lg tracking-wide">AVYUKT</h2>
-              <p className="text-purple-300/70 text-xs tracking-widest">CORE TECHNOLOGIES</p>
+              <h2 className="text-white font-bold text-lg tracking-wide">ACT</h2>
+              <p className="text-purple-300/70 text-xs tracking-widest">BUSINESS SOLUTIONS</p>
             </div>
           </div>
 
@@ -76,11 +76,11 @@ const Signup: React.FC = () => {
             <h1 className="text-5xl font-bold text-white leading-tight">
               Welcome to<br />
               <span className="bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-                SCM Pro.
+                ACT Bussiness Solutions.
               </span>
             </h1>
             <p className="text-gray-400 text-lg max-w-md leading-relaxed">
-              Sign in to your supply chain management dashboard. Experience unified operations with AI-powered insights.
+              Sign in to your ACT Bussiness Solutions dashboard. Experience unified operations with AI-powered insights.
             </p>
           </div>
 
@@ -115,7 +115,7 @@ const Signup: React.FC = () => {
             <p className="text-purple-600 text-sm font-semibold tracking-widest mb-2">NEW ACCOUNT</p>
             <h2 className="text-3xl font-bold text-gray-900 mb-2">Create Your Account</h2>
             <p className="text-gray-500">
-              Register to access the SCM Pro dashboard and start managing your supply chain.
+              Register to access the ACT Bussiness Solutions dashboard and start managing your supply chain.
             </p>
           </div>
 
@@ -208,7 +208,7 @@ const Signup: React.FC = () => {
           <div className="flex items-center justify-center gap-6 pt-4">
             <div className="flex items-center gap-2 text-gray-400 text-xs">
               <Globe className="w-4 h-4" />
-              <span>GLOBAL NODE - LONDON</span>
+              <span>India</span>
             </div>
             <div className="flex items-center gap-2 text-gray-400 text-xs">
               <Bot className="w-4 h-4" />
@@ -218,7 +218,7 @@ const Signup: React.FC = () => {
 
           {/* Footer */}
           <p className="text-center text-gray-400 text-xs">
-            Avyukt Core Technologies
+            ACT Bussiness Solutions
           </p>
         </div>
       </div>

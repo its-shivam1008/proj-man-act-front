@@ -140,13 +140,13 @@ const Layout: React.FC = () => {
     { name: "Project Dashboard", href: "/project-management", icon: FolderKanban, key: "projectDashboard" },
     { name: "Projects", href: "/project-management/projects", icon: FolderKanban, key: "projects" },
     { name: "WBS Management", href: "/project-management/wbs", icon: Network, key: "wbsManagement" },
+    { name: "Scheduling & Planning", href: "/project-management/planning", icon: PenTool, key: "schedulingPlanning" },
+    { name: "Procurement & Material Tracking", href: "/project-management/ProcurementMaterialTracking", icon: GitBranch, key: "procurementMaterialTracking" },
     { name: "Resources", href: "/project-management/resources", icon: User, key: "resources" },
     { name: "Budget & Cost", href: "/project-management/budget", icon: CircleDollarSign, key: "budgetCost" },
-    { name: "Procurement & Material Tracking", href: "/project-management/ProcurementMaterialTracking", icon: GitBranch, key: "procurementMaterialTracking" },
     { name: "Progress Updates", href: "/project-management/progress", icon: GitBranch, key: "progressUpdates" },
     { name: "Billings", href: "/project-management/billing", icon: ReceiptIndianRupee, key: "billings" },
     { name: "Projects Reports", href: "/project-management/project-reports", icon: FileText, key: "projectsReports" },
-    { name: "Scheduling & Planning", href: "/project-management/planning", icon: PenTool, key: "schedulingPlanning" },
     { name: "Project Closure", href: "/project-management/project-closure", icon: FolderClosed, key: "projectClosure" },
     { name: "Master Data", href: "/project-management/master-data", icon: FileTextIcon, key: "masterData" },
   ];
@@ -217,7 +217,7 @@ const Layout: React.FC = () => {
       <div className="fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg overflow-y-auto ">
         <div className="flex h-full flex-col">
           <div className="flex h-fit items-center justify-center border-b border-gray-200">
-            <h1 className="text-xl py-4 font-bold text-gray-900">SCM Pro</h1>
+            <h1 className="text-xl py-4 font-bold text-gray-900">ACT Bussiness Solutions</h1>
           </div>
 
           <nav className="flex-1 space-y-1 px-2 py-4">

@@ -60,8 +60,8 @@ const Login: React.FC = () => {
               <span className="text-white font-bold text-xl">A</span>
             </div>
             <div>
-              <h2 className="text-white font-bold text-lg tracking-wide">AVYUKT</h2>
-              <p className="text-white text-xs tracking-widest">CORE TECHNOLOGIES</p>
+              <h2 className="text-white font-bold text-lg tracking-wide">ACT</h2>
+              <p className="text-white text-xs tracking-widest">BUSINESS SOLUTIONS</p>
             </div>
           </div>
 
@@ -89,7 +89,7 @@ const Login: React.FC = () => {
                   </div>
                 ))}
               </div>
-              <span className="text-gray-400 text-sm">TRUST VERIFIED BY 125+ NODES</span>
+              <span className="text-gray-400 text-sm">TRUST VERIFIED BY 125+ Clients</span>
             </div>
 
             {/* Quantum Secure Badge */}
@@ -191,15 +191,6 @@ const Login: React.FC = () => {
                 <span className="px-4 bg-gradient-to-br from-gray-50 to-gray-100 text-gray-400">CREATE ACCOUNT</span>
               </div>
             </div>
-
-            {/* Demo Access Button */}
-            {/* <button
-              type="button"
-              className="w-full py-4 bg-white border border-gray-200 text-gray-700 font-medium rounded-xl hover:bg-gray-50 transition-all duration-300 flex items-center justify-center gap-2 shadow-sm"
-            >
-              <Play className="w-4 h-4 fill-current" />
-              ONE-CLICK DEMO ACCESS
-            </button> */}
           </form>
 
           {/* Sign Up Link */}
@@ -214,7 +205,7 @@ const Login: React.FC = () => {
           <div className="flex items-center justify-center gap-6 pt-4">
             <div className="flex items-center gap-2 text-gray-400 text-xs">
               <Globe className="w-4 h-4" />
-              <span>GLOBAL NODE - LONDON</span>
+              <span>India</span>
             </div>
             <div className="flex items-center gap-2 text-gray-400 text-xs">
               <Bot className="w-4 h-4" />
@@ -224,7 +215,7 @@ const Login: React.FC = () => {
 
           {/* Footer */}
           <p className="text-center text-gray-400 text-xs">
-            Avyukt Core Technologies
+            ACT Bussiness Solutions
           </p>
         </div>
       </div>

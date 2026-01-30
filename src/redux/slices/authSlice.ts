@@ -49,7 +49,7 @@ export const verifyOtpUser = createAsyncThunk(
       localStorage.setItem("userProfile", JSON.stringify(res.data.user));
 
       return res.data;
-    } catch (err) {
+    } catch (err: any) {
       return rejectWithValue(err.response?.data?.error || "OTP Verification Failed");
     }
   }
@@ -61,7 +61,7 @@ export const resendOtpUser = createAsyncThunk(
     try {
       const res = await api.post(`/auth/resend-otp`, { email });
       return res.data; // { message }
-    } catch (err) {
+    } catch (err: any) {
       return rejectWithValue("Failed to resend OTP");
     }
   }
@@ -79,8 +79,44 @@ export const loginUser = createAsyncThunk(
       localStorage.setItem("userProfile", JSON.stringify(res.data.user));
 
       return res.data;
-    } catch (err) {
+    } catch (err: any) {
       return rejectWithValue(err.response?.data?.error || "Invalid Credentials");
+    }
+  }
+);
+
+export const updateUserProfileThunk = createAsyncThunk(
+  "auth/updateUserProfile",
+  async (formData: any, { rejectWithValue }) => {
+    try {
+      const res = await api.put(`/auth/profile`, formData);
+      return res.data; // { message, user }
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.error || "Profile Update Failed");
+    }
+  }
+);
+
+export const fetchCompanyInfo = createAsyncThunk(
+  "auth/fetchCompanyInfo",
+  async (_, { rejectWithValue }) => {
+    try {
+      const res = await api.get(`/auth/company-info`);
+      return res.data.company;
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.error || "Failed to fetch company info");
+    }
+  }
+);
+
+export const updateCompanyInfo = createAsyncThunk(
+  "auth/updateCompanyInfo",
+  async (formData: any, { rejectWithValue }) => {
+    try {
+      const res = await api.put(`/auth/company-info`, formData);
+      return res.data.company;
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.error || "Failed to update company info");
     }
   }
 );
@@ -90,12 +126,14 @@ const authSlice = createSlice({
   initialState: {
     organisationId: getStoredOrganisationId(),
     token: getStoredToken(),
-    email: getStoredEmail(),     
+    email: getStoredEmail(),
     loading: false,
     error: null,
     isAuthenticated: !!getStoredToken(),
     emailForVerification: null,
-    userProfile:getStoredUserProfile()
+    userProfile: getStoredUserProfile(),
+    companyInfo: null,
+    companyLoading: false,
   },
 
   reducers: {
@@ -114,7 +152,7 @@ const authSlice = createSlice({
       if (action.payload.updatedUser) {
         state.userProfile = action.payload.updatedUser;
         state.organisationId = action.payload.updatedUser.organisationId;
-        
+
         // Update localStorage as well
         localStorage.setItem("userProfile", JSON.stringify(action.payload.updatedUser));
         localStorage.setItem("organisationId", action.payload.updatedUser.organisationId);
@@ -156,7 +194,7 @@ const authSlice = createSlice({
 
       .addCase(verifyOtpUser.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.payload;
+        state.error = action.payload as string;
       })
 
       .addCase(loginUser.pending, (state) => {
@@ -175,7 +213,7 @@ const authSlice = createSlice({
 
       .addCase(loginUser.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.payload;
+        state.error = action.payload as string;
       })
 
       .addCase(resendOtpUser.pending, (state) => {
@@ -186,6 +224,48 @@ const authSlice = createSlice({
       })
       .addCase(resendOtpUser.rejected, (state, action) => {
         state.loading = false;
+        state.error = action.payload as string;
+      })
+
+      // Update Profile
+      .addCase(updateUserProfileThunk.pending, (state) => {
+        state.loading = true;
+      })
+      .addCase(updateUserProfileThunk.fulfilled, (state, action) => {
+        state.loading = false;
+        if (action.payload.user) {
+          state.userProfile = action.payload.user;
+          localStorage.setItem("userProfile", JSON.stringify(action.payload.user));
+        }
+      })
+      .addCase(updateUserProfileThunk.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload as string;
+      })
+
+      // Fetch Company Info
+      .addCase(fetchCompanyInfo.pending, (state) => {
+        state.companyLoading = true;
+      })
+      .addCase(fetchCompanyInfo.fulfilled, (state, action) => {
+        state.companyLoading = false;
+        state.companyInfo = action.payload;
+      })
+      .addCase(fetchCompanyInfo.rejected, (state, action) => {
+        state.companyLoading = false;
+        // Optional: set error if needed
+      })
+
+      // Update Company Info
+      .addCase(updateCompanyInfo.pending, (state) => {
+        state.companyLoading = true;
+      })
+      .addCase(updateCompanyInfo.fulfilled, (state, action) => {
+        state.companyLoading = false;
+        state.companyInfo = action.payload;
+      })
+      .addCase(updateCompanyInfo.rejected, (state, action) => {
+        state.companyLoading = false;
         state.error = action.payload;
       });
   },
