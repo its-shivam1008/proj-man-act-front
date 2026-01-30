@@ -65,28 +65,45 @@ export default function RawMaterialMaster() {
   };
 
   const getAvgCost = (material: any) => {
-    // 🚀 FIFO: Calculate weighted average cost based on remaining quantities
-    if (Array.isArray(material.stocks) && material.stocks.length > 0) {
-      const stocksWithQuantity = material.stocks.filter((s: any) => s.remainingQuantity > 0);
+    if (!Array.isArray(material.stocks)) return 0;
 
-      if (stocksWithQuantity.length === 0) return 0;
+    const validStocks = material.stocks.filter((s: any) => s.remainingQuantity > 0);
+    if (!validStocks.length) return 0;
 
-      const totalValue = stocksWithQuantity.reduce((sum: number, stock: any) =>
-        sum + ((stock.remainingQuantity || 0) * (stock.unitCost || 0)), 0
-      );
-      const totalQuantity = stocksWithQuantity.reduce((sum: number, stock: any) =>
-        sum + (stock.remainingQuantity || 0), 0
-      );
+    const totalValue = validStocks.reduce((sum: number, s: any) => {
+      const qty = s.remainingQuantity || 0;
+      const base = (s.unitCost || 0) * qty;
 
-      return totalQuantity > 0 ? (totalValue / totalQuantity).toFixed(2) : 0;
-    }
-    return material.unitCost || 0;
+      const gstPercent =
+        (s.gst?.cgst || 0) +
+        (s.gst?.sgst || 0) +
+        (s.gst?.igst || 0);
+
+      const gst = (base * gstPercent) / 100;
+      return sum + base + gst;
+    }, 0);
+
+
+    const totalQty = validStocks.reduce(
+      (sum: number, s: any) => sum + s.remainingQuantity,
+      0
+    );
+
+    return totalQty > 0 ? (totalValue / totalQty).toFixed(2) : 0;
   };
+
 
 
   const [page, setPage] = useState(1);
   const limit = 10;
   const hasPrev = page > 1;
+
+  const [gstSplit, setGstSplit] = useState({
+    cgst: 0,
+    sgst: 0,
+    igst: 0,
+  });
+
 
   // Purchase History State
   const [expandedMaterial, setExpandedMaterial] = useState<string | null>(null);
@@ -150,12 +167,12 @@ export default function RawMaterialMaster() {
             const warehouseMatch = warehouses.find(
               (w: any) => w.name.toLowerCase() === excelWarehouse?.toLowerCase()
             );
-            
+
             if (excelWarehouse && !warehouseMatch) {
               throw new Error(`Warehouse '${excelWarehouse}' not found.`);
             }
             if (!excelWarehouse && !warehouses[0]) {
-               throw new Error(`No Warehouse specified and no default available.`);
+              throw new Error(`No Warehouse specified and no default available.`);
             }
 
             // 4. Construct Payload (Matching onSubmit logic)
@@ -173,13 +190,20 @@ export default function RawMaterialMaster() {
               valuationMethod: "FIFO",
               trackInventory: true,
               reorderLevel: 0,
-              
+
               // Raw Material specific structure for Stocks
               stocks: quantity > 0 ? [{
-                warehouseId: warehouseId,
-                quantity: quantity,
-                unitCost: unitCost
+                warehouseId,
+                quantity,
+                unitCost,
+                purchaseDate: new Date().toISOString(),
+                gst: {
+                  cgst: 0,
+                  sgst: 0,
+                  igst: Number(row["GST"] || 0),
+                }
               }] : []
+
             };
 
             // 5. Dispatch
@@ -239,6 +263,7 @@ export default function RawMaterialMaster() {
         }
       });
 
+
       if (fifoResponse.ok) {
         const fifoData = await fifoResponse.json();
 
@@ -247,21 +272,44 @@ export default function RawMaterialMaster() {
           console.log(`📦 Found ${batches.length} FIFO batches for material ${materialId}`, batches);
 
           // Convert FIFO batches to purchase history format with actual progress data
-          const purchaseHistoryWithProgress = batches.map((batch: any) => ({
-            _id: batch.batchId,
-            movementDate: batch.purchaseDate,
-            quantity: batch.originalQuantity || batch.quantity, // Original purchased quantity
-            remainingQuantity: batch.quantity, // Current remaining quantity
-            originalQuantity: batch.originalQuantity || batch.quantity, // Store original for progress calculation
-            consumedQuantity: batch.consumedQuantity || 0, // How much has been consumed
-            progressPercentage: batch.progressPercentage || 0, // Use FIFO service calculation
-            unitCost: batch.unitCost,
-            totalCost: (batch.originalQuantity || batch.quantity) * batch.unitCost,
-            source: 'Purchase Order',
-            referenceNumber: batch.batchId,
-            remarks: `FIFO Batch - ${batch.warehouseName || 'Warehouse'}`,
-            unit: batch.unit || 'units'
-          }));
+          const purchaseHistoryWithProgress = batches.map((batch: any) => {
+            const quantity = batch.originalQuantity || batch.quantity || 0;
+            const unitCost = batch.unitCost || 0;
+
+            // ✅ GST is stored as PERCENTAGES
+            const gstPercent =
+              (batch.gst?.cgst || 0) +
+              (batch.gst?.sgst || 0) +
+              (batch.gst?.igst || 0);
+
+            const baseCost = quantity * unitCost;
+            const gstAmount = (baseCost * gstPercent) / 100;
+            const totalCost = baseCost + gstAmount;
+
+            return {
+              _id: batch.batchId,
+              movementDate: batch.purchaseDate,
+
+              quantity,                     // original purchased quantity
+              remainingQuantity: batch.quantity,
+              originalQuantity: quantity,
+
+              consumedQuantity: batch.consumedQuantity || 0,
+              progressPercentage: batch.progressPercentage || 0,
+
+              unitCost,
+
+              // ✅ CORRECT TOTAL COST
+              totalCost,
+
+              source: "Purchase Order",
+              referenceNumber: batch.batchId,
+              remarks: `FIFO Batch - ${batch.warehouseName || "Warehouse"}`,
+              unit: batch.unit || "units",
+            };
+          });
+
+
 
           // Sort by purchase date (oldest first for FIFO order)
           const sortedHistory = purchaseHistoryWithProgress.sort((a: any, b: any) =>
@@ -696,16 +744,47 @@ export default function RawMaterialMaster() {
 
       // 🔥 Convert quantity → stocks
       if (data.trackInventory && data.quantity > 0) {
+        const quantity = Number(data.quantity || 0);
+        const unitCost = Number(data.unitCost || 0);
+        const gstPercent = Number(data.gstPercent || 0);
+
+        const baseCost = unitCost * quantity;
+        const gstAmount = (baseCost * gstPercent) / 100;
+        const totalCost = Number((baseCost + gstAmount).toFixed(2));
+
+        // Auto split GST
+        const cgst = Number(gstSplit.cgst || 0);
+        const sgst = Number(gstSplit.sgst || 0);
+        const igst = Number(gstSplit.igst || 0);
+
+        // ✅ VALIDATION: must match GST %
+        // if (cgst + sgst + igst !== gstPercent) {
+        //   toast.error("CGST + SGST + IGST must equal GST %");
+        //   return;
+        // }
         payload.stocks = [
           {
             warehouseId: data.warehouse,
-            quantity: Number(data.quantity),
-            unitCost: Number(data.unitCost || 0),
+            quantity,
+            unitCost,
+            purchaseDate: new Date().toISOString(),
+            remainingQuantity: quantity,
+
+            gst: {
+              cgst,   // % ONLY
+              sgst,   // % ONLY
+              igst,   // % ONLY
+            },
+
+            totalCost, // ✅ CORRECT
           },
         ];
+
+
       } else {
         payload.stocks = [];
       }
+
 
       // ❌ Remove legacy fields
       delete payload.quantity;
@@ -795,6 +874,97 @@ export default function RawMaterialMaster() {
     );
   }
 
+  const getTotalMaterialCost = (material: any) => {
+    if (!Array.isArray(material?.stocks)) return 0;
+
+    return material.stocks.reduce((sum: number, stock: any) => {
+      const qty =
+        typeof stock.remainingQuantity === "number"
+          ? stock.remainingQuantity
+          : typeof stock.quantity === "number"
+            ? stock.quantity
+            : 0;
+
+      const unitCost = Number(stock.unitCost || 0);
+      const cgst = Number(stock.gst?.cgst || 0);
+      const sgst = Number(stock.gst?.sgst || 0);
+      const igst = Number(stock.gst?.igst || 0);
+
+      const gstPercent = (stock.gst?.cgst || 0)
+        + (stock.gst?.sgst || 0)
+        + (stock.gst?.igst || 0);
+
+      const base = unitCost * qty;
+      const gst = (base * gstPercent) / 100;
+
+      return sum + base + gst;
+
+    }, 0);
+  };
+
+  const getCostFromPurchaseHistory = (materialId: string) => {
+    const history = purchaseHistory[materialId];
+    if (!Array.isArray(history)) return { base: 0, gst: { cgst: 0, sgst: 0, igst: 0 }, total: 0 };
+
+    let base = 0;
+    let cgst = 0, sgst = 0, igst = 0;
+
+    history.forEach(p => {
+      const qty = p.remainingQuantity ?? 0;
+      const baseLine = (p.unitCost || 0) * qty;
+
+      base += baseLine;
+      cgst += (baseLine * (p.gst?.cgst || 0)) / 100;
+      sgst += (baseLine * (p.gst?.sgst || 0)) / 100;
+      igst += (baseLine * (p.gst?.igst || 0)) / 100;
+    });
+
+
+    return {
+      base,
+      gst: { cgst, sgst, igst },
+      total: base + cgst + sgst + igst
+    };
+  };
+
+  const getBaseCost = (material: any) => {
+    if (!Array.isArray(material?.stocks)) return 0;
+
+    return material.stocks.reduce((sum: number, stock: any) => {
+      const qty =
+        typeof stock.remainingQuantity === "number"
+          ? stock.remainingQuantity
+          : typeof stock.quantity === "number"
+            ? stock.quantity
+            : 0;
+
+      return sum + (stock.unitCost || 0) * qty;
+    }, 0);
+  };
+
+  const getGSTBreakup = (material: any) => {
+    if (!Array.isArray(material?.stocks)) {
+      return { cgst: 0, sgst: 0, igst: 0 };
+    }
+
+    return material.stocks.reduce(
+      (acc: any, stock: any) => {
+        const qty = stock.remainingQuantity ?? stock.quantity ?? 0;
+        const base = (stock.unitCost || 0) * qty;
+
+        acc.cgst += (base * (stock.gst?.cgst || 0)) / 100;
+        acc.sgst += (base * (stock.gst?.sgst || 0)) / 100;
+        acc.igst += (base * (stock.gst?.igst || 0)) / 100;
+
+
+        return acc;
+      },
+      { cgst: 0, sgst: 0, igst: 0 }
+    );
+  };
+
+
+
   return (
     <div className="p-6 space-y-6">
       {/* Purchase Notifications */}
@@ -882,21 +1052,21 @@ export default function RawMaterialMaster() {
           >
             {/* [!code ++] Remove DialogTrigger wrapper and use direct Button */}
             <input
-            type="file"
-            accept=".xlsx, .xls"
-            id="rm-import"
-            className="hidden"
-            onChange={handleImport}
-            disabled={isImporting}
-          />
+              type="file"
+              accept=".xlsx, .xls"
+              id="rm-import"
+              className="hidden"
+              onChange={handleImport}
+              disabled={isImporting}
+            />
 
-          <label 
-            htmlFor="rm-import"
-            className={`cursor-pointer bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 flex items-center gap-2 text-sm font-medium ${isImporting ? 'opacity-50 pointer-events-none' : ''}`}
-          >
-             {isImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
-             Import
-          </label>
+            <label
+              htmlFor="rm-import"
+              className={`cursor-pointer bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 flex items-center gap-2 text-sm font-medium ${isImporting ? 'opacity-50 pointer-events-none' : ''}`}
+            >
+              {isImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+              Import
+            </label>
             <Button disabled={!canCreate} onClick={handleAdd}>
               <Plus className="h-4 w-4 mr-1" /> Add Material
             </Button>
@@ -1010,6 +1180,33 @@ export default function RawMaterialMaster() {
                     {...register("gstPercent")}
                   />
                 </div>
+                <div>
+                  <Label>CGST</Label>
+                  <Input
+                    type="number"
+                    value={gstSplit.cgst}
+                    onChange={(e) => setGstSplit({ ...gstSplit, cgst: Number(e.target.value) })}
+                  />
+                </div>
+
+                <div>
+                  <Label>SGST</Label>
+                  <Input
+                    type="number"
+                    value={gstSplit.sgst}
+                    onChange={(e) => setGstSplit({ ...gstSplit, sgst: Number(e.target.value) })}
+                  />
+                </div>
+
+                <div>
+                  <Label>IGST</Label>
+                  <Input
+                    type="number"
+                    value={gstSplit.igst}
+                    onChange={(e) => setGstSplit({ ...gstSplit, igst: Number(e.target.value) })}
+                  />
+                </div>
+
 
                 <div>
                   <Label>Valuation Method</Label>
@@ -1271,6 +1468,7 @@ export default function RawMaterialMaster() {
                                           ₹{purchaseHistory[m._id!].reduce((sum: number, p: any) => sum + (p.totalCost || 0), 0)}
                                         </span>
                                       </div>
+
                                     </div>
                                     <div className="space-y-2">
                                       <div>
@@ -1362,13 +1560,43 @@ export default function RawMaterialMaster() {
                 })() : 'N/A'}</p>
                 <p><strong>Unit:</strong> {viewItem?.unitOfMeasure}</p>
                 <p><strong>Qty:</strong> {viewItem?.quantity}</p>
-                <p><strong>Cost:</strong> ₹{viewItem?.unitCost}</p>
+                {/* <p><strong>Cost:</strong> ₹{viewItem?.unitCost}</p> */}
                 <p><strong>HSN:</strong> {viewItem?.hsn}</p>
                 <p><strong>GST %:</strong> {viewItem?.gstPercent}</p>
                 <p><strong>Valuation:</strong> {viewItem?.valuationMethod}</p>
                 <p><strong>Reorder Level:</strong> {viewItem?.reorderLevel}</p>
                 <p><strong>Technical Specs:</strong> {viewItem?.technicalSpecs}</p>
+
+                {viewItem && purchaseHistory[viewItem._id!] && (() => {
+                  const cost = getCostFromPurchaseHistory(viewItem._id!);
+
+                  return (
+                    <>
+                      <p><strong>Base Cost:</strong> ₹{cost.base}</p>
+
+                    </>
+                  );
+                })()}
+
+
+                {viewItem && (() => {
+                  const gst = getGSTBreakup(viewItem);
+                  const totalCost = getTotalMaterialCost(viewItem);
+
+                  return (
+                    <>
+                      <p><strong>CGST:</strong> ₹{gst.cgst}</p>
+                      <p><strong>SGST:</strong> ₹{gst.sgst}</p>
+                      <p><strong>IGST:</strong> ₹{gst.igst}</p>
+
+                      <p className="text-lg font-semibold text-green-700">
+                        <strong>Total Cost:</strong> ₹{totalCost}
+                      </p>
+                    </>
+                  );
+                })()}
               </div>
+
             </DialogContent>
           </Dialog>
         </CardContent>
@@ -1509,7 +1737,7 @@ export default function RawMaterialMaster() {
                 <Upload className="h-5 w-5" /> Import Results
               </h3>
             </div>
-            
+
             <div className="p-6 space-y-4">
               <div className="grid grid-cols-3 gap-4 text-center">
                 <div className="bg-blue-50 p-3 rounded-lg">

@@ -28,10 +28,20 @@ export interface RawMaterial {
     unitCost: number;
     purchaseDate: string;
     batchId: string;
+
+    gst?: {
+      cgst?: number;
+      sgst?: number;
+      igst?: number;
+    };
+
+    totalCost?: number;
+
     purchaseOrderId?: string;
     movementId?: string;
     remainingQuantity: number;
   }>;
+
 }
 
 export interface RawMaterialState {
@@ -150,7 +160,7 @@ const rawMaterialSlice = createSlice({
 
       .addCase(fetchMaterials.fulfilled, (state, action) => {
         state.loading = false;
-        state.materials = action.payload.materials; 
+        state.materials = action.payload.materials;
         state.total = action.payload.total;
         state.page = action.payload.page;
         state.limit = action.payload.limit;
@@ -164,15 +174,15 @@ const rawMaterialSlice = createSlice({
         state.materials.push(action.payload);
       })
 
-    .addCase(updateMaterial.fulfilled, (state, action) => {
-      const index = state.materials.findIndex((m) => m._id === action.payload._id);
-      if (index !== -1) state.materials[index] = action.payload;
-    })
+      .addCase(updateMaterial.fulfilled, (state, action) => {
+        const index = state.materials.findIndex((m) => m._id === action.payload._id);
+        if (index !== -1) state.materials[index] = action.payload;
+      })
 
-    .addCase(deleteMaterial.fulfilled, (state, action) => {
-      state.materials = state.materials.filter((m) => m._id !== action.payload);
-    });
-},
+      .addCase(deleteMaterial.fulfilled, (state, action) => {
+        state.materials = state.materials.filter((m) => m._id !== action.payload);
+      });
+  },
 });
 
 export default rawMaterialSlice.reducer;

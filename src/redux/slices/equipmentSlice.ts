@@ -5,11 +5,11 @@ import api from "@/utils/axiosApi";
 
 /* TYPES */
 export interface StoredFile {
-  id: string;
   name: string;
   type: string;
   size: number;
-  dataUrl: string;
+  url: string;
+  publicId: string;
 }
 
 export interface Equipment {
@@ -112,21 +112,34 @@ export const fetchEquipments = createAsyncThunk(
 // CREATE
 export const createEquipment = createAsyncThunk(
   "equipment/createEquipment",
-  async (payload: Partial<Equipment>, thunkAPI) => {
+  async (payload: any, thunkAPI) => {
     try {
-      const organisationId = localStorage.getItem("organisationId");
-      const res = await api.post("/equipment/create", {
-        ...payload,
-        organisationId,
-      });
+      const organisationId = localStorage.getItem("organisationId") || "";
 
-      return res.data.data; // must contain _id
+      let requestBody;
+      let config = {};
+
+      // Check if payload is FormData (File Uploads)
+      if (payload instanceof FormData) {
+        payload.append("organisationId", organisationId);
+        requestBody = payload;
+        // Axios automatically sets Content-Type to multipart/form-data when body is FormData
+      } 
+      // Handle Plain JSON (Excel Imports)
+      else {
+        requestBody = {
+          ...payload,
+          organisationId,
+        };
+      }
+
+      const res = await api.post("/equipment/create", requestBody, config);
+      return res.data.data;
     } catch (err: any) {
       return thunkAPI.rejectWithValue(err.response?.data?.message || "Failed");
     }
   }
 );
-
 // UPDATE
 export const updateEquipment = createAsyncThunk(
   "equipment/updateEquipment",

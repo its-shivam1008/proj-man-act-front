@@ -9,13 +9,19 @@ const getOrgId = () => {
   return null;
 };
 
+type MasterType = "category" | "hsn" | "supplier";
+
 // ---------- API THUNKS ----------
 
 // LIST (with pagination)
 export const fetchInventoryMaster = createAsyncThunk(
   "inventoryMaster/fetch",
   async (
-    { type, page = 1, limit = 10 }: { type: "category" | "hsn"; page?: number; limit?: number },
+    {
+      type,
+      page = 1,
+      limit = 10,
+    }: { type: MasterType; page?: number; limit?: number },
     { rejectWithValue }
   ) => {
     try {
@@ -36,15 +42,13 @@ export const fetchInventoryMaster = createAsyncThunk(
 export const addInventoryMaster = createAsyncThunk(
   "inventoryMaster/add",
   async (
-    { type, data }: { type: "category" | "hsn"; data: any },
+    { type, data }: { type: MasterType; data: any },
     { rejectWithValue }
   ) => {
     try {
       const organisationId = getOrgId();
-
       const payload = { ...data, type, organisationId };
 
-      // SAME URL AS BACKEND
       const res = await axiosApi.post(`/inventory/${type}`, payload);
 
       return { type, data: res.data.data };
@@ -58,15 +62,13 @@ export const addInventoryMaster = createAsyncThunk(
 export const updateInventoryMaster = createAsyncThunk(
   "inventoryMaster/update",
   async (
-    { id, type, data }: { id: string; type: "category" | "hsn"; data: any },
+    { id, type, data }: { id: string; type: MasterType; data: any },
     { rejectWithValue }
   ) => {
     try {
       const organisationId = getOrgId();
-
       const payload = { ...data, organisationId };
 
-      // SAME URL AS BACKEND
       const res = await axiosApi.put(`/inventory/${id}`, payload);
 
       return { type, data: res.data.data };
@@ -80,14 +82,15 @@ export const updateInventoryMaster = createAsyncThunk(
 export const deleteInventoryMaster = createAsyncThunk(
   "inventoryMaster/delete",
   async (
-    { id, type }: { id: string; type: "category" | "hsn" },
+    { id, type }: { id: string; type: MasterType },
     { rejectWithValue }
   ) => {
     try {
       const organisationId = getOrgId();
 
-      // SAME URL AS BACKEND
-      await axiosApi.delete(`/inventory/${id}?organisationId=${organisationId}`);
+      await axiosApi.delete(
+        `/inventory/${id}?organisationId=${organisationId}`
+      );
 
       return { type, id };
     } catch (err: any) {
@@ -95,15 +98,18 @@ export const deleteInventoryMaster = createAsyncThunk(
     }
   }
 );
+
 // ---------- INITIAL STATE ----------
 
 interface InventoryState {
   category: any[];
   hsn: any[];
+  supplier: any[];
 
   pagination: {
     category: { page: number; pages: number; total: number };
     hsn: { page: number; pages: number; total: number };
+    supplier: { page: number; pages: number; total: number };
   };
 
   loading: boolean;
@@ -113,10 +119,12 @@ interface InventoryState {
 const initialState: InventoryState = {
   category: [],
   hsn: [],
+  supplier: [],
 
   pagination: {
     category: { page: 1, pages: 1, total: 0 },
     hsn: { page: 1, pages: 1, total: 0 },
+    supplier: { page: 1, pages: 1, total: 0 },
   },
 
   loading: false,
@@ -136,6 +144,7 @@ const inventoryMasterSlice = createSlice({
       // FETCH
       .addCase(fetchInventoryMaster.pending, (state) => {
         state.loading = true;
+        state.error = null;
       })
       .addCase(fetchInventoryMaster.fulfilled, (state, action) => {
         state.loading = false;
@@ -164,7 +173,6 @@ const inventoryMasterSlice = createSlice({
       // UPDATE
       .addCase(updateInventoryMaster.fulfilled, (state, action) => {
         const { type, data } = action.payload;
-
         state[type] = state[type].map((item) =>
           item._id === data._id ? data : item
         );
@@ -173,7 +181,6 @@ const inventoryMasterSlice = createSlice({
       // DELETE
       .addCase(deleteInventoryMaster.fulfilled, (state, action) => {
         const { type, id } = action.payload;
-
         state[type] = state[type].filter((item) => item._id !== id);
       });
   },

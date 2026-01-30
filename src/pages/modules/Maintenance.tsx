@@ -822,7 +822,7 @@ const Maintenance: React.FC = () => {
                   Maintenance Category *
                 </label>
                 <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" required>
-                  <option value="">Select Category</option>
+                  <option value="Select Category">Select Category</option>
                   <option value="mechanical">Mechanical</option>
                   <option value="electrical">Electrical</option>
                   <option value="software">Software</option>

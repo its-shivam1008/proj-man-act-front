@@ -14,7 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -36,30 +36,26 @@ import { Label } from "@/components/ui/label";
 import { Pencil, Trash2, Plus, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 
-type InventoryMasterType = "category" | "hsn";
+type InventoryMasterType = "category" | "hsn" | "supplier";
 
 export default function InventoryMasterData() {
   const canView = usePermission("masterdatainv", "view");
-    const canCreate = usePermission("masterdatainv", "create");
-    const canEdit = usePermission("masterdatainv", "edit");
-    const canDelete = usePermission("masterdatainv", "delete");
-  
-    if (!canView) {
-      return (
-        <div className="text-center py-12 px-4">
-          <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h3 className="text-xl font-semibold text-gray-900 mb-2">
-            Access Denied
-          </h3>
-          <p className="text-gray-600">
-            You do not have the necessary permissions to view this page.
-          </p>
-        </div>
-      );
-    }
-  const dispatch = useDispatch<AppDispatch>();
+  const canCreate = usePermission("masterdatainv", "create");
+  const canEdit = usePermission("masterdatainv", "edit");
+  const canDelete = usePermission("masterdatainv", "delete");
 
-  const { category, hsn, pagination, loading } = useSelector(
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold mb-2">Access Denied</h3>
+        <p>You do not have permission to view this page.</p>
+      </div>
+    );
+  }
+
+  const dispatch = useDispatch<AppDispatch>();
+  const { category, hsn, supplier, pagination } = useSelector(
     (state: RootState) => state.inventoryMaster
   );
 
@@ -74,9 +70,11 @@ export default function InventoryMasterData() {
     description: "",
     hsnNumber: "",
     taxPercent: "",
+    company: "",
+    phone: "",
+    email: "",
   });
 
-  // Fetch data with pagination
   useEffect(() => {
     dispatch(
       fetchInventoryMaster({
@@ -88,14 +86,16 @@ export default function InventoryMasterData() {
   }, [dispatch, activeTab]);
 
   const getList = () => {
-    return activeTab === "category" ? category : hsn;
+    if (activeTab === "category") return category;
+    if (activeTab === "hsn") return hsn;
+    return supplier;
   };
 
-  const handlePageChange = (newPage: number) => {
+  const handlePageChange = (page: number) => {
     dispatch(
       fetchInventoryMaster({
         type: activeTab,
-        page: newPage,
+        page,
         limit: pagination[activeTab].limit,
       })
     );
@@ -109,6 +109,9 @@ export default function InventoryMasterData() {
         description: item.description || "",
         hsnNumber: item.hsnNumber || "",
         taxPercent: item.taxPercent || "",
+        company: item.company || "",
+        phone: item.phone || "",
+        email: item.email || "",
       });
     } else {
       setEditItem(null);
@@ -117,6 +120,9 @@ export default function InventoryMasterData() {
         description: "",
         hsnNumber: "",
         taxPercent: "",
+        company: "",
+        phone: "",
+        email: "",
       });
     }
     setIsDialogOpen(true);
@@ -128,6 +134,9 @@ export default function InventoryMasterData() {
 
     if (activeTab === "hsn" && !formData.hsnNumber)
       return toast.error("HSN number required");
+
+    if (activeTab === "supplier" && !formData.name)
+      return toast.error("Supplier name required");
 
     try {
       if (editItem) {
@@ -141,53 +150,48 @@ export default function InventoryMasterData() {
         toast.success("Updated successfully");
       } else {
         await dispatch(
-          addInventoryMaster({ type: activeTab, data: formData })
+          addInventoryMaster({
+            type: activeTab,
+            data: formData,
+          })
         ).unwrap();
         toast.success("Created successfully");
       }
 
-      // Refresh first page
       handlePageChange(1);
       setIsDialogOpen(false);
-
-    } catch (err) {
-      toast.error("Failed");
+    } catch {
+      toast.error("Operation failed");
     }
   };
 
   const handleDelete = async (id: string) => {
-    const confirmed = window.confirm("Are you sure you want to delete this record? This action cannot be undone.");
-
-    if (!confirmed) return;
+    if (!confirm("Are you sure you want to delete this record?")) return;
 
     try {
-      await dispatch(deleteInventoryMaster({
-        type: activeTab,
-        id,
-        organisationId: localStorage.getItem("organisationId"),
-      })).unwrap();
-      toast.success("Record deleted successfully");
+      await dispatch(
+        deleteInventoryMaster({ type: activeTab, id })
+      ).unwrap();
+      toast.success("Deleted successfully");
       handlePageChange(1);
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to delete record");
+    } catch {
+      toast.error("Delete failed");
     }
   };
-
 
   const pageInfo = pagination[activeTab];
 
   return (
     <div className="p-6 space-y-6">
-      {/* Header */}
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">Inventory Master Data</h1>
-
-       {canCreate && <Button onClick={() => openDialog()}>
-          <Plus className="h-4 w-4 mr-2" /> Add New
-        </Button>}
+        {canCreate && (
+          <Button onClick={() => openDialog()}>
+            <Plus className="h-4 w-4 mr-2" /> Add New
+          </Button>
+        )}
       </div>
 
-      {/* Tabs */}
       <Tabs
         value={activeTab}
         onValueChange={(v) => setActiveTab(v as InventoryMasterType)}
@@ -195,9 +199,9 @@ export default function InventoryMasterData() {
         <TabsList className="w-full justify-start">
           <TabsTrigger value="category">Category</TabsTrigger>
           <TabsTrigger value="hsn">HSN Codes</TabsTrigger>
+          <TabsTrigger value="supplier">Supplier</TabsTrigger>
         </TabsList>
 
-        {/* Table */}
         <Card className="mt-4">
           <CardHeader>
             <CardTitle className="capitalize">{activeTab} List</CardTitle>
@@ -207,14 +211,21 @@ export default function InventoryMasterData() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  {activeTab === "category" ? (
+                  {activeTab === "supplier" ? (
+                    <>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Company</TableHead>
+                      <TableHead>Phone</TableHead>
+                      <TableHead>Email</TableHead>
+                    </>
+                  ) : activeTab === "category" ? (
                     <>
                       <TableHead>Name</TableHead>
                       <TableHead>Description</TableHead>
                     </>
                   ) : (
                     <>
-                      <TableHead>HSN Number</TableHead>
+                      <TableHead>HSN</TableHead>
                       <TableHead>Tax %</TableHead>
                     </>
                   )}
@@ -225,14 +236,21 @@ export default function InventoryMasterData() {
               <TableBody>
                 {getList().length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={3} className="text-center py-8">
+                    <TableCell colSpan={5} className="text-center py-8">
                       No data found.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  getList().map((item) => (
+                  getList().map((item: any) => (
                     <TableRow key={item._id}>
-                      {activeTab === "category" ? (
+                      {activeTab === "supplier" ? (
+                        <>
+                          <TableCell>{item.name}</TableCell>
+                          <TableCell>{item.company}</TableCell>
+                          <TableCell>{item.phone}</TableCell>
+                          <TableCell>{item.email}</TableCell>
+                        </>
+                      ) : activeTab === "category" ? (
                         <>
                           <TableCell>{item.name}</TableCell>
                           <TableCell>{item.description}</TableCell>
@@ -243,13 +261,26 @@ export default function InventoryMasterData() {
                           <TableCell>{item.taxPercent}%</TableCell>
                         </>
                       )}
+
                       <TableCell className="text-right space-x-2">
-                        {canEdit && <Button variant="ghost" size="icon" onClick={() => openDialog(item)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>}
-                        {canDelete && <Button variant="ghost" size="icon" onClick={() => handleDelete(item._id)}>
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>}
+                        {canEdit && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => openDialog(item)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {canDelete && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleDelete(item._id)}
+                          >
+                            <Trash2 className="h-4 w-4 text-red-500" />
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))
@@ -257,8 +288,7 @@ export default function InventoryMasterData() {
               </TableBody>
             </Table>
 
-            {/* Pagination */}
-            <div className="flex items-center justify-between mt-4">
+            <div className="flex justify-between mt-4">
               <Button
                 variant="outline"
                 disabled={pageInfo.page === 1}
@@ -266,11 +296,9 @@ export default function InventoryMasterData() {
               >
                 Previous
               </Button>
-
-              <div className="text-sm font-medium">
+              <span>
                 Page {pageInfo.page} of {pageInfo.pages}
-              </div>
-
+              </span>
               <Button
                 variant="outline"
                 disabled={pageInfo.page >= pageInfo.pages}
@@ -283,71 +311,85 @@ export default function InventoryMasterData() {
         </Card>
       </Tabs>
 
-      {/* Create/Edit Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {editItem ? "Edit" : "Add"}{" "}
-              {activeTab === "category" ? "Category" : "HSN Code"}
+              {editItem ? "Edit" : "Add"} {activeTab}
             </DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
-            {activeTab === "category" ? (
+          <div className="space-y-4">
+            {activeTab === "category" && (
               <>
-                <div className="space-y-2">
-                  <Label>Name</Label>
-                  <Input
-                    value={formData.name}
-                    onChange={(e) =>
-                      setFormData({ ...formData, name: e.target.value })
-                    }
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Description</Label>
-                  <Input
-                    value={formData.description}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        description: e.target.value,
-                      })
-                    }
-                  />
-                </div>
+                <Label>Name</Label>
+                <Input
+                  value={formData.name}
+                  onChange={(e) =>
+                    setFormData({ ...formData, name: e.target.value })
+                  }
+                />
+                <Label>Description</Label>
+                <Input
+                  value={formData.description}
+                  onChange={(e) =>
+                    setFormData({ ...formData, description: e.target.value })
+                  }
+                />
               </>
-            ) : (
-              <>
-                <div className="space-y-2">
-                  <Label>HSN Number</Label>
-                  <Input
-                    type="number"
-                    value={formData.hsnNumber}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        hsnNumber: e.target.value,
-                      })
-                    }
-                  />
-                </div>
+            )}
 
-                <div className="space-y-2">
-                  <Label>Tax %</Label>
-                  <Input
-                    type="number"
-                    value={formData.taxPercent}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        taxPercent: e.target.value,
-                      })
-                    }
-                  />
-                </div>
+            {activeTab === "hsn" && (
+              <>
+                <Label>HSN Number</Label>
+                <Input
+                  type="number"
+                  value={formData.hsnNumber}
+                  onChange={(e) =>
+                    setFormData({ ...formData, hsnNumber: e.target.value })
+                  }
+                />
+                <Label>Tax %</Label>
+                <Input
+                  type="number"
+                  value={formData.taxPercent}
+                  onChange={(e) =>
+                    setFormData({ ...formData, taxPercent: e.target.value })
+                  }
+                />
+              </>
+            )}
+
+            {activeTab === "supplier" && (
+              <>
+                <Label>Name</Label>
+                <Input
+                  value={formData.name}
+                  onChange={(e) =>
+                    setFormData({ ...formData, name: e.target.value })
+                  }
+                />
+                <Label>Company</Label>
+                <Input
+                  value={formData.company}
+                  onChange={(e) =>
+                    setFormData({ ...formData, company: e.target.value })
+                  }
+                />
+                <Label>Phone</Label>
+                <Input
+                  value={formData.phone}
+                  onChange={(e) =>
+                    setFormData({ ...formData, phone: e.target.value })
+                  }
+                />
+                <Label>Email</Label>
+                <Input
+                  value={formData.email}
+                  onChange={(e) =>
+                    setFormData({ ...formData, email: e.target.value })
+                  }
+                />
               </>
             )}
           </div>

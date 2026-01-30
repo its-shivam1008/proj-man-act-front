@@ -5,11 +5,13 @@ import api from "@/utils/axiosApi";
 
 /* TYPES */
 export interface StoredFile {
-  id: string;
+  id?: string; // Add ID for local management
   name: string;
   type: string;
   size: number;
-  dataUrl: string;
+  url: string;
+  publicId?: string;
+  rawFile?: File; // <--- ADD THIS: To store the actual file for upload
 }
 
 export interface Machinery {
@@ -122,12 +124,28 @@ export const createMachinery = createAsyncThunk(
   async (payload: Partial<Machinery>, thunkAPI) => {
     try {
       const organisationId = localStorage.getItem("organisationId");
-      const res = await api.post("/machinery/create", {
-        ...payload,
-        organisationId,
+
+      const fd = new FormData();
+
+      Object.entries(payload).forEach(([key, value]) => {
+        if (key === "documents" && Array.isArray(value)) {
+          value.forEach((doc) => {
+            if (doc.rawFile) {
+              fd.append("documents", doc.rawFile);
+            }
+          });
+        } else if (value !== undefined && value !== null) {
+          fd.append(key, String(value));
+        }
       });
 
-      return res.data.data; // must contain _id
+      fd.append("organisationId", organisationId || "");
+
+      const res = await api.post("/machinery/create", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      return res.data.data;
     } catch (err: any) {
       return thunkAPI.rejectWithValue(err.response?.data?.message || "Failed");
     }
@@ -139,8 +157,25 @@ export const updateMachinery = createAsyncThunk(
   "machinery/updateMachinery",
   async ({ id, data }: { id: string; data: Partial<Machinery> }, thunkAPI) => {
     try {
-      const res = await api.put(`/machinery/${id}`, data);
-      return res.data.data; // updated object with _id
+      const fd = new FormData();
+
+      Object.entries(data).forEach(([key, value]) => {
+        if (key === "documents" && Array.isArray(value)) {
+          value.forEach((doc) => {
+            if (doc.rawFile) {
+              fd.append("documents", doc.rawFile);
+            }
+          });
+        } else if (value !== undefined && value !== null) {
+          fd.append(key, String(value));
+        }
+      });
+
+      const res = await api.put(`/machinery/${id}`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      return res.data.data;
     } catch (err: any) {
       return thunkAPI.rejectWithValue(err.response?.data?.message || "Failed");
     }

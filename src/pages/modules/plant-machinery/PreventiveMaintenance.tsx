@@ -467,7 +467,7 @@ export default function PreventiveMaintenanceDashboard() {
               <SelectContent>
                 <SelectItem value="all">All Locations</SelectItem>
                 {locations.length === 0 ? (
-                  <SelectItem value="" disabled>Loading locations...</SelectItem>
+                  <SelectItem value="Loading locations..." disabled>Loading locations...</SelectItem>
                 ) : (
                   locations.map((location) => (
                     <SelectItem key={location._id} value={location._id}>
@@ -628,7 +628,7 @@ export default function PreventiveMaintenanceDashboard() {
                 </SelectTrigger>
                 <SelectContent>
                   {equipments.length === 0 ? (
-                    <SelectItem value="" disabled>Loading equipments...</SelectItem>
+                    <SelectItem value="loading equipment" disabled>Loading equipments...</SelectItem>
                   ) : (
                     equipments.map((equipment) => (
                       <SelectItem key={equipment._id || equipment.id} value={equipment.name}>
@@ -666,7 +666,7 @@ export default function PreventiveMaintenanceDashboard() {
                 </SelectTrigger>
                 <SelectContent>
                   {locations.length === 0 ? (
-                    <SelectItem value="" disabled>Loading locations...</SelectItem>
+                    <SelectItem value="loading" disabled>Loading locations...</SelectItem>
                   ) : (
                     locations.map((location) => (
                       <SelectItem key={location._id} value={location._id}>

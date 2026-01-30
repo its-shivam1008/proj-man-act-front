@@ -9,8 +9,9 @@ import {
   fetchMachineries,
   fetchMachineryChildren,
 } from "@/redux/slices/plantandmachinary/machinerySlice";
+// fetchInventoryMaster
 import { fetchMasterData } from "@/redux/slices/masterDataSlice";
-import { Save, Plus, Edit2, Trash2, Search, X, ShieldAlert, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
+import { Save, Eye, Plus, Edit2, Trash2, Search, X, ShieldAlert, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
 import * as XLSX from "xlsx";
 
 import { Button } from "@/components/ui/button";
@@ -45,14 +46,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { fetchInventoryMaster } from "@/redux/slices/inventoryMasterSlice";
 
 // ---------- TYPES ----------
-interface StoredFile {
-  id: string;
+export interface StoredFile {
+  id?: string;
   name: string;
   type: string;
   size: number;
-  dataUrl: string;
+  url: string;
+  publicId?: string;
+  rawFile?: File; // frontend only
 }
 
 interface Machinery {
@@ -149,11 +153,30 @@ export default function MachineryManagementPage() {
   const canEdit = usePermission("machineryManagement", "edit");
   const canDelete = usePermission("machineryManagement", "delete");
 
+  // View Documents Modal
+  const [viewDocsOpen, setViewDocsOpen] = useState(false);
+  const [selectedDocs, setSelectedDocs] = useState<StoredFile[]>([]);
+  const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null);
+  // View Details Modal
+  const [viewOpen, setViewOpen] = useState(false);
+  const [viewItem, setViewItem] = useState<Machinery | null>(null);
+
+
+
+  function openViewDetails(item: Machinery) {
+    setViewItem(item);
+    setViewOpen(true);
+  }
+
   const dispatch = useDispatch<AppDispatch>();
   const { machineries, page, total, limit } = useSelector(
     (state: RootState) => state.machinery
   );
   const totalPages = Math.ceil(total / limit) || 1;
+  const { category, supplier } = useSelector(
+    (state: RootState) => state.inventoryMaster
+  );
+
 
   // User & Location Data
   const { userProfile } = useSelector((state: any) => state.auth);
@@ -230,6 +253,22 @@ export default function MachineryManagementPage() {
     }
     setExpandedRows(newExpanded);
   };
+  useEffect(() => {
+    dispatch(
+      fetchInventoryMaster({
+        type: "category",
+        page: 1,
+        limit: 100,
+      })
+    );
+    dispatch(
+      fetchInventoryMaster({
+        type: "supplier",
+        page: 1,
+        limit: 100,
+      })
+    );
+  }, [dispatch]);
 
   // Auto-calculate total cost
   useEffect(() => {
@@ -275,13 +314,29 @@ export default function MachineryManagementPage() {
 
   // ---------- OPEN EDIT ----------
   function openEditDialog(machinery: Machinery) {
+    const matchedCategory = category.find(
+      (c: any) => c.name === machinery.category
+    );
+
+    const matchedSupplier = supplier.find(
+      (s: any) => s.name === machinery.supplier
+    );
+
     setEditing(machinery);
     setForm({
       ...machinery,
-      location: typeof machinery.location === 'object' ? (machinery.location as any)._id : machinery.location
+      category: matchedCategory?._id,   // category → id
+      supplier: matchedSupplier?._id,   // ✅ supplier → id
+      location:
+        typeof machinery.location === "object"
+          ? machinery.location._id
+          : machinery.location,
     });
+
     setIsDialogOpen(true);
   }
+
+
 
   // ---------- SAVE ----------
   async function saveForm() {
@@ -444,11 +499,17 @@ export default function MachineryManagementPage() {
             };
 
             const machineryId = row["Machinery ID"] || row["MachineryID"] || generateUniqueMachineryCode();
+            const categoryName = row["Category"];
+            const matchedCategory = category.find(
+              (c: any) =>
+                c.name.toLowerCase() === categoryName?.toString().toLowerCase()
+            );
+
 
             const payload: Partial<Machinery> = {
               name: row["Name"],
               code: machineryId,
-              category: row["Category"] || "General",
+              category: matchedCategory?._id || undefined,
               location: locationId,
               quantity: quantity,
               basicCost,
@@ -502,25 +563,48 @@ export default function MachineryManagementPage() {
 
     reader.readAsBinaryString(file);
   };
+  function isImage(doc: StoredFile) {
+    return doc.type?.startsWith("image/");
+  }
+
+  function openViewDocuments(docs?: StoredFile[]) {
+    if (!docs || docs.length === 0) {
+      toast.info("No documents uploaded");
+      return;
+    }
+    setSelectedDocs(docs);
+    setViewDocsOpen(true);
+  }
+
+  function downloadFile(url: string, name: string) {
+    const link = document.createElement("a");
+    link.href = url + "?dl=" + encodeURIComponent(name);
+    link.setAttribute("download", name);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
 
   // ---------- FILES ----------
   async function handleFileAdd(files: FileList | null) {
-    if (!files || files.length === 0) return;
-    const arr = Array.from(files);
-    const converted = await Promise.all(
-      arr.map(async (f) => ({
-        id: crypto.randomUUID(),
-        name: f.name,
-        type: f.type,
-        size: f.size,
-        dataUrl: await fileToDataUrl(f),
-      }))
-    );
+    if (!files) return;
+
+    const mapped = Array.from(files).map((file) => ({
+      id: crypto.randomUUID(),
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      url: URL.createObjectURL(file), // preview only
+      rawFile: file,                  // 🔥 REQUIRED
+    }));
+
     setForm((prev) => ({
       ...prev,
-      documents: [...(prev.documents || []), ...converted],
+      documents: [...(prev.documents || []), ...mapped],
     }));
   }
+
 
   function removeFileFromForm(fileId: string) {
     setForm((prev) => ({
@@ -538,6 +622,13 @@ export default function MachineryManagementPage() {
       </div>
     );
   }
+
+  const getSupplierName = (id?: string) => {
+    if (!id) return "-";
+    const sup = supplier.find((s: any) => s._id === id);
+    return sup?.name || "-";
+  };
+
 
   return (
     <div className="p-6 space-y-6">
@@ -612,6 +703,7 @@ export default function MachineryManagementPage() {
                   <TableHead>ID</TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Category</TableHead>
+                  <TableHead>Supplier</TableHead>
                   <TableHead>Location</TableHead>
                   <TableHead className="text-center">Total Qty</TableHead>
                   <TableHead className="text-center">In Use</TableHead>
@@ -651,7 +743,11 @@ export default function MachineryManagementPage() {
                           </div>
                         </TableCell>
                         <TableCell className="font-medium">{machinery.name}</TableCell>
-                        <TableCell>{machinery.category || "-"}</TableCell>
+                        <TableCell>
+                          {category.find((c: any) => c._id === machinery.category)?.name || "-"}
+                        </TableCell>
+                        <TableCell>{getSupplierName(machinery.supplier)}</TableCell>
+
                         <TableCell>{getLocationName(machinery.location)}</TableCell>
                         <TableCell className="text-center font-semibold">{machinery.quantity || 1}</TableCell>
                         <TableCell className="text-center text-orange-600 font-medium">{machinery.allocatedQuantity || 0}</TableCell>
@@ -664,6 +760,25 @@ export default function MachineryManagementPage() {
 
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           <div className="flex gap-2">
+                            {/* View Details */}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openViewDetails(machinery)}
+                            >
+                              <Eye className="w-4 h-4 text-indigo-600" />
+                            </Button>
+
+                            {/* View Documents */}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openViewDocuments(machinery.documents)}
+                            >
+                              <FileSpreadsheet className="w-4 h-4 text-blue-600" />
+                            </Button>
+
+                            {/* Edit */}
                             <Button
                               variant="ghost"
                               size="sm"
@@ -673,6 +788,7 @@ export default function MachineryManagementPage() {
                               <Edit2 className="w-4 h-4" />
                             </Button>
 
+                            {/* Delete */}
                             <Button
                               variant="ghost"
                               size="sm"
@@ -692,6 +808,7 @@ export default function MachineryManagementPage() {
                               <Trash2 className="w-4 h-4 text-red-500" />
                             </Button>
                           </div>
+
                         </TableCell>
                       </TableRow>
 
@@ -873,11 +990,28 @@ export default function MachineryManagementPage() {
 
               <div>
                 <Label>Category</Label>
-                <Input
-                  value={form.category || ""}
-                  onChange={(e) => setForm({ ...form, category: e.target.value })}
-                />
+
+                <Select
+                  value={form.category ?? undefined}
+                  onValueChange={(v) => setForm({ ...form, category: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Category" />
+                  </SelectTrigger>
+
+                  <SelectContent>
+                    {category?.map((cat: any) => (
+                      <SelectItem
+                        key={cat._id}
+                        value={cat._id}   // ✅ NEVER empty string
+                      >
+                        {cat.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
+
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -943,11 +1077,24 @@ export default function MachineryManagementPage() {
                 </div>
                 <div>
                   <Label>Supplier</Label>
-                  <Input
-                    value={form.supplier || ""}
-                    onChange={(e) => setForm({ ...form, supplier: e.target.value })}
-                  />
+                  <Select
+                    value={form.supplier ?? undefined}
+                    onValueChange={(v) => setForm({ ...form, supplier: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select Supplier" />
+                    </SelectTrigger>
+
+                    <SelectContent>
+                      {supplier?.map((sup: any) => (
+                        <SelectItem key={sup._id} value={sup._id}>
+                          {sup.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
+
               </div>
             </div>
 
@@ -1103,6 +1250,173 @@ export default function MachineryManagementPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* VIEW DOCUMENTS MODAL */}
+      <Dialog open={viewDocsOpen} onOpenChange={setViewDocsOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Uploaded Documents</DialogTitle>
+            <DialogDescription>
+              View or download machinery documents
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {selectedDocs.map((doc, index) => (
+              <div
+                key={doc.publicId || index}
+                className="border rounded-md p-3 flex flex-col gap-2 bg-gray-50"
+              >
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium truncate">{doc.name}</span>
+                  <Badge variant="outline" className="text-xs">
+                    {isImage(doc) ? "Image" : "File"}
+                  </Badge>
+                </div>
+
+                {/* IMAGE PREVIEW */}
+                {isImage(doc) ? (
+                  <>
+                    <img
+                      src={doc.url}
+                      alt={doc.name}
+                      className="h-40 w-full object-cover rounded cursor-pointer border"
+                      onClick={() =>
+                        setPreviewImage({ url: doc.url, name: doc.name })
+                      }
+                    />
+
+                    {/* DOWNLOAD IMAGE */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => downloadFile(doc.url, doc.name)}
+                    >
+                      Download
+                    </Button>
+                  </>
+                ) : (
+                  /* NON-IMAGE FILE */
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => downloadFile(doc.url, doc.name)}
+                  >
+                    Download
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+
+        </DialogContent>
+      </Dialog>
+      {/* VIEW MACHINERY DETAILS */}
+      <Dialog open={viewOpen} onOpenChange={setViewOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Machinery Details</DialogTitle>
+            <DialogDescription>
+              Read-only view of machinery information
+            </DialogDescription>
+          </DialogHeader>
+
+          {viewItem && (
+            <div className="space-y-6 text-sm">
+              {/* BASIC INFO */}
+              <section>
+                <h4 className="font-semibold text-gray-700 mb-2">Basic Information</h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  <div><b>ID:</b> {viewItem.code}</div>
+                  <div><b>Name:</b> {viewItem.name}</div>
+                  <div><b>Category:</b> {category.find(c => c._id === viewItem.category)?.name || "-"}</div>
+                  <div><b>Supplier:</b> {getSupplierName(viewItem.supplier)}</div>
+                  <div><b>Location:</b> {getLocationName(viewItem.location)}</div>
+                  <div><b>Status:</b> <Badge>{viewItem.status}</Badge></div>
+                </div>
+              </section>
+
+              {/* QUANTITY */}
+              <section>
+                <h4 className="font-semibold text-gray-700 mb-2">Quantity</h4>
+                <div className="grid grid-cols-3 gap-4">
+                  <div><b>Total:</b> {viewItem.quantity || 0}</div>
+                  <div><b>Allocated:</b> {viewItem.allocatedQuantity || 0}</div>
+                  <div><b>Available:</b> {viewItem.availableQuantity ?? viewItem.quantity}</div>
+                </div>
+              </section>
+
+              {/* PURCHASE */}
+              <section>
+                <h4 className="font-semibold text-gray-700 mb-2">Purchase Info</h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  <div><b>Invoice:</b> {viewItem.invoiceNumber || "-"}</div>
+                  <div><b>Purchase Date:</b> {viewItem.purchaseDate ? new Date(viewItem.purchaseDate).toLocaleDateString() : "-"}</div>
+                  <div><b>Capacity:</b> {viewItem.capacity || "-"}</div>
+                </div>
+              </section>
+
+              {/* PRICING */}
+              <section>
+                <h4 className="font-semibold text-gray-700 mb-2">Pricing & GST</h4>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                  <div>Basic: ₹{viewItem.basicCost || 0}</div>
+                  <div>CGST: ₹{viewItem.cgst || 0}</div>
+                  <div>IGST: ₹{viewItem.igst || 0}</div>
+                  <div>SGST: ₹{viewItem.sgst || 0}</div>
+                  <div className="font-bold text-green-700">
+                    Total: ₹{viewItem.totalCost || 0}
+                  </div>
+                </div>
+              </section>
+
+              {/* COMPLIANCE */}
+              <section>
+                <h4 className="font-semibold text-gray-700 mb-2">Compliance</h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>Insurance: {viewItem.insuranceDate || "-"}</div>
+                  <div>Expiry: {viewItem.insuranceExpiry || "-"}</div>
+                  <div>PU Date: {viewItem.puDate || "-"}</div>
+                  <div>PU Expiry: {viewItem.puDateExpiry || "-"}</div>
+                </div>
+              </section>
+
+              {/* DOCUMENTS */}
+              <section>
+                <h4 className="font-semibold text-gray-700 mb-2">Documents</h4>
+                {viewItem.documents?.length ? (
+                  <div className="flex flex-wrap gap-2">
+                    {viewItem.documents.map(doc => (
+                      <Badge key={doc.id} variant="outline">{doc.name}</Badge>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground">No documents uploaded</p>
+                )}
+              </section>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button onClick={() => setViewOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* IMAGE PREVIEW MODAL */}
+      <Dialog open={!!previewImage} onOpenChange={() => setPreviewImage(null)}>
+        <DialogContent className="max-w-5xl p-2">
+          {previewImage && (
+            <img
+              src={previewImage.url}
+              alt={previewImage.name}
+              className="w-full h-auto rounded"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+
     </div>
   );
 }

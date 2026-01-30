@@ -10,7 +10,7 @@ import {
   fetchEquipmentChildren,
 } from "@/redux/slices/equipmentSlice";
 import { fetchMasterData } from "@/redux/slices/masterDataSlice";
-import { Save, Plus, Edit2, Trash2, Search, X, ShieldAlert, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
+import { Save, Eye, Plus, Edit2, Trash2, Search, X, ShieldAlert, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, AlertCircle, ChevronDown, ChevronRight, File } from "lucide-react";
 import * as XLSX from "xlsx";
 
 import { Button } from "@/components/ui/button";
@@ -45,16 +45,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { fetchInventoryMaster } from "@/redux/slices/inventoryMasterSlice";
+// import { DropdownMenu } from "@radix-ui/react-dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 // ---------- TYPES ----------
 interface StoredFile {
-  id: string;
+  id?: string; // Add ID for local management
   name: string;
   type: string;
   size: number;
-  dataUrl: string;
+  url: string;
+  publicId?: string;
+  rawFile?: File; // <--- ADD THIS: To store the actual file for upload
 }
-
 interface Equipment {
   _id?: string;
   code: string;
@@ -137,14 +141,48 @@ export default function EquipmentMasterPage() {
   const canEdit = usePermission("equipmentMaster", "edit");
   const canDelete = usePermission("equipmentMaster", "delete");
 
+  const [viewEquipment, setViewEquipment] = useState<Equipment | null>(null);
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+
+  const [imagePreview, setImagePreview] = useState<{
+    url: string;
+    name: string;
+  } | null>(null);
+
+  function isImage(doc: any) {
+    // Cloudinary image URL
+    if (doc.url?.includes("/image/upload/")) return true;
+
+    // Fallback: check name extension
+    return /\.(png|jpe?g|webp|gif)$/i.test(doc.name || "");
+  }
+
+
+  function handleViewDocument(doc: any) {
+    if (isImage(doc)) {
+      setImagePreview({
+        url: doc.url,
+        name: doc.name,
+      });
+    }
+  }
+
+
   const dispatch = useDispatch<AppDispatch>();
   const { equipments, page, total, limit } = useSelector((state: RootState) => state.equipment);
   const totalPages = Math.ceil(total / limit) || 1;
 
+  const { category, supplier } = useSelector(
+    (state: RootState) => state.inventoryMaster
+  );
+  useEffect(() => {
+    dispatch(fetchInventoryMaster({ type: "category", page: 1, limit: 100 }));
+    dispatch(fetchInventoryMaster({ type: "supplier", page: 1, limit: 100 }));
+  }, [dispatch]);
+
   // User & Location Data
   const { userProfile } = useSelector((state: any) => state.auth);
   const { locations: masterLocations } = useSelector((state: any) => state.masterData);
-
   const isLocationRestricted = userProfile?.role !== 'admin' && !!userProfile?.location;
   const [locationFilter, setLocationFilter] = useState(isLocationRestricted ? userProfile.location : "All");
 
@@ -159,6 +197,34 @@ export default function EquipmentMasterPage() {
     const found = masterLocations.find((l: any) => l._id === loc);
     return found ? found.name : loc;
   };
+  async function downloadFile(url: string, name: string, type?: string) {
+    const res = await fetch(url);
+    const blob = await res.blob();
+
+    let finalName = name;
+
+    // Fix missing extension
+    if (!/\.[a-z0-9]+$/i.test(name)) {
+      if (blob.type === "application/pdf") finalName += ".pdf";
+      else if (blob.type.startsWith("image/")) {
+        const ext = blob.type.split("/")[1];
+        finalName += `.${ext}`;
+      }
+    }
+
+    const blobUrl = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = finalName;
+    document.body.appendChild(a);
+    a.click();
+
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+  }
+
+
 
   useEffect(() => {
     dispatch(fetchMasterData("location"));
@@ -176,6 +242,10 @@ export default function EquipmentMasterPage() {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [childrenData, setChildrenData] = useState<Record<string, Equipment[]>>({});
   const [loadingChildren, setLoadingChildren] = useState<Set<string>>(new Set());
+
+  const [docModalOpen, setDocModalOpen] = useState(false);
+  const [selectedEquipment, setSelectedEquipment] = useState<Equipment | null>(null);
+
   const [form, setForm] = useState<Partial<Equipment>>({
     frequency: "Monthly",
     depreciation: "Straight-line",
@@ -255,41 +325,61 @@ export default function EquipmentMasterPage() {
 
   // ---------- OPEN EDIT ----------
   function openEditDialog(equipment: Equipment) {
+    const matchedSupplier = supplier.find(
+      (s: any) => s.name === equipment.supplier
+    );
+
     setEditing(equipment);
     setForm({
       ...equipment,
-      location: typeof equipment.location === 'object' ? (equipment.location as any)._id : equipment.location
+      supplier: matchedSupplier?._id, // ✅ STRING → ID
+      location:
+        typeof equipment.location === "object"
+          ? (equipment.location as any)._id
+          : equipment.location,
     });
+
     setIsDialogOpen(true);
   }
 
   // ---------- SAVE ----------
+  // In EquipmentMaster.tsx
   async function saveForm() {
     if (!form.name || !form.location || (form.quantity || 0) < 1) {
-      toast.error("Please fill Name, Location and Quantity (>0)");
+      toast.error("Please fill Name, Location and Quantity");
       return;
     }
 
     try {
-      if (editing && editing._id) {
-        await dispatch(updateEquipment({ id: editing._id, data: form })).unwrap();
+      const fd = new FormData();
+
+      Object.entries(form).forEach(([key, value]) => {
+        if (key === "documents" && Array.isArray(value)) {
+          value.forEach((file: File) => {
+            fd.append("documents", file);
+          });
+        } else if (value !== undefined && value !== null) {
+          fd.append(key, String(value));
+        }
+      });
+
+      if (editing?._id) {
+        await dispatch(updateEquipment({ id: editing._id, data: fd })).unwrap();
         toast.success("Equipment updated");
       } else {
-        const newEq: Partial<Equipment> = {
-          ...form,
-          code: form.code || generateEquipmentCode(),
-          createdAt: new Date().toISOString(),
-        };
-        await dispatch(createEquipment(newEq)).unwrap();
+        await dispatch(createEquipment(fd)).unwrap();
         toast.success("Equipment added");
       }
-      dispatch(fetchEquipments({ page: 1, limit: 100, location: locationFilter === "All" ? "" : locationFilter }));
+
       setIsDialogOpen(false);
       setEditing(null);
-    } catch (error: any) {
-      toast.error(error || "Failed to save equipment");
+      dispatch(fetchEquipments({ page: 1, limit: 10 }));
+    } catch (err) {
+      toast.error("Failed to save equipment");
     }
   }
+
+
 
   // ---------- IMPORT FUNCTIONALITY ----------
   const handleDownloadTemplate = () => {
@@ -415,12 +505,20 @@ export default function EquipmentMasterPage() {
             };
 
             const equipmentId = row["Equipment ID"] || row["EquipmentID"] || generateEquipmentCode();
+            const supplierName = row["Supplier"];
+            const matchedSupplier = supplier.find(
+              (s: any) =>
+                s.name.toLowerCase() === supplierName?.toString().toLowerCase()
+            );
+            const categoryName = row['Category'];
+            const matchedCategory = category.find((c: any) =>
+              c.name.toLowerCase() === categoryName?.toString().toLoswerCase())
 
             const payload: Partial<Equipment> = {
               name: row["Name"],
               code: equipmentId,
               model: row["Model"] || "",
-              category: row["Category"] || "General",
+              category: matchedCategory,
               location: locationId,
               quantity: quantity,
               basicCost,
@@ -430,7 +528,7 @@ export default function EquipmentMasterPage() {
               totalCost: basicCost + cgst + igst + sgst,
               invoiceNumber: row["Invoice Number"] || "",
               purchaseDate: parseDate(row["Purchase Date"]),
-              supplier: row["Supplier"] || "",
+              supplier: matchedSupplier?._id || undefined,
               manufacturer: row["Manufacturer"] || "",
               warranty: row["Warranty"] || "",
               createdAt: new Date().toISOString(),
@@ -470,18 +568,24 @@ export default function EquipmentMasterPage() {
   };
 
   // ---------- FILES ----------
+  // In EquipmentMaster.tsx
+
   async function handleFileAdd(files: FileList | null) {
     if (!files || files.length === 0) return;
     const arr = Array.from(files);
+
     const converted = await Promise.all(
       arr.map(async (f) => ({
         id: crypto.randomUUID(),
         name: f.name,
         type: f.type,
         size: f.size,
-        dataUrl: await fileToDataUrl(f),
+        url: await fileToDataUrl(f),
+        publicId: "",
+        rawFile: f, // <--- IMPORTANT: Store the original file here!
       }))
     );
+
     setForm((prev) => ({
       ...prev,
       documents: [...(prev.documents || []), ...converted],
@@ -619,7 +723,10 @@ export default function EquipmentMasterPage() {
                         </TableCell>
                         <TableCell className="font-medium">{equipment.name}</TableCell>
                         <TableCell>{equipment.model || "-"}</TableCell>
-                        <TableCell>{equipment.category || "-"}</TableCell>
+                        <TableCell>
+                          {category.find((c: any) => c._id === equipment.category)?.name || "-"}
+                        </TableCell>
+
                         <TableCell>{getLocationName(equipment.location)}</TableCell>
                         <TableCell className="text-center font-semibold">{equipment.quantity || 1}</TableCell>
                         <TableCell className="text-center text-orange-600 font-medium">{equipment.allocatedQuantity || 0}</TableCell>
@@ -631,7 +738,35 @@ export default function EquipmentMasterPage() {
                         </TableCell>
 
                         <TableCell onClick={(e) => e.stopPropagation()}>
-                          <div className="flex gap-2">
+                          <div
+                            className="flex gap-2"
+                            onClick={(e) => e.stopPropagation()} // 🔥 IMPORTANT
+                          >
+                            {/* 👁 VIEW DETAILS */}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setViewEquipment(equipment);
+                                setViewModalOpen(true);
+                              }}
+                            >
+                              <Eye className="w-4 h-4 text-indigo-600" />
+                            </Button>
+
+                            {/* 📎 VIEW DOCUMENTS */}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedEquipment(equipment);
+                                setDocModalOpen(true);
+                              }}
+                            >
+                              <File className="w-4 h-4 text-blue-600" />
+                            </Button>
+
+                            {/* ✏️ EDIT */}
                             <Button
                               variant="ghost"
                               size="sm"
@@ -641,17 +776,14 @@ export default function EquipmentMasterPage() {
                               <Edit2 className="w-4 h-4" />
                             </Button>
 
+                            {/* 🗑 DELETE */}
                             <Button
                               variant="ghost"
                               size="sm"
                               disabled={!canDelete}
                               onClick={() => {
-                                if (!canDelete) return;
-                                if (!equipment._id) {
-                                  toast.error("This item is not saved on server");
-                                  return;
-                                }
-                                if (window.confirm("Are you sure? This will delete all child equipment too.")) {
+                                if (!equipment._id) return;
+                                if (window.confirm("Delete this equipment?")) {
                                   dispatch(deleteEquipment(equipment._id));
                                   toast.success("Deleted successfully");
                                 }
@@ -660,7 +792,9 @@ export default function EquipmentMasterPage() {
                               <Trash2 className="w-4 h-4 text-red-500" />
                             </Button>
                           </div>
+
                         </TableCell>
+
                       </TableRow>
 
                       {/* Expanded Children Rows */}
@@ -851,10 +985,26 @@ export default function EquipmentMasterPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <Label>Category</Label>
-                <Input
-                  value={form.category || ""}
-                  onChange={(e) => setForm({ ...form, category: e.target.value })}
-                />
+
+                <Select
+                  value={form.category ?? undefined}
+                  onValueChange={(v) => setForm({ ...form, category: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Category" />
+                  </SelectTrigger>
+
+                  <SelectContent>
+                    {category?.map((cat: any) => (
+                      <SelectItem
+                        key={cat._id}
+                        value={cat._id}   // ✅ NEVER empty string
+                      >
+                        {cat.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div>
@@ -910,11 +1060,25 @@ export default function EquipmentMasterPage() {
                 </div>
                 <div>
                   <Label>Supplier</Label>
-                  <Input
-                    value={form.supplier || ""}
-                    onChange={(e) => setForm({ ...form, supplier: e.target.value })}
-                  />
+
+                  <Select
+                    value={form.supplier ?? undefined}
+                    onValueChange={(v) => setForm({ ...form, supplier: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select Supplier" />
+                    </SelectTrigger>
+
+                    <SelectContent>
+                      {supplier?.map((sup: any) => (
+                        <SelectItem key={sup._id} value={sup._id}>
+                          {sup.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
+
               </div>
             </div>
 
@@ -1007,31 +1171,47 @@ export default function EquipmentMasterPage() {
             </div>
 
             {/* DOCUMENTS */}
+            {/* DOCUMENTS */}
             <div className="border-t pt-4">
               <Label>Upload Documents</Label>
               <input
                 type="file"
                 multiple
-                onChange={(e) => handleFileAdd(e.target.files)}
-                className="block mt-1 w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100"
+                onChange={(e) => {
+                  const files = e.target.files ? Array.from(e.target.files) : [];
+                  setForm(prev => ({
+                    ...prev,
+                    documents: files // This stores the actual File objects
+                  }));
+                }}
+                className="block mt-1 w-full text-sm"
               />
 
-              {(form.documents || []).length > 0 && (
+              {/* Only show the list if there are files selected */}
+              {form.documents && form.documents.length > 0 && (
                 <div className="flex gap-2 flex-wrap mt-2">
-                  {form.documents?.map((f) => (
+                  {form.documents.map((f: any, i: number) => (
                     <div
-                      key={f.id}
-                      className="border rounded px-2 py-1 text-xs flex items-center gap-2 bg-gray-50"
+                      key={i}
+                      className="flex items-center gap-2 border rounded px-2 py-1 text-xs bg-muted"
                     >
-                      <span>{f.name}</span>
-                      <button onClick={() => removeFileFromForm(f.id)}>
-                        <X className="w-3 h-3 text-red-500" />
-                      </button>
+                      <span className="truncate max-w-[150px]">{f.name}</span>
+                      <X
+                        className="h-3 w-3 cursor-pointer text-destructive"
+                        onClick={() => {
+                          // Logic to remove a specific file if needed
+                          setForm(prev => ({
+                            ...prev,
+                            documents: prev.documents.filter((_: any, index: number) => index !== i)
+                          }));
+                        }}
+                      />
                     </div>
                   ))}
                 </div>
               )}
             </div>
+
           </div>
 
           <DialogFooter>
@@ -1048,6 +1228,212 @@ export default function EquipmentMasterPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={docModalOpen} onOpenChange={setDocModalOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Equipment Documents</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            {selectedEquipment?.documents
+              ?.filter(Boolean)
+              .map((doc, i) => (
+                <div
+                  key={i}
+                  className="flex items-center justify-between border rounded-md p-3"
+                >
+                  {/* FILE INFO */}
+                  <div className="text-sm">
+                    <p className="font-medium truncate max-w-[220px]">
+                      {doc.name}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {(doc.size / 1024).toFixed(1)} KB
+                    </p>
+                  </div>
+
+                  {/* ACTIONS */}
+                  <div className="flex gap-3">
+                    {/* VIEW → ONLY FOR IMAGES */}
+                    {isImage(doc) && (
+                      <button
+                        onClick={() => handleViewDocument(doc)}
+                        className="text-blue-600 text-sm underline"
+                      >
+                        View
+                      </button>
+                    )}
+
+
+                    {/* DOWNLOAD → ALWAYS */}
+                    <button
+                      onClick={() => downloadFile(doc.url, doc.name, doc.type)}
+                      className="text-green-600 text-sm underline"
+                    >
+                      Download
+                    </button>
+                  </div>
+
+                </div>
+              ))}
+
+            {!selectedEquipment?.documents?.length && (
+              <p className="text-sm text-muted-foreground">
+                No documents uploaded.
+              </p>
+            )}
+          </div>
+
+
+
+          <DialogFooter>
+            <Button onClick={() => setDocModalOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+
+      <Dialog open={viewModalOpen} onOpenChange={setViewModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Equipment Details</DialogTitle>
+            <DialogDescription>
+              Read-only view of equipment information
+            </DialogDescription>
+          </DialogHeader>
+
+          {viewEquipment && (
+            <div className="space-y-6 text-sm">
+
+              {/* BASIC INFO */}
+              <section>
+                <h4 className="font-semibold text-gray-700 mb-2">
+                  Basic Information
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  <div><b>Code:</b> {viewEquipment.code}</div>
+                  <div><b>Name:</b> {viewEquipment.name}</div>
+                  <div><b>Model:</b> {viewEquipment.model || "-"}</div>
+                  <div>
+                    <b>Category:</b>{" "}
+                    {category.find((c: any) => c._id === viewEquipment.category)?.name || "-"}
+                  </div>
+                  <div><b>Location:</b> {getLocationName(viewEquipment.location)}</div>
+                  <div>
+                    <b>Status:</b>{" "}
+                    <Badge variant="outline">
+                      {viewEquipment.allocationStatus || "Available"}
+                    </Badge>
+                  </div>
+                </div>
+              </section>
+
+              {/* QUANTITY */}
+              <section>
+                <h4 className="font-semibold text-gray-700 mb-2">Quantity</h4>
+                <div className="grid grid-cols-3 gap-4">
+                  <div><b>Total:</b> {viewEquipment.quantity || 0}</div>
+                  <div><b>Allocated:</b> {viewEquipment.allocatedQuantity || 0}</div>
+                  <div>
+                    <b>Available:</b>{" "}
+                    {viewEquipment.availableQuantity ??
+                      (viewEquipment.quantity || 0) - (viewEquipment.allocatedQuantity || 0)}
+                  </div>
+                </div>
+              </section>
+
+              {/* PRICING */}
+              <section>
+                <h4 className="font-semibold text-gray-700 mb-2">
+                  Pricing
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>Basic Cost: ₹{viewEquipment.basicCost || 0}</div>
+                  <div>CGST: ₹{viewEquipment.cgst || 0}</div>
+                  <div>SGST: ₹{viewEquipment.sgst || 0}</div>
+                  <div className="font-bold text-green-700">
+                    Total: ₹{viewEquipment.totalCost || 0}
+                  </div>
+                </div>
+              </section>
+
+              {/* PURCHASE INFO */}
+              <section>
+                <h4 className="font-semibold text-gray-700 mb-2">
+                  Purchase Information
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  <div>
+                    <b>Invoice No:</b> {viewEquipment.invoiceNumber || "-"}
+                  </div>
+                  <div>
+                    <b>Purchase Date:</b>{" "}
+                    {viewEquipment.purchaseDate
+                      ? new Date(viewEquipment.purchaseDate).toLocaleDateString()
+                      : "-"}
+                  </div>
+                  <div>
+                    <b>Supplier:</b> {viewEquipment.supplier || "-"}
+                  </div>
+                </div>
+              </section>
+
+              {/* DOCUMENTS */}
+              <section>
+                <h4 className="font-semibold text-gray-700 mb-2">Documents</h4>
+                {viewEquipment.documents?.length ? (
+                  <div className="flex flex-wrap gap-2">
+                    {viewEquipment.documents.map((doc: any, index: number) => (
+                      <Badge key={doc.publicId || index} variant="outline">
+                        {doc.name}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground">No documents uploaded</p>
+                )}
+              </section>
+
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button onClick={() => setViewModalOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+
+      <Dialog
+        open={!!imagePreview}
+        onOpenChange={() => setImagePreview(null)}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{imagePreview?.name}</DialogTitle>
+          </DialogHeader>
+
+          <div className="flex justify-center">
+            <img
+              src={imagePreview?.url}
+              alt={imagePreview?.name}
+              className="max-h-[70vh] rounded-md"
+            />
+          </div>
+
+          <DialogFooter>
+            <Button onClick={() => setImagePreview(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+
+
+
+
     </div>
   );
 }
