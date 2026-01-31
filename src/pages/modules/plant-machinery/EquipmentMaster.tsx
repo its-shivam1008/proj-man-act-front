@@ -287,7 +287,7 @@ export default function EquipmentMasterPage() {
 
   // Auto-calculate total cost
   useEffect(() => {
-    const total = (form.basicCost || 0) + (form.cgst || 0) + (form.igst || 0) + (form.sgst || 0);
+    const total = Number(form.basicCost || 0) + Number(form.cgst || 0) + Number(form.igst || 0) + Number(form.sgst || 0);
     setForm(prev => ({ ...prev, totalCost: total }));
   }, [form.basicCost, form.cgst, form.igst, form.sgst]);
 

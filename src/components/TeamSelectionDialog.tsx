@@ -208,7 +208,7 @@ const TeamSelectionDialog: React.FC<TeamSelectionDialogProps> = ({
  
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-5xl max-h-[85vh] flex flex-col">
+      <DialogContent className="max-w-5xl h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Manage Team for: {wbsItem?.type?.toUpperCase()} {wbsItem?.name}</DialogTitle>
           <DialogDescription>
