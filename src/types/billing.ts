@@ -7,6 +7,7 @@ export interface Milestone {
   billed?: number;
   balance?: number;
   projectId?: string | null;
+  location?:string;
   notes?: string;
   createdAt?: string;
   updatedAt?: string;

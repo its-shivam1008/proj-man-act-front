@@ -10,13 +10,35 @@ const getOrg = () => localStorage.getItem("organisationId");
 
 export const fetchPaginatedMilestones = createAsyncThunk(
   "billing/fetchPaginatedMilestones",
-  async ({ page = 1, limit = 10, search = "", projectId = "", organisationId = "" }) => {
+  async ({
+    page = 1,
+    limit = 10,
+    search = "",
+    projectId,
+    organisationId,
+    location,
+  }: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    projectId?: string;
+    organisationId?: string;
+    location?: string;
+  }) => {
     const res = await api.get("/get/milestone/paginated", {
-      params: { page, limit, search, projectId, organisationId },
+      params: {
+        page,
+        limit,
+        search,
+        projectId,
+        organisationId,
+        ...(location ? { location } : {}), // ✅ only send if exists
+      },
     });
     return res.data;
   }
 );
+
 
 /* ---------------------------------------------------
    FETCH MILESTONES

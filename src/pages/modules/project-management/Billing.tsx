@@ -2,6 +2,7 @@
 import { fetchWbsByIds, fetchWbsByProject } from "@/redux/slices/wbsSlice";
 import { fetchBillsByWbs, deleteBill } from "@/redux/slices/wbsBillSlice";
 import jsPDF from "jspdf";
+import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import autoTable from "jspdf-autotable";
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { Button } from "../../../components/ui/button";
@@ -13,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
 import { Badge } from "../../../components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui/tabs";
-import { Plus, Trash2, Edit2, FileText, Loader2, ShieldAlert, Download, Eye } from "lucide-react";
+import { Plus, Trash2, Edit2, FileText, Loader2, ShieldAlert, Download, Eye, ChevronsUpDown, Check } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 import { useDispatch, useSelector } from "react-redux";
 import { RootState } from "@/redux/store";
@@ -21,8 +22,11 @@ import { Milestone, Invoice } from "@/types/billing";
 import { fetchMilestones, createMilestone, updateMilestone, deleteMilestone, fetchInvoices, createInvoice, fetchPaginatedMilestones } from "@/redux/slices/billingSlice";
 import { fetchProjects } from "@/redux/slices/projectSlice";
 import { usePermission } from "@/hooks/userPermission";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 
 export default function BillingPage() {
+    const { userProfile } = useSelector((state: RootState) => state.auth);
     const dispatch = useDispatch();
     const { milestones, invoices, loading: billingLoading, totalPages } = useSelector((state: RootState) => state.billing);
     const { projects, loading: projectsLoading } = useSelector((state: RootState) => state.projects);
@@ -45,8 +49,14 @@ export default function BillingPage() {
         percent: 0,
         value: 0,
         billed: 0,
+        location: userProfile?.location || undefined,
     });
 
+    const isLocationRestricted =
+        userProfile?.role !== 'admin' &&
+        !!userProfile?.location;
+    const [locationFilter, setLocationFilter] = useState("all");
+    
     // Invoice States
     const [invoiceOpen, setInvoiceOpen] = useState(false);
     const [invoiceData, setInvoiceData] = useState<any>(null);
@@ -65,13 +75,33 @@ export default function BillingPage() {
     const [search, setSearch] = useState("");
     const [searchDebounce, setSearchDebounce] = useState("");
     const [projectId, setProjectId] = useState("");
+    
+    // Master Data
+    const { locations } = useSelector(
+        (state: RootState) => state.masterData
+    );
+
+    const [locationOpen, setLocationOpen] = useState(false);
 
     const safeMilestones = Array.isArray(milestones) ? milestones.filter(Boolean) : [];
     const safeInvoices = Array.isArray(invoices) ? invoices.filter(Boolean) : [];
     const safeProjects = Array.isArray(projects) ? projects.filter(Boolean) : [];
     const safeWbsBills = Array.isArray(wbsBills) ? wbsBills.filter(Boolean) : [];
+    const safeLocations = Array.isArray(locations) ? locations : []; // Ensure locations is an array
 
     const organisationId = localStorage.getItem("organisationId") || "";
+    
+    const handleLocationFilterChange = (val: string) => {
+        setLocationFilter(val);
+        setPage(1);
+    };
+
+    const getLocationName = (locData: string | { _id: string; name: string } | undefined) => {
+        if (!locData) return "N/A";
+        if (typeof locData === 'object' && locData.name) return locData.name;
+        const found = safeLocations.find((l) => l._id === locData);
+        return found ? found.name : "Unknown Location";
+    };
 
     // Debounce search
     useEffect(() => {
@@ -88,11 +118,26 @@ export default function BillingPage() {
                 page,
                 limit,
                 search: searchDebounce,
-                projectId,
+                projectId: projectId && projectId !== "all" ? projectId : undefined, // FIXED: Sanitize projectId
                 organisationId,
+                location: locationFilter !== "all" ? locationFilter : undefined,
             }));
         }
-    }, [page, searchDebounce, projectId, organisationId, dispatch]);
+    }, [
+        page,
+        searchDebounce,
+        projectId,
+        locationFilter,
+        organisationId,
+        dispatch,
+    ]);
+
+    useEffect(() => {
+        if (isLocationRestricted && userProfile?.location) {
+            setLocationFilter(userProfile.location);
+            setPage(1);
+        }
+    }, [isLocationRestricted, userProfile]);
 
     // Fetch initial data
     useEffect(() => {
@@ -100,7 +145,8 @@ export default function BillingPage() {
             dispatch(fetchInvoices({ organisationId }));
         }
         dispatch(fetchProjects({ page: 1, limit: 999, search: "", status: "" }));
-    }, [dispatch , organisationId]);
+        dispatch(fetchMasterData("location"));
+    }, [dispatch, organisationId]);
 
     // Fetch WBS for selected project in milestone form
     useEffect(() => {
@@ -145,10 +191,15 @@ export default function BillingPage() {
     // Handlers
     const openCreate = useCallback(() => {
         setEditing(null);
-        setForm({ percent: 0, value: 0, billed: 0 });
+        setForm({
+            percent: 0,
+            value: 0,
+            billed: 0,
+            location: userProfile?.location ?? undefined,
+        });
         setSelectedWbs([]);
         setIsDialogOpen(true);
-    }, []);
+    }, [userProfile]);
 
     const openEdit = useCallback((m: Milestone) => {
         setEditing(m);
@@ -177,8 +228,19 @@ export default function BillingPage() {
             if (editing) {
                 await dispatch(updateMilestone({
                     id: editing._id,
-                    payload: { ...form, billed, balance, wbsIds: selectedWbs },
-                })).unwrap();
+                    payload: {
+                        ...form,
+                        location:
+                            form.location ??
+                            editing.location ??
+                            userProfile?.location ??
+                            null,
+                        billed,
+                        balance,
+                        wbsIds: selectedWbs,
+                    }
+
+                })).unwrap()
             } else {
                 const newMilestone = {
                     name: form.name!,
@@ -187,6 +249,7 @@ export default function BillingPage() {
                     value,
                     billed,
                     balance,
+                    location: form.location ?? null,
                     projectId: form.projectId!,
                     wbsIds: selectedWbs,
                     createdAt: new Date().toISOString(),
@@ -195,12 +258,14 @@ export default function BillingPage() {
                 await dispatch(createMilestone(newMilestone)).unwrap();
             }
 
+            // FIXED: Ensure projectId is sanitized here as well so the list refreshes correctly
             await dispatch(fetchPaginatedMilestones({
                 page,
                 limit,
                 search: searchDebounce,
-                projectId,
+                projectId: projectId && projectId !== "all" ? projectId : undefined,
                 organisationId,
+                location: locationFilter !== "all" ? locationFilter : undefined,
             }));
 
             setIsDialogOpen(false);
@@ -241,17 +306,17 @@ export default function BillingPage() {
         };
 
         try {
-            // ✅ ONLY CREATE INVOICE
             await dispatch(createInvoice(invoice)).unwrap();
-
-            // ✅ REFRESH DATA
             await dispatch(fetchInvoices({ organisationId })).unwrap();
+            
+            // FIXED: Ensure payload matches main useEffect
             await dispatch(fetchPaginatedMilestones({
                 page,
                 limit,
                 search: searchDebounce,
-                projectId,
+                projectId: projectId && projectId !== "all" ? projectId : undefined,
                 organisationId,
+                location: locationFilter !== "all" ? locationFilter : undefined,
             })).unwrap();
 
         } catch (error) {
@@ -259,8 +324,6 @@ export default function BillingPage() {
             alert("Failed to generate invoice.");
         }
     };
-
-
 
     const openInvoicePreview = async (milestone: Milestone) => {
         if (!milestone.wbsIds || milestone.wbsIds.length === 0) {
@@ -444,25 +507,91 @@ export default function BillingPage() {
                                 placeholder="e.g., Phase 1 Completion"
                             />
                         </div>
-                        <div className="grid gap-2">
-                            <Label htmlFor="project">Project</Label>
-                            <Select
-                                value={form.projectId || ""}
-                                onValueChange={(v) => setForm({ ...form, projectId: v })}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select project" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {safeProjects.map((p) => (
-                                        <SelectItem key={p._id} value={p._id}>
-                                            {p.name}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                        <div className="flex justify-between gap-3 w-full">
+                            {/* Project */}
+                            <div className="flex flex-col gap-2 w-full">
+                                <Label htmlFor="project">Project</Label>
+                                <Select
+                                    value={form.projectId || ""}
+                                    onValueChange={(v) => setForm({ ...form, projectId: v })}
+                                >
+                                    <SelectTrigger className="w-full">
+                                        <SelectValue placeholder="Select project" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {safeProjects.map((p) => (
+                                            <SelectItem key={p._id} value={p._id}>
+                                                {p.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            {/* Location */}
+                            <div className="flex flex-col gap-2 w-full">
+                                <Label>Location</Label>
+                                <Popover
+                                    open={locationOpen}
+                                    onOpenChange={setLocationOpen}
+                                    modal={false}
+                                >
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="outline"
+                                            role="combobox"
+                                            disabled={isLocationRestricted}
+                                            className="justify-between w-full"
+                                        >
+                                            {form.location
+                                                ? safeLocations.find((l) => l._id === form.location)?.name
+                                                : "Select Location"}
+                                            <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                                        </Button>
+                                    </PopoverTrigger>
+
+                                    {!isLocationRestricted && (
+                                        <PopoverContent className="p-0 w-[240px]" align="start">
+                                            <Command>
+                                                <CommandInput placeholder="Search location..." />
+                                                <CommandList>
+                                                    <CommandEmpty>No location found.</CommandEmpty>
+                                                    <CommandGroup>
+                                                        {safeLocations.map((l) => (
+                                                            <CommandItem
+                                                                key={l._id}
+                                                                value={l.name}
+                                                                onSelect={() => {
+                                                                    setForm({ ...form, location: l._id });
+                                                                    setLocationOpen(false);
+                                                                }}
+                                                            >
+                                                                <Check
+                                                                    className={`mr-2 h-4 w-4 ${form.location === l._id
+                                                                        ? "opacity-100"
+                                                                        : "opacity-0"
+                                                                        }`}
+                                                                />
+                                                                {l.name}
+                                                            </CommandItem>
+                                                        ))}
+                                                    </CommandGroup>
+                                                </CommandList>
+                                            </Command>
+                                        </PopoverContent>
+                                    )}
+                                </Popover>
+
+                                {isLocationRestricted && (
+                                    <p className="text-[10px] text-muted-foreground">
+                                        * Location is fixed based on your permissions
+                                    </p>
+                                )}
+                            </div>
                         </div>
-                        {wbsList.length > 0 && (
+
+                        {/* ... existing dialog content ... */}
+                         {wbsList.length > 0 && (
                             <div className="grid gap-2">
                                 <Label>Link WBS Items</Label>
                                 <div className="border rounded-md p-3 max-h-40 overflow-y-auto">
@@ -535,10 +664,11 @@ export default function BillingPage() {
                 </DialogContent>
             </Dialog>
 
-            {/* Invoice Preview Dialog */}
+            {/* Invoice & Bill Dialogs (Existing Code) */}
             <Dialog open={invoiceOpen} onOpenChange={setInvoiceOpen}>
                 <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-                    <DialogHeader>
+                     {/* ... Invoice preview content ... */}
+                     <DialogHeader>
                         <DialogTitle>Invoice Preview</DialogTitle>
                     </DialogHeader>
                     {invoiceData && (
@@ -609,10 +739,10 @@ export default function BillingPage() {
                 </DialogContent>
             </Dialog>
 
-            {/* Bill Preview Dialog */}
             <Dialog open={!!previewBill} onOpenChange={(open) => !open && setPreviewBill(null)}>
                 <DialogContent className="max-w-2xl">
-                    <DialogHeader>
+                     {/* ... Bill preview content ... */}
+                     <DialogHeader>
                         <DialogTitle>Bill Preview</DialogTitle>
                     </DialogHeader>
                     {previewBill && (
@@ -670,6 +800,19 @@ export default function BillingPage() {
                         <CardHeader className="flex flex-row items-center justify-between">
                             <CardTitle>Milestones ({safeMilestones.length})</CardTitle>
                             <div className="flex gap-2">
+                                <Select disabled={isLocationRestricted} value={locationFilter} onValueChange={handleLocationFilterChange}>
+                                    <SelectTrigger className="w-full md:w-48">
+                                        <SelectValue placeholder="Filter Location" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">All Locations</SelectItem>
+                                        {safeLocations.map((loc) => (
+                                            <SelectItem key={loc._id} value={loc._id}>
+                                                {loc.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                                 <Input
                                     placeholder="Search milestones..."
                                     value={search}
@@ -707,6 +850,7 @@ export default function BillingPage() {
                                         <TableHead>Billed</TableHead>
                                         <TableHead>Balance</TableHead>
                                         <TableHead>Project</TableHead>
+                                        <TableHead>Location</TableHead>
                                         <TableHead className="text-right">Actions</TableHead>
                                     </TableRow>
                                 </TableHeader>
@@ -723,6 +867,8 @@ export default function BillingPage() {
                                                     ₹{(m.balance ?? 0).toLocaleString("en-IN")}
                                                 </TableCell>
                                                 <TableCell>{project?.name || "—"}</TableCell>
+                                                <TableCell>{getLocationName(m.location)}</TableCell>
+
                                                 <TableCell>
                                                     <div className="flex justify-end gap-2">
                                                         {canEdit && (
@@ -754,7 +900,7 @@ export default function BillingPage() {
 
                             {safeMilestones.length === 0 && (
                                 <div className="text-center py-12 text-muted-foreground">
-                                    No milestones yet. Click "Add Milestone" to create one.
+                                    No milestones found matching your criteria.
                                 </div>
                             )}
 
@@ -782,7 +928,7 @@ export default function BillingPage() {
                         </CardContent>
                     </Card>
 
-                    {/* Charts */}
+                    {/* Charts (Existing Code) */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                         <Card>
                             <CardHeader>
@@ -837,7 +983,8 @@ export default function BillingPage() {
 
                 {/* Invoices Tab */}
                 <TabsContent value="invoices" className="space-y-4">
-                    <Card>
+                     {/* ... Invoices content ... */}
+                     <Card>
                         <CardHeader>
                             <CardTitle>Invoices ({safeInvoices.length})</CardTitle>
                         </CardHeader>
@@ -878,7 +1025,8 @@ export default function BillingPage() {
 
                 {/* WBS Bills Tab */}
                 <TabsContent value="wbs-bills" className="space-y-4">
-                    <Card>
+                     {/* ... WBS Bills content ... */}
+                     <Card>
                         <CardHeader>
                             <CardTitle>WBS Bills</CardTitle>
                             <p className="text-sm text-muted-foreground">
@@ -1016,6 +1164,1165 @@ export default function BillingPage() {
         </div>
     );
 }
+
+// "use client";
+// import { fetchWbsByIds, fetchWbsByProject } from "@/redux/slices/wbsSlice";
+// import { fetchBillsByWbs, deleteBill } from "@/redux/slices/wbsBillSlice";
+// import jsPDF from "jspdf";
+// import { fetchMasterData } from "@/redux/slices/masterDataSlice";
+// import autoTable from "jspdf-autotable";
+// import React, { useEffect, useMemo, useState, useCallback } from "react";
+// import { Button } from "../../../components/ui/button";
+// import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
+// import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "../../../components/ui/dialog";
+// import { Input } from "../../../components/ui/input";
+// import { Label } from "../../../components/ui/label";
+// import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
+// import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/ui/table";
+// import { Badge } from "../../../components/ui/badge";
+// import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui/tabs";
+// import { Plus, Trash2, Edit2, FileText, Loader2, ShieldAlert, Download, Eye, ChevronsUpDown, Check } from "lucide-react";
+// import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
+// import { useDispatch, useSelector } from "react-redux";
+// import { RootState } from "@/redux/store";
+// import { Milestone, Invoice } from "@/types/billing";
+// import { fetchMilestones, createMilestone, updateMilestone, deleteMilestone, fetchInvoices, createInvoice, fetchPaginatedMilestones } from "@/redux/slices/billingSlice";
+// import { fetchProjects } from "@/redux/slices/projectSlice";
+// import { usePermission } from "@/hooks/userPermission";
+// import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+// import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+
+// export default function BillingPage() {
+//     const { userProfile } = useSelector((state: RootState) => state.auth);
+//     const dispatch = useDispatch();
+//     const { milestones, invoices, loading: billingLoading, totalPages } = useSelector((state: RootState) => state.billing);
+//     const { projects, loading: projectsLoading } = useSelector((state: RootState) => state.projects);
+//     const { bills: wbsBills, loading: billLoading } = useSelector((state: RootState) => state.wbsBill);
+
+//     const loading = billingLoading || projectsLoading;
+
+//     // Permissions
+//     const canView = usePermission('billings', 'view');
+//     const canCreate = usePermission('billings', 'create');
+//     const canEdit = usePermission('billings', 'edit');
+//     const canDelete = usePermission('billings', 'delete');
+
+//     // Milestone States
+//     const [wbsList, setWbsList] = useState([]);
+//     const [selectedWbs, setSelectedWbs] = useState([]);
+//     const [isDialogOpen, setIsDialogOpen] = useState(false);
+//     const [editing, setEditing] = useState<Milestone | null>(null);
+//     const [form, setForm] = useState<Partial<Milestone>>({
+//         percent: 0,
+//         value: 0,
+//         billed: 0,
+//         location: userProfile?.location || undefined,
+//     });
+
+//     const isLocationRestricted =
+//         userProfile?.role !== 'admin' &&
+//         !!userProfile?.location;
+//     const [locationFilter, setLocationFilter] = useState("all");
+//     // Invoice States
+//     const [invoiceOpen, setInvoiceOpen] = useState(false);
+//     const [invoiceData, setInvoiceData] = useState<any>(null);
+
+//     // WBS Bill States
+//     const [wbsBillProject, setWbsBillProject] = useState("");
+//     const [wbsBillWbs, setWbsBillWbs] = useState("");
+//     const [wbsBillList, setWbsBillList] = useState([]);
+//     const [billDialogOpen, setBillDialogOpen] = useState(false);
+//     const [activeWbsId, setActiveWbsId] = useState<string | null>(null);
+//     const [previewBill, setPreviewBill] = useState<any>(null);
+
+//     // Pagination & Search
+//     const [page, setPage] = useState(1);
+//     const [limit, setLimit] = useState(10);
+//     const [search, setSearch] = useState("");
+//     const [searchDebounce, setSearchDebounce] = useState("");
+//     const [projectId, setProjectId] = useState("");
+//     const { clients, departments, projectTypes, locations } = useSelector( // [!code ++]
+//         (state: RootState) => state.masterData
+//     );
+
+//     const [locationOpen, setLocationOpen] = useState(false);
+
+//     const safeMilestones = Array.isArray(milestones) ? milestones.filter(Boolean) : [];
+//     const safeInvoices = Array.isArray(invoices) ? invoices.filter(Boolean) : [];
+//     const safeProjects = Array.isArray(projects) ? projects.filter(Boolean) : [];
+//     const safeWbsBills = Array.isArray(wbsBills) ? wbsBills.filter(Boolean) : [];
+
+//     const organisationId = localStorage.getItem("organisationId") || "";
+//     const handleLocationFilterChange = (val: string) => { // [!code ++]
+//         setLocationFilter(val);
+//         setPage(1);
+//     };
+//     const getLocationName = (locData: string | { _id: string; name: string } | undefined) => {
+//         if (!locData) return "N/A";
+//         if (typeof locData === 'object' && locData.name) return locData.name;
+//         const found = locations.find((l) => l._id === locData);
+//         return found ? found.name : "Unknown Location";
+//     };
+//     // Debounce search
+//     useEffect(() => {
+//         const delay = setTimeout(() => {
+//             setSearchDebounce(search);
+//         }, 300);
+//         return () => clearTimeout(delay);
+//     }, [search]);
+
+//     // Fetch paginated milestones
+//     useEffect(() => {
+//         if (organisationId) {
+//             dispatch(fetchPaginatedMilestones({
+//                 page,
+//                 limit,
+//                 search: searchDebounce,
+//                 projectId,
+//                 organisationId,
+//                 location: locationFilter !== "all" ? locationFilter : undefined, // ✅ ADD
+//             }));
+//         }
+//     }, [
+//         page,
+//         searchDebounce,
+//         projectId,
+//         locationFilter, // ✅ IMPORTANT
+//         organisationId,
+//         dispatch,
+//     ]);
+
+//     useEffect(() => {
+//         if (isLocationRestricted && userProfile?.location) {
+//             setLocationFilter(userProfile.location);
+//             setPage(1);
+//         }
+//     }, [isLocationRestricted, userProfile]);
+
+//     // Fetch initial data
+//     useEffect(() => {
+//         if (organisationId) {
+//             dispatch(fetchInvoices({ organisationId }));
+//         }
+//         dispatch(fetchProjects({ page: 1, limit: 999, search: "", status: "" }));
+//         dispatch(fetchMasterData("location"));
+//     }, [dispatch, organisationId]);
+
+//     // Fetch WBS for selected project in milestone form
+//     useEffect(() => {
+//         if (form.projectId) {
+//             dispatch(fetchWbsByProject(form.projectId))
+//                 .unwrap()
+//                 .then((res) => setWbsList(Array.isArray(res) ? res : []))
+//                 .catch(() => setWbsList([]));
+//         } else {
+//             setWbsList([]);
+//             setSelectedWbs([]);
+//         }
+//     }, [form.projectId, dispatch]);
+
+//     // Fetch WBS for WBS Bill tab
+//     useEffect(() => {
+//         if (wbsBillProject) {
+//             dispatch(fetchWbsByProject(wbsBillProject))
+//                 .unwrap()
+//                 .then((res) => setWbsBillList(Array.isArray(res) ? res : []))
+//                 .catch(() => setWbsBillList([]));
+//         } else {
+//             setWbsBillList([]);
+//             setWbsBillWbs("");
+//         }
+//     }, [wbsBillProject, dispatch]);
+
+//     // Fetch bills for selected WBS
+//     useEffect(() => {
+//         if (wbsBillWbs) {
+//             dispatch(fetchBillsByWbs(wbsBillWbs));
+//         }
+//     }, [wbsBillWbs, dispatch]);
+
+//     // Auto-adjust page if empty
+//     useEffect(() => {
+//         if (safeMilestones.length === 0 && page > 1 && !loading) {
+//             setPage(page - 1);
+//         }
+//     }, [safeMilestones.length, page, loading]);
+
+//     // Handlers
+//     const openCreate = useCallback(() => {
+//         setEditing(null);
+//         setForm({
+//             percent: 0,
+//             value: 0,
+//             billed: 0,
+//             location: userProfile?.location ?? undefined, // ✅ AUTO SET
+//         });
+//         setSelectedWbs([]);
+//         setIsDialogOpen(true);
+//     }, [userProfile]);
+
+//     const openEdit = useCallback((m: Milestone) => {
+//         setEditing(m);
+//         setForm({
+//             ...m,
+//             projectId: m.projectId,
+//             percent: m.percent ?? 0,
+//             value: m.value ?? 0,
+//             billed: m.billed ?? 0,
+//         });
+//         setSelectedWbs(m.wbsIds || []);
+//         setIsDialogOpen(true);
+//     }, []);
+
+//     const handleSave = async () => {
+//         if (!form.name || !form.projectId || (form.value ?? 0) <= 0) {
+//             alert("Please fill Milestone Name, select a Project, and enter a valid Value.");
+//             return;
+//         }
+
+//         const billed = Number(form.billed) || 0;
+//         const value = Number(form.value) || 0;
+//         const balance = value - billed;
+
+//         try {
+//             if (editing) {
+//                 await dispatch(updateMilestone({
+//                     id: editing._id,
+//                     payload: {
+//                         ...form,
+//                         location:
+//                             form.location ??
+//                             editing.location ??
+//                             userProfile?.location ??
+//                             null,
+//                         billed,
+//                         balance,
+//                         wbsIds: selectedWbs,
+//                     }
+
+//                 })).unwrap()
+//             } else {
+//                 const newMilestone = {
+//                     name: form.name!,
+//                     organisationId,
+//                     percent: Number(form.percent) || 0,
+//                     value,
+//                     billed,
+//                     balance,
+//                     location: form.location ?? null,
+//                     projectId: form.projectId!,
+//                     wbsIds: selectedWbs,
+//                     createdAt: new Date().toISOString(),
+//                     updatedAt: new Date().toISOString(),
+//                 };
+//                 await dispatch(createMilestone(newMilestone)).unwrap();
+//             }
+
+//             await dispatch(fetchPaginatedMilestones({
+//                 page,
+//                 limit,
+//                 search: searchDebounce,
+//                 projectId,
+//                 organisationId,
+//                 location: locationFilter !== "all" ? locationFilter : undefined,
+//             }));
+
+//             setIsDialogOpen(false);
+//             setEditing(null);
+//             setForm({ percent: 0, value: 0, billed: 0 });
+//             setSelectedWbs([]);
+//         } catch (error) {
+//             console.error("Failed to save milestone:", error);
+//             alert("Failed to save milestone. Please try again.");
+//         }
+//     };
+
+//     const handleDelete = useCallback((id: string) => {
+//         if (confirm("Are you sure you want to delete this milestone?")) {
+//             dispatch(deleteMilestone(id));
+//         }
+//     }, [dispatch]);
+
+//     const generateInvoice = async (m?: Milestone) => {
+//         const target = m || safeMilestones.find(
+//             (x: Milestone) => (x.balance ?? 0) > 0
+//         );
+
+//         if (!target) {
+//             alert("No milestone with remaining balance found to invoice.");
+//             return;
+//         }
+
+//         const now = new Date().toISOString();
+
+//         const invoice = {
+//             milestoneId: target._id,
+//             organisationId,
+//             milestoneName: target.name,
+//             date: now.slice(0, 10),
+//             amount: target.balance ?? 0,
+//             status: "Pending" as const,
+//         };
+
+//         try {
+//             // ✅ ONLY CREATE INVOICE
+//             await dispatch(createInvoice(invoice)).unwrap();
+
+//             // ✅ REFRESH DATA
+//             await dispatch(fetchInvoices({ organisationId })).unwrap();
+//             await dispatch(fetchPaginatedMilestones({
+//                 page,
+//                 limit,
+//                 search: searchDebounce,
+//                 projectId,
+//                 organisationId,
+//                 location: locationFilter !== "all" ? locationFilter : undefined,
+//             })).unwrap();
+
+//         } catch (error) {
+//             console.error("Failed to generate invoice:", error);
+//             alert("Failed to generate invoice.");
+//         }
+//     };
+
+
+
+//     const openInvoicePreview = async (milestone: Milestone) => {
+//         if (!milestone.wbsIds || milestone.wbsIds.length === 0) {
+//             alert("No WBS linked with this milestone");
+//             return;
+//         }
+
+//         try {
+//             const wbsItems = await dispatch(fetchWbsByIds(milestone.wbsIds)).unwrap();
+//             const totalAmount = wbsItems.reduce((sum: number, w: any) => sum + (w.plannedCost || 0), 0);
+
+//             setInvoiceData({
+//                 project: safeProjects.find(p => p._id === milestone.projectId),
+//                 milestone,
+//                 wbsItems: Array.isArray(wbsItems) ? wbsItems : [],
+//                 totalAmount,
+//                 invoice: {
+//                     date: new Date().toISOString().slice(0, 10),
+//                     status: "Pending",
+//                 },
+//             });
+//             setInvoiceOpen(true);
+//         } catch (error) {
+//             console.error("Failed to fetch WBS items:", error);
+//             alert("Failed to load invoice preview.");
+//         }
+//     };
+
+//     const downloadInvoicePDF = () => {
+//         if (!invoiceData) return;
+
+//         const doc = new jsPDF();
+//         const pageWidth = doc.internal.pageSize.getWidth();
+
+//         // Header
+//         doc.setFontSize(20);
+//         doc.text("INVOICE", pageWidth / 2, 20, { align: "center" });
+
+//         doc.setFontSize(10);
+//         doc.text(`Date: ${invoiceData.invoice.date}`, 20, 35);
+//         doc.text(`Status: ${invoiceData.invoice.status}`, 20, 42);
+
+//         // Project & Milestone
+//         doc.setFontSize(12);
+//         doc.text("Project:", 20, 55);
+//         doc.setFontSize(10);
+//         doc.text(invoiceData.project?.name || "N/A", 20, 62);
+
+//         doc.setFontSize(12);
+//         doc.text("Milestone:", 20, 72);
+//         doc.setFontSize(10);
+//         doc.text(invoiceData.milestone.name, 20, 79);
+
+//         // Table
+//         const tableData = invoiceData.wbsItems.map((w: any) => [
+//             w.name,
+//             `${w.duration} days`,
+//             `${w.progress}%`,
+//             `₹${(w.plannedCost || 0).toLocaleString("en-IN")}`,
+//         ]);
+
+//         autoTable(doc, {
+//             startY: 90,
+//             head: [["WBS", "Duration", "Progress", "Cost"]],
+//             body: tableData,
+//             foot: [["", "", "Total Amount", `₹${invoiceData.totalAmount.toLocaleString("en-IN")}`]],
+//             theme: "grid",
+//         });
+
+//         doc.save(`invoice-${invoiceData.milestone.name}.pdf`);
+//     };
+
+//     const downloadBillImage = async (imageUrl: string) => {
+//         try {
+//             const response = await fetch(imageUrl);
+//             const blob = await response.blob();
+//             const blobUrl = window.URL.createObjectURL(blob);
+//             const link = document.createElement("a");
+//             link.href = blobUrl;
+//             link.download = "WBS-Bill.jpg";
+//             link.click();
+//             window.URL.revokeObjectURL(blobUrl);
+//         } catch (error) {
+//             console.error("Failed to download bill image:", error);
+//             alert("Failed to download bill image.");
+//         }
+//     };
+
+//     const handleDeleteBill = useCallback((billId: string) => {
+//         if (confirm("Are you sure you want to delete this bill?")) {
+//             dispatch(deleteBill(billId))
+//                 .unwrap()
+//                 .then(() => {
+//                     if (wbsBillWbs) {
+//                         dispatch(fetchBillsByWbs(wbsBillWbs));
+//                     }
+//                 })
+//                 .catch((error) => {
+//                     console.error("Failed to delete bill:", error);
+//                     alert("Failed to delete bill.");
+//                 });
+//         }
+//     }, [dispatch, wbsBillWbs]);
+
+//     // Chart data
+//     const invoicePaymentData = useMemo(() => {
+//         return safeInvoices.map((inv: Invoice) => ({
+//             date: inv.date,
+//             invoice: inv.amount,
+//             payment: inv.status === "Paid" ? inv.amount : 0,
+//         }));
+//     }, [safeInvoices]);
+
+//     const forecastData = useMemo(() => {
+//         return safeMilestones.map((m) => ({
+//             milestone: m.name,
+//             value: m.value || 0,
+//         }));
+//     }, [safeMilestones]);
+
+//     // Loading state
+//     if (loading) {
+//         return (
+//             <div className="flex items-center justify-center min-h-screen">
+//                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
+//             </div>
+//         );
+//     }
+
+//     // Permission check
+//     if (!canView) {
+//         return (
+//             <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+//                 <ShieldAlert className="h-16 w-16 text-destructive" />
+//                 <h1 className="text-2xl font-bold">Access Denied</h1>
+//                 <p className="text-muted-foreground">You do not have the necessary permissions to view this page.</p>
+//             </div>
+//         );
+//     }
+
+//     return (
+//         <div className="p-6 space-y-6">
+//             {/* Header */}
+//             <div className="flex items-center justify-between">
+//                 <div>
+//                     <h1 className="text-3xl font-bold">Billing & Invoicing</h1>
+//                     <p className="text-muted-foreground">Link project progress with client billing and invoices.</p>
+//                 </div>
+//                 <div className="flex gap-2">
+//                     {canCreate && (
+//                         <>
+//                             <Button onClick={openCreate}>
+//                                 <Plus className="h-4 w-4 mr-2" />
+//                                 Add Milestone
+//                             </Button>
+//                             <Button onClick={() => generateInvoice()} variant="outline">
+//                                 <FileText className="h-4 w-4 mr-2" />
+//                                 Generate Invoice
+//                             </Button>
+//                         </>
+//                     )}
+//                 </div>
+//             </div>
+
+//             {/* Milestone Dialog */}
+//             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+//                 <DialogContent className="max-w-2xl">
+//                     <DialogHeader>
+//                         <DialogTitle>{editing ? "Edit Milestone" : "Add Milestone"}</DialogTitle>
+//                         <DialogDescription>
+//                             {editing ? "Update milestone details" : "Create a new billing milestone"}
+//                         </DialogDescription>
+//                     </DialogHeader>
+//                     <div className="grid gap-4 py-4">
+//                         <div className="grid gap-2">
+//                             <Label htmlFor="name">Milestone Name</Label>
+//                             <Input
+//                                 id="name"
+//                                 value={form.name || ""}
+//                                 onChange={(e) => setForm({ ...form, name: e.target.value })}
+//                                 placeholder="e.g., Phase 1 Completion"
+//                             />
+//                         </div>
+//                         <div className="flex justify-between gap-3 w-full">
+//                             {/* Project */}
+//                             <div className="flex flex-col gap-2 w-full">
+//                                 <Label htmlFor="project">Project</Label>
+//                                 <Select
+//                                     value={form.projectId || ""}
+//                                     onValueChange={(v) => setForm({ ...form, projectId: v })}
+//                                 >
+//                                     <SelectTrigger className="w-full">
+//                                         <SelectValue placeholder="Select project" />
+//                                     </SelectTrigger>
+//                                     <SelectContent>
+//                                         {safeProjects.map((p) => (
+//                                             <SelectItem key={p._id} value={p._id}>
+//                                                 {p.name}
+//                                             </SelectItem>
+//                                         ))}
+//                                     </SelectContent>
+//                                 </Select>
+//                             </div>
+
+//                             {/* Location */}
+//                             <div className="flex flex-col gap-2 w-full">
+//                                 <Label>Location</Label>
+
+//                                 <Popover
+//                                     open={locationOpen}
+//                                     onOpenChange={setLocationOpen}
+//                                     modal={false}
+//                                 >
+//                                     <PopoverTrigger asChild>
+//                                         <Button
+//                                             variant="outline"
+//                                             role="combobox"
+//                                             disabled={isLocationRestricted}
+//                                             className="justify-between w-full"
+//                                         >
+//                                             {form.location
+//                                                 ? locations.find((l) => l._id === form.location)?.name
+//                                                 : "Select Location"}
+//                                             <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+//                                         </Button>
+//                                     </PopoverTrigger>
+
+//                                     {!isLocationRestricted && (
+//                                         <PopoverContent className="p-0 w-[240px]" align="start">
+//                                             <Command>
+//                                                 <CommandInput placeholder="Search location..." />
+//                                                 <CommandList>
+//                                                     <CommandEmpty>No location found.</CommandEmpty>
+//                                                     <CommandGroup>
+//                                                         {locations.map((l) => (
+//                                                             <CommandItem
+//                                                                 key={l._id}
+//                                                                 value={l.name}
+//                                                                 onSelect={() => {
+//                                                                     setForm({ ...form, location: l._id });
+//                                                                     setLocationOpen(false);
+//                                                                 }}
+//                                                             >
+//                                                                 <Check
+//                                                                     className={`mr-2 h-4 w-4 ${form.location === l._id
+//                                                                         ? "opacity-100"
+//                                                                         : "opacity-0"
+//                                                                         }`}
+//                                                                 />
+//                                                                 {l.name}
+//                                                             </CommandItem>
+//                                                         ))}
+//                                                     </CommandGroup>
+//                                                 </CommandList>
+//                                             </Command>
+//                                         </PopoverContent>
+//                                     )}
+//                                 </Popover>
+
+//                                 {isLocationRestricted && (
+//                                     <p className="text-[10px] text-muted-foreground">
+//                                         * Location is fixed based on your permissions
+//                                     </p>
+//                                 )}
+//                             </div>
+//                         </div>
+
+//                         {wbsList.length > 0 && (
+//                             <div className="grid gap-2">
+//                                 <Label>Link WBS Items</Label>
+//                                 <div className="border rounded-md p-3 max-h-40 overflow-y-auto">
+//                                     {wbsList.map((wbs: any) => (
+//                                         <div key={wbs._id} className="flex items-center space-x-2 py-1">
+//                                             <input
+//                                                 type="checkbox"
+//                                                 id={`wbs-${wbs._id}`}
+//                                                 checked={selectedWbs.includes(wbs._id)}
+//                                                 onChange={(e) => {
+//                                                     if (e.target.checked) {
+//                                                         setSelectedWbs([...selectedWbs, wbs._id]);
+//                                                     } else {
+//                                                         setSelectedWbs(selectedWbs.filter((id) => id !== wbs._id));
+//                                                     }
+//                                                 }}
+//                                                 className="rounded"
+//                                             />
+//                                             <label htmlFor={`wbs-${wbs._id}`} className="text-sm cursor-pointer">
+//                                                 {wbs.name}
+//                                             </label>
+//                                         </div>
+//                                     ))}
+//                                 </div>
+//                             </div>
+//                         )}
+//                         <div className="grid grid-cols-2 gap-4">
+//                             <div className="grid gap-2">
+//                                 <Label htmlFor="percent">Completion %</Label>
+//                                 <Input
+//                                     id="percent"
+//                                     type="number"
+//                                     value={form.percent || 0}
+//                                     onChange={(e) => setForm({ ...form, percent: Number(e.target.value) })}
+//                                     min="0"
+//                                     max="100"
+//                                 />
+//                             </div>
+//                             <div className="grid gap-2">
+//                                 <Label htmlFor="value">Total Value (₹)</Label>
+//                                 <Input
+//                                     id="value"
+//                                     type="number"
+//                                     value={form.value || 0}
+//                                     onChange={(e) => setForm({ ...form, value: Number(e.target.value) })}
+//                                     min="0"
+//                                 />
+//                             </div>
+//                         </div>
+//                         <div className="grid gap-2">
+//                             <Label htmlFor="billed">Amount Billed (₹)</Label>
+//                             <Input
+//                                 id="billed"
+//                                 type="number"
+//                                 value={form.billed || 0}
+//                                 onChange={(e) => setForm({ ...form, billed: Number(e.target.value) })}
+//                                 min="0"
+//                                 max={form.value || 0}
+//                             />
+//                         </div>
+//                     </div>
+//                     <DialogFooter>
+//                         <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+//                             Cancel
+//                         </Button>
+//                         <Button onClick={handleSave}>
+//                             {editing ? "Update" : "Create"} Milestone
+//                         </Button>
+//                     </DialogFooter>
+//                 </DialogContent>
+//             </Dialog>
+
+//             {/* Invoice Preview Dialog */}
+//             <Dialog open={invoiceOpen} onOpenChange={setInvoiceOpen}>
+//                 <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+//                     <DialogHeader>
+//                         <DialogTitle>Invoice Preview</DialogTitle>
+//                     </DialogHeader>
+//                     {invoiceData && (
+//                         <div id="invoice" className="p-6 bg-white">
+//                             <div className="border-b pb-4 mb-6">
+//                                 <h2 className="text-3xl font-bold text-center">INVOICE</h2>
+//                                 <div className="flex justify-between mt-4 text-sm">
+//                                     <div>
+//                                         <p><strong>Date:</strong> {invoiceData.invoice.date}</p>
+//                                         <p><strong>Status:</strong> {invoiceData.invoice.status}</p>
+//                                     </div>
+//                                 </div>
+//                             </div>
+
+//                             <div className="grid grid-cols-2 gap-6 mb-6">
+//                                 <div>
+//                                     <h3 className="font-semibold mb-2">Project</h3>
+//                                     <p>{invoiceData.project?.name || "N/A"}</p>
+//                                 </div>
+//                                 <div>
+//                                     <h3 className="font-semibold mb-2">Milestone</h3>
+//                                     <p>{invoiceData.milestone.name}</p>
+//                                 </div>
+//                             </div>
+
+//                             <Table>
+//                                 <TableHeader>
+//                                     <TableRow>
+//                                         <TableHead>WBS</TableHead>
+//                                         <TableHead>Duration</TableHead>
+//                                         <TableHead>Progress</TableHead>
+//                                         <TableHead className="text-right">Cost</TableHead>
+//                                     </TableRow>
+//                                 </TableHeader>
+//                                 <TableBody>
+//                                     {invoiceData.wbsItems.map((w: any) => (
+//                                         <TableRow key={w._id}>
+//                                             <TableCell>{w.name}</TableCell>
+//                                             <TableCell>{w.duration} days</TableCell>
+//                                             <TableCell>{w.progress}%</TableCell>
+//                                             <TableCell className="text-right">
+//                                                 ₹{(w.plannedCost || 0).toLocaleString("en-IN")}
+//                                             </TableCell>
+//                                         </TableRow>
+//                                     ))}
+//                                 </TableBody>
+//                             </Table>
+
+//                             <div className="mt-6 flex justify-end">
+//                                 <div className="w-64 border-t pt-4">
+//                                     <div className="flex justify-between text-xl font-bold">
+//                                         <span>Total Amount</span>
+//                                         <span>₹{invoiceData.totalAmount.toLocaleString("en-IN")}</span>
+//                                     </div>
+//                                 </div>
+//                             </div>
+//                         </div>
+//                     )}
+//                     <DialogFooter>
+//                         <Button variant="outline" onClick={() => setInvoiceOpen(false)}>
+//                             Close
+//                         </Button>
+//                         <Button onClick={downloadInvoicePDF}>
+//                             <Download className="h-4 w-4 mr-2" />
+//                             Download PDF
+//                         </Button>
+//                     </DialogFooter>
+//                 </DialogContent>
+//             </Dialog>
+
+//             {/* Bill Preview Dialog */}
+//             <Dialog open={!!previewBill} onOpenChange={(open) => !open && setPreviewBill(null)}>
+//                 <DialogContent className="max-w-2xl">
+//                     <DialogHeader>
+//                         <DialogTitle>Bill Preview</DialogTitle>
+//                     </DialogHeader>
+//                     {previewBill && (
+//                         <div className="space-y-4">
+//                             <img
+//                                 src={previewBill.billImage.url}
+//                                 alt="Bill"
+//                                 className="w-full rounded-lg border"
+//                             />
+//                             <div className="grid grid-cols-2 gap-4 text-sm">
+//                                 <div>
+//                                     <p className="font-semibold">Total Amount</p>
+//                                     <p>₹{previewBill.billingDetails.totalAmount.toLocaleString("en-IN")}</p>
+//                                 </div>
+//                                 <div>
+//                                     <p className="font-semibold">GST Withheld</p>
+//                                     <p>₹{previewBill.billingDetails.gstWithheld.toLocaleString("en-IN")}</p>
+//                                 </div>
+//                                 <div>
+//                                     <p className="font-semibold">Retention Withheld</p>
+//                                     <p>₹{previewBill.billingDetails.retentionWithheld.toLocaleString("en-IN")}</p>
+//                                 </div>
+//                                 <div>
+//                                     <p className="font-semibold">Status</p>
+//                                     <Badge>{previewBill.billingDetails.status}</Badge>
+//                                 </div>
+//                             </div>
+//                         </div>
+//                     )}
+//                     <DialogFooter>
+//                         <Button variant="outline" onClick={() => setPreviewBill(null)}>
+//                             Close
+//                         </Button>
+//                         {previewBill && (
+//                             <Button onClick={() => downloadBillImage(previewBill.billImage.url)}>
+//                                 <Download className="h-4 w-4 mr-2" />
+//                                 Download Image
+//                             </Button>
+//                         )}
+//                     </DialogFooter>
+//                 </DialogContent>
+//             </Dialog>
+
+//             {/* Tabs */}
+//             <Tabs defaultValue="milestones" className="space-y-4">
+//                 <TabsList>
+//                     <TabsTrigger value="milestones">Milestones</TabsTrigger>
+//                     <TabsTrigger value="invoices">Invoices</TabsTrigger>
+//                     <TabsTrigger value="wbs-bills">WBS Bills</TabsTrigger>
+//                 </TabsList>
+
+//                 {/* Milestones Tab */}
+//                 <TabsContent value="milestones" className="space-y-4">
+//                     <Card>
+//                         <CardHeader className="flex flex-row items-center justify-between">
+//                             <CardTitle>Milestones ({safeMilestones.length})</CardTitle>
+//                             <div className="flex gap-2">
+//                                 <Select disabled={isLocationRestricted} value={locationFilter} onValueChange={handleLocationFilterChange}>
+//                                     <SelectTrigger className="w-full md:w-48">
+//                                         <SelectValue placeholder="Filter Location" />
+//                                     </SelectTrigger>
+//                                     <SelectContent>
+//                                         <SelectItem value="all">All Locations</SelectItem>
+//                                         {locations.map((loc) => (
+//                                             <SelectItem key={loc._id} value={loc._id}>
+//                                                 {loc.name}
+//                                             </SelectItem>
+//                                         ))}
+//                                     </SelectContent>
+//                                 </Select>
+//                                 <Input
+//                                     placeholder="Search milestones..."
+//                                     value={search}
+//                                     onChange={(e) => {
+//                                         setSearch(e.target.value);
+//                                         setPage(1);
+//                                     }}
+//                                     className="w-64"
+//                                 />
+//                                 <Select value={projectId} onValueChange={(v) => {
+//                                     setProjectId(v);
+//                                     setPage(1);
+//                                 }}>
+//                                     <SelectTrigger className="w-48">
+//                                         <SelectValue placeholder="All Projects" />
+//                                     </SelectTrigger>
+//                                     <SelectContent>
+//                                         <SelectItem value="all">All Projects</SelectItem>
+//                                         {safeProjects.map((p) => (
+//                                             <SelectItem key={p._id} value={p._id}>
+//                                                 {p.name}
+//                                             </SelectItem>
+//                                         ))}
+//                                     </SelectContent>
+//                                 </Select>
+//                             </div>
+//                         </CardHeader>
+//                         <CardContent>
+//                             <Table>
+//                                 <TableHeader>
+//                                     <TableRow>
+//                                         <TableHead>Milestone</TableHead>
+//                                         <TableHead>%</TableHead>
+//                                         <TableHead>Value</TableHead>
+//                                         <TableHead>Billed</TableHead>
+//                                         <TableHead>Balance</TableHead>
+//                                         <TableHead>Project</TableHead>
+//                                         <TableHead>Location</TableHead>
+//                                         <TableHead className="text-right">Actions</TableHead>
+//                                     </TableRow>
+//                                 </TableHeader>
+//                                 <TableBody>
+//                                     {safeMilestones.map((m: Milestone) => {
+//                                         const project = safeProjects.find((p) => p._id === m.projectId);
+//                                         return (
+//                                             <TableRow key={m._id}>
+//                                                 <TableCell className="font-medium">{m.name}</TableCell>
+//                                                 <TableCell>{m.percent ?? 0}%</TableCell>
+//                                                 <TableCell>₹{(m.value ?? 0).toLocaleString("en-IN")}</TableCell>
+//                                                 <TableCell>₹{(m.billed ?? 0).toLocaleString("en-IN")}</TableCell>
+//                                                 <TableCell className={(m.balance ?? 0) > 0 ? "text-green-600 font-semibold" : ""}>
+//                                                     ₹{(m.balance ?? 0).toLocaleString("en-IN")}
+//                                                 </TableCell>
+//                                                 <TableCell>{project?.name || "—"}</TableCell>
+//                                                 <TableCell>{getLocationName(m.location)}</TableCell>
+
+//                                                 <TableCell>
+//                                                     <div className="flex justify-end gap-2">
+//                                                         {canEdit && (
+//                                                             <Button size="sm" variant="ghost" onClick={() => openEdit(m)}>
+//                                                                 <Edit2 className="h-4 w-4" />
+//                                                             </Button>
+//                                                         )}
+//                                                         {canDelete && (
+//                                                             <Button size="sm" variant="ghost" onClick={() => handleDelete(m._id)}>
+//                                                                 <Trash2 className="h-4 w-4" />
+//                                                             </Button>
+//                                                         )}
+//                                                         {(m.balance ?? 0) > 0 && (
+//                                                             <Button size="sm" variant="outline" onClick={() => generateInvoice(m)}>
+//                                                                 Invoice
+//                                                             </Button>
+//                                                         )}
+//                                                         <Button size="sm" variant="outline" onClick={() => openInvoicePreview(m)}>
+//                                                             <Eye className="h-4 w-4 mr-1" />
+//                                                             Bill
+//                                                         </Button>
+//                                                     </div>
+//                                                 </TableCell>
+//                                             </TableRow>
+//                                         );
+//                                     })}
+//                                 </TableBody>
+//                             </Table>
+
+//                             {safeMilestones.length === 0 && (
+//                                 <div className="text-center py-12 text-muted-foreground">
+//                                     No milestones yet. Click "Add Milestone" to create one.
+//                                 </div>
+//                             )}
+
+//                             {totalPages > 1 && (
+//                                 <div className="flex items-center justify-between mt-4">
+//                                     <Button
+//                                         variant="outline"
+//                                         onClick={() => setPage(page - 1)}
+//                                         disabled={page === 1}
+//                                     >
+//                                         Previous
+//                                     </Button>
+//                                     <span className="text-sm text-muted-foreground">
+//                                         Page {page} of {totalPages}
+//                                     </span>
+//                                     <Button
+//                                         variant="outline"
+//                                         onClick={() => setPage(page + 1)}
+//                                         disabled={page >= totalPages}
+//                                     >
+//                                         Next
+//                                     </Button>
+//                                 </div>
+//                             )}
+//                         </CardContent>
+//                     </Card>
+
+//                     {/* Charts */}
+//                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+//                         <Card>
+//                             <CardHeader>
+//                                 <CardTitle>Invoice vs Payment Trend</CardTitle>
+//                             </CardHeader>
+//                             <CardContent>
+//                                 {invoicePaymentData.length > 0 ? (
+//                                     <ResponsiveContainer width="100%" height={300}>
+//                                         <LineChart data={invoicePaymentData}>
+//                                             <CartesianGrid strokeDasharray="3 3" />
+//                                             <XAxis dataKey="date" />
+//                                             <YAxis tickFormatter={(v) => `₹${Number(v).toLocaleString("en-IN")}`} />
+//                                             <Tooltip formatter={(v) => `₹${Number(v).toLocaleString("en-IN")}`} />
+//                                             <Legend />
+//                                             <Line type="monotone" dataKey="invoice" stroke="#8884d8" name="Invoice" />
+//                                             <Line type="monotone" dataKey="payment" stroke="#82ca9d" name="Payment" />
+//                                         </LineChart>
+//                                     </ResponsiveContainer>
+//                                 ) : (
+//                                     <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+//                                         No invoice data available
+//                                     </div>
+//                                 )}
+//                             </CardContent>
+//                         </Card>
+
+//                         <Card>
+//                             <CardHeader>
+//                                 <CardTitle>Billing Forecast by Milestone</CardTitle>
+//                             </CardHeader>
+//                             <CardContent>
+//                                 {forecastData.length > 0 ? (
+//                                     <ResponsiveContainer width="100%" height={300}>
+//                                         <BarChart data={forecastData}>
+//                                             <CartesianGrid strokeDasharray="3 3" />
+//                                             <XAxis dataKey="milestone" />
+//                                             <YAxis tickFormatter={(v) => `₹${Number(v).toLocaleString("en-IN")}`} />
+//                                             <Tooltip formatter={(v) => `₹${Number(v).toLocaleString("en-IN")}`} />
+//                                             <Legend />
+//                                             <Bar dataKey="value" fill="#8884d8" name="Value" />
+//                                         </BarChart>
+//                                     </ResponsiveContainer>
+//                                 ) : (
+//                                     <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+//                                         No milestone data available
+//                                     </div>
+//                                 )}
+//                             </CardContent>
+//                         </Card>
+//                     </div>
+//                 </TabsContent>
+
+//                 {/* Invoices Tab */}
+//                 <TabsContent value="invoices" className="space-y-4">
+//                     <Card>
+//                         <CardHeader>
+//                             <CardTitle>Invoices ({safeInvoices.length})</CardTitle>
+//                         </CardHeader>
+//                         <CardContent>
+//                             <Table>
+//                                 <TableHeader>
+//                                     <TableRow>
+//                                         <TableHead>Date</TableHead>
+//                                         <TableHead>Milestone</TableHead>
+//                                         <TableHead>Amount</TableHead>
+//                                         <TableHead>Status</TableHead>
+//                                     </TableRow>
+//                                 </TableHeader>
+//                                 <TableBody>
+//                                     {safeInvoices.map((inv: Invoice) => (
+//                                         <TableRow key={inv._id}>
+//                                             <TableCell>{inv.date}</TableCell>
+//                                             <TableCell>{inv.milestoneName || "—"}</TableCell>
+//                                             <TableCell>₹{Number(inv.amount).toLocaleString("en-IN")}</TableCell>
+//                                             <TableCell>
+//                                                 <Badge variant={inv.status === "Paid" ? "default" : "secondary"}>
+//                                                     {inv.status}
+//                                                 </Badge>
+//                                             </TableCell>
+//                                         </TableRow>
+//                                     ))}
+//                                 </TableBody>
+//                             </Table>
+
+//                             {safeInvoices.length === 0 && (
+//                                 <div className="text-center py-12 text-muted-foreground">
+//                                     No invoices generated yet.
+//                                 </div>
+//                             )}
+//                         </CardContent>
+//                     </Card>
+//                 </TabsContent>
+
+//                 {/* WBS Bills Tab */}
+//                 <TabsContent value="wbs-bills" className="space-y-4">
+//                     <Card>
+//                         <CardHeader>
+//                             <CardTitle>WBS Bills</CardTitle>
+//                             <p className="text-sm text-muted-foreground">
+//                                 View and manage bills associated with WBS items
+//                             </p>
+//                         </CardHeader>
+//                         <CardContent className="space-y-4">
+//                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+//                                 <div className="grid gap-2">
+//                                     <Label htmlFor="wbs-project">Select Project</Label>
+//                                     <Select value={wbsBillProject} onValueChange={setWbsBillProject}>
+//                                         <SelectTrigger id="wbs-project">
+//                                             <SelectValue placeholder="Choose a project" />
+//                                         </SelectTrigger>
+//                                         <SelectContent>
+//                                             {safeProjects.map((p) => (
+//                                                 <SelectItem key={p._id} value={p._id}>
+//                                                     {p.name}
+//                                                 </SelectItem>
+//                                             ))}
+//                                         </SelectContent>
+//                                     </Select>
+//                                 </div>
+
+//                                 <div className="grid gap-2">
+//                                     <Label htmlFor="wbs-item">Select WBS</Label>
+//                                     <Select
+//                                         value={wbsBillWbs}
+//                                         onValueChange={setWbsBillWbs}
+//                                         disabled={!wbsBillProject || wbsBillList.length === 0}
+//                                     >
+//                                         <SelectTrigger id="wbs-item">
+//                                             <SelectValue placeholder="Choose a WBS item" />
+//                                         </SelectTrigger>
+//                                         <SelectContent>
+//                                             {wbsBillList.map((wbs: any) => (
+//                                                 <SelectItem key={wbs._id} value={wbs._id}>
+//                                                     {wbs.name}
+//                                                 </SelectItem>
+//                                             ))}
+//                                         </SelectContent>
+//                                     </Select>
+//                                 </div>
+//                             </div>
+
+//                             {billLoading ? (
+//                                 <div className="flex items-center justify-center py-12">
+//                                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
+//                                 </div>
+//                             ) : wbsBillWbs && safeWbsBills.length > 0 ? (
+//                                 <div className="space-y-4">
+//                                     <h3 className="font-semibold">Bills for Selected WBS</h3>
+//                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+//                                         {safeWbsBills.map((bill: any) => (
+//                                             <Card key={bill._id} className="overflow-hidden">
+//                                                 <CardContent className="p-4 space-y-3">
+//                                                     <div className="aspect-video relative bg-muted rounded-md overflow-hidden">
+//                                                         {bill.billImage?.url ? (
+//                                                             <img
+//                                                                 src={bill.billImage.url}
+//                                                                 alt="Bill"
+//                                                                 className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition"
+//                                                                 onClick={() => setPreviewBill(bill)}
+//                                                             />
+//                                                         ) : (
+//                                                             <div className="w-full h-full flex items-center justify-center">
+//                                                                 <FileText className="h-12 w-12 text-muted-foreground" />
+//                                                             </div>
+//                                                         )}
+//                                                     </div>
+
+//                                                     <div className="space-y-2">
+//                                                         <div className="flex justify-between text-sm">
+//                                                             <span className="text-muted-foreground">Total:</span>
+//                                                             <span className="font-semibold">
+//                                                                 ₹{bill.billingDetails?.totalAmount?.toLocaleString("en-IN") || 0}
+//                                                             </span>
+//                                                         </div>
+//                                                         <div className="flex justify-between text-sm">
+//                                                             <span className="text-muted-foreground">GST:</span>
+//                                                             <span>₹{bill.billingDetails?.gstWithheld?.toLocaleString("en-IN") || 0}</span>
+//                                                         </div>
+//                                                         <div className="flex justify-between text-sm">
+//                                                             <span className="text-muted-foreground">Retention:</span>
+//                                                             <span>
+//                                                                 ₹{bill.billingDetails?.retentionWithheld?.toLocaleString("en-IN") || 0}
+//                                                             </span>
+//                                                         </div>
+//                                                         <div className="flex justify-between items-center">
+//                                                             <span className="text-sm text-muted-foreground">Status:</span>
+//                                                             <Badge variant={bill.billingDetails?.status === "Approved" ? "default" : "secondary"}>
+//                                                                 {bill.billingDetails?.status || "Pending"}
+//                                                             </Badge>
+//                                                         </div>
+//                                                     </div>
+
+//                                                     <div className="flex gap-2 pt-2">
+//                                                         <Button
+//                                                             size="sm"
+//                                                             variant="outline"
+//                                                             className="flex-1"
+//                                                             onClick={() => setPreviewBill(bill)}
+//                                                         >
+//                                                             <Eye className="h-4 w-4 mr-1" />
+//                                                             View
+//                                                         </Button>
+//                                                         {canDelete && (
+//                                                             <Button
+//                                                                 size="sm"
+//                                                                 variant="destructive"
+//                                                                 onClick={() => handleDeleteBill(bill._id)}
+//                                                             >
+//                                                                 <Trash2 className="h-4 w-4" />
+//                                                             </Button>
+//                                                         )}
+//                                                     </div>
+//                                                 </CardContent>
+//                                             </Card>
+//                                         ))}
+//                                     </div>
+//                                 </div>
+//                             ) : wbsBillWbs ? (
+//                                 <div className="text-center py-12 text-muted-foreground">
+//                                     No bills found for this WBS item.
+//                                 </div>
+//                             ) : (
+//                                 <div className="text-center py-12 text-muted-foreground">
+//                                     Select a project and WBS item to view bills.
+//                                 </div>
+//                             )}
+//                         </CardContent>
+//                     </Card>
+//                 </TabsContent>
+//             </Tabs>
+//         </div>
+//     );
+// }
 
 // "use client";
 // import { fetchWbsByIds, fetchWbsByProject } from "@/redux/slices/wbsSlice";

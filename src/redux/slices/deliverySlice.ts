@@ -10,7 +10,14 @@ export interface Delivery {
   quantity: number;
   shippingMethod: string;
   priority: "low" | "medium" | "high";
-  status: "draft" | "ready" | "in-transit" | "delivered" | "cancelled";
+  status:
+  | "draft"
+  | "ready"
+  | "in-transit"
+  | "delivered"
+  | "cancelled"
+  | "rejected";
+
   scheduledDate: string;
   organisationId: string;
 }

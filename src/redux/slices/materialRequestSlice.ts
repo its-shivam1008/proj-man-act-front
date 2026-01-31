@@ -14,7 +14,7 @@ export interface MaterialRequest {
   projectId?: string;
   projectName?: string;
   remark?: string;
-  status: 'ready' | 'in-transit' | 'delivered' | 'cancelled';
+  status: 'ready' | 'in-transit' | 'delivered' | 'cancelled' | 'rejected';
   acceptedAt: string;
   acceptedBy?: string;
   deliveryDetails?: {
@@ -41,9 +41,15 @@ interface MaterialRequestState {
     'in-transit': number;
     delivered: number;
     cancelled: number;
-  };
+    rejected: number;
+  }
 }
-
+type MaterialRequestStatus =
+  | 'ready'
+  | 'in-transit'
+  | 'delivered'
+  | 'cancelled'
+  | 'rejected';
 const initialState: MaterialRequestState = {
   requests: [],
   loading: false,
@@ -54,7 +60,9 @@ const initialState: MaterialRequestState = {
     'in-transit': 0,
     delivered: 0,
     cancelled: 0,
+    rejected: 0,
   },
+
 };
 
 // Async thunks
@@ -94,10 +102,10 @@ export const updateMaterialRequest = createAsyncThunk(
 
 export const updateMaterialRequestStatus = createAsyncThunk(
   'materialRequests/updateStatus',
-  async ({ id, status, deliveryDetails }: { 
-    id: string; 
-    status: string; 
-    deliveryDetails?: any 
+  async ({ id, status, deliveryDetails }: {
+    id: string;
+    status: MaterialRequestStatus;
+    deliveryDetails?: any
   }) => {
     const organisationId = localStorage.getItem('organisationId');
     const response = await api.patch(`/api/material-requests/${id}/status`, {
@@ -151,17 +159,17 @@ export const migrateMaterialRequestsFromLocalStorage = createAsyncThunk(
   async () => {
     const organisationId = localStorage.getItem('organisationId');
     const localStorageData = localStorage.getItem('MATERIAL_REQUESTS');
-    
+
     if (!localStorageData) {
       return [];
     }
-    
+
     const requests = JSON.parse(localStorageData);
-    
+
     if (requests.length === 0) {
       return [];
     }
-    
+
     // Add organisationId to all requests
     const requestsWithOrgId = requests.map((req: any) => ({
       ...req,
@@ -171,16 +179,16 @@ export const migrateMaterialRequestsFromLocalStorage = createAsyncThunk(
       acceptedAt: req.acceptedAt || new Date().toISOString(),
       sentDate: req.sentDate || new Date().toISOString(),
     }));
-    
+
     const response = await api.post('/api/material-requests/bulk', {
       requests: requestsWithOrgId
     }, {
       headers: { organisationId }
     });
-    
+
     // Clear localStorage after successful migration
     localStorage.removeItem('MATERIAL_REQUESTS');
-    
+
     return response.data.data;
   }
 );
@@ -211,7 +219,7 @@ const materialRequestSlice = createSlice({
         state.loading = false;
         state.error = action.error.message || 'Failed to fetch material requests';
       })
-      
+
       // Create material request
       .addCase(createMaterialRequest.pending, (state) => {
         state.loading = true;
@@ -225,7 +233,7 @@ const materialRequestSlice = createSlice({
         state.loading = false;
         state.error = action.error.message || 'Failed to create material request';
       })
-      
+
       // Update material request
       .addCase(updateMaterialRequest.fulfilled, (state, action) => {
         const index = state.requests.findIndex(req => req._id === action.payload._id);
@@ -233,7 +241,7 @@ const materialRequestSlice = createSlice({
           state.requests[index] = action.payload;
         }
       })
-      
+
       // Update status
       .addCase(updateMaterialRequestStatus.fulfilled, (state, action) => {
         const index = state.requests.findIndex(req => req._id === action.payload._id);
@@ -241,22 +249,22 @@ const materialRequestSlice = createSlice({
           state.requests[index] = action.payload;
         }
       })
-      
+
       // Delete material request
       .addCase(deleteMaterialRequest.fulfilled, (state, action) => {
         state.requests = state.requests.filter(req => req._id !== action.payload);
       })
-      
+
       // Fetch statistics
       .addCase(fetchMaterialRequestStatistics.fulfilled, (state, action) => {
         state.statistics = action.payload;
       })
-      
+
       // Bulk create
       .addCase(bulkCreateMaterialRequests.fulfilled, (state, action) => {
         state.requests = [...action.payload, ...state.requests];
       })
-      
+
       // Migration
       .addCase(migrateMaterialRequestsFromLocalStorage.fulfilled, (state, action) => {
         state.requests = [...action.payload, ...state.requests];

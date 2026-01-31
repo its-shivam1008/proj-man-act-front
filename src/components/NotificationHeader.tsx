@@ -465,7 +465,7 @@ export default function NotificationHeader() {
                 size="sm"
                 onClick={handleRefresh}
                 disabled={cooldown > 0 || loading}
-                className="h-9 w-9 p-0 hover:bg-white/50 rounded-lg"
+                className="h-9 w-9 p-0 mr-2 hover:bg-white/50 rounded-lg"
                 title={cooldown > 0 ? `Wait ${cooldown}s` : "Refresh"}
               >
                 <RefreshCcw
@@ -526,7 +526,7 @@ export default function NotificationHeader() {
                                         "bg-gradient-to-br from-gray-100 to-gray-200 text-gray-700"
                         }`}>
                         {isInvite ? <UserPlus className="h-4 w-4" /> :
-                          notification.type === "deadline_reminder" ? <Bell className="h-4 w-4" /> :
+                          notification.type === "deadline_reminder" ? <Bell className="h-5 w-5" /> :
                             // Resource released icon
                             isResourceReleased ? <CheckCircle className="h-4 w-4" /> :
                               // Package Icon - only show on RFQ pages, not Purchase Order pages

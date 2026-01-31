@@ -4,7 +4,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "../../../../redux/store";
 import { fetchProducts } from "../../../../redux/slices/productSlice";
 import { fetchMaterials } from "../../../../redux/slices/rawmaterialSlice";
-import { Search, Download, BarChart2, PieChart as PieIcon, ShieldAlert } from "lucide-react";
+import { Search, Download, ShieldAlert, RefreshCw, Filter } from "lucide-react";
 import {
   ResponsiveContainer,
   PieChart,
@@ -25,32 +25,24 @@ const BAR_COLOR = "#2563EB";
 
 export default function InventoryHistoryAdvancedUI() {
   const canView = usePermission("inventoryHistory", "view");
-  const canCreate = usePermission("inventoryHistory", "create");
-  const canEdit = usePermission("inventoryHistory", "edit");
-  const canDelete = usePermission("inventoryHistory", "delete");
+  // (Other permissions kept for future use if needed)
+  // const canCreate = usePermission("inventoryHistory", "create");
+  // const canEdit = usePermission("inventoryHistory", "edit");
+  // const canDelete = usePermission("inventoryHistory", "delete");
 
-  if (!canView) {
-    return (
-      <div className="text-center py-12 px-4">
-        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
-        <h3 className="text-xl font-semibold text-gray-900 mb-2">
-          Access Denied
-        </h3>
-        <p className="text-gray-600">
-          You do not have the necessary permissions to view this page.
-        </p>
-      </div>
-    );
-  }
+  // --- 1. New State for Filters ---
+  // const [selectedProject, setSelectedProject] = useState("All Projects");
+  const [movementType, setMovementType] = useState("All Types");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<"all" | "product" | "material">("all");
+
   const dispatch = useDispatch<AppDispatch>();
   const orgId = typeof window !== "undefined" ? localStorage.getItem("organisationId") : null;
 
   const { products = [], loading: productsLoading } = useSelector((state: RootState) => state.products || {});
   const { materials = [], loading: materialsLoading } = useSelector((state: RootState) => state.rawMaterials || {});
-
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "product" | "material">("all");
-  const [showCharts, setShowCharts] = useState(true);
 
   useEffect(() => {
     if (!orgId) return;
@@ -58,63 +50,104 @@ export default function InventoryHistoryAdvancedUI() {
     dispatch(fetchMaterials(orgId as any));
   }, [dispatch, orgId]);
 
- const combined = useMemo(() => {
-  const p = products.map((it: any) => {
-    const totalQty = (it.stocks || []).reduce(
-      (sum: number, s: any) => sum + (s.quantity || 0),
-      0
-    );
+  const handleRefresh = () => {
+    // setSelectedProject("All Projects");
+    setMovementType("All Types");
+    setStartDate("");
+    setEndDate("");
+    setSearch("");
+    setFilter("all");
+    // Optionally re-fetch data:
+    if (orgId) {
+      dispatch(fetchProducts(orgId as any));
+      dispatch(fetchMaterials(orgId as any));
+    }
+  };
 
-    const avgRate =
-      (it.stocks || []).length > 0
-        ? (it.stocks.reduce((sum: number, s: any) => sum + (s.unitCost || 0), 0) /
-           it.stocks.length)
-        : 0;
+  // --- 2. Data Transformation (Updated to include date/project fields) ---
+  const combined = useMemo(() => {
+    const p = products.map((it: any) => {
+      const totalQty = (it.stocks || []).reduce(
+        (sum: number, s: any) => sum + (s.quantity || 0),
+        0
+      );
 
-    return {
-      id: it._id,
-      type: "Product",
-      name: it.name,
-      qty: totalQty,
-      unit: it.unitOfMeasure || "PCS",
-      value: totalQty * avgRate,
-    };
-  });
+      const avgRate =
+        (it.stocks || []).length > 0
+          ? (it.stocks.reduce((sum: number, s: any) => sum + (s.unitCost || 0), 0) /
+             it.stocks.length)
+          : 0;
 
-  const m = materials.map((it: any) => {
-    const totalQty = (it.stocks || []).reduce(
-      (sum: number, s: any) => sum + (s.remainingQuantity ?? s.quantity ?? 0),
-      0
-    );
+      return {
+        id: it._id,
+        type: "Product",
+        name: it.name,
+        qty: totalQty,
+        unit: it.unitOfMeasure || "PCS",
+        value: totalQty * avgRate,
+        // Fallback to createdAt or current date for filtering if field is missing
+        date: it.createdAt || new Date().toISOString(), 
+        // projectId: it.projectId || "Unassigned" 
+      };
+    });
 
-    const avgRate =
-      (it.stocks || []).length > 0
-        ? (it.stocks.reduce((sum: number, s: any) => sum + (s.unitCost || 0), 0) /
-           it.stocks.length)
-        : 0;
+    const m = materials.map((it: any) => {
+      const totalQty = (it.stocks || []).reduce(
+        (sum: number, s: any) => sum + (s.remainingQuantity ?? s.quantity ?? 0),
+        0
+      );
 
-    return {
-      id: it._id,
-      type: "Raw Material",
-      name: it.name,
-      qty: totalQty,
-      unit: it.unitOfMeasure,
-      value: totalQty * avgRate,
-    };
-  });
+      const avgRate =
+        (it.stocks || []).length > 0
+          ? (it.stocks.reduce((sum: number, s: any) => sum + (s.unitCost || 0), 0) /
+             it.stocks.length)
+          : 0;
 
-  return [...p, ...m];
-}, [products, materials]);
+      return {
+        id: it._id,
+        type: "Raw Material",
+        name: it.name,
+        qty: totalQty,
+        unit: it.unitOfMeasure,
+        value: totalQty * avgRate,
+        date: it.createdAt || new Date().toISOString(),
+        // projectId: it.projectId || "Unassigned"
+      };
+    });
 
+    return [...p, ...m];
+  }, [products, materials]);
+
+  // --- 3. Filtering Logic ---
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
+    
     return combined.filter((item) => {
+      // Type Filter
       if (filter === "product" && item.type !== "Product") return false;
       if (filter === "material" && item.type !== "Raw Material") return false;
-      if (!q) return true;
-      return item.name.toLowerCase().includes(q);
+      
+      // Project Filter
+      // if (selectedProject !== "All Projects" && item.projectId !== selectedProject) return false;
+
+      // Search Filter
+      if (q && !item.name.toLowerCase().includes(q)) return false;
+
+      // Date Range Filter
+      if (startDate) {
+        const itemDate = new Date(item.date).setHours(0,0,0,0);
+        const start = new Date(startDate).setHours(0,0,0,0);
+        if (itemDate < start) return false;
+      }
+      if (endDate) {
+        const itemDate = new Date(item.date).setHours(0,0,0,0);
+        const end = new Date(endDate).setHours(0,0,0,0);
+        if (itemDate > end) return false;
+      }
+
+      return true;
     });
-  }, [combined, search, filter]);
+  }, [combined, search, filter, startDate, endDate]);
 
   // Chart data: pie breakdown of total stock value by type
   const pieData = useMemo(() => {
@@ -147,49 +180,127 @@ export default function InventoryHistoryAdvancedUI() {
     URL.revokeObjectURL(url);
   };
 
+  if (!canView) {
+    return (
+      <div className="text-center py-12 px-4">
+        <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
+        <p className="text-gray-600">You do not have the necessary permissions to view this page.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 max-w-8xl mx-auto">
-      <div className="flex items-start justify-between gap-6 mb-6">
+      {/* Title Section */}
+      <div className="flex items-start justify-between gap-6 mb-8">
         <div>
           <h1 className="text-3xl font-extrabold">Inventory History</h1>
           <p className="text-sm text-gray-500">Overview, charts and export for products & raw materials</p>
         </div>
+      </div>
 
-        <div className="flex items-center gap-3">
-          <div className="relative w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search item name..."
-              className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
+      {/* --- Filter Section (Matches Screenshot) --- */}
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6">
+        <div className="flex justify-between items-center mb-4">
+          <div className="flex items-center gap-2">
+            <Filter size={20} className="text-gray-700" />
+            <h3 className="font-bold text-gray-800 text-lg">Filters</h3>
+          </div>
+          <button 
+            onClick={handleRefresh}
+            className="flex items-center gap-2 px-3 py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium transition-colors"
+          >
+            <RefreshCw size={14} /> Refresh
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          {/* <div className="space-y-1">
+            <label className="text-sm font-semibold text-gray-700">Project</label>
+            <select 
+              value={selectedProject}
+              onChange={(e) => setSelectedProject(e.target.value)}
+              className="w-full p-2 border border-gray-300 rounded-md bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+            >
+              <option>All Projects</option>
+            </select> </div> */}
+
+          {/* <div className="space-y-1">
+            <label className="text-sm font-semibold text-gray-700">Movement Type</label>
+            <select 
+              value={movementType}
+              onChange={(e) => setMovementType(e.target.value)}
+              className="w-full p-2 border border-gray-300 rounded-md bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+            >
+              <option>All Types</option>
+              <option>Inbound</option>
+              <option>Outbound</option>
+            </select>
+          </div> */}
+
+          <div className="space-y-1">
+            <label className="text-sm font-semibold text-gray-700">Start Date</label>
+            <input 
+              type="date" 
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 outline-none" 
             />
           </div>
 
-          <div className="hidden sm:flex items-center gap-2 bg-gray-50 p-1 rounded-lg">
-            <button
-              onClick={() => setFilter("all")}
-              className={`px-3 py-1 rounded-md text-sm ${filter === "all" ? "bg-indigo-600 text-white" : "text-gray-700"}`}
-            >All</button>
-            <button
-              onClick={() => setFilter("product")}
-              className={`px-3 py-1 rounded-md text-sm ${filter === "product" ? "bg-indigo-600 text-white" : "text-gray-700"}`}
-            >Products</button>
-            <button
-              onClick={() => setFilter("material")}
-              className={`px-3 py-1 rounded-md text-sm ${filter === "material" ? "bg-indigo-600 text-white" : "text-gray-700"}`}
-            >Raw Materials</button>
+          <div className="space-y-1">
+            <label className="text-sm font-semibold text-gray-700">End Date</label>
+            <input 
+              type="date" 
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 outline-none" 
+            />
           </div>
+        </div>
 
-          <button
-            onClick={downloadCSV}
-            className="ml-2 inline-flex items-center gap-2 px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-          >
-            <Download size={16} /> Export CSV
-          </button>
+        {/* Search Bar */}
+        <div className="space-y-1">
+          <label className="text-sm font-semibold text-gray-700">Search</label>
+          <div className="relative">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by material, source, destination, WBS task, or reference..."
+              className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+            />
+            <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+          </div>
         </div>
       </div>
 
+      {/* --- Controls: Tabs & Export --- */}
+      <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
+        <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
+          <button
+            onClick={() => setFilter("all")}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${filter === "all" ? "bg-white text-indigo-600 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}
+          >All</button>
+          <button
+            onClick={() => setFilter("product")}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${filter === "product" ? "bg-white text-indigo-600 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}
+          >Products</button>
+          <button
+            onClick={() => setFilter("material")}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${filter === "material" ? "bg-white text-indigo-600 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}
+          >Raw Materials</button>
+        </div>
+
+        <button
+          onClick={downloadCSV}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm transition-colors text-sm font-medium"
+        >
+          <Download size={16} /> Export CSV
+        </button>
+      </div>
+
+      {/* --- Charts --- */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         <div className="col-span-2 bg-white rounded-xl shadow p-4">
           <div className="flex items-center justify-between mb-4">
@@ -232,6 +343,7 @@ export default function InventoryHistoryAdvancedUI() {
         </div>
       </div>
 
+      {/* --- Table --- */}
       <div className="bg-white rounded-xl shadow p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-semibold">Inventory Table ({filtered.length})</h3>

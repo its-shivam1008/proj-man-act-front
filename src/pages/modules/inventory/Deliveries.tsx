@@ -47,7 +47,6 @@ import {
   X,
   ShieldAlert,
   FolderKanban,
-  Badge,
 } from "lucide-react";
 import { BASE_URL } from "@/utils/constants";
 import MaterialRequestMigration from "@/components/MaterialRequestMigration";
@@ -59,6 +58,9 @@ import {
   PopoverTrigger,
   PopoverContent,
 } from "@/components/ui/popover";
+import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 
 
 interface DeliveryItem {
@@ -70,10 +72,16 @@ interface DeliveryItem {
   quantity: number;
   shippingMethod: string;
   priority: "low" | "medium" | "high";
-  status: "draft" | "ready" | "in-transit" | "delivered" | "cancelled";
+  status: 'ready' | 'in-transit' | 'delivered' | 'cancelled' | 'rejected';
   scheduledDate: string;
   warehouseId: string;
 }
+type MaterialRequestStatus =
+  | "ready"
+  | "in-transit"
+  | "delivered"
+  | "cancelled"
+  | "rejected";
 
 const Deliveries: React.FC = () => {
 
@@ -132,6 +140,15 @@ const Deliveries: React.FC = () => {
   const [showUpdateForm, setShowUpdateForm] = useState(false);
   const [showViewForm, setShowViewForm] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
+
+  const [selectedNotifications, setSelectedNotifications] = useState<string[]>([]);
+  const toggleNotification = (id: string) => {
+    setSelectedNotifications(prev =>
+      prev.includes(id)
+        ? prev.filter(nid => nid !== id)
+        : [...prev, id]
+    );
+  };
 
   const [editingDelivery, setEditingDelivery] = useState<DeliveryItem | null>(
     null
@@ -233,29 +250,27 @@ const Deliveries: React.FC = () => {
   };
 
   // Handle status update
-  const handleUpdateStatus = async (newStatus: string) => {
-    if (!editingRequest) return;
+  const handleUpdateStatus = async (newStatus: MaterialRequestStatus) => {
+  if (!editingRequest) return;
 
-    try {
-      await dispatch(updateMaterialRequestStatus({
-        id: editingRequest._id,
-        status: newStatus
-      }));
+  try {
+    await dispatch(updateMaterialRequestStatus({
+      id: editingRequest._id,
+      status: newStatus
+    })).unwrap();
 
-      // Update MRS status sync using unique ID instead of item name
-      if (newStatus === 'in-transit') {
-        const mrsStatusSync = JSON.parse(localStorage.getItem('MRS_STATUS_SYNC') || '{}');
-        mrsStatusSync[editingRequest.itemId] = 'in-transit'; // Use itemId (original MRS ID)
-        localStorage.setItem('MRS_STATUS_SYNC', JSON.stringify(mrsStatusSync));
-      }
+    // 🔁 FORCE REFRESH
+    await dispatch(fetchMaterialRequests({}));
 
-      setShowEditStatusDialog(false);
-      setEditingRequest(null);
-      toast.success(`Status updated to ${newStatus}`);
-    } catch (error) {
-      toast.error('Failed to update status');
-    }
-  };
+    setShowEditStatusDialog(false);
+    setEditingRequest(null);
+
+    toast.success(`Status updated to ${newStatus}`);
+  } catch (error) {
+    toast.error("Failed to update status");
+  }
+};
+
 
   // Handle delete request
   const handleDeleteRequest = async (id: string) => {
@@ -363,11 +378,14 @@ const Deliveries: React.FC = () => {
       case "delivered":
         return "bg-green-100 text-green-800";
       case "cancelled":
+        return "bg-gray-200 text-gray-700";
+      case "rejected":
         return "bg-red-100 text-red-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
   };
+
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -392,12 +410,15 @@ const Deliveries: React.FC = () => {
         return <Truck className="h-5 w-5 text-blue-500" />;
       case "delivered":
         return <CheckCircle className="h-5 w-5 text-green-500" />;
-      case "cancelled":
+      case "rejected":
         return <XCircle className="h-5 w-5 text-red-500" />;
+      case "cancelled":
+        return <XCircle className="h-5 w-5 text-gray-500" />;
       default:
         return null;
     }
   };
+
 
   const getProductName = (productId: string) => {
     const product = products.find((p: any) => p._id === productId);
@@ -750,6 +771,80 @@ const Deliveries: React.FC = () => {
     }
   );
 
+  const handleBulkAccept = async () => {
+    if (selectedNotifications.length === 0) {
+      toast.error("Select at least one request");
+      return;
+    }
+
+    try {
+      for (const id of selectedNotifications) {
+        const notification = notifications.find(n => n._id === id);
+        if (!notification) continue;
+
+        // Create material request
+        if (notification.materialData) {
+          await dispatch(createMaterialRequest({
+            itemId: notification.itemId,
+            item: notification.materialData.item,
+            sourceTask: notification.materialData.sourceTask,
+            quantity: notification.materialData.quantity,
+            unit: notification.materialData.unit,
+            requiredDate: notification.materialData.requiredDate,
+            sentDate: notification.materialData.sentDate,
+            projectId: notification.materialData.projectId,
+            projectName: notification.materialData.projectName,
+            remark: notification.remark,
+            status: "ready",
+            acceptedAt: new Date().toISOString()
+          }) as any);
+        }
+
+        // Mark notification accepted
+        await fetch(`${BASE_URL}/notifications/${id}/respond`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`
+          },
+          body: JSON.stringify({ response: "accepted" })
+        });
+      }
+
+      setSelectedNotifications([]);
+      fetchNotifications();
+      toast.success("Selected requests accepted successfully");
+    } catch (err) {
+      toast.error("Bulk accept failed");
+    }
+  };
+  const handleBulkReject = async () => {
+    if (selectedNotifications.length === 0) {
+      toast.error("Select at least one request");
+      return;
+    }
+
+    try {
+      for (const id of selectedNotifications) {
+        await fetch(`${BASE_URL}/notifications/${id}/respond`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`
+          },
+          body: JSON.stringify({ response: "rejected" })
+        });
+      }
+
+      setSelectedNotifications([]);
+      fetchNotifications();
+      toast.success("Selected requests rejected");
+    } catch {
+      toast.error("Bulk reject failed");
+    }
+  };
+
+
 
   const filteredStockTransfers = stockTransfers.filter((transfer: any) => {
     const matchesSearch = transfer.productName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -787,63 +882,138 @@ const Deliveries: React.FC = () => {
             <Package className="h-5 w-5" />
             New Material Requests from MRS ({notifications.length})
           </h3>
+          {selectedNotifications.length > 0 && (
+            <div className="flex gap-3 mb-3">
+              <button
+                onClick={handleBulkAccept}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg"
+              >
+                Accept Selected ({selectedNotifications.length})
+              </button>
+
+              <button
+                onClick={handleBulkReject}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg"
+              >
+                Reject Selected
+              </button>
+            </div>
+          )}
+
           <div className="space-y-3">
-            {notifications.map((notification) => (
-              <div key={notification._id} className="bg-white p-4 rounded-lg border border-blue-200">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <p className="font-medium text-gray-900 mb-2">{notification.materialData?.item || 'Unknown Item'}</p>
-                    <div className="text-sm text-gray-600 grid grid-cols-2 md:grid-cols-4 gap-2">
-                      <div>
-                        <span className="font-medium">Source Task:</span>
-                        <p className="text-gray-800">{notification.materialData?.sourceTask || 'N/A'}</p>
+            <div className="max-h-[70vh] overflow-y-auto pr-2 space-y-4">
+              {notifications.map((notification) => (
+                <div
+                  key={notification._id}
+                  className="bg-white p-4 rounded-lg border border-blue-200"
+                >
+                  <Card>
+                    <CardContent className="p-4">
+                      <div className="flex items-start gap-4">
+
+                        {/* Checkbox */}
+                        <Checkbox
+                          checked={selectedNotifications.includes(notification._id)}
+                          onCheckedChange={() => toggleNotification(notification._id)}
+                          className="mt-1"
+                        />
+
+                        {/* Main Content */}
+                        <div className="flex-1 space-y-3">
+
+                          {/* Item Title */}
+                          <div className="flex items-center justify-between">
+                            <h3 className="text-base font-semibold">
+                              {notification.materialData?.item || "Unknown Item"}
+                            </h3>
+
+                            {notification.materialData?.projectName && (
+                              <Badge variant="secondary">
+                                {notification.materialData.projectName}
+                              </Badge>
+                            )}
+                          </div>
+
+                          <Separator />
+
+                          {/* Info Grid */}
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                            <div>
+                              <p className="text-muted-foreground">Source Task</p>
+                              <p className="font-medium">
+                                {notification.materialData?.sourceTask || "N/A"}
+                              </p>
+                            </div>
+
+                            <div>
+                              <p className="text-muted-foreground">Quantity</p>
+                              <p className="font-medium">
+                                {notification.materialData?.quantity}{" "}
+                                {notification.materialData?.unit || "units"}
+                              </p>
+                            </div>
+
+                            <div>
+                              <p className="text-muted-foreground">Required Date</p>
+                              <p className="font-medium">
+                                {notification.materialData?.requiredDate
+                                  ? new Date(notification.materialData.requiredDate).toLocaleDateString()
+                                  : "N/A"}
+                              </p>
+                            </div>
+
+                            <div>
+                              <p className="text-muted-foreground">Sent Date</p>
+                              <p className="font-medium">
+                                {notification.materialData?.sentDate
+                                  ? new Date(notification.materialData.sentDate).toLocaleDateString()
+                                  : "N/A"}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Remark */}
+                          {notification.remark && (
+                            <div className="rounded-md bg-muted p-3 text-sm">
+                              <span className="font-medium">Remark:</span>
+                              <span className="ml-2">{notification.remark}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex flex-col gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() =>
+                              handleDeliveryResponse(notification._id, "accepted", notification)
+                            }
+                          >
+                            Accept
+                          </Button>
+
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() =>
+                              handleDeliveryResponse(notification._id, "rejected", notification)
+                            }
+                          >
+                            Reject
+                          </Button>
+                        </div>
+
                       </div>
-                      <div>
-                        <span className="font-medium">Quantity:</span>
-                        <p className="text-gray-800">{notification.materialData?.quantity} {notification.materialData?.unit || 'units'}</p>
-                      </div>
-                      <div>
-                        <span className="font-medium">Required Date:</span>
-                        <p className="text-gray-800">{notification.materialData?.requiredDate ? new Date(notification.materialData.requiredDate).toLocaleDateString() : 'N/A'}</p>
-                      </div>
-                      <div>
-                        <span className="font-medium">Sent Date:</span>
-                        <p className="text-gray-800">{notification.materialData?.sentDate ? new Date(notification.materialData.sentDate).toLocaleDateString() : 'N/A'}</p>
-                      </div>
-                    </div>
-                    {notification.materialData?.projectName && (
-                      <div className="mt-2 text-sm">
-                        <span className="font-medium text-gray-600">Project:</span>
-                        <span className="ml-2 text-gray-800">{notification.materialData.projectName}</span>
-                      </div>
-                    )}
-                    {notification.remark && (
-                      <div className="mt-2 text-sm">
-                        <span className="font-medium text-gray-600">Remark:</span>
-                        <span className="ml-2 text-gray-800">{notification.remark}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex gap-2 ml-4">
-                    <button
-                      onClick={() => handleDeliveryResponse(notification._id, 'accepted', notification)}
-                      className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium"
-                    >
-                      Accept
-                    </button>
-                    <button
-                      onClick={() => handleDeliveryResponse(notification._id, 'rejected', notification)}
-                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium"
-                    >
-                      Reject
-                    </button>
-                  </div>
+                    </CardContent>
+                  </Card>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
+
           </div>
         </div>
       )}
+
 
       {/* Header */}
       <div className="flex justify-between items-center">
@@ -877,6 +1047,7 @@ const Deliveries: React.FC = () => {
       </div>
 
       {/* Stats Cards */}
+      {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         <div className="bg-white p-6 rounded-lg shadow flex items-center gap-4">
           <Truck className="h-10 w-10 text-gray-600" />
@@ -887,6 +1058,7 @@ const Deliveries: React.FC = () => {
             </p>
           </div>
         </div>
+
         <div className="bg-white p-6 rounded-lg shadow flex items-center gap-4">
           <Truck className="h-10 w-10 text-blue-500" />
           <div>
@@ -897,6 +1069,7 @@ const Deliveries: React.FC = () => {
             </p>
           </div>
         </div>
+
         <div className="bg-white p-6 rounded-lg shadow flex items-center gap-4">
           <CheckCircle className="h-10 w-10 text-green-500" />
           <div>
@@ -907,131 +1080,136 @@ const Deliveries: React.FC = () => {
             </p>
           </div>
         </div>
+
         <div className="bg-white p-6 rounded-lg shadow flex items-center gap-4">
-          <AlertTriangle className="h-10 w-10 text-red-500" />
+          <XCircle className="h-10 w-10 text-red-500" />
           <div>
-            <p className="text-sm text-gray-500">High Priority</p>
+            <p className="text-sm text-gray-500">Rejected</p>
             <p className="text-2xl font-bold">
-              {(materialRequestsFromDB || []).filter((r: any) => r.priority === "high").length +
-                stockTransfers.filter((t: any) => t.priority === "high").length}
+              {filteredMaterialRequests.filter(
+                (r: any) => r.status === "rejected"
+              ).length}
             </p>
           </div>
         </div>
+
       </div>
+
 
       {/* Filters */}
       <div className="bg-white rounded-xl border shadow-sm p-4">
-  <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3">
 
-    {/* Search */}
-    <div className="relative flex-1 min-w-[220px]">
-      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-      <Input
-        placeholder="Search deliveries, project, task…"
-        value={searchTerm}
-        onChange={(e) => setSearchTerm(e.target.value)}
-        className="pl-9"
-      />
-    </div>
-
-    {/* Filters Button */}
-    <Popover open={filterOpen} onOpenChange={setFilterOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="outline" className="gap-2">
-          <Filter className="h-4 w-4" />
-          Filters
-        </Button>
-      </PopoverTrigger>
-
-      <PopoverContent
-        align="end"
-        className="w-[360px] bg-white border p-4 space-y-4 z-50"
-      >
-        {/* Date Range */}
-        <div className="space-y-2">
-          <p className="text-sm font-medium">Date Range</p>
-          <div className="grid grid-cols-2 gap-2">
+          {/* Search */}
+          <div className="relative flex-1 min-w-[220px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-            />
-            <Input
-              type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
+              placeholder="Search deliveries, project, task…"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9"
             />
           </div>
-        </div>
 
-        {/* Project */}
-        <div className="space-y-2">
-          <p className="text-sm font-medium">Project</p>
-          <Select
-            value={projectFilter}
-            onValueChange={(val) => {
-              setProjectFilter(val);
-              setFilterOpen(false);
-            }}
-          >
-            <SelectTrigger>
-              <FolderKanban className="mr-2 h-4 w-4 text-muted-foreground" />
-              <SelectValue placeholder="All Projects" />
-            </SelectTrigger>
-            <SelectContent className="z-[9999]">
-              <SelectItem value="all">All Projects</SelectItem>
-              {projects.map((p: any) => (
-                <SelectItem key={p._id} value={p._id}>
-                  {p.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+          {/* Filters Button */}
+          <Popover open={filterOpen} onOpenChange={setFilterOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="gap-2">
+                <Filter className="h-4 w-4" />
+                Filters
+              </Button>
+            </PopoverTrigger>
 
-        {/* Status */}
-        <div className="space-y-2">
-          <p className="text-sm font-medium">Status</p>
-          <Select
-            value={statusFilter}
-            onValueChange={(val) => {
-              setStatusFilter(val);
-              setFilterOpen(false);
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="All Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="draft">Draft</SelectItem>
-              <SelectItem value="ready">Ready</SelectItem>
-              <SelectItem value="in-transit">In Transit</SelectItem>
-              <SelectItem value="delivered">Delivered</SelectItem>
-              <SelectItem value="cancelled">Cancelled</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+            <PopoverContent
+              align="end"
+              className="w-[360px] bg-white border p-4 space-y-4 z-50"
+            >
+              {/* Date Range */}
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Date Range</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    type="date"
+                    value={fromDate}
+                    onChange={(e) => setFromDate(e.target.value)}
+                  />
+                  <Input
+                    type="date"
+                    value={toDate}
+                    onChange={(e) => setToDate(e.target.value)}
+                  />
+                </div>
+              </div>
 
-        {/* Clear */}
-        <Button
-          variant="ghost"
-          className="w-full text-red-600"
-          onClick={() => {
-            setFromDate("");
-            setToDate("");
-            setProjectFilter("all");
-            setStatusFilter("all");
-            setSearchTerm("");
-            setFilterOpen(false);
-          }}
-        >
-          Clear Filters
-        </Button>
-      </PopoverContent>
-    </Popover>
-  </div>
-</div>
+              {/* Project */}
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Project</p>
+                <Select
+                  value={projectFilter}
+                  onValueChange={(val) => {
+                    setProjectFilter(val);
+                    setFilterOpen(false);
+                  }}
+                >
+                  <SelectTrigger>
+                    <FolderKanban className="mr-2 h-4 w-4 text-muted-foreground" />
+                    <SelectValue placeholder="All Projects" />
+                  </SelectTrigger>
+                  <SelectContent className="z-[9999]">
+                    <SelectItem value="all">All Projects</SelectItem>
+                    {projects.map((p: any) => (
+                      <SelectItem key={p._id} value={p._id}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Status */}
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Status</p>
+                <Select
+                  value={statusFilter}
+                  onValueChange={(val) => {
+                    setStatusFilter(val);
+                    setFilterOpen(false);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="All Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="draft">Draft</SelectItem>
+                    <SelectItem value="ready">Ready</SelectItem>
+                    <SelectItem value="in-transit">In Transit</SelectItem>
+                    <SelectItem value="delivered">Delivered</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                    <SelectItem value="rejected">Rejected</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Clear */}
+              <Button
+                variant="ghost"
+                className="w-full text-red-600"
+                onClick={() => {
+                  setFromDate("");
+                  setToDate("");
+                  setProjectFilter("all");
+                  setStatusFilter("all");
+                  setSearchTerm("");
+                  setFilterOpen(false);
+                }}
+              >
+                Clear Filters
+              </Button>
+            </PopoverContent>
+          </Popover>
+        </div>
+      </div>
 
 
 
@@ -1169,6 +1347,14 @@ const Deliveries: React.FC = () => {
                               </span>
                             </div>
                           </SelectItem>
+                          <SelectItem value="rejected">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-1 rounded bg-red-100 text-red-700 text-xs">
+                                Rejected
+                              </span>
+                            </div>
+                          </SelectItem>
+
 
                           <SelectItem value="cancelled">
                             <div className="flex items-center gap-2">
@@ -1280,12 +1466,21 @@ const Deliveries: React.FC = () => {
                     {request.sentDate ? new Date(request.sentDate).toLocaleDateString() : 'N/A'}
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`px-3 py-1 text-xs font-semibold rounded-full ${request.status === 'ready' ? 'bg-blue-100 text-blue-800' :
-                      request.status === 'in-transit' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-green-100 text-green-800'
-                      }`}>
-                      {request.status.replace('-', ' ')}
+                    <span
+                      className={`px-3 py-1 text-xs font-semibold rounded-full ${request.status === "ready"
+                        ? "bg-blue-100 text-blue-800"
+                        : request.status === "in-transit"
+                          ? "bg-yellow-100 text-yellow-800"
+                          : request.status === "delivered"
+                            ? "bg-green-100 text-green-800"
+                            : request.status === "rejected"
+                              ? "bg-red-100 text-red-800"
+                              : "bg-gray-100 text-gray-800"
+                        }`}
+                    >
+                      {request.status.replace("-", " ")}
                     </span>
+
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
@@ -1375,6 +1570,15 @@ const Deliveries: React.FC = () => {
                   In Transit
                 </span>
               </button>
+              <button
+                onClick={() => handleUpdateStatus("rejected")}
+                className="w-full px-4 py-3 text-left border rounded-lg hover:bg-red-50 hover:border-red-500"
+              >
+                <span className="px-3 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">
+                  Rejected
+                </span>
+              </button>
+
 
               {/* <button
                 onClick={() => handleUpdateStatus('delivered')}

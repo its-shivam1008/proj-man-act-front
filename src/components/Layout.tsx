@@ -1,8 +1,10 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useLocation, Outlet, useNavigate } from "react-router-dom";
 import NotificationHeader from "./NotificationHeader";
+// import { ChevronRight } from "lucide-react";
 import {
   Home,
+  Search,
   Package,
   Factory,
   ShoppingCart,
@@ -37,6 +39,8 @@ import {
   Paintbrush,
   DatabaseZap,
   FileTextIcon,
+  Building2,
+  MessageCircle,
 } from "lucide-react";
 import {
   Accordion,
@@ -47,6 +51,8 @@ import {
 import { useDispatch, useSelector } from "react-redux";
 import { RootState } from "@/redux/store";
 import { logout } from "@/redux/slices/authSlice";
+import { Button } from "./ui/button";
+import NotificationSidebar from "./SidebarNotidication";
 
 interface NavLink {
   name: string;
@@ -72,6 +78,25 @@ const Layout: React.FC = () => {
     const perms = userProfile?.permissions || {};
     return perms[key]?.view === true;
   };
+
+  const buildSearchIndex = (modules: {
+    parent: string;
+    parentHref: string;
+    links: NavLink[];
+  }[]) => {
+    return modules.flatMap((module) =>
+      module.links.map((link) => ({
+        label: link.name,
+        href: link.href,
+        parent: module.parent,
+        key: link.key,
+      }))
+    );
+  };
+
+
+
+
 
   const mainLinks: NavLink[] = [
     { name: "Dashboard", href: "/", icon: Home, key: "dashboard" },
@@ -179,6 +204,56 @@ const Layout: React.FC = () => {
 
   const defaultActiveAccordion = activeModule ? activeModule.name : undefined;
 
+  const [openAccordion, setOpenAccordion] = useState<string | undefined>(
+    defaultActiveAccordion
+  );
+  const [search, setSearch] = useState("");
+
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+
+  // 2. Add Keyboard Shortcut (Ctrl+K or Cmd+K)
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setIsSearchOpen((open) => !open);
+      }
+    };
+    document.addEventListener("keydown", down);
+    return () => document.removeEventListener("keydown", down);
+  }, []);
+
+
+
+
+  // const defaultActiveAccordion = activeModule ? activeModule.name : undefined;
+  const searchItems = buildSearchIndex([
+    {
+      parent: "Project",
+      parentHref: "/project-management",
+      links: projectLinks.slice(1),
+    },
+    {
+      parent: "Production",
+      parentHref: "/production",
+      links: productionLinks.slice(1),
+    },
+    {
+      parent: "Inventory",
+      parentHref: "/inventory",
+      links: inventoryLinks,
+    },
+    {
+      parent: "Purchase",
+      parentHref: "/purchase",
+      links: purchaseLinks.slice(1),
+    },
+    {
+      parent: "Plant & Machinery",
+      parentHref: "/plant-machinery",
+      links: plantLinks.slice(1),
+    },
+  ]).filter((item) => hasViewAccess(item.key));
   // --- Auto-Redirect Logic ---
   useEffect(() => {
     if (location.pathname === "/" && !hasViewAccess("dashboard")) {
@@ -211,20 +286,86 @@ const Layout: React.FC = () => {
       }
     }
   }, [location.pathname, userProfile]);
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const [notifications, setNotifications] = useState([
+    {
+      id: 1,
+      type: 'mention',
+      title: 'Sarah mentioned you in a comment',
+      message: '"Could you review this when you get a chance?"',
+      time: '2m ago',
+      read: false,
+      category: 'social'
+    },
+    {
+      id: 2,
+      type: 'update',
+      title: 'Project timeline updated',
+      message: 'The Q1 deliverables deadline has been moved to March 15th',
+      time: '1h ago',
+      read: false,
+      category: 'work'
+    },
+    {
+      id: 3,
+      type: 'success',
+      title: 'Deployment successful',
+      message: 'Your latest changes are now live in production',
+      time: '3h ago',
+      read: true,
+      category: 'system'
+    },
+    {
+      id: 4,
+      type: 'alert',
+      title: 'Security update required',
+      message: 'Please review and approve the new security settings',
+      time: '5h ago',
+      read: false,
+      category: 'security'
+    },
+    {
+      id: 5,
+      type: 'message',
+      title: 'New message from team',
+      message: 'Weekly sync meeting notes are ready for review',
+      time: '1d ago',
+      read: true,
+      category: 'social'
+    }
+  ]);
 
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  const handleMarkAsRead = (id) => {
+    setNotifications(notifications.map(n =>
+      n.id === id ? { ...n, read: true } : n
+    ));
+  };
+
+  const handleMarkAllAsRead = () => {
+    setNotifications(notifications.map(n => ({ ...n, read: true })));
+  };
+
+  const handleDeleteNotification = (id) => {
+    setNotifications(notifications.filter(n => n.id !== id));
+  };
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg overflow-y-auto ">
+      <div className="fixed inset-y-0 left-0 z-50 w-64 bg-[#111113] shadow-xl overflow-y-auto border-r border-gray-800">
         <div className="flex h-full flex-col">
-          <div className="flex h-fit items-center justify-center border-b border-gray-200">
-            <h1 className="text-xl py-4 font-bold text-gray-900">ACT Bussiness Solutions</h1>
+          {/* --- Header --- */}
+          <div className="flex h-fit items-center justify-center border-b border-gray-800">
+            <h1 className="text-xl py-4 font-bold text-white tracking-wide">ACT Bussiness Solutions</h1>
           </div>
 
+          {/* --- Navigation --- */}
           <nav className="flex-1 space-y-1 px-2 py-4">
             <Accordion
               type="single"
               collapsible
-              defaultValue={defaultActiveAccordion}
+              value={openAccordion}
+              onValueChange={setOpenAccordion}
               className="w-full"
             >
               {mainLinks.map((item) => {
@@ -240,13 +381,7 @@ const Layout: React.FC = () => {
                 // --- MODULES RENDER LOGIC ---
                 if (subLinks) {
                   const visibleSubLinks = subLinks.filter(sub => hasViewAccess(sub.key));
-
-                  // [LOGIC UPDATED]: 
-                  // If there are NO visible children, hide the entire parent Accordion.
-                  // This applies even if the parent permission is TRUE.
-                  if (visibleSubLinks.length === 0) {
-                    return null;
-                  }
+                  if (visibleSubLinks.length === 0) return null;
 
                   const isModuleActive = location.pathname.startsWith(item.href);
 
@@ -257,31 +392,40 @@ const Layout: React.FC = () => {
                       className="border-b-0"
                     >
                       <AccordionTrigger
-                        className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors w-full justify-between hover:no-underline
-                        ${isModuleActive ? "bg-blue-50 text-blue-700" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"}
-                        `}
+                        className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-all w-full justify-between hover:no-underline
+                    ${isModuleActive
+                            ? "bg-blue-900/20 text-blue-400"
+                            : "text-gray-400 hover:bg-gray-800 hover:text-white"
+                          }
+                  `}
                       >
                         <div className="flex items-center">
-                          <Icon className={`mr-3 h-5 w-5 transition-colors ${isModuleActive ? "text-blue-500" : "text-gray-400 group-hover:text-gray-500"}`} />
+                          <Icon className={`mr-3 h-5 w-5 transition-colors ${isModuleActive ? "text-blue-400" : "text-gray-500 group-hover:text-gray-300"}`} />
                           {item.name}
                         </div>
                       </AccordionTrigger>
-                      <AccordionContent className="pt-1 pb-0 pl-7 space-y-1">
-                        {visibleSubLinks.map((subItem) => {
-                          const SubIcon = subItem.icon;
-                          const isSubActive = location.pathname === subItem.href;
-                          return (
-                            <Link
-                              key={subItem.name}
-                              to={subItem.href}
-                              className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors w-full ${isSubActive ? "bg-blue-50 text-blue-700" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                                }`}
-                            >
-                              <SubIcon className={`mr-3 h-5 w-5 transition-colors ${isSubActive ? "text-blue-500" : "text-gray-400 group-hover:text-gray-500"}`} />
-                              {subItem.name}
-                            </Link>
-                          );
-                        })}
+
+                      <AccordionContent className="pt-1 pb-0 pl-4 space-y-1">
+                        <div className="border-l border-gray-700 pl-3 space-y-1">
+                          {visibleSubLinks.map((subItem) => {
+                            const SubIcon = subItem.icon;
+                            const isSubActive = location.pathname === subItem.href;
+                            return (
+                              <Link
+                                key={subItem.name}
+                                to={subItem.href}
+                                className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors w-full 
+                            ${isSubActive
+                                    ? "bg-gray-800 text-white"
+                                    : "text-gray-400 hover:bg-gray-800 hover:text-white"
+                                  }`}
+                              >
+                                <SubIcon className={`mr-3 h-5 w-5 transition-colors ${isSubActive ? "text-blue-400" : "text-gray-600 group-hover:text-gray-400"}`} />
+                                {subItem.name}
+                              </Link>
+                            );
+                          })}
+                        </div>
                       </AccordionContent>
                     </AccordionItem>
                   );
@@ -295,10 +439,13 @@ const Layout: React.FC = () => {
                   <Link
                     key={item.name}
                     to={item.href}
-                    className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors ${isActive ? "bg-blue-50 text-blue-700" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                    className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors 
+                ${isActive
+                        ? "bg-blue-900/20 text-blue-400"
+                        : "text-gray-400 hover:bg-gray-800 hover:text-white"
                       }`}
                   >
-                    <Icon className={`mr-3 h-5 w-5 transition-colors ${isActive ? "text-blue-500" : "text-gray-400 group-hover:text-gray-500"}`} />
+                    <Icon className={`mr-3 h-5 w-5 transition-colors ${isActive ? "text-blue-400" : "text-gray-500 group-hover:text-gray-300"}`} />
                     {item.name}
                   </Link>
                 );
@@ -306,22 +453,24 @@ const Layout: React.FC = () => {
             </Accordion>
           </nav>
 
-          <div className="border-t border-gray-200 p-4 space-y-3">
+          {/* --- Footer / User Profile --- */}
+          <div className="border-t border-gray-800 p-4 space-y-3 bg-[#111113]">
             <Link
               to="/profile"
-              className="flex items-center p-2 rounded-lg hover:bg-gray-50 transition-colors group"
+              className="flex items-center p-2 rounded-lg hover:bg-gray-800 transition-colors group"
             >
-              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-br from-purple-100 to-indigo-100 flex items-center justify-center">
-                <User className="h-5 w-5 text-purple-600" />
+              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center border border-gray-700 group-hover:border-gray-600">
+                <User className="h-5 w-5 text-gray-400 group-hover:text-white" />
               </div>
               <div className="ml-3 flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">{userProfile?.fullname || "User"}</p>
+                <p className="text-sm font-medium text-gray-200 group-hover:text-white truncate">{userProfile?.fullname || "User"}</p>
                 <p className="text-xs text-gray-500 truncate">{email || "No email"}</p>
               </div>
             </Link>
+
             <button
               onClick={handleLogout}
-              className="w-full flex items-center px-3 py-2 text-sm font-medium text-gray-600 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors"
+              className="w-full flex items-center px-3 py-2 text-sm font-medium text-gray-400 rounded-lg hover:bg-red-900/20 hover:text-red-400 transition-colors"
             >
               <LogOut className="mr-3 h-4 w-4" />
               Sign Out
@@ -331,16 +480,287 @@ const Layout: React.FC = () => {
       </div>
 
       <div className="pl-64">
-        <div className="sticky top-0 z-40 bg-white border-b border-gray-200 px-4 py-3 flex justify-between items-center">
-          <h1 className="text-xl font-semibold text-gray-900">SCM Pro</h1>
-          <NotificationHeader />
+        {/* Header */}
+        <div className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+
+          {/* Left: Company & User */}
+          <div className="flex items-center gap-3">
+            {/* Company Icon Badge */}
+            <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg 
+                  flex items-center justify-center shadow-md ring-2 ring-blue-100">
+              <Building2 className="w-5 h-5 text-white" />
+            </div>
+
+            {/* Company & User Details */}
+            <div className="flex flex-col gap-0.5 min-w-0">
+              <h1 className="text-base font-semibold text-gray-900 truncate">
+                {userProfile?.companyName || "ACT Business Solutions"}
+              </h1>
+              <div className="flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                <span className="text-sm text-gray-600 truncate">
+                  {userProfile?.fullname}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Right: Search + Notifications */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsSearchOpen(true)}
+              className="group flex items-center w-72 px-4 py-2 text-sm text-gray-500 bg-gray-50 border border-gray-300 rounded-lg
+                   hover:bg-gray-100 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200 transition-all"
+            >
+              <Search className="w-4 h-4 mr-2 text-gray-400 group-hover:text-gray-600" />
+              <span className="flex-1 text-left">Search modules…</span>
+              <kbd className="hidden sm:inline-flex items-center px-2 py-0.5 text-[10px] font-medium text-gray-400 bg-white border rounded-md">
+                CTRL&nbsp;K
+              </kbd>
+            </button>
+
+            <NotificationSidebar
+              open={isNotificationOpen}
+              onOpenChange={setIsNotificationOpen}
+              notifications={notifications}
+              onMarkAsRead={handleMarkAsRead}
+              onMarkAllAsRead={handleMarkAllAsRead}
+              onDeleteNotification={handleDeleteNotification}
+            />
+            <NotificationHeader/>
+
+            <button
+              onClick={() => setIsNotificationOpen(true)}
+              className="relative"
+            >
+              <MessageCircle className="mr-2 h-4 w-4" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-2 -right-1 bg-red-500 text-white text-xs font-bold rounded-full h-4 w-4 flex items-center justify-center">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
+
+        {/* Main Content */}
         <main className="py-6">
           <div className="w-full px-4 sm:px-6 lg:px-8">
             <Outlet />
           </div>
         </main>
       </div>
+
+      {isSearchOpen && (
+        <>
+          {/* Backdrop with smooth blur */}
+          <div
+            onClick={() => {
+              setIsSearchOpen(false);
+              setSearch("");
+            }}
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 animate-in fade-in duration-200"
+          />
+
+          {/* Modal Container */}
+          <div className="fixed left-1/2 top-[15%] -translate-x-1/2 z-50 w-full max-w-2xl px-4 animate-in slide-in-from-top-4 fade-in duration-300">
+            <div className="bg-white rounded-2xl shadow-2xl border border-slate-200/60 overflow-hidden">
+              {/* Header & Input */}
+              <div className="relative border-b border-slate-100">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                    />
+                  </svg>
+                </div>
+                <input
+                  autoFocus
+                  type="text"
+                  placeholder="Search for dashboards, inventory, reports, or settings..."
+                  className="w-full pl-12 pr-24 py-4 text-base bg-transparent border-0 focus:outline-none focus:ring-0 text-slate-900 placeholder:text-slate-400"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+                <button
+                  onClick={() => {
+                    setIsSearchOpen(false);
+                    setSearch("");
+                  }}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-500 bg-slate-50 rounded-lg border border-slate-200 hover:bg-slate-100 hover:border-slate-300 transition-all duration-150"
+                >
+                  ESC
+                </button>
+              </div>
+
+              {/* Results Area */}
+              <div className="max-h-[60vh] overflow-y-auto">
+                {search.length > 0 ? (
+                  <div className="p-2">
+                    {/* Section Label */}
+                    <div className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      Search Results
+                    </div>
+
+                    {/* Results List */}
+                    <div className="space-y-1">
+                      {searchItems
+                        .filter((item) =>
+                          item.label.toLowerCase().includes(search.toLowerCase())
+                        )
+                        .map((item) => (
+                          <button
+                            key={item.href}
+                            onClick={() => {
+                              setOpenAccordion(item.parent);
+                              navigate(item.href);
+                              setIsSearchOpen(false);
+                              setSearch("");
+                            }}
+                            className="group w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 transition-all duration-200 border border-transparent hover:border-blue-100 hover:shadow-sm"
+                          >
+                            {/* Icon Container */}
+                            <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                              <svg
+                                className="w-5 h-5 text-white"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                />
+                              </svg>
+                            </div>
+
+                            {/* Text Content */}
+                            <div className="flex-1 text-left min-w-0">
+                              <div className="font-medium text-slate-900 group-hover:text-blue-700 transition-colors truncate">
+                                {item.label}
+                              </div>
+                              <div className="text-sm text-slate-500 truncate">
+                                {item.parent}
+                              </div>
+                            </div>
+
+                            {/* Arrow Indicator */}
+                            <div className="flex-shrink-0 text-slate-400 group-hover:text-blue-600 group-hover:translate-x-1 transition-all duration-200">
+                              <svg
+                                className="w-5 h-5"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M9 5l7 7-7 7"
+                                />
+                              </svg>
+                            </div>
+                          </button>
+                        ))}
+
+                      {/* Empty State Inside List */}
+                      {searchItems.filter((i) =>
+                        i.label.toLowerCase().includes(search.toLowerCase())
+                      ).length === 0 && (
+                          <div className="flex flex-col items-center justify-center py-12 px-4">
+                            <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mb-4">
+                              <svg
+                                className="w-8 h-8 text-slate-400"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                                />
+                              </svg>
+                            </div>
+                            <h3 className="text-base font-semibold text-slate-900 mb-1">
+                              No results found
+                            </h3>
+                            <p className="text-sm text-slate-500 text-center max-w-sm">
+                              We couldn't find anything matching{" "}
+                              <span className="font-medium text-slate-700">"{search}"</span>
+                            </p>
+                          </div>
+                        )}
+                    </div>
+                  </div>
+                ) : (
+                  /* Default State (No typing yet) */
+                  <div className="p-6">
+                    <div className="text-center mb-6">
+                      <h3 className="text-lg font-semibold text-slate-900 mb-2">
+                        Where would you like to go?
+                      </h3>
+                      <p className="text-sm text-slate-500">
+                        Search for dashboards, inventory, reports, or settings...
+                      </p>
+                    </div>
+
+                    {/* Quick Suggestions */}
+                    <div className="space-y-3">
+                      <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-1">
+                        Quick Access
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {["Project", "Inventory", "Production", "Analytics", "Settings"].map(
+                          (tag) => (
+                            <button
+                              key={tag}
+                              onClick={() => setSearch(tag)}
+                              className="px-4 py-2 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 hover:border-slate-300 text-sm font-medium text-slate-700 hover:text-slate-900 transition-all duration-150 hover:shadow-sm"
+                            >
+                              {tag}
+                            </button>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer / Status Bar */}
+              <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-3 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-4 text-slate-500">
+                  <div className="flex items-center gap-1.5">
+                    <kbd className="px-2 py-1 bg-white rounded border border-slate-200 font-mono text-slate-600">
+                      ↑↓
+                    </kbd>
+                    <span>Navigate</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <kbd className="px-2 py-1 bg-white rounded border border-slate-200 font-mono text-slate-600">
+                      ↵
+                    </kbd>
+                    <span>Select</span>
+                  </div>
+                </div>
+                <div className="text-slate-400 font-medium">SCM Pro Search</div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };
