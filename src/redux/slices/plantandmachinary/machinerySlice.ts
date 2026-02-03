@@ -4,6 +4,18 @@ import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import api from "@/utils/axiosApi";
 
 /* TYPES */
+
+export interface MachineAllocation {
+  _id: string;
+  machineryId: string;
+  resourceName: string;
+  projectName: string;
+  quantity: number;
+  startDate: string;
+  endDate: string;
+  approvalStatus: "PENDING" | "APPROVED" | "REJECTED";
+}
+
 export interface StoredFile {
   id?: string; // Add ID for local management
   name: string;
@@ -77,6 +89,7 @@ export interface Machinery {
 /* STATE */
 interface MachineryState {
   machineries: Machinery[];
+  allocations: MachineAllocation[];
   loading: boolean;
   error: string | null;
   total: number;
@@ -86,6 +99,7 @@ interface MachineryState {
 
 const initialState: MachineryState = {
   machineries: [],
+  allocations: [],
   loading: false,
   error: null,
   total: 0,
@@ -94,6 +108,69 @@ const initialState: MachineryState = {
 };
 
 /* API CALLS */
+// export const fetchPendingAllocations = createAsyncThunk(
+//   "machinery/fetchPendingAllocations",
+//   async (_, thunkAPI) => {
+//     try {
+//       const res = await api.get(
+//         "/resource?tab=pending&resourceType=machinery"
+//       );
+//       return res.data.data; // 👈 important
+//     } catch (err: any) {
+//       return thunkAPI.rejectWithValue(
+//         err.response?.data?.message || "Failed to fetch allocations"
+//       );
+//     }
+//   }
+// );
+
+
+// export const approveMachineAllocation = createAsyncThunk(
+//   "machinery/approveAllocation",
+//   async (allocationId: string, thunkAPI) => {
+//     try {
+//       await api.get("/machinery", {
+//         params: {
+//           tab: "allocation-action",
+//           allocationId,
+//           action: "APPROVED",
+//         },
+//       });
+
+//       return allocationId;
+//     } catch (err: any) {
+//       return thunkAPI.rejectWithValue(
+//         err.response?.data?.message || "Approval failed"
+//       );
+//     }
+//   }
+// );
+
+// export const rejectMachineAllocation = createAsyncThunk(
+//   "machinery/rejectAllocation",
+//   async (
+//     { allocationId, reason }: { allocationId: string; reason?: string },
+//     thunkAPI
+//   ) => {
+//     try {
+//       await api.get("/machinery", {
+//         params: {
+//           tab: "allocation-action",
+//           allocationId,
+//           action: "REJECTED",
+//           rejectionReason: reason,
+//         },
+//       });
+
+//       return allocationId;
+//     } catch (err: any) {
+//       return thunkAPI.rejectWithValue(
+//         err.response?.data?.message || "Rejection failed"
+//       );
+//     }
+//   }
+// );
+
 
 // FETCH WITH PAGINATION
 export const fetchMachineries = createAsyncThunk(
@@ -241,6 +318,25 @@ const machinerySlice = createSlice({
       state.loading = false;
       state.error = action.payload as string;
     });
+    // FETCH PENDING
+    // builder.addCase(fetchPendingAllocations.fulfilled, (state, action) => {
+    //   state.allocations = action.payload;
+    // });
+
+    // // APPROVE
+    // builder.addCase(approveMachineAllocation.fulfilled, (state, action) => {
+    //   state.allocations = state.allocations.filter(
+    //     (a) => a._id !== action.payload
+    //   );
+    // });
+
+    // // REJECT
+    // builder.addCase(rejectMachineAllocation.fulfilled, (state, action) => {
+    //   state.allocations = state.allocations.filter(
+    //     (a) => a._id !== action.payload
+    //   );
+    // });
+
 
     /* CREATE */
     builder.addCase(createMachinery.fulfilled, (state, action) => {

@@ -368,6 +368,7 @@ export default function Resources() {
       endDate: formData.endDate,
       selectedChildren: formData.selectedChildren,
       createdAt: editingAllocation?.createdAt ?? new Date().toISOString(),
+      approvalStatus: formData.resourceType === "machinery" ? "PENDING" : "APPROVED",
     };
 
     console.log("=== FRONTEND SAVE ===");

@@ -159,6 +159,7 @@ const Layout: React.FC = () => {
     { name: "Reporting", href: "/purchase/reporting", icon: TrendingUp, key: "purchaseReporting" },
     { name: "Settings", href: "/purchase/settings", icon: Settings, key: "purchaseSettings" },
   ];
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const projectLinks: NavLink[] = [
     { name: "Main Dashboard", href: "/", icon: Home },
@@ -287,69 +288,7 @@ const Layout: React.FC = () => {
     }
   }, [location.pathname, userProfile]);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
-  const [notifications, setNotifications] = useState([
-    {
-      id: 1,
-      type: 'mention',
-      title: 'Sarah mentioned you in a comment',
-      message: '"Could you review this when you get a chance?"',
-      time: '2m ago',
-      read: false,
-      category: 'social'
-    },
-    {
-      id: 2,
-      type: 'update',
-      title: 'Project timeline updated',
-      message: 'The Q1 deliverables deadline has been moved to March 15th',
-      time: '1h ago',
-      read: false,
-      category: 'work'
-    },
-    {
-      id: 3,
-      type: 'success',
-      title: 'Deployment successful',
-      message: 'Your latest changes are now live in production',
-      time: '3h ago',
-      read: true,
-      category: 'system'
-    },
-    {
-      id: 4,
-      type: 'alert',
-      title: 'Security update required',
-      message: 'Please review and approve the new security settings',
-      time: '5h ago',
-      read: false,
-      category: 'security'
-    },
-    {
-      id: 5,
-      type: 'message',
-      title: 'New message from team',
-      message: 'Weekly sync meeting notes are ready for review',
-      time: '1d ago',
-      read: true,
-      category: 'social'
-    }
-  ]);
 
-  const unreadCount = notifications.filter(n => !n.read).length;
-
-  const handleMarkAsRead = (id) => {
-    setNotifications(notifications.map(n =>
-      n.id === id ? { ...n, read: true } : n
-    ));
-  };
-
-  const handleMarkAllAsRead = () => {
-    setNotifications(notifications.map(n => ({ ...n, read: true })));
-  };
-
-  const handleDeleteNotification = (id) => {
-    setNotifications(notifications.filter(n => n.id !== id));
-  };
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="fixed inset-y-0 left-0 z-50 w-64 bg-[#111113] shadow-xl overflow-y-auto border-r border-gray-800">
@@ -522,12 +461,11 @@ const Layout: React.FC = () => {
             <NotificationSidebar
               open={isNotificationOpen}
               onOpenChange={setIsNotificationOpen}
-              notifications={notifications}
-              onMarkAsRead={handleMarkAsRead}
-              onMarkAllAsRead={handleMarkAllAsRead}
-              onDeleteNotification={handleDeleteNotification}
+              onUnreadChange={setUnreadCount}
             />
-            <NotificationHeader/>
+
+
+            <NotificationHeader />
 
             <button
               onClick={() => setIsNotificationOpen(true)}
@@ -540,6 +478,7 @@ const Layout: React.FC = () => {
                 </span>
               )}
             </button>
+
           </div>
         </div>
 

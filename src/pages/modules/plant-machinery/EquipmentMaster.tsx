@@ -8,9 +8,12 @@ import {
   deleteEquipment,
   fetchEquipments,
   fetchEquipmentChildren,
+  fetchPendingEquipmentRequests,
+  approveEquipmentAllocation,
+  rejectEquipmentAllocation,
 } from "@/redux/slices/equipmentSlice";
 import { fetchMasterData } from "@/redux/slices/masterDataSlice";
-import { Save, Eye, Plus, Edit2, Trash2, Search, X, ShieldAlert, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, AlertCircle, ChevronDown, ChevronRight, File } from "lucide-react";
+import { Save, Eye, Plus, Edit2, Trash2, Search, X, ShieldAlert, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, AlertCircle, ChevronDown, ChevronRight, File, Briefcase, Check } from "lucide-react";
 import * as XLSX from "xlsx";
 
 import { Button } from "@/components/ui/button";
@@ -169,7 +172,7 @@ export default function EquipmentMasterPage() {
 
 
   const dispatch = useDispatch<AppDispatch>();
-  const { equipments, page, total, limit } = useSelector((state: RootState) => state.equipment);
+  const { equipments, page, total, limit, pendingEquipment } = useSelector((state: RootState) => state.equipment);
   const totalPages = Math.ceil(total / limit) || 1;
 
   const { category, supplier } = useSelector(
@@ -223,6 +226,9 @@ export default function EquipmentMasterPage() {
     document.body.removeChild(a);
     URL.revokeObjectURL(blobUrl);
   }
+  useEffect(() => {
+    dispatch(fetchPendingEquipmentRequests());
+  }, [dispatch]);
 
 
 
@@ -674,7 +680,75 @@ export default function EquipmentMasterPage() {
               </SelectContent>
             </Select>
           </div>
+          {pendingEquipment.length > 0 && (
+            <Card className="border-orange-300 bg-orange-50">
+              <CardHeader>
+                <CardTitle>Pending Equipment Requests</CardTitle>
+              </CardHeader>
 
+              <CardContent className="p-0"> {/* Remove padding to let the table flush with edges if desired */}
+                <Table>
+                  <TableHeader className="bg-muted/50 p-4">
+                    <TableRow className="">
+                      <TableHead className="w-[300px]">Equipment & Project</TableHead>
+                      <TableHead className="text-center">Quantity</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {pendingEquipment.map((req) => (
+                      <TableRow key={req._id} className="group hover:bg-orange-50/50 transition-colors p-4">
+                        <TableCell>
+                          <div className="flex flex-col gap-0.5">
+                            <span className="font-semibold text-sm text-slate-900">
+                              {req.equipmentName}
+                            </span>
+                            <span className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Briefcase className="w-3 h-3" /> {req.projectName}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="secondary" className="font-mono">
+                            {req.quantity}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 text-xs border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                              onClick={() =>
+                                dispatch(
+                                  rejectEquipmentAllocation({
+                                    allocationId: req._id,
+                                    reason: "Not available",
+                                  })
+                                )
+                              }
+                            >
+                              <X className="w-3.5 h-3.5 mr-1" />
+                              Reject
+                            </Button>
+
+                            <Button
+                              size="sm"
+                              className="h-8 text-xs bg-green-600 hover:bg-green-700 shadow-sm"
+                              onClick={() => dispatch(approveEquipmentAllocation(req._id))}
+                            >
+                              <Check className="w-3.5 h-3.5 mr-1" />
+                              Approve
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
           <div className="overflow-x-auto rounded-md border">
             <Table>
               <TableHeader>
@@ -691,6 +765,8 @@ export default function EquipmentMasterPage() {
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
+
+
 
               <TableBody>
                 {visible.length === 0 ? (

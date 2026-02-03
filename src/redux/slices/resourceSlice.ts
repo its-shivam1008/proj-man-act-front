@@ -18,6 +18,9 @@ export interface ResourceAllocation {
   startDate?: string;
   endDate?: string;
   createdAt: string;
+  approvalStatus?: "PENDING" | "APPROVED" | "REJECTED";
+  rejectionReason?: string;
+
 }
 
 const RESOURCE_BASE = "/resource";
@@ -49,7 +52,45 @@ export const addResource = createAsyncThunk(
     }
   }
 );
-
+export const fetchPendingMachineryRequests = createAsyncThunk(
+  "resource/fetchPendingMachineryRequests",
+  async (_, thunkAPI) => {
+    try {
+      const res = await api.get("/resource/pending/machinery");
+      return res.data; // Return res.data directly, NOT res.data.data
+    } catch (err: any) {
+      return thunkAPI.rejectWithValue(err.response?.data?.message || "Failed");
+    }
+  }
+);
+export const approveResourceAllocation = createAsyncThunk(
+  "resource/approve",
+  async (allocationId: string) => {
+    // The machinery controller expects 'action: "APPROVED"'
+    const response = await api.post(`/machinery/handle-allocation`, { 
+      allocationId, 
+      action: "APPROVED" 
+    });
+    return allocationId;
+  }
+);
+export const rejectResourceAllocation = createAsyncThunk(
+  "resource/rejectAllocation",
+  async ({ allocationId, reason }: { allocationId: string; reason: string }, thunkAPI) => {
+    try {
+      // [!code --] REMOVE THIS: await api.put(`/resource/reject/${allocationId}`, { reason });
+      // [!code ++] ADD THIS:
+      await api.post(`/machinery/handle-allocation`, {
+        allocationId,
+        action: "REJECTED",
+        rejectionReason: reason
+      });
+      return allocationId;
+    } catch (err: any) {
+      return thunkAPI.rejectWithValue("Rejection failed");
+    }
+  }
+);
 // -------------------------
 //  UPDATE
 // -------------------------
@@ -88,12 +129,14 @@ export const deleteResource = createAsyncThunk(
 // -------------------------
 interface ResourceState {
   resources: ResourceAllocation[];
+  pendingMachinery: ResourceAllocation[];
   loading: boolean;
   error: string | null;
 }
 
 const initialState: ResourceState = {
   resources: [],
+  pendingMachinery: [],
   loading: false,
   error: null,
 };
@@ -143,6 +186,21 @@ const resourceSlice = createSlice({
     });
     builder.addCase(deleteResource.rejected, (state, action) => {
       state.error = action.payload as string;
+    })
+    // FETCH PENDING MACHINERY
+    builder.addCase(fetchPendingMachineryRequests.fulfilled, (state, action) => {
+      state.pendingMachinery = action.payload;
+    })
+    builder.addCase(approveResourceAllocation.fulfilled, (state, action) => {
+      state.pendingMachinery = state.pendingMachinery.filter(
+        (item) => item._id !== action.payload
+      );
+    });
+
+    builder.addCase(rejectResourceAllocation.fulfilled, (state, action) => {
+      state.pendingMachinery = state.pendingMachinery.filter(
+        (item) => item._id !== action.payload
+      );
     });
   },
 });

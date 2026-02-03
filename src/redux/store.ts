@@ -74,9 +74,11 @@ import routingReducer from "./slices/production/routingSlice";
 import wbsBillReducer from './slices/wbsBillSlice'
 import batchReducer from "@/redux/slices/production/batchSlice";
 import chatReducer from "@/redux/slices/production/chatSlice";
+import notificationSidebarReducer from "@/redux/slices/notificationSidebarSlice"
 export const store = configureStore({
   reducer: {
     chat: chatReducer,
+    notifications: notificationSidebarReducer,
     batch: batchReducer, 
     wbsBill:wbsBillReducer,
     routing: routingReducer,

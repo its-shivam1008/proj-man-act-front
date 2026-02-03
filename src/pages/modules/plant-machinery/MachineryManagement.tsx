@@ -13,7 +13,6 @@ import {
 import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import { Save, Eye, Plus, Edit2, Trash2, Search, X, ShieldAlert, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
 import * as XLSX from "xlsx";
-
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -47,6 +46,11 @@ import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { fetchInventoryMaster } from "@/redux/slices/inventoryMasterSlice";
+import {
+  fetchPendingMachineryRequests,
+  approveResourceAllocation,
+  rejectResourceAllocation,
+} from "@/redux/slices/resourceSlice";
 
 // ---------- TYPES ----------
 export interface StoredFile {
@@ -57,6 +61,17 @@ export interface StoredFile {
   url: string;
   publicId?: string;
   rawFile?: File; // frontend only
+}
+interface MachineAllocation {
+  _id: string;
+  machineryId: string;
+  machineryName: string;
+  projectName: string;
+  wbsName: string;
+  quantity: number;
+  startDate: string;
+  endDate: string;
+  approvalStatus: "PENDING" | "APPROVED" | "REJECTED";
 }
 
 interface Machinery {
@@ -107,7 +122,7 @@ interface Machinery {
   isParent?: boolean;
   parentId?: string;
   childIndex?: number;
-  allocationStatus?: string;
+  pendingMachineryRequeststatus?: string;
   allocatedTo?: {
     projectName?: string;
     siteName?: string;
@@ -161,8 +176,16 @@ export default function MachineryManagementPage() {
   const [viewOpen, setViewOpen] = useState(false);
   const [viewItem, setViewItem] = useState<Machinery | null>(null);
 
+  const { pendingMachinery } = useSelector(
+    (state: RootState) => state.resources
+  );
 
-
+  useEffect(() => {
+    console.log("🔄 [Component] Redux State - pendingMachinery:", pendingMachinery);
+    if (pendingMachinery?.length === 0) {
+      console.warn("⚠️ [Component] pendingMachinery is empty. Check if API returned data or if status is PENDING.");
+    }
+  }, [pendingMachinery]);
   function openViewDetails(item: Machinery) {
     setViewItem(item);
     setViewOpen(true);
@@ -205,6 +228,11 @@ export default function MachineryManagementPage() {
       location: locationFilter === "All" ? "" : locationFilter
     }));
   }, [dispatch, locationFilter]);
+  const formatDate = (date?: string) => {
+    if (!date) return "-";
+    const d = new Date(date);
+    return isNaN(d.getTime()) ? "-" : d.toLocaleDateString();
+  };
 
   // UI states
   const [query, setQuery] = useState("");
@@ -213,6 +241,43 @@ export default function MachineryManagementPage() {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [childrenData, setChildrenData] = useState<Record<string, Machinery[]>>({});
   const [loadingChildren, setLoadingChildren] = useState<Set<string>>(new Set());
+
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [selectedAllocation, setSelectedAllocation] = useState<MachineAllocation | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+
+
+  const handleApprove = async (allocationId: string) => {
+    try {
+      await dispatch(approveResourceAllocation(allocationId)).unwrap();
+      toast.success("Machine request approved");
+      dispatch(fetchMachineries({ page, limit, location: locationFilter === "All" ? "" : locationFilter }));
+    } catch {
+      toast.error("Approval failed");
+    }
+  };
+
+  const handleReject = async () => {
+    if (!selectedAllocation) return;
+
+    try {
+      await dispatch(
+        rejectResourceAllocation({
+          allocationId: selectedAllocation._id,
+          reason: rejectReason,
+        })
+      ).unwrap();
+
+      toast.success("Machine request rejected");
+      setRejectDialogOpen(false);
+      setRejectReason("");
+      setSelectedAllocation(null);
+    } catch {
+      toast.error("Rejection failed");
+    }
+  };
+
+
   const [form, setForm] = useState<Partial<Machinery>>({
     frequency: "Monthly",
     depreciation: "Straight-line",
@@ -253,6 +318,10 @@ export default function MachineryManagementPage() {
     }
     setExpandedRows(newExpanded);
   };
+  useEffect(() => {
+    dispatch(fetchPendingMachineryRequests());
+    dispatch(fetchMachineries());
+  }, [dispatch]);
   useEffect(() => {
     dispatch(
       fetchInventoryMaster({
@@ -696,7 +765,70 @@ export default function MachineryManagementPage() {
             </Select>
           </div>
 
+          
+
           <div className="overflow-x-auto rounded-md border">
+            {pendingMachinery?.length > 0 && (
+              <Card className="border-orange-300 bg-orange-50">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-orange-700">
+                    <AlertTriangle className="w-5 h-5" />
+                    Pending Machine Requests
+                  </CardTitle>
+                </CardHeader>
+
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Machinery</TableHead>
+                        <TableHead>Project</TableHead>
+                        <TableHead>Qty</TableHead>
+                        <TableHead>Duration</TableHead>
+                        <TableHead className="text-right">Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+
+                    <TableBody>
+                      {pendingMachinery.map((req) => (
+                        <TableRow key={req._id}>
+                          <TableCell className="font-medium">
+                            {req.machineryName}
+                          </TableCell>
+                          <TableCell>{req.projectName}</TableCell>
+                          <TableCell>{req.quantity}</TableCell>
+                          <TableCell className="text-xs">
+                            {formatDate(req.startDate)} → {formatDate(req.endDate)}
+                          </TableCell>
+
+                          <TableCell className="text-right space-x-2">
+                            <Button
+                              size="sm"
+                              className="bg-green-600 hover:bg-green-700"
+                              onClick={() => handleApprove(req._id)}
+                            >
+                              Accept
+                            </Button>
+
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => {
+                                setSelectedAllocation(req);
+                                setRejectDialogOpen(true);
+                              }}
+                            >
+                              Reject
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            )}
+
             <Table>
               <TableHeader>
                 <TableRow>
@@ -838,10 +970,10 @@ export default function MachineryManagementPage() {
                                             <TableCell className="font-mono text-xs">{child.code}</TableCell>
                                             <TableCell>
                                               <Badge
-                                                variant={child.allocationStatus === "allocated" ? "destructive" : "outline"}
-                                                className={child.allocationStatus === "available" ? "bg-green-100 text-green-700" : ""}
+                                                variant={child.pendingMachineryRequeststatus === "allocated" ? "destructive" : "outline"}
+                                                className={child.pendingMachineryRequeststatus === "available" ? "bg-green-100 text-green-700" : ""}
                                               >
-                                                {child.allocationStatus === "allocated" ? "In Use" : "Available"}
+                                                {child.pendingMachineryRequeststatus === "allocated" ? "In Use" : "Available"}
                                               </Badge>
                                             </TableCell>
                                             <TableCell>
@@ -1415,6 +1547,33 @@ export default function MachineryManagementPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject Machine Request</DialogTitle>
+            <DialogDescription>
+              Please provide a reason for rejection
+            </DialogDescription>
+          </DialogHeader>
+
+          <Input
+            placeholder="Reason (e.g. Under maintenance)"
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+          />
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleReject}>
+              Reject
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
 
 
     </div>

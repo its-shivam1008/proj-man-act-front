@@ -1,11 +1,52 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Bell, Check, Trash2 } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
+import api from '@/utils/axiosApi';
+import { useDispatch, useSelector } from "react-redux";
+import {
+    deleteNotification,
+    fetchNotifications,
+    markAllNotificationsRead,
+    markNotificationRead
+} from "@/redux/slices/notificationSidebarSlice"
+import { RootState, AppDispatch } from "@/redux/store";
 
-const NotificationSidebar = ({ open, onOpenChange, notifications, onMarkAsRead, onMarkAllAsRead, onDeleteNotification }) => {
-    const unreadCount = notifications?.filter(n => !n.read).length || 0;
+const NotificationSidebar = ({ open, onOpenChange, onUnreadChange }) => {
+
+    // const unreadCount = notifications?.filter(n => !n.read).length || 0;
+    const dispatch = useDispatch<AppDispatch>();
+
+    const { list: notifications, unreadCount, loading } =
+        useSelector((state: RootState) => state.notifications);
+
+    const organisationId =
+        typeof window !== "undefined"
+            ? localStorage.getItem("organisationId")
+            : null;
+
+    const markAsRead = (id: string) => {
+        dispatch(markNotificationRead(id));
+    };
+
+    const markAllAsRead = () => {
+        dispatch(markAllNotificationsRead());
+    };
+
+    const removeNotification = (id: string) => {
+        dispatch(deleteNotification(id));
+    };
+useEffect(() => {
+  if (open && notifications.length === 0) {
+    dispatch(fetchNotifications());
+  }
+}, [open, notifications.length, dispatch]);
+
+
+    useEffect(() => {
+        onUnreadChange?.(unreadCount);
+    }, [unreadCount, onUnreadChange]);
 
     const getTypeColor = (type) => {
         const colors = {
@@ -96,11 +137,11 @@ const NotificationSidebar = ({ open, onOpenChange, notifications, onMarkAsRead, 
                                 <Bell className="h-7 w-7 text-slate-700" />
                                 Notifications
                             </SheetTitle>
-                            {unreadCount > 0 && onMarkAllAsRead && (
+                            {unreadCount > 0 && markAllAsRead && (
                                 <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={onMarkAllAsRead}
+                                    onClick={markAllAsRead}
                                     className="text-sm text-slate-600 hover:text-slate-900 font-medium"
                                 >
                                     <Check className="h-4 w-4 mr-1" />
@@ -128,7 +169,7 @@ const NotificationSidebar = ({ open, onOpenChange, notifications, onMarkAsRead, 
                             ) : (
                                 notifications.map((notification, index) => (
                                     <div
-                                        key={notification.id}
+                                        key={notification._id}
                                         className="notification-item slide-in rounded-xl p-4 border border-slate-200 bg-white shadow-sm"
                                         style={{ animationDelay: `${index * 0.05}s` }}
                                     >
@@ -142,7 +183,7 @@ const NotificationSidebar = ({ open, onOpenChange, notifications, onMarkAsRead, 
                                                     <h3 className="font-semibold text-slate-900 text-base leading-tight">
                                                         {notification.title}
                                                     </h3>
-                                                    {!notification.read && (
+                                                    {!notification.isRead && (
                                                         <div className="h-2.5 w-2.5 rounded-full bg-blue-500 flex-shrink-0 mt-1.5" />
                                                     )}
                                                 </div>
@@ -153,25 +194,25 @@ const NotificationSidebar = ({ open, onOpenChange, notifications, onMarkAsRead, 
 
                                                 <div className="flex items-center justify-between mt-3">
                                                     <span className="text-xs text-slate-500 font-medium">
-                                                        {notification.time}
+                                                        {new Date(notification.createdAt).toLocaleString()}
                                                     </span>
 
                                                     <div className="flex items-center gap-1">
-                                                        {!notification.read && onMarkAsRead && (
+                                                        {!notification.isRead && (
                                                             <Button
                                                                 variant="ghost"
                                                                 size="sm"
-                                                                onClick={() => onMarkAsRead(notification.id)}
+                                                                onClick={() => markAsRead(notification._id)}
                                                                 className="action-button h-8 w-8 p-0 hover:bg-blue-50 hover:text-blue-600"
                                                             >
                                                                 <Check className="h-4 w-4" />
                                                             </Button>
                                                         )}
-                                                        {onDeleteNotification && (
+                                                        {(
                                                             <Button
                                                                 variant="ghost"
                                                                 size="sm"
-                                                                onClick={() => onDeleteNotification(notification.id)}
+                                                                onClick={() => removeNotification(notification._id)}
                                                                 className="action-button h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600"
                                                             >
                                                                 <Trash2 className="h-4 w-4" />

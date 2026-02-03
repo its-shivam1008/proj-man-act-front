@@ -66,6 +66,7 @@ export interface Equipment {
 /* STATE */
 interface EquipmentState {
   equipments: Equipment[];
+  pendingEquipment: any[]; // ✅ REQUIRED
   loading: boolean;
   error: string | null;
   total: number;
@@ -74,8 +75,10 @@ interface EquipmentState {
   search: string;
 }
 
+
 const initialState: EquipmentState = {
   equipments: [],
+  pendingEquipment: [],
   loading: false,
   error: null,
   total: 0,
@@ -109,6 +112,38 @@ export const fetchEquipments = createAsyncThunk(
     }
   }
 );
+
+export const fetchPendingEquipmentRequests = createAsyncThunk(
+  "equipment/fetchPending",
+  async () => {
+    const res = await api.get("/resource/pending/equipment");
+    return res.data;
+  }
+);
+
+export const approveEquipmentAllocation = createAsyncThunk(
+  "equipment/approve",
+  async (allocationId: string) => {
+    await api.post("/equipment/handle-allocation", {
+      allocationId,
+      action: "APPROVED",
+    });
+    return allocationId;
+  }
+);
+
+export const rejectEquipmentAllocation = createAsyncThunk(
+  "equipment/reject",
+  async ({ allocationId, reason }: { allocationId: string; reason: string }) => {
+    await api.post("/equipment/handle-allocation", {
+      allocationId,
+      action: "REJECTED",
+      rejectionReason: reason,
+    });
+    return allocationId;
+  }
+);
+
 // CREATE
 export const createEquipment = createAsyncThunk(
   "equipment/createEquipment",
@@ -124,7 +159,7 @@ export const createEquipment = createAsyncThunk(
         payload.append("organisationId", organisationId);
         requestBody = payload;
         // Axios automatically sets Content-Type to multipart/form-data when body is FormData
-      } 
+      }
       // Handle Plain JSON (Excel Imports)
       else {
         requestBody = {
@@ -211,6 +246,23 @@ const equipmentSlice = createSlice({
       state.page = action.payload.pagination.page;
       state.limit = action.payload.pagination.limit;
     });
+    builder.addCase(fetchPendingEquipmentRequests.fulfilled, (state, action) => {
+      state.pendingEquipment = action.payload;
+    });
+
+    builder.addCase(approveEquipmentAllocation.fulfilled, (state, action) => {
+      state.pendingEquipment = state.pendingEquipment.filter(
+        (item) => item._id !== action.payload
+      );
+    });
+
+    builder.addCase(rejectEquipmentAllocation.fulfilled, (state, action) => {
+      state.pendingEquipment = state.pendingEquipment.filter(
+        (item) => item._id !== action.payload
+      );
+    });
+
+
 
     builder.addCase(fetchEquipments.rejected, (state, action) => {
       state.loading = false;
