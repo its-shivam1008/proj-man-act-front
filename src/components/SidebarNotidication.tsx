@@ -37,11 +37,20 @@ const NotificationSidebar = ({ open, onOpenChange, onUnreadChange }) => {
     const removeNotification = (id: string) => {
         dispatch(deleteNotification(id));
     };
-useEffect(() => {
-  if (open && notifications.length === 0) {
-    dispatch(fetchNotifications());
-  }
-}, [open, notifications.length, dispatch]);
+    useEffect(() => {
+        if (open) {
+            // Fetch immediately on open
+            dispatch(fetchNotifications());
+
+            // Set up polling interval (e.g., every 15 seconds)
+            const intervalId = setInterval(() => {
+                dispatch(fetchNotifications());
+            }, 15000);
+
+            // Cleanup on close
+            return () => clearInterval(intervalId);
+        }
+    }, [open, dispatch]);
 
 
     useEffect(() => {
