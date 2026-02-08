@@ -22,6 +22,22 @@ const initialState: RepairOrderState = {
 
 /* ---------------- THUNKS ---------------- */
 
+// export const acceptRepairOrder = createAsyncThunk(
+//   "repairOrders/accept",
+//   async (id: string) => {
+//     const res = await api.post(`/repair-orders/${id}/accept`);
+//     return res.data.data;
+//   }
+// );
+
+// export const rejectRepairOrder = createAsyncThunk(
+//   "repairOrders/reject",
+//   async ({ id, reason }: any) => {
+//     const res = await api.post(`/repair-orders/${id}/reject`, { reason });
+//     return res.data.data;
+//   }
+// );
+
 export const fetchRepairOrders = createAsyncThunk(
   "repairOrders/fetch",
   async (params: FetchParams) => {
@@ -90,7 +106,19 @@ const repairOrderSlice = createSlice({
 
       .addCase(deleteRepairOrder.fulfilled, (state, action) => {
         state.data = state.data.filter((o) => o._id !== action.payload);
-      });
+      })
+    // .addCase(acceptRepairOrder.fulfilled, (state, action) => {
+    //     state.data = state.data.map((o: any) =>
+    //       o._id === action.payload._id ? action.payload : o
+    //     );
+    //   });
+
+    // builder.addCase(rejectRepairOrder.fulfilled, (state, action) => {
+    //   state.data = state.data.map((o: any) =>
+    //     o._id === action.payload._id ? action.payload : o
+    //   );
+    // });
+
   },
 });
 

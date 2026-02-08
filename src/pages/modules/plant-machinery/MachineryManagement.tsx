@@ -31,7 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
+import { fetchPlantMachineryMaster } from "@/redux/slices/plantandmachinary/plantMachineryMasterSlice";
 import {
   Table,
   TableBody,
@@ -45,7 +45,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { fetchInventoryMaster } from "@/redux/slices/inventoryMasterSlice";
+// import { fetchInventoryMaster } from "@/redux/slices/inventoryMasterSlice";
 import {
   fetchPendingMachineryRequests,
   approveResourceAllocation,
@@ -72,6 +72,11 @@ interface MachineAllocation {
   startDate: string;
   endDate: string;
   approvalStatus: "PENDING" | "APPROVED" | "REJECTED";
+
+  assetType: "equipment" | "machinery";
+  assetId: string;
+  assetCode: string;
+
 }
 
 interface Machinery {
@@ -179,7 +184,6 @@ export default function MachineryManagementPage() {
   const { pendingMachinery } = useSelector(
     (state: RootState) => state.resources
   );
-
   useEffect(() => {
     console.log("🔄 [Component] Redux State - pendingMachinery:", pendingMachinery);
     if (pendingMachinery?.length === 0) {
@@ -197,9 +201,12 @@ export default function MachineryManagementPage() {
   );
   const totalPages = Math.ceil(total / limit) || 1;
   const { category, supplier } = useSelector(
-    (state: RootState) => state.inventoryMaster
+    (state: RootState) => state.plantMachineryMaster
   );
 
+  // Access the machinery-specific category list and the supplier list
+  const categoryList = category.machinery ?? [];
+  const supplierList = supplier ?? [];
 
   // User & Location Data
   const { userProfile } = useSelector((state: any) => state.auth);
@@ -279,6 +286,10 @@ export default function MachineryManagementPage() {
 
 
   const [form, setForm] = useState<Partial<Machinery>>({
+    assetType: "machinery",   // 👈 REQUIRED
+    assetId: undefined,       // 👈 set when user selects asset
+    assetCode: "",            // 👈 set when asset is chosen
+
     frequency: "Monthly",
     depreciation: "Straight-line",
     quantity: 1,
@@ -322,22 +333,22 @@ export default function MachineryManagementPage() {
     dispatch(fetchPendingMachineryRequests());
     dispatch(fetchMachineries());
   }, [dispatch]);
-  useEffect(() => {
-    dispatch(
-      fetchInventoryMaster({
-        type: "category",
-        page: 1,
-        limit: 100,
-      })
-    );
-    dispatch(
-      fetchInventoryMaster({
-        type: "supplier",
-        page: 1,
-        limit: 100,
-      })
-    );
-  }, [dispatch]);
+  // useEffect(() => {
+  //   dispatch(
+  //     fetchInventoryMaster({
+  //       type: "category",
+  //       page: 1,
+  //       limit: 100,
+  //     })
+  //   );
+  //   dispatch(
+  //     fetchInventoryMaster({
+  //       type: "supplier",
+  //       page: 1,
+  //       limit: 100,
+  //     })
+  //   );
+  // }, [dispatch]);
 
   // Auto-calculate total cost
   useEffect(() => {
@@ -348,20 +359,37 @@ export default function MachineryManagementPage() {
   // FILTER + SEARCH
   const visible = useMemo(() => {
     let items = [...machineries];
+
     if (query.trim()) {
       const q = query.toLowerCase();
+
       items = items.filter((it) =>
-        [
-          it.code,
-          it.name,
-        ]
-          .filter(Boolean)
-          .some((f) => f!.toLowerCase().includes(q))
+        it.name?.toLowerCase().includes(q) ||
+        it.code?.toLowerCase().includes(q)
       );
     }
+
     return items;
   }, [machineries, query]);
 
+  useEffect(() => {
+    dispatch(fetchMachineries({ page: 1, limit: 10 }));
+
+    // Fetch Category for 'machinery'
+    dispatch(fetchPlantMachineryMaster({
+      type: "category",
+      categoryFor: "machinery",
+      page: 1,
+      limit: 100
+    }));
+
+    // Fetch Suppliers
+    dispatch(fetchPlantMachineryMaster({
+      type: "supplier",
+      page: 1,
+      limit: 100
+    }));
+  }, [dispatch]);
   // ---------- OPEN ADD ----------
   function openAddDialog() {
     setEditing(null);
@@ -383,7 +411,7 @@ export default function MachineryManagementPage() {
 
   // ---------- OPEN EDIT ----------
   function openEditDialog(machinery: Machinery) {
-    const matchedCategory = category.find(
+    const matchedCategory = categoryList.find(
       (c: any) => c.name === machinery.category
     );
 
@@ -569,7 +597,7 @@ export default function MachineryManagementPage() {
 
             const machineryId = row["Machinery ID"] || row["MachineryID"] || generateUniqueMachineryCode();
             const categoryName = row["Category"];
-            const matchedCategory = category.find(
+            const matchedCategory = categoryList.find(
               (c: any) =>
                 c.name.toLowerCase() === categoryName?.toString().toLowerCase()
             );
@@ -582,6 +610,9 @@ export default function MachineryManagementPage() {
               location: locationId,
               quantity: quantity,
               basicCost,
+              assetType: "machinery",       // or "equipment"
+              assetId: selectedAssetId,     // ObjectId
+              assetCode: selectedAssetCode,
               cgst,
               igst,
               sgst,
@@ -741,11 +772,12 @@ export default function MachineryManagementPage() {
             <div className="relative w-full md:w-auto">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search by Name..."
+                placeholder="Search by Name or Machinery ID..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 className="pl-8 w-full md:w-64"
               />
+
             </div>
 
             <Select
@@ -765,7 +797,7 @@ export default function MachineryManagementPage() {
             </Select>
           </div>
 
-          
+
 
           <div className="overflow-x-auto rounded-md border">
             {pendingMachinery?.length > 0 && (
@@ -876,7 +908,7 @@ export default function MachineryManagementPage() {
                         </TableCell>
                         <TableCell className="font-medium">{machinery.name}</TableCell>
                         <TableCell>
-                          {category.find((c: any) => c._id === machinery.category)?.name || "-"}
+                          {categoryList.find((c: any) => c._id === machinery.category)?.name || "-"}
                         </TableCell>
                         <TableCell>{getSupplierName(machinery.supplier)}</TableCell>
 
@@ -1124,22 +1156,24 @@ export default function MachineryManagementPage() {
                 <Label>Category</Label>
 
                 <Select
-                  value={form.category ?? undefined}
+                  value={form.category || ""}
                   onValueChange={(v) => setForm({ ...form, category: v })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select Category" />
                   </SelectTrigger>
-
                   <SelectContent>
-                    {category?.map((cat: any) => (
-                      <SelectItem
-                        key={cat._id}
-                        value={cat._id}   // ✅ NEVER empty string
-                      >
-                        {cat.name}
-                      </SelectItem>
-                    ))}
+                    {categoryList.length === 0 ? (
+                      <div className="p-2 text-sm text-muted-foreground text-center">
+                        No category found. Create one first.
+                      </div>
+                    ) : (
+                      categoryList.map((cat: any) => (
+                        <SelectItem key={cat._id} value={cat._id}>
+                          {cat.name}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -1210,19 +1244,24 @@ export default function MachineryManagementPage() {
                 <div>
                   <Label>Supplier</Label>
                   <Select
-                    value={form.supplier ?? undefined}
+                    value={form.supplier || ""}
                     onValueChange={(v) => setForm({ ...form, supplier: v })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select Supplier" />
                     </SelectTrigger>
-
                     <SelectContent>
-                      {supplier?.map((sup: any) => (
-                        <SelectItem key={sup._id} value={sup._id}>
-                          {sup.name}
-                        </SelectItem>
-                      ))}
+                      {supplierList.length === 0 ? (
+                        <div className="p-2 text-sm text-muted-foreground text-center">
+                          No supplier found. Create one first.
+                        </div>
+                      ) : (
+                        supplierList.map((sup: any) => (
+                          <SelectItem key={sup._id} value={sup._id}>
+                            {sup.company || sup.name}
+                          </SelectItem>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1461,7 +1500,7 @@ export default function MachineryManagementPage() {
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                   <div><b>ID:</b> {viewItem.code}</div>
                   <div><b>Name:</b> {viewItem.name}</div>
-                  <div><b>Category:</b> {category.find(c => c._id === viewItem.category)?.name || "-"}</div>
+                  <div><b>Category:</b> {categoryList.find(c => c._id === viewItem.category)?.name || "-"}</div>
                   <div><b>Supplier:</b> {getSupplierName(viewItem.supplier)}</div>
                   <div><b>Location:</b> {getLocationName(viewItem.location)}</div>
                   <div><b>Status:</b> <Badge>{viewItem.status}</Badge></div>

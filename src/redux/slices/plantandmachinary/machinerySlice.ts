@@ -52,6 +52,9 @@ export interface Machinery {
   status?: string;
   documents?: StoredFile[];
   createdAt: string;
+  assetType: "equipment" | "machinery";
+  assetId: string;
+  assetCode: string;
 
   // Pricing & GST
   basicCost?: number;

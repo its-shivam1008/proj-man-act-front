@@ -103,6 +103,7 @@ import Drawing from "./pages/modules/Drawing";
 import InventoryMasterData from "./pages/modules/inventory/InventoryMasterData";
 import UserProfileMiddleware from "./middleware/UserProfileMiddleware";
 import RoutingMaster from "./pages/modules/production/Routing";
+import PlantMachineryMasterPage from "./pages/modules/plant-machinery/plantandmachinarymasterdata";
 
 function App() {
   useEffect(() => {
@@ -322,6 +323,7 @@ function App() {
                 path="/plant-machinery/reports"
                 element={<PlantMachineryReportsPage />}
               />
+              <Route path="/plant-machinary/masterdata" element={<PlantMachineryMasterPage/>}/>
               <Route path="/plant-machinery/kanban" element={<KanbanBoard />} />
               <Route
                 path="/plant-machinery/preventive-planning"

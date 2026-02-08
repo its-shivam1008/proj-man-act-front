@@ -75,12 +75,14 @@ import wbsBillReducer from './slices/wbsBillSlice'
 import batchReducer from "@/redux/slices/production/batchSlice";
 import chatReducer from "@/redux/slices/production/chatSlice";
 import notificationSidebarReducer from "@/redux/slices/notificationSidebarSlice"
+import plantMachineryMasterReducer from "@/redux/slices/plantandmachinary/plantMachineryMasterSlice";
 export const store = configureStore({
   reducer: {
     chat: chatReducer,
+    plantMachineryMaster: plantMachineryMasterReducer,
     notifications: notificationSidebarReducer,
-    batch: batchReducer, 
-    wbsBill:wbsBillReducer,
+    batch: batchReducer,
+    wbsBill: wbsBillReducer,
     routing: routingReducer,
     teams: teamReducer,
     documents: documentReducer,

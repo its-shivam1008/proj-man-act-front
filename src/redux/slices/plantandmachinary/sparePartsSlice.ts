@@ -10,6 +10,7 @@ export interface SparePart {
   name: string;
   equipmentLink?: string;
   vendor?: string;
+  supplier?:string;
   location?: string | { _id: string; name: string };
 
   // Quantity

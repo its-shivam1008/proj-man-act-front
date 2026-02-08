@@ -36,7 +36,12 @@ import { Label } from "@/components/ui/label";
 import { Pencil, Trash2, Plus, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 
-type InventoryMasterType = "category" | "hsn" | "supplier";
+// type InventoryMasterType = "category" | "hsn" | "supplier";
+type InventoryMasterType =
+  | "product"
+  | "rawmaterial"
+  | "hsn"
+  | "supplier";
 
 export default function InventoryMasterData() {
   const canView = usePermission("masterdatainv", "view");
@@ -55,19 +60,36 @@ export default function InventoryMasterData() {
   }
 
   const dispatch = useDispatch<AppDispatch>();
-  const { category, hsn, supplier, pagination } = useSelector(
-    (state: RootState) => state.inventoryMaster
-  );
+  // const { category, hsn, supplier, pagination } = useSelector(
+  //   (state: RootState) => state.inventoryMaster
+  // );
+  const { product, rawmaterial, hsn, supplier, pagination } =
+    useSelector((state: RootState) => state.inventoryMaster);
 
+
+  // const [activeTab, setActiveTab] =
+  //   useState<InventoryMasterType>("category");
   const [activeTab, setActiveTab] =
-    useState<InventoryMasterType>("category");
+    useState<InventoryMasterType>("product");
+
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editItem, setEditItem] = useState<any | null>(null);
 
+  // const [formData, setFormData] = useState({
+  //   name: "",
+  //   description: "",
+  //   hsnNumber: "",
+  //   taxPercent: "",
+  //   company: "",
+  //   phone: "",
+  //   email: "",
+  // });
+
   const [formData, setFormData] = useState({
     name: "",
     description: "",
+    categoryType: "",
     hsnNumber: "",
     taxPercent: "",
     company: "",
@@ -86,10 +108,18 @@ export default function InventoryMasterData() {
   }, [dispatch, activeTab]);
 
   const getList = () => {
-    if (activeTab === "category") return category;
+    if (activeTab === "product") return product;
+    if (activeTab === "rawmaterial") return rawmaterial;
     if (activeTab === "hsn") return hsn;
     return supplier;
   };
+
+
+  // const getList = () => {
+  //   if (activeTab === "category") return category;
+  //   if (activeTab === "hsn") return hsn;
+  //   return supplier;
+  // };
 
   const handlePageChange = (page: number) => {
     dispatch(
@@ -104,9 +134,11 @@ export default function InventoryMasterData() {
   const openDialog = (item?: any) => {
     if (item) {
       setEditItem(item);
+
       setFormData({
         name: item.name || "",
         description: item.description || "",
+        categoryType: item.categoryType || "", // ✅ IMPORTANT
         hsnNumber: item.hsnNumber || "",
         taxPercent: item.taxPercent || "",
         company: item.company || "",
@@ -115,9 +147,11 @@ export default function InventoryMasterData() {
       });
     } else {
       setEditItem(null);
+
       setFormData({
         name: "",
         description: "",
+        categoryType: "", // ✅ RESET properly
         hsnNumber: "",
         taxPercent: "",
         company: "",
@@ -125,12 +159,20 @@ export default function InventoryMasterData() {
         email: "",
       });
     }
+
     setIsDialogOpen(true);
   };
 
+
   const handleSave = async () => {
-    if (activeTab === "category" && !formData.name)
-      return toast.error("Category name required");
+    if (
+      (activeTab === "product" || activeTab === "rawmaterial") &&
+      (!formData.name || !formData.categoryType)
+    ) {
+      return toast.error("Category name & type required");
+    }
+
+
 
     if (activeTab === "hsn" && !formData.hsnNumber)
       return toast.error("HSN number required");
@@ -197,7 +239,9 @@ export default function InventoryMasterData() {
         onValueChange={(v) => setActiveTab(v as InventoryMasterType)}
       >
         <TabsList className="w-full justify-start">
-          <TabsTrigger value="category">Category</TabsTrigger>
+          {/* <TabsTrigger value="category">Category</TabsTrigger> */}
+          <TabsTrigger value="product">Product Category</TabsTrigger>
+          <TabsTrigger value="rawmaterial">Raw Material Category</TabsTrigger>
           <TabsTrigger value="hsn">HSN Codes</TabsTrigger>
           <TabsTrigger value="supplier">Supplier</TabsTrigger>
         </TabsList>
@@ -218,19 +262,21 @@ export default function InventoryMasterData() {
                       <TableHead>Phone</TableHead>
                       <TableHead>Email</TableHead>
                     </>
-                  ) : activeTab === "category" ? (
-                    <>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Description</TableHead>
-                    </>
-                  ) : (
+                  ) : activeTab === "hsn" ? (
                     <>
                       <TableHead>HSN</TableHead>
                       <TableHead>Tax %</TableHead>
                     </>
+                  ) : (
+                    <>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Category Type</TableHead>
+                    </>
                   )}
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
+
               </TableHeader>
 
               <TableBody>
@@ -250,17 +296,19 @@ export default function InventoryMasterData() {
                           <TableCell>{item.phone}</TableCell>
                           <TableCell>{item.email}</TableCell>
                         </>
-                      ) : activeTab === "category" ? (
-                        <>
-                          <TableCell>{item.name}</TableCell>
-                          <TableCell>{item.description}</TableCell>
-                        </>
-                      ) : (
+                      ) : activeTab === "hsn" ? (
                         <>
                           <TableCell>{item.hsnNumber}</TableCell>
                           <TableCell>{item.taxPercent}%</TableCell>
                         </>
+                      ) : (
+                        <>
+                          <TableCell>{item.name}</TableCell>
+                          <TableCell>{item.description}</TableCell>
+                          <TableCell>{item.categoryType}</TableCell>
+                        </>
                       )}
+
 
                       <TableCell className="text-right space-x-2">
                         {canEdit && (
@@ -320,7 +368,7 @@ export default function InventoryMasterData() {
           </DialogHeader>
 
           <div className="space-y-4">
-            {activeTab === "category" && (
+            {(activeTab === "product" || activeTab === "rawmaterial") && (
               <>
                 <Label>Name</Label>
                 <Input
@@ -329,6 +377,7 @@ export default function InventoryMasterData() {
                     setFormData({ ...formData, name: e.target.value })
                   }
                 />
+
                 <Label>Description</Label>
                 <Input
                   value={formData.description}
@@ -336,8 +385,28 @@ export default function InventoryMasterData() {
                     setFormData({ ...formData, description: e.target.value })
                   }
                 />
+
+                <Label>Category Type</Label>
+                <select
+                  className="w-full border rounded px-2 py-1"
+                  value={formData.categoryType}
+                  onChange={(e) =>
+                    setFormData({ ...formData, categoryType: e.target.value })
+                  }
+                >
+                  <option value="">Select</option>
+                  {(activeTab === "product"
+                    ? ["Finished", "Semi-Finished"]
+                    : ["Consumable", "Non-Consumable", "Chemical", "Packaging"]
+                  ).map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
               </>
             )}
+
 
             {activeTab === "hsn" && (
               <>

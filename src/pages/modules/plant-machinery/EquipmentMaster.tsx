@@ -48,9 +48,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { fetchInventoryMaster } from "@/redux/slices/inventoryMasterSlice";
+// import { fetchInventoryMaster } from "@/redux/slices/inventoryMasterSlice";
+import { fetchPlantMachineryMaster } from "@/redux/slices/plantandmachinary/plantMachineryMasterSlice";
 // import { DropdownMenu } from "@radix-ui/react-dropdown-menu";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+// import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 // ---------- TYPES ----------
 interface StoredFile {
@@ -174,14 +175,35 @@ export default function EquipmentMasterPage() {
   const dispatch = useDispatch<AppDispatch>();
   const { equipments, page, total, limit, pendingEquipment } = useSelector((state: RootState) => state.equipment);
   const totalPages = Math.ceil(total / limit) || 1;
-
   const { category, supplier } = useSelector(
-    (state: RootState) => state.inventoryMaster
+    (state: RootState) => state.plantMachineryMaster
   );
+
+  // Access the equipment category array directly
+  const categoryList = category.equipment ?? [];
+
+  // Access the supplier array directly
+  const supplierList = supplier ?? [];
+
   useEffect(() => {
-    dispatch(fetchInventoryMaster({ type: "category", page: 1, limit: 100 }));
-    dispatch(fetchInventoryMaster({ type: "supplier", page: 1, limit: 100 }));
+    dispatch(
+      fetchPlantMachineryMaster({
+        type: "category",
+        categoryFor: "equipment",
+        page: 1,
+        limit: 100,
+      })
+    );
+
+    dispatch(
+      fetchPlantMachineryMaster({
+        type: "supplier",
+        page: 1,
+        limit: 100,
+      })
+    );
   }, [dispatch]);
+
 
   // User & Location Data
   const { userProfile } = useSelector((state: any) => state.auth);
@@ -331,17 +353,24 @@ export default function EquipmentMasterPage() {
 
   // ---------- OPEN EDIT ----------
   function openEditDialog(equipment: Equipment) {
-    const matchedSupplier = supplier.find(
-      (s: any) => s.name === equipment.supplier
-    );
+    const supplierId =
+      typeof equipment.supplier === "object"
+        ? equipment.supplier._id
+        : equipment.supplier;
+
+    const categoryId =
+      typeof equipment.category === "object"
+        ? equipment.category._id
+        : equipment.category;
 
     setEditing(equipment);
     setForm({
       ...equipment,
-      supplier: matchedSupplier?._id, // ✅ STRING → ID
+      supplier: supplierId || undefined,
+      category: categoryId || undefined,
       location:
         typeof equipment.location === "object"
-          ? (equipment.location as any)._id
+          ? equipment.location._id
           : equipment.location,
     });
 
@@ -512,19 +541,22 @@ export default function EquipmentMasterPage() {
 
             const equipmentId = row["Equipment ID"] || row["EquipmentID"] || generateEquipmentCode();
             const supplierName = row["Supplier"];
-            const matchedSupplier = supplier.find(
+            const matchedSupplier = supplierList.find(
               (s: any) =>
                 s.name.toLowerCase() === supplierName?.toString().toLowerCase()
             );
+
             const categoryName = row['Category'];
-            const matchedCategory = category.find((c: any) =>
-              c.name.toLowerCase() === categoryName?.toString().toLoswerCase())
+            const matchedCategory = categoryList.find(
+              (c: any) =>
+                c.name.toLowerCase() === categoryName?.toString().toLowerCase()
+            );
 
             const payload: Partial<Equipment> = {
               name: row["Name"],
               code: equipmentId,
               model: row["Model"] || "",
-              category: matchedCategory,
+              category: matchedCategory?._id,
               location: locationId,
               quantity: quantity,
               basicCost,
@@ -800,7 +832,7 @@ export default function EquipmentMasterPage() {
                         <TableCell className="font-medium">{equipment.name}</TableCell>
                         <TableCell>{equipment.model || "-"}</TableCell>
                         <TableCell>
-                          {category.find((c: any) => c._id === equipment.category)?.name || "-"}
+                          {categoryList.find((c: any) => c._id === equipment.category)?.name || "-"}
                         </TableCell>
 
                         <TableCell>{getLocationName(equipment.location)}</TableCell>
@@ -1071,14 +1103,18 @@ export default function EquipmentMasterPage() {
                   </SelectTrigger>
 
                   <SelectContent>
-                    {category?.map((cat: any) => (
-                      <SelectItem
-                        key={cat._id}
-                        value={cat._id}   // ✅ NEVER empty string
-                      >
-                        {cat.name}
-                      </SelectItem>
-                    ))}
+                    {categoryList.length === 0 ? (
+                      <div className="p-3 text-sm text-center text-muted-foreground">
+                        <p>No categories found.</p>
+                        <p className="text-xs mt-1 opacity-70">Please create one in Master Data first.</p>
+                      </div>
+                    ) : (
+                      categoryList.map((cat: any) => (
+                        <SelectItem key={cat._id} value={cat._id}>
+                          {cat.name}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -1146,11 +1182,20 @@ export default function EquipmentMasterPage() {
                     </SelectTrigger>
 
                     <SelectContent>
-                      {supplier?.map((sup: any) => (
-                        <SelectItem key={sup._id} value={sup._id}>
-                          {sup.name}
-                        </SelectItem>
-                      ))}
+                      {/* CHECK IF LIST IS EMPTY */}
+                      {supplierList.length === 0 ? (
+                        <div className="p-3 text-sm text-center text-muted-foreground">
+                          <p>No suppliers found.</p>
+                          <p className="text-xs mt-1 opacity-70">Please create one in Master Data first.</p>
+                        </div>
+                      ) : (
+                        /* RENDER LIST IF DATA EXISTS */
+                        supplierList.map((sup: any) => (
+                          <SelectItem key={sup._id} value={sup._id}>
+                            {sup.name || sup.company || "Unknown Supplier"}
+                          </SelectItem>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1393,7 +1438,7 @@ export default function EquipmentMasterPage() {
                   <div><b>Model:</b> {viewEquipment.model || "-"}</div>
                   <div>
                     <b>Category:</b>{" "}
-                    {category.find((c: any) => c._id === viewEquipment.category)?.name || "-"}
+                    {categoryList.find((c: any) => c._id === viewEquipment.category)?.name || "-"}
                   </div>
                   <div><b>Location:</b> {getLocationName(viewEquipment.location)}</div>
                   <div>

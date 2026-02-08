@@ -571,18 +571,16 @@ export default function ProcurementPage() {
     };
 
     const addMoreMRSItem = () => {
-        // Validate current form
         if (!form.item?.trim() || form.quantity === undefined || form.quantity < 1) {
             toast.error("Please fill Item and Quantity before adding more.");
             return;
         }
 
-        // Add current form to multipleItems
         setMultipleItems(prev => {
             const updated = [...prev];
 
             if (editingIndex !== null) {
-                updated.splice(editingIndex, 0, { ...form });
+                updated[editingIndex] = { ...form }; // ✅ FIX
             } else {
                 updated.push({ ...form });
             }
@@ -592,8 +590,6 @@ export default function ProcurementPage() {
 
         setEditingIndex(null);
 
-
-        // Reset form for next item but keep project and task
         setForm({
             item: "",
             quantity: 1,
@@ -603,9 +599,8 @@ export default function ProcurementPage() {
             task: form.task,
             materialId: undefined
         });
-        setIsCustomItem(false);
 
-        toast.success(`${multipleItems.length + 1} item(s) ready to save. Fill in the next item.`);
+        setIsCustomItem(false);
     };
 
     // const openEdit = (m: ExtendedMRSItem) => {
@@ -1868,13 +1863,11 @@ export default function ProcurementPage() {
                                     <div
                                         className="flex justify-between items-center text-sm border-b pb-1 cursor-pointer hover:bg-slate-100 px-1 rounded"
                                         onClick={() => {
-                                            setForm(item);                // load into form
-                                            setEditingIndex(index);       // remember index
-                                            setMultipleItems(prev =>
-                                                prev.filter((_, i) => i !== index)
-                                            );
+                                            setForm(item);
+                                            setEditingIndex(index);
                                             setIsCustomItem(false);
                                         }}
+
                                     >
 
                                         <div>
@@ -1887,14 +1880,16 @@ export default function ProcurementPage() {
                                         <Button
                                             size="icon"
                                             variant="ghost"
-                                            onClick={() =>
+                                            onClick={(e) => {
+                                                e.stopPropagation(); // ✅ IMPORTANT
                                                 setMultipleItems(prev =>
                                                     prev.filter((_, i) => i !== index)
-                                                )
-                                            }
+                                                );
+                                            }}
                                         >
                                             <Trash2 className="h-4 w-4 text-red-500" />
                                         </Button>
+
                                     </div>
                                 ))}
                             </div>

@@ -9,7 +9,8 @@ const getOrgId = () => {
   return null;
 };
 
-type MasterType = "category" | "hsn" | "supplier";
+// type MasterType = "category" | "hsn" | "supplier";
+type MasterType = "product" | "rawmaterial" | "hsn" | "supplier";
 
 // ---------- API THUNKS ----------
 
@@ -49,7 +50,7 @@ export const addInventoryMaster = createAsyncThunk(
       const organisationId = getOrgId();
       const payload = { ...data, type, organisationId };
 
-      const res = await axiosApi.post(`/inventory/${type}`, payload);
+      const res = await axiosApi.post("/inventory", payload);
 
       return { type, data: res.data.data };
     } catch (err: any) {
@@ -57,6 +58,7 @@ export const addInventoryMaster = createAsyncThunk(
     }
   }
 );
+
 
 // UPDATE
 export const updateInventoryMaster = createAsyncThunk(
@@ -100,16 +102,23 @@ export const deleteInventoryMaster = createAsyncThunk(
 );
 
 // ---------- INITIAL STATE ----------
+interface PaginationInfo {
+  page: number;
+  pages: number;
+  total: number;
+}
 
 interface InventoryState {
-  category: any[];
+  product: any[];
+  rawmaterial: any[];
   hsn: any[];
   supplier: any[];
 
   pagination: {
-    category: { page: number; pages: number; total: number };
-    hsn: { page: number; pages: number; total: number };
-    supplier: { page: number; pages: number; total: number };
+    product: PaginationInfo;
+    rawmaterial: PaginationInfo;
+    hsn: PaginationInfo;
+    supplier: PaginationInfo;
   };
 
   loading: boolean;
@@ -117,12 +126,14 @@ interface InventoryState {
 }
 
 const initialState: InventoryState = {
-  category: [],
+  product: [],
+  rawmaterial: [],
   hsn: [],
   supplier: [],
 
   pagination: {
-    category: { page: 1, pages: 1, total: 0 },
+    product: { page: 1, pages: 1, total: 0 },
+    rawmaterial: { page: 1, pages: 1, total: 0 },
     hsn: { page: 1, pages: 1, total: 0 },
     supplier: { page: 1, pages: 1, total: 0 },
   },
@@ -130,6 +141,21 @@ const initialState: InventoryState = {
   loading: false,
   error: null,
 };
+
+// const initialState: InventoryState = {
+//   category: [],
+//   hsn: [],
+//   supplier: [],
+
+//   pagination: {
+//     category: { page: 1, pages: 1, total: 0 },
+//     hsn: { page: 1, pages: 1, total: 0 },
+//     supplier: { page: 1, pages: 1, total: 0 },
+//   },
+
+//   loading: false,
+//   error: null,
+// };
 
 // ---------- SLICE ----------
 

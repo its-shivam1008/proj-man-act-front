@@ -18,7 +18,6 @@ import { usePermission } from "@/hooks/userPermission";
 import * as XLSX from 'xlsx';
 import { Upload, AlertCircle, Check, FileSpreadsheet, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"; // Assuming you have these or use standard HTML dialog
-
 import {
   Package,
   Plus,
@@ -74,6 +73,10 @@ const Products: React.FC = () => {
   const [warehouseListModal, setWarehouseListModal] = useState([]);
   const [selectedWarehouse, setSelectedWarehouse] = useState(null);
 
+  const { product: productCategories } = useSelector(
+    (state: RootState) => state.inventoryMaster
+  );
+
   const [transferModal, setTransferModal] = useState(null);
   const canView = usePermission("products", "view");
   const canCreate = usePermission("products", "create");
@@ -100,7 +103,6 @@ const Products: React.FC = () => {
     if (!Array.isArray(product.stocks)) return 0;
     return product.stocks.reduce((sum: number, s: any) => sum + (s.quantity || 0), 0);
   };
-
   const getWarehouseName = (warehouseId: string | { name: string } | undefined) => {
     if (!warehouseId) return "N/A";
     if (typeof warehouseId === 'object') return warehouseId.name || "N/A";
@@ -146,8 +148,8 @@ const Products: React.FC = () => {
 
   // Purchase History State
   const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
-  const [purchaseHistory, setPurchaseHistory] = useState<{[key: string]: any[]}>({});
-  const [loadingHistory, setLoadingHistory] = useState<{[key: string]: boolean}>({});
+  const [purchaseHistory, setPurchaseHistory] = useState<{ [key: string]: any[] }>({});
+  const [loadingHistory, setLoadingHistory] = useState<{ [key: string]: boolean }>({});
 
   const [isImporting, setIsImporting] = useState(false);
   const [importReport, setImportReport] = useState<{
@@ -180,7 +182,7 @@ const Products: React.FC = () => {
         // Loop through data
         for (const [index, row] of data.entries()) {
           const rowNum = index + 2; // +1 for 0-index, +1 for header row
-          
+
           try {
             // 1. Validate Mandatory Fields
             if (!row["Product Name"]) throw new Error("Missing Product Name");
@@ -200,7 +202,7 @@ const Products: React.FC = () => {
             const warehouseMatch = warehouses.find(
               (w: any) => w.name.toLowerCase() === excelWarehouse?.toLowerCase()
             );
-            
+
             // If warehouse specified but not found
             if (excelWarehouse && !warehouseMatch) {
               throw new Error(`Warehouse '${excelWarehouse}' not found.`);
@@ -213,20 +215,20 @@ const Products: React.FC = () => {
               type: row["Product Type"].toLowerCase(), // Ensure lowercase for enum
               category: categoryMatch.name, // Use system name
               sku: row["SKU"] || `SKU-${Date.now()}-${index}`,
-              
+
               // Stock Logic
               trackInventory: true,
               quantity: Number(row["Available stock level"] || 0),
               minStock: 0,
-              
+
               // Pricing
               unitCost: Number(row["Cost Price"] || 0),
               salesPrice: Number(row["Sales Price"] || 0),
-              
+
               // Location
               warehouseId: warehouseMatch?._id || null,
               location: warehouseMatch?.name || "Main Warehouse",
-              
+
               status: Number(row["Available stock level"]) > 0 ? "in-stock" : "out-of-stock"
             };
 
@@ -254,7 +256,7 @@ const Products: React.FC = () => {
       } finally {
         setIsImporting(false);
         // Reset file input
-        e.target.value = ""; 
+        e.target.value = "";
         dispatch(fetchProducts({ page, limit }));
       }
     };
@@ -265,11 +267,11 @@ const Products: React.FC = () => {
   // Fetch purchase history for a product
   const fetchPurchaseHistory = async (productId: string, forceRefresh = false) => {
     setLoadingHistory(prev => ({ ...prev, [productId]: true }));
-    
+
     try {
       console.log(`🔍 Fetching FIFO stock summary for product: ${productId}`);
       const organisationId = localStorage.getItem('organisationId');
-      
+
       // First try to get FIFO stock summary which includes actual consumption data
       const fifoResponse = await fetch(`${BASE_URL}/fifo/stock-summary/${productId}`, {
         headers: {
@@ -277,14 +279,14 @@ const Products: React.FC = () => {
           'Content-Type': 'application/json'
         }
       });
-      
+
       if (fifoResponse.ok) {
         const fifoData = await fifoResponse.json();
-        
+
         if (fifoData.success && fifoData.data.batches) {
           const batches = fifoData.data.batches;
           console.log(`📦 Found ${batches.length} FIFO batches for product ${productId}`, batches);
-          
+
           // Convert FIFO batches to purchase history format with actual progress data
           const purchaseHistoryWithProgress = batches.map((batch: any) => ({
             _id: batch.batchId,
@@ -301,17 +303,17 @@ const Products: React.FC = () => {
             remarks: `FIFO Batch - ${batch.warehouseName || 'Warehouse'}`,
             unit: batch.unit || 'units'
           }));
-          
+
           // Sort by purchase date (oldest first for FIFO order)
-          const sortedHistory = purchaseHistoryWithProgress.sort((a: any, b: any) => 
+          const sortedHistory = purchaseHistoryWithProgress.sort((a: any, b: any) =>
             new Date(a.movementDate).getTime() - new Date(b.movementDate).getTime()
           );
-          
+
           setPurchaseHistory(prev => ({
             ...prev,
             [productId]: sortedHistory
           }));
-          
+
           if (forceRefresh) {
             toast.success(`FIFO stock summary refreshed! Found ${sortedHistory.length} batches.`);
           }
@@ -337,20 +339,20 @@ const Products: React.FC = () => {
     try {
       console.log(`📦 Fallback: Fetching product movements for ${productId}`);
       const organisationId = localStorage.getItem('organisationId');
-      
+
       const response = await fetch(`${BASE_URL}/material-movements?organisationId=${organisationId}&materialId=${productId}&movementType=inbound&source=Purchase Order`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
           'Content-Type': 'application/json'
         }
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         const movements = data.data || [];
-        
+
         console.log(`📦 Found ${movements.length} purchase movements for product ${productId}`);
-        
+
         // Add default progress data for movements (no FIFO data available)
         const movementsWithProgress = movements.map((movement: any) => ({
           ...movement,
@@ -359,17 +361,17 @@ const Products: React.FC = () => {
           consumedQuantity: 0,
           progressPercentage: 0 // No consumption data available
         }));
-        
+
         // Sort by date (oldest first for FIFO order)
-        const sortedMovements = movementsWithProgress.sort((a: any, b: any) => 
+        const sortedMovements = movementsWithProgress.sort((a: any, b: any) =>
           new Date(a.movementDate).getTime() - new Date(b.movementDate).getTime()
         );
-        
+
         setPurchaseHistory(prev => ({
           ...prev,
           [productId]: sortedMovements
         }));
-        
+
         if (forceRefresh) {
           toast.success(`Purchase history refreshed! Found ${sortedMovements.length} purchases.`);
         }
@@ -475,6 +477,7 @@ const Products: React.FC = () => {
         dispatch(fetchProducts({ page, limit }));
         if (orgId) {
           dispatch(fetchWarehouses(orgId));
+          dispatch(fetchInventoryMaster({ type: "product", page: 1, limit: 100 }));
         }
         toast.success(`Product ${response === 'accepted' ? 'added successfully' : 'rejected'}`);
       }
@@ -844,10 +847,12 @@ const Products: React.FC = () => {
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">Select Category</option>
-                    {categories && categories.length > 0 ? (
-                      categories.map((cat: any) => (
+                    {productCategories && productCategories.length > 0 ? (
+                      productCategories.map((cat: any) => (
                         <option key={cat._id} value={cat.name}>
                           {cat.name}
+                          {/* Optional: Show type like (Finished) if you want */}
+                          {cat.categoryType ? ` (${cat.categoryType})` : ""}
                         </option>
                       ))
                     ) : (
@@ -1288,14 +1293,14 @@ const Products: React.FC = () => {
           const match2 = warehouseProductId === product.id;
           const match3 = warehouseProductId?.toString() === product._id?.toString();
           const match4 = warehouseProductId?.toString() === product.id?.toString();
-          
+
           console.log(`   Comparing product: ${p.productName}`, {
             warehouseProductId: warehouseProductId,
             searchingForId: product._id,
             searchingForId2: product.id,
             match1, match2, match3, match4
           });
-          
+
           return match1 || match2 || match3 || match4;
         }
       );
@@ -1312,10 +1317,10 @@ const Products: React.FC = () => {
         const warehousesWithProduct = warehouses.filter((w) =>
           w.products?.some((p) => {
             const warehouseProductId = p.productId?._id || p.productId;
-            return warehouseProductId === product._id || 
-                   warehouseProductId === product.id ||
-                   warehouseProductId?.toString() === product._id?.toString() ||
-                   warehouseProductId?.toString() === product.id?.toString();
+            return warehouseProductId === product._id ||
+              warehouseProductId === product.id ||
+              warehouseProductId?.toString() === product._id?.toString() ||
+              warehouseProductId?.toString() === product.id?.toString();
           })
         );
 
@@ -1653,24 +1658,24 @@ const Products: React.FC = () => {
             onChange={handleFileUpload}
             disabled={isImporting}
           />
-          
-          <label 
+
+          <label
             htmlFor="product-import"
             className={`cursor-pointer bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 flex items-center gap-2 text-sm font-medium shadow-lg ${isImporting ? 'opacity-50 pointer-events-none' : ''}`}
           >
-             {isImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
-             {isImporting ? "Importing..." : "Import Excel"}
+            {isImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+            {isImporting ? "Importing..." : "Import Excel"}
           </label>
-        <button
-          disabled={!canCreate}
-          onClick={() => {
-            setEditingProduct(null);
-            setShowAddProductForm(true);
-          }}
-          className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 flex items-center gap-3 text-sm font-medium shadow-lg"
-        >
-          <Plus className="h-4 w-4" /> Add Product
-        </button>
+          <button
+            disabled={!canCreate}
+            onClick={() => {
+              setEditingProduct(null);
+              setShowAddProductForm(true);
+            }}
+            className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 flex items-center gap-3 text-sm font-medium shadow-lg"
+          >
+            <Plus className="h-4 w-4" /> Add Product
+          </button>
         </div>
       </div>
 
@@ -1703,8 +1708,8 @@ const Products: React.FC = () => {
             className="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
           >
             <option value="all">All Categories</option>
-            {categories && categories.length > 0 ? (
-              categories.map((cat: any) => (
+            {productCategories && productCategories.length > 0 ? (
+              productCategories.map((cat: any) => (
                 <option key={cat._id} value={cat.name}>
                   {cat.name}
                 </option>
@@ -1782,255 +1787,254 @@ const Products: React.FC = () => {
                       </div>
                     </div>
                   </td>
-                <td className="px-6 py-4 text-sm text-gray-900 font-medium">
-                  {item.sku}
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-900">
-                  {item.category}
-                </td>
-                <td className="px-6 py-4 text-sm">
-                  <span className="font-bold">{getTotalStock(item)}</span>
-                  <span className="text-gray-500"> / {item.minStock} min</span>
+                  <td className="px-6 py-4 text-sm text-gray-900 font-medium">
+                    {item.sku}
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-900">
+                    {item.category}
+                  </td>
+                  <td className="px-6 py-4 text-sm">
+                    <span className="font-bold">{getTotalStock(item)}</span>
+                    <span className="text-gray-500"> / {item.minStock} min</span>
 
-                </td>
-                <td className="px-6 py-4 text-sm">
-                  ₹{getAvgUnitCost(item).toFixed(2)}
-                </td>
-                <td className="px-6 py-4 text-sm font-bold text-gray-900">
-                  ₹{(getTotalStock(item) * getAvgUnitCost(item)).toLocaleString()}
-                </td>
-                <td className="px-4 py-4 whitespace-nowrap">
+                  </td>
+                  <td className="px-6 py-4 text-sm">
+                    ₹{getAvgUnitCost(item).toFixed(2)}
+                  </td>
+                  <td className="px-6 py-4 text-sm font-bold text-gray-900">
+                    ₹{(getTotalStock(item) * getAvgUnitCost(item)).toLocaleString()}
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap">
 
-                  <span
-                    className={`inline-flex px-3 py-1 text-xs w-full font-bold rounded-full ${getStatusColor(
-                      item.status
-                    )}`}
-                  >
-                    {item.status.replace(/-/g, " ")}
-                  </span>
-                </td>
-                <td className="px-6 py-6 text-sm font-medium text-blue-700">
-                  <button
-                    className="flex items-center gap-2 underline hover:text-blue-900"
-                    onClick={() => {
-                      const warehouseIds = item.stocks?.map((s: any) => String(s.warehouseId)) || [];
-
-                      const list = warehouses.filter(w =>
-                        warehouseIds.includes(String(w._id))
-                      );
-
-                      setWarehouseListModal(list);
-                    }}
-
-                  >
-                    <span>{getWarehouseCountForProduct(item)}</span>
-                    <span>warehouses</span>
-                  </button>
-                </td>
-
-
-
-
-                <td className="px-6 py-4 text-sm">
-                  <div className="flex items-center space-x-4">
-                    <button
-                      className="text-blue-600 hover:text-blue-800"
-                      onClick={() => setViewingProduct(item)}
+                    <span
+                      className={`inline-flex px-3 py-1 text-xs w-full font-bold rounded-full ${getStatusColor(
+                        item.status
+                      )}`}
                     >
-                      <Eye className="h-5 w-5" />
-                    </button>
-
+                      {item.status.replace(/-/g, " ")}
+                    </span>
+                  </td>
+                  <td className="px-6 py-6 text-sm font-medium text-blue-700">
                     <button
-                      className="text-green-600 hover:text-green-800"
-                      disabled={!canCreate}
+                      className="flex items-center gap-2 underline hover:text-blue-900"
                       onClick={() => {
-                        setEditingProduct(item);
-                        setShowAddProductForm(true);
+                        const warehouseIds = item.stocks?.map((s: any) => String(s.warehouseId)) || [];
+
+                        const list = warehouses.filter(w =>
+                          warehouseIds.includes(String(w._id))
+                        );
+
+                        setWarehouseListModal(list);
                       }}
+
                     >
-                      <Edit className="h-5 w-5" />
+                      <span>{getWarehouseCountForProduct(item)}</span>
+                      <span>warehouses</span>
                     </button>
-                    <button
-                      className="text-purple-600 hover:text-purple-800"
-                      onClick={() => setTransferModal(item)}
-                    >
-                      <Truck />
-                    </button>
-                    {transferModal && (
-                      <StockTransferModal
-                        product={transferModal}
-                        onClose={() => setTransferModal(null)}
-                      />
-                    )}
+                  </td>
 
 
-                    <button
-                      disabled={!canDelete}
-                      className="text-red-600 hover:text-red-800"
-                      onClick={() => handleDelete(item._id!)}
-                    >
-                      <Trash2 className="h-5 w-5" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-              
-              {/* Purchase History Dropdown */}
-              {expandedProduct === item._id && (
-                <tr>
-                  <td colSpan={9} className="bg-gray-50 p-0">
-                    <div className="p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <History className="h-4 w-4 text-blue-600" />
-                          <h4 className="font-semibold text-gray-900">Purchase History for {item.name}</h4>
+
+
+                  <td className="px-6 py-4 text-sm">
+                    <div className="flex items-center space-x-4">
+                      <button
+                        className="text-blue-600 hover:text-blue-800"
+                        onClick={() => setViewingProduct(item)}
+                      >
+                        <Eye className="h-5 w-5" />
+                      </button>
+
+                      <button
+                        className="text-green-600 hover:text-green-800"
+                        disabled={!canCreate}
+                        onClick={() => {
+                          setEditingProduct(item);
+                          setShowAddProductForm(true);
+                        }}
+                      >
+                        <Edit className="h-5 w-5" />
+                      </button>
+                      <button
+                        className="text-purple-600 hover:text-purple-800"
+                        onClick={() => setTransferModal(item)}
+                      >
+                        <Truck />
+                      </button>
+                      {transferModal && (
+                        <StockTransferModal
+                          product={transferModal}
+                          onClose={() => setTransferModal(null)}
+                        />
+                      )}
+
+
+                      <button
+                        disabled={!canDelete}
+                        className="text-red-600 hover:text-red-800"
+                        onClick={() => handleDelete(item._id!)}
+                      >
+                        <Trash2 className="h-5 w-5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+
+                {/* Purchase History Dropdown */}
+                {expandedProduct === item._id && (
+                  <tr>
+                    <td colSpan={9} className="bg-gray-50 p-0">
+                      <div className="p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <History className="h-4 w-4 text-blue-600" />
+                            <h4 className="font-semibold text-gray-900">Purchase History for {item.name}</h4>
+                          </div>
                         </div>
-                      </div>
-                      
-                      {purchaseHistory[item._id!] ? (
-                        purchaseHistory[item._id!].length > 0 ? (
-                          <div className="bg-white rounded-lg border">
-                            <div className="overflow-x-auto">
-                              <table className="min-w-full">
-                                <thead>
-                                  <tr className="bg-gray-100">
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Date</th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Quantity</th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Unit Cost</th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Total Cost</th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">FIFO Consumption</th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Source</th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Reference</th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Remarks</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {purchaseHistory[item._id!].map((purchase: any, index: number) => {
-                                    const progress = (((purchase.originalQuantity || purchase.quantity) - (purchase.remainingQuantity || 0)) / (purchase.originalQuantity || purchase.quantity || 0)) * 100;
-                                    return (
-                                      <tr key={purchase._id || index} className="text-sm border-b">
-                                        <td className="px-4 py-2 text-xs">
-                                          {purchase.movementDate ? 
-                                            new Date(purchase.movementDate).toLocaleDateString('en-IN', {
-                                              day: '2-digit',
-                                              month: 'short',
-                                              year: 'numeric'
-                                            }) : 'N/A'
-                                          }
-                                        </td>
-                                        <td className="px-4 py-2 text-xs font-medium">
-                                          {purchase.quantity} {purchase.unit}
-                                        </td>
-                                        <td className="px-4 py-2 text-xs">
-                                          ₹{purchase.unitCost || 0}
-                                        </td>
-                                        <td className="px-4 py-2 text-xs font-medium">
-                                          ₹{purchase.totalCost || 0}
-                                        </td>
-                                        <td className="px-4 py-2 text-xs">
-                                          <div className="space-y-1">
-                                            <div className="flex justify-between text-xs">
-                                              <span>Used: {(purchase.originalQuantity || purchase.quantity) - (purchase.remainingQuantity || 0)}</span>
-                                              <span>Left: {purchase.remainingQuantity || 0}</span>
+
+                        {purchaseHistory[item._id!] ? (
+                          purchaseHistory[item._id!].length > 0 ? (
+                            <div className="bg-white rounded-lg border">
+                              <div className="overflow-x-auto">
+                                <table className="min-w-full">
+                                  <thead>
+                                    <tr className="bg-gray-100">
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Date</th>
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Quantity</th>
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Unit Cost</th>
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Total Cost</th>
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">FIFO Consumption</th>
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Source</th>
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Reference</th>
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Remarks</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {purchaseHistory[item._id!].map((purchase: any, index: number) => {
+                                      const progress = (((purchase.originalQuantity || purchase.quantity) - (purchase.remainingQuantity || 0)) / (purchase.originalQuantity || purchase.quantity || 0)) * 100;
+                                      return (
+                                        <tr key={purchase._id || index} className="text-sm border-b">
+                                          <td className="px-4 py-2 text-xs">
+                                            {purchase.movementDate ?
+                                              new Date(purchase.movementDate).toLocaleDateString('en-IN', {
+                                                day: '2-digit',
+                                                month: 'short',
+                                                year: 'numeric'
+                                              }) : 'N/A'
+                                            }
+                                          </td>
+                                          <td className="px-4 py-2 text-xs font-medium">
+                                            {purchase.quantity} {purchase.unit}
+                                          </td>
+                                          <td className="px-4 py-2 text-xs">
+                                            ₹{purchase.unitCost || 0}
+                                          </td>
+                                          <td className="px-4 py-2 text-xs font-medium">
+                                            ₹{purchase.totalCost || 0}
+                                          </td>
+                                          <td className="px-4 py-2 text-xs">
+                                            <div className="space-y-1">
+                                              <div className="flex justify-between text-xs">
+                                                <span>Used: {(purchase.originalQuantity || purchase.quantity) - (purchase.remainingQuantity || 0)}</span>
+                                                <span>Left: {purchase.remainingQuantity || 0}</span>
+                                              </div>
+                                              <div className="w-full bg-gray-200 rounded-full h-2">
+                                                <div
+                                                  className={`h-2 rounded-full ${progress >= 100 ? 'bg-red-500' :
+                                                    progress >= 75 ? 'bg-orange-500' :
+                                                      progress >= 25 ? 'bg-yellow-500' : 'bg-green-500'
+                                                    }`}
+                                                  style={{
+                                                    width: `${Math.min(progress || 0, 100)}%`
+                                                  }}
+                                                ></div>
+                                              </div>
+                                              <div className="text-xs text-gray-500">
+                                                {(progress || 0).toFixed(1)}% consumed
+                                              </div>
                                             </div>
-                                            <div className="w-full bg-gray-200 rounded-full h-2">
-                                              <div 
-                                                className={`h-2 rounded-full ${
-                                                  progress >= 100 ? 'bg-red-500' : 
-                                                  progress >= 75 ? 'bg-orange-500' : 
-                                                  progress >= 25 ? 'bg-yellow-500' : 'bg-green-500'
-                                                }`}
-                                                style={{ 
-                                                  width: `${Math.min(progress || 0, 100)}%` 
-                                                }}
-                                              ></div>
-                                            </div>
-                                            <div className="text-xs text-gray-500">
-                                              {(progress || 0).toFixed(1)}% consumed
-                                            </div>
-                                          </div>
-                                        </td>
-                                        <td className="px-4 py-2 text-xs">
-                                          {purchase.source || 'Purchase Order'}
-                                        </td>
-                                        <td className="px-4 py-2 text-xs">
-                                          {purchase.referenceNumber || 'N/A'}
-                                        </td>
-                                        <td className="px-4 py-2 text-xs">
-                                          {purchase.remarks || 'Product purchase'}
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
-                            </div>
-                            
-                            {/* Summary */}
-                            <div className="p-3 bg-blue-50 border-t">
-                              <div className="grid grid-cols-2 gap-6 text-sm">
-                                <div className="space-y-2">
-                                  <div>
-                                    <span className="text-gray-600">Total Purchases:</span>
-                                    <span className="ml-2 font-semibold">{purchaseHistory[item._id!].length}</span>
+                                          </td>
+                                          <td className="px-4 py-2 text-xs">
+                                            {purchase.source || 'Purchase Order'}
+                                          </td>
+                                          <td className="px-4 py-2 text-xs">
+                                            {purchase.referenceNumber || 'N/A'}
+                                          </td>
+                                          <td className="px-4 py-2 text-xs">
+                                            {purchase.remarks || 'Product purchase'}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              {/* Summary */}
+                              <div className="p-3 bg-blue-50 border-t">
+                                <div className="grid grid-cols-2 gap-6 text-sm">
+                                  <div className="space-y-2">
+                                    <div>
+                                      <span className="text-gray-600">Total Purchases:</span>
+                                      <span className="ml-2 font-semibold">{purchaseHistory[item._id!].length}</span>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-600">Total Purchased:</span>
+                                      <span className="ml-2 font-semibold">
+                                        {purchaseHistory[item._id!].reduce((sum: number, p: any) => sum + (p.originalQuantity || p.quantity || 0), 0)} units
+                                      </span>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-600">Total Value:</span>
+                                      <span className="ml-2 font-semibold">
+                                        ₹{purchaseHistory[item._id!].reduce((sum: number, p: any) => sum + (p.totalCost || 0), 0)}
+                                      </span>
+                                    </div>
                                   </div>
-                                  <div>
-                                    <span className="text-gray-600">Total Purchased:</span>
-                                    <span className="ml-2 font-semibold">
-                                      {purchaseHistory[item._id!].reduce((sum: number, p: any) => sum + (p.originalQuantity || p.quantity || 0), 0)} units
-                                    </span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-600">Total Value:</span>
-                                    <span className="ml-2 font-semibold">
-                                      ₹{purchaseHistory[item._id!].reduce((sum: number, p: any) => sum + (p.totalCost || 0), 0)}
-                                    </span>
-                                  </div>
-                                </div>
-                                <div className="space-y-2">
-                                  <div>
-                                    <span className="text-gray-600">Total Consumed:</span>
-                                    <span className="ml-2 font-semibold text-red-600">
-                                      {purchaseHistory[item._id!].reduce((sum: number, p: any) => sum + ((p.originalQuantity || p.quantity || 0) - (p.remainingQuantity || 0)), 0)} units
-                                    </span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-600">Remaining Stock:</span>
-                                    <span className="ml-2 font-semibold text-green-600">
-                                      {purchaseHistory[item._id!].reduce((sum: number, p: any) => sum + (p.remainingQuantity || 0), 0)} units
-                                    </span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-600">Consumption Rate:</span>
-                                    <span className="ml-2 font-semibold text-blue-600">
-                                      {(() => {
-                                        const totalPurchased = purchaseHistory[item._id!].reduce((sum: number, p: any) => sum + (p.originalQuantity || p.quantity || 0), 0);
-                                        const totalConsumed = purchaseHistory[item._id!].reduce((sum: number, p: any) => sum + ((p.originalQuantity || p.quantity || 0) - (p.remainingQuantity || 0)), 0);
-                                        return totalPurchased > 0 ? ((totalConsumed / totalPurchased) * 100).toFixed(1) : '0.0';
-                                      })()}%
-                                    </span>
+                                  <div className="space-y-2">
+                                    <div>
+                                      <span className="text-gray-600">Total Consumed:</span>
+                                      <span className="ml-2 font-semibold text-red-600">
+                                        {purchaseHistory[item._id!].reduce((sum: number, p: any) => sum + ((p.originalQuantity || p.quantity || 0) - (p.remainingQuantity || 0)), 0)} units
+                                      </span>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-600">Remaining Stock:</span>
+                                      <span className="ml-2 font-semibold text-green-600">
+                                        {purchaseHistory[item._id!].reduce((sum: number, p: any) => sum + (p.remainingQuantity || 0), 0)} units
+                                      </span>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-600">Consumption Rate:</span>
+                                      <span className="ml-2 font-semibold text-blue-600">
+                                        {(() => {
+                                          const totalPurchased = purchaseHistory[item._id!].reduce((sum: number, p: any) => sum + (p.originalQuantity || p.quantity || 0), 0);
+                                          const totalConsumed = purchaseHistory[item._id!].reduce((sum: number, p: any) => sum + ((p.originalQuantity || p.quantity || 0) - (p.remainingQuantity || 0)), 0);
+                                          return totalPurchased > 0 ? ((totalConsumed / totalPurchased) * 100).toFixed(1) : '0.0';
+                                        })()}%
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
                             </div>
-                          </div>
+                          ) : (
+                            <div className="text-center py-4 text-gray-500">
+                              <Package className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                              <p>No purchase history found for this product</p>
+                            </div>
+                          )
                         ) : (
-                          <div className="text-center py-4 text-gray-500">
-                            <Package className="h-8 w-8 mx-auto mb-2 text-gray-400" />
-                            <p>No purchase history found for this product</p>
+                          <div className="text-center py-4">
+                            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
+                            <p className="text-gray-500 mt-2">Loading purchase history...</p>
                           </div>
-                        )
-                      ) : (
-                        <div className="text-center py-4">
-                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
-                          <p className="text-gray-500 mt-2">Loading purchase history...</p>
-                        </div>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </React.Fragment>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
             ))}
 
 
@@ -2206,7 +2210,7 @@ const Products: React.FC = () => {
                 <Upload className="h-5 w-5" /> Import Results
               </h3>
             </div>
-            
+
             <div className="p-6 space-y-4">
               <div className="grid grid-cols-3 gap-4 text-center">
                 <div className="bg-blue-50 p-3 rounded-lg">

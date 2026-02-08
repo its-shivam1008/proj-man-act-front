@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useDispatch } from 'react-redux';
-import { BarChart3, FileText, Users, Clipboard, TrendingUp, Settings, ShieldAlert } from 'lucide-react';
+import { BarChart3, FileText, Users, Clipboard, TrendingUp,  ShieldAlert } from 'lucide-react';
 import { usePermission } from '@/hooks/userPermission';
 import { fetchMasterData } from '@/redux/slices/masterDataSlice';
 import { fetchProducts } from '@/redux/slices/productSlice';
@@ -11,7 +11,7 @@ import RepairOrders from '@/components/repair/RepairOrders';
 import RepairTeams from '@/components/repair/RepairTeams';
 import RepairTemplates from '@/components/repair/RepairTemplates';
 import Reports from '@/components/repair/Reports';
-import RepairSettings from '@/components/repair/Settings';
+// import RepairSettings from '@/components/repair/Settings';
 
 // Template Modal Components
 const TemplateModal = ({ isOpen, onClose, title, children }: { isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode }) =>

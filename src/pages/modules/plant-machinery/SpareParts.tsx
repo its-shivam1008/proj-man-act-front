@@ -64,6 +64,8 @@ import {
   YAxis,
   Tooltip,
 } from "recharts";
+import { fetchInventoryMaster } from "@/redux/slices/inventoryMasterSlice";
+import { fetchPlantMachineryMaster } from "@/redux/slices/plantandmachinary/plantMachineryMasterSlice";
 
 /* ----------------------------
    Types
@@ -79,6 +81,7 @@ interface SparePart {
   location?: string | { _id: string; name: string };
   quantity: number;
   unit: string;
+  supplier:string;
   reorderLevel: number;
   costPerUnit: number;
   critical?: boolean;
@@ -194,6 +197,16 @@ export default function SparePartsInventory() {
     slipType: "ISSUE",
     quantity: 1,
   });
+  const { supplier } = useSelector(
+    (state: RootState) => state.plantMachineryMaster
+  );
+
+    const getSupplierName = (id?: string) => {
+  if (!id) return "-";
+  const sup = supplier.find((s: any) => s._id === id);
+  // Check for company name first, then falling back to name
+  return sup?.company || sup?.name || "Unknown";
+};
 
   const organisationId = localStorage.getItem("organisationId") || "";
 
@@ -209,6 +222,11 @@ export default function SparePartsInventory() {
     dispatch(fetchVendors({})).catch(console.error);
     dispatch(fetchStores({})).catch(console.error);
     dispatch(fetchMasterData("location")).catch(console.error);
+     dispatch(fetchPlantMachineryMaster({
+          type: "supplier",
+          page: 1,
+          limit: 100
+        }));
   }, [dispatch, organisationId]); // Add query here if you implement server-side search
 
   // Auto-calculate total cost when GST fields change
@@ -251,6 +269,7 @@ export default function SparePartsInventory() {
       "Code (SKU)",
       "Name",
       "Vendor",
+      "Supplier",
       "Location",
       "Quantity",
       "Reorder Level",
@@ -311,22 +330,27 @@ export default function SparePartsInventory() {
           const row = rows[i];
           try {
             const sparePartData = {
-              code: row[0] || `SP-${Date.now()}-${i}`,
-              name: row[1],
-              vendor: row[2] || "",
-              location: row[3] || "",
-              quantity: parseInt(row[4]) || 1,
-              // unit removed (default "pcs" in backend/model if needed, or handled as implicit)
-              reorderLevel: parseInt(row[5]) || 1,
-              basicCost: parseFloat(row[6]) || 0,
-              cgst: parseFloat(row[7]) || 0,
-              igst: parseFloat(row[8]) || 0,
-              sgst: parseFloat(row[9]) || 0,
-              totalCost: (parseFloat(row[6]) || 0) + (parseFloat(row[7]) || 0) + (parseFloat(row[8]) || 0) + (parseFloat(row[9]) || 0),
-              invoiceNumber: row[10] || "",
-              purchaseDate: row[11] || "",
-              notes: row[12] || "",
-            };
+  code: row[0] || `SP-${Date.now()}-${i}`,
+  name: row[1],
+  vendor: row[2] || "",
+  supplier: row[3] || "",
+  location: row[4] || "",
+  quantity: parseInt(row[5]) || 1,
+  reorderLevel: parseInt(row[6]) || 1,
+  basicCost: parseFloat(row[7]) || 0,
+  cgst: parseFloat(row[8]) || 0,
+  igst: parseFloat(row[9]) || 0,
+  sgst: parseFloat(row[10]) || 0,
+  totalCost:
+    (parseFloat(row[7]) || 0) +
+    (parseFloat(row[8]) || 0) +
+    (parseFloat(row[9]) || 0) +
+    (parseFloat(row[10]) || 0),
+  invoiceNumber: row[11] || "",
+  purchaseDate: row[12] || "",
+  notes: row[13] || "",
+};
+
 
             await dispatch(createSparePart(sparePartData)).unwrap();
             successCount++;
@@ -486,7 +510,8 @@ export default function SparePartsInventory() {
     if (query.trim()) {
       const q = query.toLowerCase();
       list = list.filter((p) =>
-        [p.name, p.code, p.equipmentLink, p.vendor]
+        [p.name, p.code, p.equipmentLink, p.vendor, getSupplierName(p.supplier)]
+
           .filter(Boolean)
           .some((x) => x!.toLowerCase().includes(q))
       );
@@ -729,7 +754,9 @@ export default function SparePartsInventory() {
                   <TableHead className="text-center">Qty</TableHead>
                   <TableHead className="text-center text-orange-600">Allocated</TableHead>
                   <TableHead className="text-center text-green-600">Available</TableHead>
+                  
                   <TableHead>Unit</TableHead>
+                  <TableHead>Supplier</TableHead>
                   <TableHead>Reorder</TableHead>
                   <TableHead className="text-right">Total Cost</TableHead>
                   <TableHead>Actions</TableHead>
@@ -772,18 +799,26 @@ export default function SparePartsInventory() {
                       <TableCell className="text-center text-green-600 font-bold">
                         {p.availableQuantity !== undefined ? p.availableQuantity : (p.quantity || 1)}
                       </TableCell>
-                      <TableCell>{p.unit}</TableCell>
-                      <TableCell>
-                        <div
-                          className={`inline-block px-2 py-0.5 rounded text-sm ${
-                            p.quantity <= p.reorderLevel
-                              ? "bg-red-100 text-red-800"
-                              : "bg-green-100 text-green-800"
-                          }`}
-                        >
-                          {p.quantity} / {p.reorderLevel}
-                        </div>
-                      </TableCell>
+                     <TableCell>{p.unit}</TableCell>
+
+{/* ✅ Supplier column */}
+<TableCell>
+  {getSupplierName(p.supplier)}
+</TableCell>
+
+{/* ✅ Reorder column */}
+<TableCell>
+  <div
+    className={`inline-block px-2 py-0.5 rounded text-sm ${
+      p.quantity <= p.reorderLevel
+        ? "bg-red-100 text-red-800"
+        : "bg-green-100 text-green-800"
+    }`}
+  >
+    {p.quantity} / {p.reorderLevel}
+  </div>
+</TableCell>
+
                       <TableCell className="text-right font-medium">
                         ₹{(p.totalCost || p.costPerUnit * (p.quantity || 1) || 0).toLocaleString()}
                       </TableCell>
@@ -846,6 +881,10 @@ export default function SparePartsInventory() {
                                             {child.allocationStatus || "available"}
                                           </Badge>
                                         </TableCell>
+                                        {/* <TableCell>
+  {getSupplierName(p.supplier)}
+</TableCell> */}
+
                                         <TableCell>{child.allocatedTo?.projectName || "-"}</TableCell>
                                         <TableCell>
                                           {child.allocatedTo?.startDate && child.allocatedTo?.endDate
@@ -954,6 +993,31 @@ export default function SparePartsInventory() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-2">
+  <Label>Supplier</Label>
+  <Select
+    value={partForm.supplier || ""}
+    onValueChange={(v) => setPartForm({ ...partForm, supplier: v })}
+  >
+    <SelectTrigger>
+      <SelectValue placeholder="Select Supplier" />
+    </SelectTrigger>
+    <SelectContent>
+      {supplier.length === 0 ? (
+        <div className="p-2 text-sm text-center text-muted-foreground">
+          No suppliers found.
+        </div>
+      ) : (
+        supplier.map((sup: any) => (
+          <SelectItem key={sup._id} value={sup._id}>
+            {/* ✅ Use company or name field */}
+            {sup.company || sup.name}
+          </SelectItem>
+        ))
+      )}
+    </SelectContent>
+  </Select>
+</div>
             {/* Unit field removed */}
             <div>
               <Label>Quantity</Label>

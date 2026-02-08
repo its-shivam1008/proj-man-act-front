@@ -50,6 +50,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { fetchEquipments } from "@/redux/slices/equipmentSlice";
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/userPermission";
 import { useDebounce } from "@/hooks/useDebounce";
@@ -80,6 +81,8 @@ import {
   parseISO,
   differenceInDays,
 } from "date-fns";
+import { fetchMachineries } from "@/redux/slices/plantandmachinary/machinerySlice";
+import { BASE_URL } from "@/utils/constants";
 
 /* -----------------------
    Types
@@ -96,25 +99,39 @@ interface Attachment {
 
 interface Breakdown {
   _id: string;
-  equipmentCode: string;
+  assetType: "equipment" | "machinery";
+  assetId: string;
+  assetCode: string;
+  // existing
+  // equipmentCode: string;
   reportedBy: string;
-  reportDate: string; // ISO
+  reportDate: string;
   failureDescription: string;
   priority: "Low" | "Medium" | "High" | "Critical";
-  assignedTo?: string;
-  assignDate?: string; // ISO
-  startRepair?: string; // ISO
-  endRepair?: string; // ISO
-  downtimeMinutes?: number;
-  repairCost?: number;
-  rca?: string;
-  attachments?: Attachment[];
   status: Status;
   location: string | { _id: string; name: string };
+
+  // 🔥 NEW – repair bridge fields
+  repairType?: "warranty" | "paid" | "internal";
+  customerName?: string;
+  issueDescription?: string;
+
+  repairOrderId?: string;   // 👈 link to RepairOrder
+  repairCreated?: boolean; // simple flag
+
+  assignedTo?: string;
+  assignDate?: string;
+  startRepair?: string;
+  endRepair?: string;
+  downtimeMinutes?: number;
+  rca?: string;
+
+  attachments?: Attachment[];
   organisationId: string;
   createdAt: string;
   updatedAt: string;
 }
+
 
 interface BreakdownStats {
   totalBreakdowns: number;
@@ -130,12 +147,12 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000
 interface MaintenanceWorkOrder {
   id: string;
   breakdownId: string;
-  equipmentCode: string;
+  assetCode: string;
   technician?: string;
   startDate?: string;
   endDate?: string;
   totalDowntimeMinutes?: number;
-  totalRepairCost?: number;
+  // totalRepairCost?: number;
   rca?: string;
   status: "Open" | "Closed";
   createdAt: string;
@@ -153,12 +170,26 @@ export default function BreakdownCalendarWithMWO() {
   const dispatch = useDispatch<AppDispatch>();
   const { userProfile } = useSelector((state: RootState) => state.auth);
   const { locations } = useSelector((state: RootState) => state.masterData);
-  
+
+  const { equipments: equipmentList, loading: equipmentLoading } = useSelector(
+    (state: RootState) => state.equipment
+  );
+
+  // const [equipmentId, setEquipmentId] = useState("");
+
   // Permissions
   const canView = usePermission('breakdownMgt', 'view');
   const canCreate = usePermission('breakdownMgt', 'create');
   const canEdit = usePermission('breakdownMgt', 'edit');
   const canDelete = usePermission('breakdownMgt', 'delete');
+
+  const [showCompleteDialog, setShowCompleteDialog] = useState(false);
+  const [completeData, setCompleteData] = useState({
+    id: "",
+    cost: 0,
+    rca: "",
+  });
+
 
   const [records, setRecords] = useState<Breakdown[]>([]);
   const [mwos, setMwos] = useState<MaintenanceWorkOrder[]>([]);
@@ -182,9 +213,10 @@ export default function BreakdownCalendarWithMWO() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Breakdown | null>(null);
   const [form, setForm] = useState<Partial<Breakdown>>({
+    assetType: "equipment",
     priority: "Medium",
     reportDate: new Date().toISOString().slice(0, 16),
-    repairCost: 0,
+    // repairCost: 0,
     attachments: [],
   });
 
@@ -194,15 +226,18 @@ export default function BreakdownCalendarWithMWO() {
 
   const debouncedSearch = useDebounce(query, 500);
   const organisationId = localStorage.getItem('organisationId');
-
+  const { machineries } = useSelector(
+    (state: RootState) => state.machinery
+  );
   // Location restriction check
-  const isLocationRestricted = 
-    userProfile?.role !== 'admin' && 
+  const isLocationRestricted =
+    userProfile?.role !== 'admin' &&
     !!userProfile?.location;
 
   // Fetch master data on mount
   useEffect(() => {
     dispatch(fetchMasterData("location"));
+    dispatch(fetchMachineries({ page: 1, limit: 100 }));
   }, [dispatch]);
 
   // Set location filter for restricted users
@@ -228,7 +263,7 @@ export default function BreakdownCalendarWithMWO() {
 
   const fetchBreakdowns = async () => {
     if (!canView) return;
-    
+
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -297,7 +332,7 @@ export default function BreakdownCalendarWithMWO() {
     setForm({
       priority: "Medium",
       reportDate: new Date().toISOString().slice(0, 16),
-      repairCost: 0,
+      // repairCost: 0,
       attachments: [],
       location: isLocationRestricted ? userProfile?.location : undefined,
     });
@@ -306,7 +341,7 @@ export default function BreakdownCalendarWithMWO() {
 
   function openEdit(b: Breakdown) {
     setEditing(b);
-    setForm({ 
+    setForm({
       ...b,
       location: typeof b.location === 'object' ? b.location._id : b.location,
     });
@@ -342,10 +377,18 @@ export default function BreakdownCalendarWithMWO() {
   }
 
   async function saveForm() {
-    if (!form.equipmentCode || !form.reportedBy || !form.failureDescription || !form.location) {
-      toast.error("Equipment, reporter, failure description, and location are required.");
+    if (
+      !form.assetType ||
+      !form.assetId ||
+      !form.assetCode ||
+      !form.reportedBy ||
+      !form.failureDescription ||
+      !form.location
+    ) {
+      toast.error("Asset, reporter, failure description, and location are required.");
       return;
     }
+
 
     try {
       const breakdownData = {
@@ -357,10 +400,10 @@ export default function BreakdownCalendarWithMWO() {
       console.log("Form data being sent:", JSON.stringify(breakdownData, null, 2));
       console.log("======================");
 
-      const url = editing 
+      const url = editing
         ? `${API_BASE_URL}/breakdown-maintenance/${editing._id}`
         : `${API_BASE_URL}/breakdown-maintenance`;
-      
+
       const method = editing ? 'PUT' : 'POST';
 
       const response = await fetch(url, {
@@ -465,50 +508,38 @@ export default function BreakdownCalendarWithMWO() {
     }
   }
 
-  async function completeRepair(id: string, additionalCost = 0, rca = "") {
+  async function confirmCompleteRepair() {
     try {
-      const response = await fetch(`${API_BASE_URL}/breakdown-maintenance/${id}/complete-repair`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ additionalCost, rca }),
-      });
-
-      if (!response.ok) throw new Error('Failed to complete repair');
+      const response = await fetch(
+        `${BASE_URL}/repair-orders/${completeData.id}/complete`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            partsCost: completeData.cost,
+            laborCost: 0,
+            rca: completeData.rca,
+          }),
+        }
+      );
 
       const data = await response.json();
-      if (data.success) {
-        toast.success('Repair completed successfully');
-        fetchBreakdowns();
-        fetchStats();
-        
-        // Create MWO locally for display
-        const breakdown = records.find(r => r._id === id);
-        if (breakdown) {
-          const mwo: MaintenanceWorkOrder = {
-            id: uuidv4(),
-            breakdownId: id,
-            equipmentCode: breakdown.equipmentCode,
-            technician: breakdown.assignedTo,
-            startDate: breakdown.startRepair || breakdown.assignDate || breakdown.reportDate,
-            endDate: new Date().toISOString(),
-            totalDowntimeMinutes: breakdown.downtimeMinutes,
-            totalRepairCost: breakdown.repairCost,
-            rca: breakdown.rca,
-            status: "Closed",
-            createdAt: new Date().toISOString(),
-          };
-          setMwos((prevMwos) => [mwo, ...prevMwos]);
-          toast.success("Work Order created");
-        }
-      }
-    } catch (error) {
-      console.error('Error completing repair:', error);
-      toast.error('Failed to complete repair');
+      if (!response.ok) throw new Error(data.message);
+
+      toast.success("Repair completed successfully");
+
+      setShowCompleteDialog(false);
+      fetchBreakdowns();
+      fetchStats();
+    } catch (err) {
+      toast.error("Failed to complete repair");
     }
   }
+
+
 
   /* -----------------------
      Helper Functions
@@ -547,8 +578,10 @@ export default function BreakdownCalendarWithMWO() {
   const mtbf = useMemo(() => {
     const byEquip: Record<string, string[]> = {};
     records.forEach((r) => {
-      if (!byEquip[r.equipmentCode]) byEquip[r.equipmentCode] = [];
-      byEquip[r.equipmentCode].push(r.reportDate);
+      if (!byEquip[r.assetCode]) byEquip[r.assetCode] = [];
+      byEquip[r.assetCode].push(r.reportDate);
+
+
     });
     let intervalsInDays: number[] = [];
     Object.values(byEquip).forEach((dates) => {
@@ -566,7 +599,8 @@ export default function BreakdownCalendarWithMWO() {
   const downtimeChart = useMemo(() => {
     const map: Record<string, number> = {};
     records.forEach((r) => {
-      map[r.equipmentCode] = (map[r.equipmentCode] || 0) + (r.downtimeMinutes || 0);
+      map[r.assetCode] = (map[r.assetCode] || 0) + (r.downtimeMinutes || 0);
+
     });
     return Object.entries(map).map(([equipment, downtimeMinutes]) => ({
       equipment,
@@ -578,7 +612,7 @@ export default function BreakdownCalendarWithMWO() {
   const failureCountChart = useMemo(() => {
     const map: Record<string, number> = {};
     records.forEach((r) => {
-      map[r.equipmentCode] = (map[r.equipmentCode] || 0) + 1;
+      map[r.assetCode] = (map[r.assetCode] || 0) + 1;
     });
     return Object.entries(map).map(([equipment, count]) => ({ equipment, count }));
   }, [records]);
@@ -710,6 +744,9 @@ export default function BreakdownCalendarWithMWO() {
     if (daysOld > 7 && !["Completed", "Cancelled"].includes(r.status)) return "bg-red-100 text-red-800"; // overdue heuristic
     return "bg-blue-100 text-blue-800";
   }
+  useEffect(() => {
+    dispatch(fetchEquipments({ page: 1, limit: 100 }));
+  }, [dispatch]);
 
   /* -----------------------
      Last 5 MWOs
@@ -764,10 +801,11 @@ export default function BreakdownCalendarWithMWO() {
                 {last5Mwos.map((m) => (
                   <li key={m.id} className="flex justify-between items-center">
                     <div>
-                      <div className="font-medium">{m.equipmentCode}</div>
+                      <div className="font-medium">{m.assetCode}</div>
+
                       <div className="text-xs text-muted-foreground">{new Date(m.createdAt).toLocaleString()}</div>
                     </div>
-                    <div className="text-xs text-muted-foreground">₹{(m.totalRepairCost||0).toFixed(0)}</div>
+                    {/* <div className="text-xs text-muted-foreground">₹{(m.totalRepairCost || 0).toFixed(0)}</div> */}
                   </li>
                 ))}
               </ul>
@@ -822,15 +860,15 @@ export default function BreakdownCalendarWithMWO() {
             <div className="relative w-full md:flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <Input
-                placeholder="Search equipment, reporter, technician..."
+                placeholder="Search asset, reporter, technician..."
                 className="pl-10"
                 value={query}
                 onChange={handleSearchChange}
               />
             </div>
-            <Select 
-              disabled={isLocationRestricted} 
-              value={locationFilter} 
+            <Select
+              disabled={isLocationRestricted}
+              value={locationFilter}
               onValueChange={handleLocationFilterChange}
             >
               <SelectTrigger className="w-full md:w-48">
@@ -880,12 +918,12 @@ export default function BreakdownCalendarWithMWO() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Reported</TableHead>
-                      <TableHead>Equipment</TableHead>
+                      <TableHead>Asset</TableHead>
                       <TableHead>Location</TableHead>
                       <TableHead>Priority</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Downtime</TableHead>
-                      <TableHead>Cost</TableHead>
+                      {/* <TableHead>Cost</TableHead> */}
                       <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -912,7 +950,14 @@ export default function BreakdownCalendarWithMWO() {
                       records.map((r) => (
                         <TableRow key={r._id}>
                           <TableCell>{new Date(r.reportDate).toLocaleString()}</TableCell>
-                          <TableCell>{r.equipmentCode}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-col">
+                              <span className="font-medium">{r.assetCode}</span>
+                              <span className="text-xs text-muted-foreground capitalize">
+                                {r.assetType}
+                              </span>
+                            </div>
+                          </TableCell>
                           <TableCell>
                             <div className="flex items-center">
                               <MapPin className="h-4 w-4 mr-2" />
@@ -920,28 +965,26 @@ export default function BreakdownCalendarWithMWO() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <span className={`px-2 py-1 text-xs rounded-full ${
-                              r.priority === "Critical" ? "bg-red-100 text-red-800" :
+                            <span className={`px-2 py-1 text-xs rounded-full ${r.priority === "Critical" ? "bg-red-100 text-red-800" :
                               r.priority === "High" ? "bg-orange-100 text-orange-800" :
-                              r.priority === "Medium" ? "bg-yellow-100 text-yellow-800" :
-                              "bg-green-100 text-green-800"
-                            }`}>
+                                r.priority === "Medium" ? "bg-yellow-100 text-yellow-800" :
+                                  "bg-green-100 text-green-800"
+                              }`}>
                               {r.priority}
                             </span>
                           </TableCell>
                           <TableCell>
-                            <span className={`px-2 py-1 text-xs rounded-full ${
-                              r.status === "Completed" ? "bg-green-100 text-green-800" :
+                            <span className={`px-2 py-1 text-xs rounded-full ${r.status === "Completed" ? "bg-green-100 text-green-800" :
                               r.status === "In Progress" ? "bg-blue-100 text-blue-800" :
-                              r.status === "Assigned" ? "bg-yellow-100 text-yellow-800" :
-                              r.status === "Cancelled" ? "bg-red-100 text-red-800" :
-                              "bg-gray-100 text-gray-800"
-                            }`}>
+                                r.status === "Assigned" ? "bg-yellow-100 text-yellow-800" :
+                                  r.status === "Cancelled" ? "bg-red-100 text-red-800" :
+                                    "bg-gray-100 text-gray-800"
+                              }`}>
                               {r.status}
                             </span>
                           </TableCell>
                           <TableCell>{formatMinutes(r.downtimeMinutes)}</TableCell>
-                          <TableCell>₹{(r.repairCost||0).toFixed(0)}</TableCell>
+                          {/* <TableCell>₹{(r.repairCost || 0).toFixed(0)}</TableCell> */}
                           <TableCell>
                             <div className="flex gap-2">
                               {canEdit && (
@@ -951,7 +994,16 @@ export default function BreakdownCalendarWithMWO() {
                               )}
                               <Button size="sm" variant="ghost" onClick={() => {
                                 if (r.status === "Assigned") startRepair(r._id);
-                                else if (r.status === "In Progress") completeRepair(r._id, 0, r.rca || "");
+                                else if (r.status === "In Progress") {
+                                  setCompleteData({
+                                    id: r.repairOrderId!, // repair order id ✅
+                                    cost: 0,
+                                    rca: r.rca || "",
+                                  });
+
+                                  setShowCompleteDialog(true);
+                                }
+
                                 else if (r.status === "Reported") assignTo(r._id, "TechName");
                                 else openEdit(r);
                               }}>
@@ -1013,7 +1065,7 @@ export default function BreakdownCalendarWithMWO() {
           {/* calendar grid */}
           <div className="grid grid-cols-7 gap-2">
             {/* weekday headers */}
-            {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((d) => (
+            {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
               <div key={d} className="text-xs font-medium text-center">{d}</div>
             ))}
 
@@ -1038,9 +1090,9 @@ export default function BreakdownCalendarWithMWO() {
                             key={r._id}
                             onClick={() => openEdit(r)}
                             className={`w-full text-left truncate px-1 py-0.5 rounded ${statusColorClass(r)}`}
-                            title={`${r.equipmentCode} — ${r.failureDescription}`}
+                            title={`${r.assetCode} — ${r.failureDescription}`}
                           >
-                            <div className="text-[11px] font-medium">{r.equipmentCode}</div>
+                            <div className="text-[11px] font-medium">{r.assetCode}</div>
                             <div className="text-[10px]">{r.priority}</div>
                           </button>
                         ))}
@@ -1059,15 +1111,111 @@ export default function BreakdownCalendarWithMWO() {
       )}
 
       {/* Dialog */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader><DialogTitle>{editing ? "Edit Breakdown" : "New Breakdown Report"}</DialogTitle></DialogHeader>
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen} >
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-scroll flex flex-col">
+
+          <DialogHeader>
+            <DialogTitle>{editing ? "Edit Breakdown" : "New Breakdown Report"}</DialogTitle></DialogHeader>
 
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
+            {/* <div className="space-y-2">
               <Label>Equipment Code *</Label>
               <Input value={form.equipmentCode || ""} onChange={(e) => setForm({ ...form, equipmentCode: e.target.value })} />
+            </div> */}
+            <div className="space-y-2 col-span-2">
+              <Label>Asset Type *</Label>
+              <Select
+                value={form.assetType}
+                onValueChange={(value) =>
+                  setForm(prev => ({
+                    ...prev,
+                    assetType: value as "equipment" | "machinery",
+                    assetId: "",
+                    assetCode: "",
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Asset Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="equipment">Equipment</SelectItem>
+                  <SelectItem value="machinery">Machinery</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+
+            <div className="space-y-2 col-span-2">
+              <Label>
+                {form.assetType === "machinery" ? "Machinery" : "Equipment"} *
+              </Label>
+
+              <Select
+                value={form.assetId || ""}
+                onValueChange={(value) => {
+                  const list =
+                    form.assetType === "machinery" ? machineries : equipmentList;
+
+                  const selected = list.find((i: any) => i._id === value);
+
+                  setForm(prev => ({
+                    ...prev,
+                    assetId: value,
+                    assetCode: selected?.code || "",
+                  }));
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Asset" />
+                </SelectTrigger>
+
+                <SelectContent>
+                  {(form.assetType === "machinery" ? machineries : equipmentList).map(
+                    (item: any) => (
+                      <SelectItem key={item._id} value={item._id}>
+                        {item.code}
+                      </SelectItem>
+                    )
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+
+
+            {/* Repair Details */}
+            <div className="col-span-2 grid grid-cols-2 gap-4">
+              <div>
+                <Label>Repair Type</Label>
+                <select
+                  value={form.repairType || ""}
+                  onChange={(e) => setForm({ ...form, repairType: e.target.value })}
+                  className="border rounded w-full p-2"
+                >
+                  <option value="">Select</option>
+                  <option value="warranty">Warranty</option>
+                  <option value="paid">Paid</option>
+                  <option value="internal">Internal</option>
+                </select>
+              </div>
+
+              <div>
+                <Label>Customer / Department</Label>
+                <Input
+                  value={form.customerName || ""}
+                  onChange={(e) => setForm({ ...form, customerName: e.target.value })}
+                />
+              </div>
+
+              <div className="col-span-2">
+                <Label>Issue Description</Label>
+                <Input
+                  value={form.issueDescription || ""}
+                  onChange={(e) => setForm({ ...form, issueDescription: e.target.value })}
+                />
+              </div>
+            </div>
+
 
             <div className="space-y-2">
               <Label>Reported By *</Label>
@@ -1120,10 +1268,10 @@ export default function BreakdownCalendarWithMWO() {
               <Input value={form.assignedTo || ""} onChange={(e) => setForm({ ...form, assignedTo: e.target.value })} />
             </div>
 
-            <div className="space-y-2">
-              <Label>Estimated Repair Cost</Label>
-              <Input type="number" value={form.repairCost || 0} onChange={(e) => setForm({ ...form, repairCost: Number(e.target.value) })} />
-            </div>
+            {/* <div className="space-y-2"> */}
+            {/* <Label>Estimated Repair Cost</Label> */}
+            {/* <Input type="number" value={form.repairCost || 0} onChange={(e) => setForm({ ...form, repairCost: Number(e.target.value) })} /> */}
+            {/* </div> */}
 
             <div className="col-span-2 space-y-2">
               <Label>RCA / Notes</Label>
@@ -1153,6 +1301,49 @@ export default function BreakdownCalendarWithMWO() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+
+      <Dialog open={showCompleteDialog} onOpenChange={setShowCompleteDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Complete Repair</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <Label>Total Repair Cost</Label>
+              <Input
+                type="number"
+                value={completeData.cost}
+                onChange={(e) =>
+                  setCompleteData(p => ({ ...p, cost: Number(e.target.value) }))
+                }
+              />
+            </div>
+
+            <div>
+              <Label>RCA</Label>
+              <Input
+                value={completeData.rca}
+                onChange={(e) =>
+                  setCompleteData(p => ({ ...p, rca: e.target.value }))
+                }
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCompleteDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmCompleteRepair}>
+              Complete Repair
+            </Button>
+
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }

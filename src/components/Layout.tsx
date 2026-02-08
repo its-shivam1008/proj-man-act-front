@@ -41,6 +41,7 @@ import {
   FileTextIcon,
   Building2,
   MessageCircle,
+  Database,
 } from "lucide-react";
 import {
   Accordion,
@@ -193,6 +194,7 @@ const Layout: React.FC = () => {
     { name: "Preventive Planning", href: "/plant-machinery/preventive-planning", icon: PlaneTakeoff, key: "preventivePlanning" },
     { name: "Teams and Technicians", href: "/plant-machinery/teams", icon: Users, key: "teamsTechnicians" },
     { name: "Kanban board", href: "/plant-machinery/kanban", icon: CircuitBoard, key: "kanbanBoard" },
+    {name:'Master Data' , href:'/plant-machinary/masterdata' , icon:Database, key:'plantmasterdata'}
   ];
 
   const activeModule = [

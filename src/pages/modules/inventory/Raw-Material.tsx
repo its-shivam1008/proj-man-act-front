@@ -4,7 +4,7 @@ import { useForm, Controller } from "react-hook-form";
 import * as XLSX from 'xlsx';
 import { Upload, AlertCircle, FileSpreadsheet, Loader2 } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
-import { RootState, AppDispatch } from "@/redux/store";
+import { RootState } from "@/redux/store";
 
 import {
   fetchMaterials,
@@ -25,7 +25,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
+  // DialogTrigger,
 } from "@/components/ui/dialog";
 import { fetchMasterData } from "@/redux/slices/masterDataSlice";
 import { fetchWarehouses } from "@/redux/slices/warehouseSlice";
@@ -119,7 +119,7 @@ export default function RawMaterialMaster() {
   const canDelete = usePermission("rawMaterials", "delete");
   const dispatch = useDispatch<any>();
 
-  const { userProfile } = useSelector((state: RootState) => state.auth);
+  // const { userProfile } = useSelector((state: RootState) => state.auth);
   const { locations } = useSelector((state: RootState) => state.masterData);
   const { warehouses } = useSelector((state: RootState) => state.warehouse);
 
@@ -530,9 +530,11 @@ export default function RawMaterialMaster() {
   });
 
   // Get HSN codes from inventory master
-  const { hsn: hsnCodes } = useSelector(
+  const { hsn: hsnCodes, rawmaterial: rmCategories } = useSelector(
     (state: RootState) => state.inventoryMaster
   );
+
+  const [categoryFilter, setCategoryFilter] = useState("all");
 
   // Notification state
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -715,6 +717,9 @@ export default function RawMaterialMaster() {
   const isSearching = search.trim() !== "";
   const filtered = useMemo(() => {
     return materials.filter((m) => {
+
+      const matchesCategory =
+        categoryFilter === "all" ? true : m.category === categoryFilter;
       // Search filter
       const matchesSearch =
         !search.trim() ||
@@ -730,9 +735,9 @@ export default function RawMaterialMaster() {
             (s: any) => String(s.warehouseId) === warehouseFilter
           );
 
-      return matchesSearch && matchesWarehouse;
+      return matchesSearch && matchesWarehouse && matchesCategory;
     });
-  }, [materials, search, warehouseFilter]);
+  }, [materials, search, warehouseFilter, categoryFilter]);
 
 
   const onSubmit = async (data: RawMaterial) => {
@@ -1031,6 +1036,22 @@ export default function RawMaterialMaster() {
             className="w-64"
           />
           <Select
+            value={categoryFilter}
+            onValueChange={(val) => setCategoryFilter(val)}
+          >
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="All Categories" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Categories</SelectItem>
+              {rmCategories?.map((cat: any) => (
+                <SelectItem key={cat._id} value={cat.name}>
+                  {cat.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
             value={warehouseFilter}
             onValueChange={setWarehouseFilter}
           >
@@ -1071,7 +1092,7 @@ export default function RawMaterialMaster() {
               <Plus className="h-4 w-4 mr-1" /> Add Material
             </Button>
 
-            <DialogContent className="max-w-2xl">
+            <DialogContent className="max-w-2xl overflow-auto max-h-[720px]">
               <DialogHeader>
                 <DialogTitle>
                   {editing ? "Edit Material" : "Add New Material"}
@@ -1206,6 +1227,33 @@ export default function RawMaterialMaster() {
                     onChange={(e) => setGstSplit({ ...gstSplit, igst: Number(e.target.value) })}
                   />
                 </div>
+                <div className="col-span-2">
+                  <Label>Category</Label>
+                  <Controller
+                    name="category"
+                    control={control}
+                    render={({ field }) => (
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select Category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {rmCategories && rmCategories.length > 0 ? (
+                            rmCategories.map((cat: any) => (
+                              <SelectItem key={cat._id} value={cat.name}>
+                                {cat.name}
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <SelectItem value="none" disabled>
+                              No categories found
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                </div>
 
 
                 <div>
@@ -1275,6 +1323,7 @@ export default function RawMaterialMaster() {
                 <TableHead>UoM</TableHead>
                 <TableHead>Qty</TableHead>
                 {/* <TableHead>Cost</TableHead> */}
+                <TableHead>Category</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
@@ -1318,6 +1367,9 @@ export default function RawMaterialMaster() {
                     <TableCell>{m.unitOfMeasure}</TableCell>
                     <TableCell>{getTotalQuantity(m)}</TableCell>
                     {/* <TableCell>₹{getAvgCost(m)}</TableCell> */}
+                    <TableCell>
+                      <Badge variant="outline">{m.category || "N/A"}</Badge>
+                    </TableCell>
 
                     <TableCell>{calcStatus(m)}</TableCell>
                     <TableCell className="flex gap-3">
