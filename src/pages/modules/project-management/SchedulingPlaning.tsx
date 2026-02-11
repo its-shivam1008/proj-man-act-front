@@ -108,6 +108,7 @@ import {
   GanttToday,
 } from "@/components/ui/shadcn-io/gantt";
 import { usePermission } from "@/hooks/userPermission";
+import { BASE_URL } from "@/utils/constants";
 
 interface ReminderForm {
   itemId: string;
@@ -962,7 +963,6 @@ export default function SchedulingPlanning() {
       const token = localStorage.getItem('token');
       if (!token) return;
 
-      const BASE_URL = 'http://localhost:4000'; // Backend URL
       const response = await fetch(`${BASE_URL}/test/sync-reminders-to-notifications`, {
         method: 'POST',
         headers: {

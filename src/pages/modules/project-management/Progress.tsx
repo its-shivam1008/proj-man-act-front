@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -54,10 +54,13 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { parseISO, differenceInDays, addDays, format, isWithinInterval, startOfDay } from "date-fns";
 import { DailyProgressItem } from "@/types/dailyProgress";
 import { Progress } from "@/components/ui/progress";
+import { Slider } from "@/components/ui/slider";
+import axios from "axios";
+import { BASE_URL } from "@/utils/constants";
 
 export default function DailyProgressPage() {
   const dispatch = useDispatch<AppDispatch>();
-  
+
   // -- Selectors --
   const { items, loading: progressLoading } = useSelector((state: RootState) => state.dailyProgress);
   const { projects, loading: projectLoading } = useSelector((state: RootState) => state.projects);
@@ -71,7 +74,7 @@ export default function DailyProgressPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editing, setEditing] = useState<DailyProgressItem | null>(null);
   const [form, setForm] = useState<Partial<DailyProgressItem>>({ date: new Date().toISOString().slice(0, 10), percentComplete: 0 });
-  
+
   // Pagination
   const [progressPage, setProgressPage] = useState(1);
   const PROGRESS_PAGE_SIZE = 10;
@@ -82,9 +85,22 @@ export default function DailyProgressPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearchTerm = useDebounce(searchTerm, 500);
   const [locationFilter, setLocationFilter] = useState("all");
+  const [updatingWbs, setUpdatingWbs] = useState<string | null>(null);
 
-  const isLocationRestricted = 
-    userProfile?.role !== 'admin' && 
+  // Local progress state for optimistic updates and animations
+  const [localProgress, setLocalProgress] = useState<Record<string, number>>({});
+  const debounceTimers = useRef<Record<string, NodeJS.Timeout>>({});
+
+  // Daily logs filters
+  const [logFilters, setLogFilters] = useState({
+    dateFrom: "",
+    dateTo: "",
+    updaterType: "all",
+    wbsId: "all"
+  });
+
+  const isLocationRestricted =
+    userProfile?.role !== 'admin' &&
     !!userProfile?.location;
 
   // -- Initial Fetch --
@@ -123,11 +139,22 @@ export default function DailyProgressPage() {
   }, [selectedProjectId, dispatch]);
 
   // -- Helper: Calculate Planned vs Actual Data based on WBS --
+  // Memoize based on selectedProjectId and WBS structure (dates) only, NOT progress values
+  // This prevents chart re-rendering when slider is adjusted
+  const wbsStructure = useMemo(() => {
+    return wbs.map(item => ({
+      _id: item._id,
+      startDate: item.startDate,
+      endDate: item.endDate,
+      parentId: item.parentId
+    }));
+  }, [wbs.map(i => `${i._id}-${i.startDate}-${i.endDate}`).join(',')]);
+
   const chartData = useMemo(() => {
-    if (!selectedProjectId || wbs.length === 0) return [];
+    if (!selectedProjectId || wbsStructure.length === 0) return [];
 
     // 1. Find Date Range of the Project
-    const dates = wbs
+    const dates = wbsStructure
       .map(item => ({ start: item.startDate ? parseISO(item.startDate) : null, end: item.endDate ? parseISO(item.endDate) : null }))
       .filter(d => d.start && d.end);
 
@@ -149,25 +176,25 @@ export default function DailyProgressPage() {
       let activeItemsWeight = 0;
       let totalItemsWeight = 0;
 
-      wbs.forEach(item => {
-        if (!item.startDate || !item.endDate) return;
+      wbsStructure.forEach((item) => {
+        if (!item.startDate || !item.endDate || item.parentId === null) return;
         const start = parseISO(item.startDate);
         const end = parseISO(item.endDate);
-        
+
         // Simple weight: 1 per item (can be improved to use plannedCost)
-        const weight = 1; 
+        const weight = 1;
         totalItemsWeight += weight;
 
         if (currentDate >= start) {
-           const itemDuration = differenceInDays(end, start) + 1;
-           const daysPassed = differenceInDays(currentDate, start) + 1;
-           
-           if (currentDate > end) {
-             activeItemsWeight += weight; // 100% complete planned
-           } else {
-             const percentPlanned = Math.min(100, Math.max(0, (daysPassed / itemDuration) * 100));
-             activeItemsWeight += (percentPlanned / 100) * weight;
-           }
+          const itemDuration = differenceInDays(end, start) + 1;
+          const daysPassed = differenceInDays(currentDate, start) + 1;
+
+          if (currentDate > end) {
+            activeItemsWeight += weight; // 100% complete planned
+          } else {
+            const percentPlanned = Math.min(100, Math.max(0, (daysPassed / itemDuration) * 100));
+            activeItemsWeight += (percentPlanned / 100) * weight;
+          }
         }
       });
 
@@ -176,13 +203,13 @@ export default function DailyProgressPage() {
       // Actual Progress (Aggregate current WBS progress)
       // Note: Since we don't have historical WBS snapshots, we approximate actual curve 
       // by using the "DailyProgress" entries if they match the date, or holding the current WBS progress value if looking at today.
-      
+
       // For visualization, let's map "Actual" as the Weighted Average of WBS Progress *Current State* // (This creates a flat line for past/future, so we'll try to find DailyProgress logs to make it jagged)
-      
+
       const dailyLog = items.find(log => log.date === dateStr);
       // If there is a daily log, use its percentComplete as a proxy for project level if applicable, 
       // or just plot it separately.
-      
+
       // Better approach for "Actual" Line: Weighted Average of WBS items *Right Now* is a single point (Today).
       // To show history, we really need the DailyProgress logs to be linked to WBS items. 
       // Since they aren't explicitly linked by ID in the schema provided, we will omit the historical Actual line 
@@ -196,7 +223,7 @@ export default function DailyProgressPage() {
     }
 
     return dataPoints;
-  }, [wbs, items, selectedProjectId]);
+  }, [selectedProjectId, wbsStructure, items]);
 
 
   // -- Data Processing for UI --
@@ -211,8 +238,25 @@ export default function DailyProgressPage() {
 
   const paginatedProgressItems = useMemo(() => {
     const start = (progressPage - 1) * PROGRESS_PAGE_SIZE;
-    return items.slice(start, start + PROGRESS_PAGE_SIZE);
-  }, [items, progressPage]);
+
+    // Apply filters
+    let filtered = items;
+
+    if (logFilters.dateFrom) {
+      filtered = filtered.filter(item => item.date >= logFilters.dateFrom);
+    }
+    if (logFilters.dateTo) {
+      filtered = filtered.filter(item => item.date <= logFilters.dateTo);
+    }
+    if (logFilters.updaterType !== "all") {
+      filtered = filtered.filter(item => (item as any).updaterType === logFilters.updaterType);
+    }
+    if (logFilters.wbsId !== "all") {
+      filtered = filtered.filter(item => (item as any).wbsId === logFilters.wbsId);
+    }
+
+    return filtered.slice(start, start + PROGRESS_PAGE_SIZE);
+  }, [items, progressPage, logFilters]);
 
   const progressTotalPages = Math.max(1, Math.ceil((items.length || 0) / PROGRESS_PAGE_SIZE));
 
@@ -232,7 +276,7 @@ export default function DailyProgressPage() {
   const handleSave = async () => {
     if (!form.date || typeof form.percentComplete !== "number") return;
     const now = new Date().toISOString();
-    
+
     // Payload preparation
     const payload = {
       organisationId: localStorage.getItem("organisationId") || "",
@@ -286,6 +330,68 @@ export default function DailyProgressPage() {
     setForm((f) => ({ ...(f || {}), photos: (f.photos || []).filter((p) => p.id !== photoId) }));
   };
 
+  // Debounced API call for WBS progress update
+  const updateProgressAPI = useCallback(async (wbsId: string, newProgress: number) => {
+    if (!selectedProjectId || !selectedProjectDetails) return;
+
+    setUpdatingWbs(wbsId);
+    try {
+      const token = localStorage.getItem("token");
+      const API_URL = BASE_URL;
+
+      await axios.put(
+        `${API_URL}/wbs/update-with-log/${wbsId}`,
+        {
+          progress: newProgress,
+          projectId: selectedProjectId,
+          projectName: selectedProjectDetails.name,
+          updaterName: userProfile?.name || "Operator",
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      // Refresh WBS and daily logs
+      dispatch(fetchWbsByProject(selectedProjectId));
+      dispatch(fetchDailyProgress());
+    } catch (error) {
+      console.error("Failed to update progress:", error);
+      // Revert local progress on error
+      setLocalProgress(prev => {
+        const updated = { ...prev };
+        delete updated[wbsId];
+        return updated;
+      });
+    } finally {
+      setUpdatingWbs(null);
+    }
+  }, [selectedProjectId, selectedProjectDetails, userProfile, dispatch]);
+
+  // Handle WBS progress change with debouncing and optimistic updates
+  const handleProgressChange = useCallback((wbsId: string, newProgress: number) => {
+    // Optimistic update - update local state immediately for smooth animation
+    setLocalProgress(prev => ({ ...prev, [wbsId]: newProgress }));
+
+    // Clear existing timer for this WBS
+    if (debounceTimers.current[wbsId]) {
+      clearTimeout(debounceTimers.current[wbsId]);
+    }
+
+    // Set new debounced timer (800ms delay)
+    debounceTimers.current[wbsId] = setTimeout(() => {
+      updateProgressAPI(wbsId, newProgress);
+      delete debounceTimers.current[wbsId];
+    }, 800);
+  }, [updateProgressAPI]);
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(debounceTimers.current).forEach(timer => clearTimeout(timer));
+    };
+  }, []);
+
   if (!canView) {
     return (
       <div className="text-center py-12 px-4">
@@ -304,7 +410,7 @@ export default function DailyProgressPage() {
           <h2 className="text-3xl font-bold">Progress Tracking</h2>
           <p className="text-muted-foreground">Monitor actual vs planned progress across projects.</p>
         </div>
-        
+
         <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
           {/* Location Filter */}
           <Select disabled={isLocationRestricted} value={locationFilter} onValueChange={handleLocationFilterChange}>
@@ -320,7 +426,7 @@ export default function DailyProgressPage() {
               ))}
             </SelectContent>
           </Select>
-          
+
           {/* Project Selector Popover */}
           <Popover open={projectPopoverOpen} onOpenChange={setProjectPopoverOpen}>
             <PopoverTrigger asChild>
@@ -362,9 +468,8 @@ export default function DailyProgressPage() {
                           }}
                         >
                           <Check
-                            className={`mr-2 h-4 w-4 ${
-                              selectedProjectId === project._id ? "opacity-100" : "opacity-0"
-                            }`}
+                            className={`mr-2 h-4 w-4 ${selectedProjectId === project._id ? "opacity-100" : "opacity-0"
+                              }`}
                           />
                           <div className="flex flex-col">
                             <span className="font-medium">{project.code} - {project.name}</span>
@@ -377,9 +482,9 @@ export default function DailyProgressPage() {
             </PopoverContent>
           </Popover>
 
-          <Button onClick={openCreate} className="whitespace-nowrap">
+          {/* <Button onClick={openCreate} className="whitespace-nowrap">
             <Upload className="mr-2 h-4 w-4" /> Log Daily Progress
-          </Button>
+          </Button> */}
         </div>
       </div>
 
@@ -395,8 +500,8 @@ export default function DailyProgressPage() {
                 </p>
               </div>
               <div className="text-right">
-                 <div className="text-2xl font-bold">{overallActualProgress}%</div>
-                 <div className="text-xs text-muted-foreground">Calculated Actual</div>
+                <div className="text-2xl font-bold">{overallActualProgress}%</div>
+                <div className="text-xs text-muted-foreground">Calculated Actual</div>
               </div>
             </CardHeader>
             <CardContent className="h-[350px]">
@@ -405,31 +510,31 @@ export default function DailyProgressPage() {
                   <AreaChart data={chartData}>
                     <defs>
                       <linearGradient id="colorPlanned" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#8884d8" stopOpacity={0.1}/>
-                        <stop offset="95%" stopColor="#8884d8" stopOpacity={0}/>
+                        <stop offset="5%" stopColor="#8884d8" stopOpacity={0.1} />
+                        <stop offset="95%" stopColor="#8884d8" stopOpacity={0} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="date" tick={{fontSize: 12}} tickFormatter={(val) => val.slice(5)} />
+                    <XAxis dataKey="date" tick={{ fontSize: 12 }} tickFormatter={(val) => val.slice(5)} />
                     <YAxis domain={[0, 100]} />
                     <Tooltip />
                     <Legend />
-                    <Area 
-                      type="monotone" 
-                      dataKey="planned" 
-                      name="Planned Cumulative %" 
-                      stroke="#8884d8" 
-                      fillOpacity={1} 
-                      fill="url(#colorPlanned)" 
+                    <Area
+                      type="monotone"
+                      dataKey="planned"
+                      name="Planned Cumulative %"
+                      stroke="#8884d8"
+                      fillOpacity={1}
+                      fill="url(#colorPlanned)"
                       strokeWidth={2}
                     />
-                    <Line 
-                      type="monotone" 
-                      dataKey="actualLog" 
-                      name="Daily Log Entry %" 
-                      stroke="#82ca9d" 
-                      strokeWidth={2} 
-                      dot={{r: 4}}
+                    <Line
+                      type="monotone"
+                      dataKey="actualLog"
+                      name="Daily Log Entry %"
+                      stroke="#82ca9d"
+                      strokeWidth={2}
+                      dot={{ r: 4 }}
                       connectNulls={true}
                     />
                   </AreaChart>
@@ -448,34 +553,100 @@ export default function DailyProgressPage() {
               <CardTitle>WBS Items Breakdown</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
+              <div className="space-y-1 overflow-y-auto max-h-[400px]">
                 {wbsLoading ? (
-                  <div className="text-center py-4"><Loader2 className="animate-spin mx-auto"/></div>
+                  <div className="text-center py-4"><Loader2 className="animate-spin mx-auto" /></div>
                 ) : wbs.length === 0 ? (
                   <p className="text-muted-foreground text-center">No WBS items found for this project.</p>
                 ) : (
                   <div className="grid gap-4">
-                    {wbs.filter(i => i.parentId !== null).map((item) => (
-                      <div key={item.id} className="grid grid-cols-12 items-center gap-4 border-b pb-3 last:border-0">
-                         <div className="col-span-4 md:col-span-3">
-                           <div className="font-medium truncate">{item.name}</div>
-                           <div className="text-xs text-muted-foreground capitalize">{item.type}</div>
-                         </div>
-                         <div className="col-span-4 md:col-span-6">
-                            <div className="flex items-center justify-between text-xs mb-1">
+                    {wbs.filter(i => {
+                      // Show items that are:
+                      // 1. Not parent items (parentId !== null)
+                      // 2. AND (status is 'in-progress' OR progress is 0 or undefined)
+                      // console.log(" i ==- ",wbs)
+                      return i.status === 'in-progress';
+                    }).map((item) => {
+                      const currentProgress = localProgress[item._id] ?? item.progress;
+                      const isChanging = localProgress[item._id] !== undefined && localProgress[item._id] !== item.progress;
+                      const isIncreasing = isChanging && currentProgress > item.progress;
+                      const isDecreasing = isChanging && currentProgress < item.progress;
+
+                      return (
+                        <div key={item.id} className="grid grid-cols-12 items-center gap-4 border-b pb-3 last:border-0">
+                          <div className="col-span-4 md:col-span-3">
+                            <div className="font-medium truncate">{item.name}</div>
+                            <div className="text-xs text-muted-foreground capitalize">{item.type}</div>
+                          </div>
+                          <div className="col-span-4 md:col-span-6">
+                            <div className="flex items-center justify-between text-xs mb-2">
                               <span>{item.startDate}</span>
-                              <span className="font-semibold">{item.progress}%</span>
+                              <div className="flex items-center gap-2">
+                                <span className={`font-semibold text-base transition-all duration-300 ${isIncreasing ? 'text-green-600 scale-110' :
+                                  isDecreasing ? 'text-red-600 scale-110' :
+                                    'scale-100'
+                                  }`}>
+                                  {currentProgress}%
+                                </span>
+                                {isIncreasing && (
+                                  <span className="text-green-600 text-sm animate-bounce">↑</span>
+                                )}
+                                {isDecreasing && (
+                                  <span className="text-red-600 text-sm animate-bounce">↓</span>
+                                )}
+                              </div>
                               <span>{item.endDate}</span>
                             </div>
-                            <Progress value={item.progress} className="h-2" />
-                         </div>
-                         <div className="col-span-4 md:col-span-3 text-right">
+                            <div className="relative">
+                              <Slider
+                                value={[currentProgress]}
+                                onValueChange={(value) => handleProgressChange(item._id, value[0])}
+                                max={100}
+                                step={1}
+                                className={`cursor-pointer transition-all duration-300 ${isChanging ? 'opacity-80' : 'opacity-100'
+                                  }`}
+                                disabled={updatingWbs === item._id}
+                              />
+                              {/* Progress bar background animation */}
+                              <div
+                                className="absolute top-0 left-0 h-full rounded-full transition-all duration-500 ease-out pointer-events-none"
+                                style={{
+                                  width: `${currentProgress}%`,
+                                  background: isIncreasing
+                                    ? 'linear-gradient(90deg, rgba(34,197,94,0.2) 0%, rgba(34,197,94,0.4) 100%)'
+                                    : isDecreasing
+                                      ? 'linear-gradient(90deg, rgba(239,68,68,0.2) 0%, rgba(239,68,68,0.4) 100%)'
+                                      : 'transparent'
+                                }}
+                              />
+                            </div>
+                            {updatingWbs === item._id && (
+                              <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                Saving...
+                              </div>
+                            )}
+                            {isChanging && updatingWbs !== item._id && (
+                              <div className="text-xs text-blue-600 mt-1 flex items-center gap-1">
+                                <div className="h-1 w-1 rounded-full bg-blue-600 animate-pulse" />
+                                Will save in a moment...
+                              </div>
+                            )}
+                            {!isChanging && !updatingWbs && currentProgress === 0 && (
+                              <div className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                                <div className="h-1.5 w-1.5 rounded-full bg-amber-600" />
+                                Not started - Drag slider to begin
+                              </div>
+                            )}
+                          </div>
+                          <div className="col-span-4 md:col-span-3 text-right">
                             <Badge variant={item.status === 'completed' ? 'default' : 'outline'} className="capitalize">
                               {item.status?.replace('-', ' ')}
                             </Badge>
-                         </div>
-                      </div>
-                    ))}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -492,87 +663,168 @@ export default function DailyProgressPage() {
       )}
 
       {/* --- DAILY PROGRESS LOGS (Existing Functionality) --- */}
-      <div className="mt-8">
+      {/* <div className="mt-8">
         <Card>
           <CardHeader>
             <CardTitle>Recent Daily Logs ({items.length})</CardTitle>
+
+            <div className="flex flex-wrap gap-3 mt-4">
+              <div className="flex gap-2 items-center">
+                <Label className="text-sm">From:</Label>
+                <Input
+                  type="date"
+                  value={logFilters.dateFrom}
+                  onChange={(e) => setLogFilters({ ...logFilters, dateFrom: e.target.value })}
+                  className="w-40"
+                />
+              </div>
+              <div className="flex gap-2 items-center">
+                <Label className="text-sm">To:</Label>
+                <Input
+                  type="date"
+                  value={logFilters.dateTo}
+                  onChange={(e) => setLogFilters({ ...logFilters, dateTo: e.target.value })}
+                  className="w-40"
+                />
+              </div>
+              <Select
+                value={logFilters.updaterType}
+                onValueChange={(val) => setLogFilters({ ...logFilters, updaterType: val })}
+              >
+                <SelectTrigger className="w-40">
+                  <SelectValue placeholder="Updater Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Updates</SelectItem>
+                  <SelectItem value="operator">Operator</SelectItem>
+                  <SelectItem value="employee">Employee</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                value={logFilters.wbsId}
+                onValueChange={(val) => setLogFilters({ ...logFilters, wbsId: val })}
+              >
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="WBS Task" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Tasks</SelectItem>
+                  {wbs.filter(i => i.parentId !== null).map((item) => (
+                    <SelectItem key={item._id} value={item._id}>{item.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {(logFilters.dateFrom || logFilters.dateTo || logFilters.updaterType !== "all" || logFilters.wbsId !== "all") && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setLogFilters({ dateFrom: "", dateTo: "", updaterType: "all", wbsId: "all" })}
+                >
+                  Clear Filters
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>
-                  <TableHead>Task</TableHead>
-                  <TableHead>% Completed</TableHead>
-                  <TableHead>Remarks</TableHead>
+                  <TableHead>WBS Task</TableHead>
+                  <TableHead>Progress Change</TableHead>
+                  <TableHead>Updater Type</TableHead>
                   <TableHead>Updated By</TableHead>
+                  <TableHead>Remarks</TableHead>
                   <TableHead>Photos</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {progressLoading ? (
-                   <TableRow><TableCell colSpan={7} className="text-center"><Loader2 className="animate-spin inline mr-2"/>Loading...</TableCell></TableRow>
-                ) : paginatedProgressItems.map((it) => (
-                  <TableRow key={it._id}>
-                    <TableCell>{it.date}</TableCell>
-                    <TableCell className="max-w-[200px] truncate">{it.task || "—"}</TableCell>
-                    <TableCell>
-                      <Badge variant="secondary">{it.percentComplete}%</Badge>
-                    </TableCell>
-                    <TableCell className="max-w-[240px] truncate">{it.remarks || "—"}</TableCell>
-                    <TableCell>{it.updatedBy || "—"}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        {(it.photos || []).slice(0, 3).map((p) => (
-                          <div
-                            key={p.id}
-                            className="w-8 h-8 rounded overflow-hidden border bg-gray-100"
-                            title={p.gps ? `GPS: ${p.gps.lat.toFixed(4)}, ${p.gps.lng.toFixed(4)}` : "No GPS"}
-                          >
-                            <img src={p.dataUrl} alt="photo" className="w-full h-full object-cover" />
+                  <TableRow><TableCell colSpan={8} className="text-center"><Loader2 className="animate-spin inline mr-2" />Loading...</TableCell></TableRow>
+                ) : paginatedProgressItems.map((it) => {
+                  const itAny = it as any;
+                  return (
+                    <TableRow key={it._id}>
+                      <TableCell>{it.date}</TableCell>
+                      <TableCell className="max-w-[200px] truncate font-medium">
+                        {itAny.wbsName || it.task || "—"}
+                      </TableCell>
+                      <TableCell>
+                        {itAny.previousProgress !== undefined ? (
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline">{itAny.previousProgress}%</Badge>
+                            <span className="text-muted-foreground">→</span>
+                            <Badge variant="secondary">{it.percentComplete}%</Badge>
+                            {it.percentComplete > itAny.previousProgress ? (
+                              <span className="text-green-600 text-xs">↑</span>
+                            ) : it.percentComplete < itAny.previousProgress ? (
+                              <span className="text-red-600 text-xs">↓</span>
+                            ) : null}
                           </div>
-                        ))}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button size="icon" variant="ghost" onClick={() => openEdit(it)}>
-                          <Edit2 className="h-4 w-4" />
-                        </Button>
-                        <Button size="icon" variant="ghost" onClick={() => handleDelete(it._id)}>
-                          <Trash2 className="h-4 w-4 text-red-600" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                        ) : (
+                          <Badge variant="secondary">{it.percentComplete}%</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={itAny.updaterType === "operator" ? "default" : "outline"}>
+                          {itAny.updaterType || "operator"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{itAny.updaterName || it.updatedBy || "—"}</TableCell>
+                      <TableCell className="max-w-[240px] truncate">{it.remarks || "—"}</TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          {(it.photos || []).slice(0, 3).map((p) => (
+                            <div
+                              key={p.id}
+                              className="w-8 h-8 rounded overflow-hidden border bg-gray-100"
+                              title={p.gps ? `GPS: ${p.gps.lat.toFixed(4)}, ${p.gps.lng.toFixed(4)}` : "No GPS"}
+                            >
+                              <img src={p.dataUrl} alt="photo" className="w-full h-full object-cover" />
+                            </div>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          <Button size="icon" variant="ghost" onClick={() => openEdit(it)}>
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                          <Button size="icon" variant="ghost" onClick={() => handleDelete(it._id)}>
+                            <Trash2 className="h-4 w-4 text-red-600" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
 
             {items.length > PROGRESS_PAGE_SIZE && (
               <div className="flex justify-end gap-2 mt-4">
-                 <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setProgressPage((prev) => Math.max(1, prev - 1))}
-                    disabled={progressPage === 1}
-                  >
-                    Previous
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setProgressPage((prev) => Math.min(progressTotalPages, prev + 1))}
-                    disabled={progressPage === progressTotalPages}
-                  >
-                    Next
-                  </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setProgressPage((prev) => Math.max(1, prev - 1))}
+                  disabled={progressPage === 1}
+                >
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setProgressPage((prev) => Math.min(progressTotalPages, prev + 1))}
+                  disabled={progressPage === progressTotalPages}
+                >
+                  Next
+                </Button>
               </div>
             )}
           </CardContent>
         </Card>
-      </div>
+      </div> */}
 
       {/* --- CREATE/EDIT DIALOG --- */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -666,10 +918,10 @@ export default function DailyProgressPage() {
             </div>
 
             {/* GPS Indicator */}
-             <div className="flex items-center gap-2 text-sm text-muted-foreground bg-gray-50 p-2 rounded">
-              <MapPin className="h-4 w-4" /> 
+            <div className="flex items-center gap-2 text-sm text-muted-foreground bg-gray-50 p-2 rounded">
+              <MapPin className="h-4 w-4" />
               {((form.photos || []).find((p) => p.gps)?.gps) ? (
-                 <span className="text-green-600">Location Tagged</span>
+                <span className="text-green-600">Location Tagged</span>
               ) : "No GPS data yet"}
             </div>
 

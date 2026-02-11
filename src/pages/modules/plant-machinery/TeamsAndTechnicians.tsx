@@ -39,6 +39,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ClipLoader } from "react-spinners";
+import { BASE_URL } from "@/utils/constants";
 
 interface Technician {
   id: string;
@@ -65,7 +66,7 @@ interface Team {
   updatedAt: string;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000";
+const API_BASE_URL = BASE_URL || "http://localhost:4000";
 
 const Teams: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
