@@ -76,8 +76,10 @@ import batchReducer from "@/redux/slices/production/batchSlice";
 import chatReducer from "@/redux/slices/production/chatSlice";
 import notificationSidebarReducer from "@/redux/slices/notificationSidebarSlice"
 import plantMachineryMasterReducer from "@/redux/slices/plantandmachinary/plantMachineryMasterSlice";
+import POInventoryReducer from "@/redux/slices/poInventorySlice"
 export const store = configureStore({
   reducer: {
+    purchaseOrdersInventory: POInventoryReducer,
     chat: chatReducer,
     plantMachineryMaster: plantMachineryMasterReducer,
     notifications: notificationSidebarReducer,

@@ -26,6 +26,7 @@ import {
   MapPin
 } from 'lucide-react';
 import { toast } from 'sonner';
+import api from "@/utils/axiosApi";
 
 const RFQComponent: React.FC = () => {
   const canView = usePermission("rfq", "view");
@@ -50,6 +51,10 @@ const RFQComponent: React.FC = () => {
   const { rfqs, loading: rfqLoading, meta, error } = useSelector((state: RootState) => state.rfqs);
   const { vendors } = useSelector((state: RootState) => state.vendors);
 
+  const [showPoRequests, setShowPoRequests] = useState(false);
+  const [poRequests, setPoRequests] = useState<any[]>([]);
+
+
   const [showCreateRfq, setShowCreateRfq] = useState(false);
   const [showUpdateRfq, setShowUpdateRfq] = useState(false);
   const [showViewRfq, setShowViewRfq] = useState(false);
@@ -66,18 +71,33 @@ const RFQComponent: React.FC = () => {
   const [loadingMrsNotifications, setLoadingMrsNotifications] = useState(false);
 
   // [!code ++] Get Profile & Locations
-  const { userProfile } = useSelector((state: any) => state.auth); 
+  const { userProfile } = useSelector((state: any) => state.auth);
   const { locations } = useSelector((state: any) => state.masterData);
 
   // [!code ++] Logic
   const isLocationRestricted = userProfile?.role !== 'admin' && !!userProfile?.location;
   const [locationFilter, setLocationFilter] = useState(isLocationRestricted ? userProfile.location : "all");
 
+  // const fetchPoRequests = async () => {
+  //   const res = await fetch(
+  //     `${BASE_URL}/notifications/list?destination=purchase.rfq&type=PO_TO_RFQ_REQUEST&status=PENDING`,
+  //     {
+  //       headers: {
+  //         Authorization: `Bearer ${localStorage.getItem("token")}`,
+  //       },
+  //     }
+  //   );
+
+  //   const data = await res.json();
+  //   setPoRequests(data);
+  // };
+
   useEffect(() => {
     dispatch(fetchMasterData("location")); // [!code ++]
     dispatch(fetchRFQs({ page, limit, q: search, location: locationFilter })); // [!code ++]
     dispatch(fetchVendors());
     fetchMrsNotifications(); // Fetch MRS notifications
+    fetchPoRequests();
   }, [dispatch, page, limit, search, locationFilter]); // [!code ++]
 
   // Fetch MRS notifications for RFQ page
@@ -115,6 +135,142 @@ const RFQComponent: React.FC = () => {
     }
   };
 
+
+  const handleRejectPoRequest = async (request: any) => {
+    try {
+      await api.patch(
+        `${BASE_URL}/api/notifications/po-to-rfq/reject/${request._id}`,
+        {},
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        }
+      );
+
+      toast.success("PO request rejected successfully");
+
+      fetchPoRequests(); // refresh list
+    } catch (error) {
+      console.error("Reject error:", error);
+      toast.error("Failed to reject request");
+    }
+  };
+
+  const fetchPoRequests = async () => {
+    const res = await api.get(`${BASE_URL}/api/notifications/tab/purchase.rfq`, {
+      params: {
+        type: "PO_TO_RFQ_REQUEST",
+        status: "PENDING",
+        // destination: "purchase.rfq", // [!code --] Removed (handled by URL param)
+      },
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem("token")}`,
+      },
+    });
+
+    setPoRequests(Array.isArray(res.data) ? res.data : []);
+  };
+
+
+
+
+
+  const handleAcceptPoRequest = async (request: any) => {
+    // 1. Safely extract the IDs using optional chaining
+    // Check both 'metadata' and 'data' just in case
+    const ids = request.metadata?.purchaseOrderIds || request.data?.purchaseOrderIds;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      toast.error("No Purchase Order IDs found in this request");
+      return;
+    }
+
+    try {
+      const res = await fetch(`${BASE_URL}/purchase-orders/by-ids`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({ ids }),
+      });
+
+      if (!res.ok) throw new Error("Failed to fetch Purchase Orders");
+
+      const pos = await res.json();
+
+      if (!pos || pos.length === 0) {
+        toast.error("No matching Purchase Orders found in database");
+        return;
+      }
+
+      setFormData({
+        rfqNumber: generateRfqNumber(),
+        orderDate: new Date().toISOString().split("T")[0],
+        deliveryDate: "",
+        currency: "INR",
+        vendors: [],
+        // Safely access the first PO's location
+        location: pos[0]?.location || "",
+        paymentTerms: "Net 30",
+        products: pos.map((po: any) => ({
+          name: po.rawMaterialName || "Unknown Product",
+          quantity: po.quantity || 0,
+          uom: po.uom || "pieces",
+          unitPrice: 0,
+          taxes: 0,
+        })),
+        notes: "Generated from Purchase Orders",
+      });
+
+      setShowPoRequests(false);
+      setShowCreateRfq(true);
+    } catch (error) {
+      console.error("Error accepting PO request:", error);
+      toast.error("An error occurred while processing the request");
+    }
+  };
+
+
+  // const handleAcceptPoRequest = async (request: any) => {
+  //   // fetch PO details
+  //   const res = await fetch(`${BASE_URL}/purchase-orders/by-ids`, {
+  //     method: "POST",
+  //     headers: {
+  //       "Content-Type": "application/json",
+  //       Authorization: `Bearer ${localStorage.getItem("token")}`,
+  //     },
+  //     body: JSON.stringify({
+  //       ids: request.metadata.purchaseOrderIds,
+  //     }),
+  //   });
+
+  //   const pos = await res.json();
+
+  //   // Prefill RFQ form
+  //   setFormData({
+  //     rfqNumber: generateRfqNumber(),
+  //     orderDate: new Date().toISOString().split("T")[0],
+  //     deliveryDate: "",
+  //     currency: "INR",
+  //     vendors: [],
+  //     location: pos[0].location,
+  //     paymentTerms: "Net 30",
+  //     products: pos.map((po: any) => ({
+  //       name: po.rawMaterialName,
+  //       quantity: po.quantity,
+  //       uom: "pieces",
+  //       unitPrice: 0,
+  //       taxes: 0,
+  //     })),
+  //     notes: `Generated from PO`,
+  //   });
+
+  //   setShowPoRequests(false);
+  //   setShowCreateRfq(true);
+  // };
+
   // Handle MRS notification accept/reject
   const handleMrsNotificationResponse = async (notificationId: string, response: 'accepted' | 'rejected', notification?: any) => {
     try {
@@ -129,10 +285,10 @@ const RFQComponent: React.FC = () => {
 
       if (res.ok) {
         const result = await res.json();
-        
+
         if (response === 'accepted') {
           toast.success('MRS notification accepted. Auto-filling RFQ form...');
-          
+
           // Auto-fill RFQ form with MRS data
           const materialData = notification.materialData;
           setFormData({
@@ -152,12 +308,12 @@ const RFQComponent: React.FC = () => {
             }],
             notes: `Auto-generated from MRS: ${materialData.wbsName} - ${materialData.remarks || ''}`
           });
-          
+
           setShowCreateRfq(true);
         } else {
           toast.success('MRS notification rejected successfully');
         }
-        
+
         fetchMrsNotifications(); // Refresh notifications
       } else {
         const errorData = await res.json();
@@ -197,7 +353,7 @@ const RFQComponent: React.FC = () => {
   const handleAutoFill = (data: any) => {
     try {
       console.log('🔄 Auto-filling RFQ form with data:', data);
-      
+
       // Handle different data structures from different sources
       const materialName = data.materialName || data.item || data.itemName || '';
       const quantity = data.quantity || 0;
@@ -206,7 +362,7 @@ const RFQComponent: React.FC = () => {
       const projectName = data.projectName || 'Project';
       const sourceTask = data.wbsName || data.sourceTask || 'Task';
       const remarks = data.remarks || data.remark || '';
-      
+
       console.log('📋 Extracted auto-fill values:', {
         materialName,
         quantity,
@@ -216,7 +372,7 @@ const RFQComponent: React.FC = () => {
         sourceTask,
         remarks
       });
-      
+
       setFormData(prevData => {
         const newFormData = {
           ...prevData,
@@ -230,14 +386,14 @@ const RFQComponent: React.FC = () => {
           deliveryDate: requiredDate ? new Date(requiredDate).toISOString().split('T')[0] : '',
           notes: `Material request from ${projectName} - ${sourceTask}: ${remarks}`
         };
-        
+
         console.log('📝 Setting new form data:', newFormData);
         return newFormData;
       });
-      
+
       // Open the create RFQ form immediately
       setShowCreateRfq(true);
-      
+
       toast.success('RFQ form auto-filled with material request data');
       console.log('✅ RFQ form auto-filled and opened immediately');
     } catch (error) {
@@ -395,9 +551,9 @@ const RFQComponent: React.FC = () => {
           ...formData,
           status: 'draft'
         })).unwrap();
-        
+
         toast.success("RFQ created successfully");
-        
+
         // Create notification to Purchase Order when RFQ is saved
         try {
           const notificationData = {
@@ -444,10 +600,10 @@ const RFQComponent: React.FC = () => {
           console.error('Failed to create PO notification:', notifError);
           // Don't fail the main operation
         }
-        
+
         dispatch(fetchRFQs({ page, limit, q: search }));
         setShowCreateRfq(false);
-        
+
         // Reset form data
         setFormData({
           rfqNumber: generateRfqNumber(),
@@ -505,8 +661,8 @@ const RFQComponent: React.FC = () => {
 
 
     return (
-      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-        <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-4/5 lg:w-3/4 shadow-lg rounded-md bg-white mb-10">
+      <div className="fixed inset-0 bg-gray-700 bg-opacity-50 overflow-y-auto h-full  w-full z-50 ">
+        <div className="relative top-10 mx-auto p-5 border w-11/12 md:w-4/5 lg:w-3/4 shadow-lg rounded-md bg-white mb-10 h-full overflow-y-scroll">
           <div className="mt-3">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-medium text-gray-900">Create New RFQ</h3>
@@ -769,9 +925,9 @@ const RFQComponent: React.FC = () => {
       rfqNumber: editingRfq.rfqNumber,
       orderDate: editingRfq.orderDate ? new Date(editingRfq.orderDate).toISOString().split('T')[0] : '',
       currency: editingRfq.currency || 'USD',
-      location: editingRfq.location 
-          ? (typeof editingRfq.location === 'object' ? editingRfq.location._id : editingRfq.location)
-          : (isLocationRestricted ? userProfile.location : ""),
+      location: editingRfq.location
+        ? (typeof editingRfq.location === 'object' ? editingRfq.location._id : editingRfq.location)
+        : (isLocationRestricted ? userProfile.location : ""),
       vendors: typeof editingRfq.vendors[0] === 'object' ? editingRfq.vendors.map((v: any) => v.id || v._id) : editingRfq.vendors,
       paymentTerms: editingRfq.paymentTerms || 'Net 30',
       deliveryDate: editingRfq.deliveryDate ? new Date(editingRfq.deliveryDate).toISOString().split('T')[0] : '',
@@ -859,19 +1015,19 @@ const RFQComponent: React.FC = () => {
                   />
                 </div>
                 <select
-            value={locationFilter}
-            onChange={(e) => {
-              setLocationFilter(e.target.value);
-              setPage(1);
-            }}
-            disabled={isLocationRestricted}
-            className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-          >
-            <option value="all">All Locations</option>
-            {locations.map((l: any) => (
-              <option key={l._id} value={l._id}>{l.name}</option>
-            ))}
-          </select>
+                  value={locationFilter}
+                  onChange={(e) => {
+                    setLocationFilter(e.target.value);
+                    setPage(1);
+                  }}
+                  disabled={isLocationRestricted}
+                  className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+                >
+                  <option value="all">All Locations</option>
+                  {locations.map((l: any) => (
+                    <option key={l._id} value={l._id}>{l.name}</option>
+                  ))}
+                </select>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
                   <select
@@ -1275,6 +1431,26 @@ const RFQComponent: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          <div className="relative">
+            <Button
+              variant="outline"
+              onClick={() => {
+                fetchPoRequests();
+                setShowPoRequests(true);
+              }}
+              className="relative"
+            >
+              <FileText className="h-4 w-4 mr-2" />
+              Requests
+            </Button>
+            {poRequests.length > 0 && (
+              <span className="absolute -top-2 -right-2 h-5 w-5 bg-red-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full shadow-sm ring-2 ring-white z-10">
+                {poRequests.length}
+              </span>
+            )}
+          </div>
+
+
           <input
             type="search"
             value={search}
@@ -1286,8 +1462,8 @@ const RFQComponent: React.FC = () => {
             className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <select value={locationFilter} onChange={e => setLocationFilter(e.target.value)} disabled={isLocationRestricted} className="border p-2 rounded">
-              <option value="all">All Locations</option>
-              {locations.map((l: any) => <option key={l._id} value={l._id}>{l.name}</option>)}
+            <option value="all">All Locations</option>
+            {locations.map((l: any) => <option key={l._id} value={l._id}>{l.name}</option>)}
           </select>
           <button
             disabled={!canCreate}
@@ -1355,10 +1531,10 @@ const RFQComponent: React.FC = () => {
                       {rfq.rfqNumber}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        <div className="flex items-center gap-1">
-                            {rfq.location && <MapPin className="w-3 h-3" />}
-                            {getLocationName(rfq.location)}
-                        </div>
+                      <div className="flex items-center gap-1">
+                        {rfq.location && <MapPin className="w-3 h-3" />}
+                        {getLocationName(rfq.location)}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {rfq.vendors?.length || 0} vendors
@@ -1530,6 +1706,106 @@ const RFQComponent: React.FC = () => {
       </div>
 
       {/* Modals */}
+      {showPoRequests && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex justify-center items-center z-50 p-4 transition-all">
+          <div className="bg-white w-full max-w-lg rounded-xl shadow-2xl flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-200">
+
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-5 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <div className="bg-blue-100 p-2 rounded-lg">
+                  <FileText className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">PO Requests</h3>
+                  <p className="text-xs text-gray-500">
+                    {poRequests.length} pending request{poRequests.length !== 1 && 's'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowPoRequests(false)}
+                className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-2 rounded-full transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Scrollable Content Area */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-3 custom-scrollbar">
+              {poRequests.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="bg-gray-50 h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <CheckCircle className="h-8 w-8 text-gray-400" />
+                  </div>
+                  <h3 className="text-gray-900 font-medium">All caught up!</h3>
+                  <p className="text-gray-500 text-sm mt-1">No pending PO requests found.</p>
+                </div>
+              ) : (
+                poRequests.map((req: any) => {
+                  const poCount = (req.metadata?.purchaseOrderIds || req.data?.purchaseOrderIds || []).length;
+                  const requestDate = req.createdAt ? new Date(req.createdAt).toLocaleDateString() : 'Unknown Date';
+
+                  return (
+                    <div
+                      key={req._id}
+                      className="group border border-gray-200 bg-white p-4 rounded-xl hover:shadow-md hover:border-blue-200 transition-all duration-200"
+                    >
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex items-start gap-3">
+                          <div className="mt-1">
+                            <span className="flex h-2 w-2 translate-y-1 rounded-full bg-blue-500 ring-2 ring-white"></span>
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-semibold text-gray-900">
+                              New PO to RFQ Request
+                            </h4>
+                            <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                              <Clock className="h-3 w-3" /> {requestDate}
+                            </p>
+                          </div>
+                        </div>
+                        <span className="bg-blue-50 text-blue-700 text-xs font-medium px-2.5 py-0.5 rounded-full border border-blue-100">
+                          {poCount} POs Included
+                        </span>
+                      </div>
+
+                      <div className="flex gap-2 justify-end pt-2 border-t border-gray-50 mt-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-100 h-8 text-xs"
+                          onClick={() => handleRejectPoRequest(req)}
+                        >
+                          Reject
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="bg-blue-600 hover:bg-blue-700 text-white h-8 text-xs shadow-sm"
+                          onClick={() => handleAcceptPoRequest(req)}
+                        >
+                          Accept & Create RFQ
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-gray-100 bg-gray-50 rounded-b-xl flex justify-end">
+              <Button
+                variant="ghost"
+                className="text-gray-600 hover:text-gray-900 hover:bg-gray-200"
+                onClick={() => setShowPoRequests(false)}
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       {showCreateRfq && <CreateRfqForm onClose={() => setShowCreateRfq(false)} />}
       {showUpdateRfq && editingRfq && (
         <UpdateRfqForm rfq={editingRfq} onClose={() => setShowUpdateRfq(false)} />

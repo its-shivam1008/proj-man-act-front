@@ -104,6 +104,7 @@ import InventoryMasterData from "./pages/modules/inventory/InventoryMasterData";
 import UserProfileMiddleware from "./middleware/UserProfileMiddleware";
 import RoutingMaster from "./pages/modules/production/Routing";
 import PlantMachineryMasterPage from "./pages/modules/plant-machinery/plantandmachinarymasterdata";
+import PO from "./pages/modules/inventory/PO";
 
 function App() {
   useEffect(() => {
@@ -220,6 +221,7 @@ function App() {
                 <Route path="forecasting" element={<ForecastingPage />} />
               </Route>
               <Route path="/inventory/settings" element={<FormBuilder />} />
+              <Route path="/inventory/purchase-order" element={<PO/>}/>
               <Route path="/inventory/reporting" element={<ReportingModule />}>
                 <Route path="stock" element={<StockPage />} />
                 <Route

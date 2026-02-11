@@ -85,13 +85,12 @@ export const fetchMaterials = createAsyncThunk(
 
 export const addMaterial = createAsyncThunk(
   "raw/add",
-  async (data: Partial<RawMaterial>, { rejectWithValue }) => {
+  async (data: any, { rejectWithValue }) => {
     try {
-      const organisationId = localStorage.getItem("organisationId");
-
-      const res = await api.post("/raw/craete/", {
-        ...data,
-        organisationId,
+      const res = await api.post("/raw/create", data, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
       });
 
       toast.success("Material added successfully");
@@ -104,14 +103,20 @@ export const addMaterial = createAsyncThunk(
   }
 );
 
+
 export const updateMaterial = createAsyncThunk(
   "raw/update",
   async (
-    { id, data }: { id: string; data: Partial<RawMaterial> },
+    { id, data }: { id: string; data: any },
     { rejectWithValue }
   ) => {
     try {
-      const res = await api.put(`/raw/update/${id}`, data);
+      const res = await api.put(`/raw/update/${id}`, data, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+
       toast.success("Material updated successfully");
       return res.data.material;
     } catch (error: any) {

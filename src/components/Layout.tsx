@@ -42,6 +42,7 @@ import {
   Building2,
   MessageCircle,
   Database,
+  ShoppingBag,
 } from "lucide-react";
 import {
   Accordion,
@@ -136,6 +137,7 @@ const Layout: React.FC = () => {
     { name: "Inventory Dashboard", href: "/inventory", icon: Package, key: "inventoryDashboard" },
     { name: "Overview", href: "/inventory", icon: BarChart3, key: "inventoryOverview" },
     { name: "Products", href: "/inventory/products", icon: Package, key: "products" },
+    {name:"Purchase Order" , href:"/inventory/purchase-order" , icon:ShoppingBag , key:"purchase-order"},
     { name: "Raw Materials", href: "/inventory/rawmaterials", icon: Warehouse, key: "rawMaterials" },
     { name: "Warehouses", href: "/inventory/warehouses", icon: MapPin, key: "warehouses" },
     { name: "Stores", href: "/inventory/stores", icon: Package, key: "stores" },
