@@ -8,7 +8,8 @@ import {
   ReceiptIndianRupee, CircuitBoard, PlaneTakeoff, CassetteTape, PenTool, 
   FolderClosed, BarChart3, Warehouse, MapPin, Mail, CheckCircle, Clock, Trash2, Search, UserCog, Loader2,
   ShieldAlert,
-  History
+  History,
+  DollarSign
 } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchMasterData } from "@/redux/slices/masterDataSlice";
@@ -39,6 +40,7 @@ const inventoryLinks = [
     { name: "Overview", icon: BarChart3, key: "inventoryOverview" },
     { name: "Products", icon: Package, key: "products" },
     { name: "Raw Materials", icon: Warehouse, key: "rawMaterials" },
+    {name:"Purchase Order" , icon:DollarSign , key:"po"},
     { name: "Warehouses", icon: MapPin, key: "warehouses" },
     { name: "Stores", icon: Package, key: "stores" },
     { name: "Forcasting", icon: Clock, key: "forecasting" }, // forcasting

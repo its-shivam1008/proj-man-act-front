@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -43,6 +42,7 @@ import {
     CommandItem,
     CommandList,
 } from "../../../components/ui/command";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui/tabs";
 import { createNotification } from "@/redux/slices/notificationSlice";
 // import { Textarea } from "../../../components/ui/textarea";
 import { toast } from 'sonner';
@@ -116,6 +116,9 @@ export default function ProcurementPage() {
         item: ExtendedMRSItem;
         type: "INVENTORY" | "PURCHASE"; // To distinguish between the two buttons
     } | null>(null);
+
+    // NEW: Tab state - defaults to "delivery"
+    const [activeTab, setActiveTab] = useState<"delivery" | "purchase">("delivery");
 
     const canView = usePermission('procurementMaterialTracking', 'view');
 
@@ -1372,15 +1375,15 @@ export default function ProcurementPage() {
                         <Plus className="mr-2 h-4 w-4" /> Create MRS Item
                     </Button>
 
-                    {/* <Button 
-                        variant="outline" 
-                        onClick={() => dispatch(fetchMRS())} 
+                    {/* <Button
+                        variant="outline"
+                        onClick={() => dispatch(fetchMRS())}
                         disabled={mrsLoading}
                     >
                         <RefreshCcw className="mr-2 h-4 w-4" /> Refresh
                     </Button> */}
-                    {/* <Button 
-                        variant="outline" 
+                    {/* <Button
+                        variant="outline"
                         onClick={resetSendCounts}
                         className="text-red-600 hover:text-red-700"
                     >
@@ -1470,290 +1473,322 @@ export default function ProcurementPage() {
                     {selectedProjectId && wbsLoading && <p className="text-sm text-blue-500">Fetching Project WBS Materials...</p>}
                 </CardHeader>
                 <CardContent>
-                    <Table>
-                        <TableHeader>
-                            {/* Group header row */}
-                            <TableRow className="border-b-0">
-                                <TableHead
-                                    colSpan={6}
-                                    className="text-center text-xs font-bold uppercase tracking-widest bg-blue-50 text-blue-700 border-r-[3px] border-r-gray-800 py-2"
-                                >
-                                    For Delivery
-                                </TableHead>
-                                <TableHead
-                                    colSpan={2}
-                                    className="text-center text-xs font-bold uppercase tracking-widest bg-orange-50 text-orange-700 py-2"
-                                >
-                                    For Purchase
-                                </TableHead>
-                            </TableRow>
-                            {/* Column header row */}
-                            <TableRow>
-                                <TableHead className="w-[50px]"></TableHead>
-                                <TableHead>Source Task</TableHead>
-                                <TableHead>Item / Material</TableHead>
-                                <TableHead>Quantity</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead className="border-r-[3px] border-r-gray-800">Delivery Status</TableHead>
-                                <TableHead>Required Date</TableHead>
-                                <TableHead>Actions</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {mrsLoading && <TableRow><TableCell colSpan={8} className="text-center">Loading MRS...</TableCell></TableRow>}
+                    {/* Tabs for Delivery and Purchase */}
+                    <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "delivery" | "purchase")} className="w-full">
+                        <TabsList className="grid w-full max-w-md grid-cols-2 mb-4">
+                            <TabsTrigger value="delivery">
+                                <Truck className="mr-2 h-4 w-4" />
+                                Delivery
+                            </TabsTrigger>
+                            <TabsTrigger value="purchase">
+                                <ShoppingCart className="mr-2 h-4 w-4" />
+                                Purchase
+                            </TabsTrigger>
+                        </TabsList>
 
-                            {!mrsLoading && paginatedMrsItems.length === 0 && (
-                                <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">No materials found.</TableCell></TableRow>
-                            )}
+                        {/* Delivery Tab Content */}
+                        <TabsContent value="delivery" className="space-y-4">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead className="w-[50px]"></TableHead>
+                                        <TableHead>Source Task</TableHead>
+                                        <TableHead>Item / Material</TableHead>
+                                        <TableHead>Quantity</TableHead>
+                                        <TableHead>Status</TableHead>
+                                        <TableHead>Delivery Status</TableHead>
+                                        <TableHead>Required Date</TableHead>
+                                        <TableHead>Actions</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {mrsLoading && <TableRow><TableCell colSpan={8} className="text-center">Loading MRS...</TableCell></TableRow>}
 
-                            {paginatedMrsItems.map((m) => (
-                                <TableRow key={m.id || m._id} className={m.isWbsLinked ? "bg-slate-50" : ""}>
-                                    <TableCell>
-                                        <input
-                                            type="checkbox"
-                                            checked={!!selectedIds[m.id || m._id!]}
-                                            onChange={() => toggleSelect(m.id || m._id!)}
-                                        />
-                                    </TableCell>
-                                    <TableCell>
-                                        {m.task || "—"}
-                                        {m.task && <Badge variant="secondary" className="ml-2 text-[10px]">WBS</Badge>}
-                                    </TableCell>
-                                    <TableCell className="font-medium">
-                                        {m.item}
-                                        {m.unit && <span className="text-xs text-gray-500 ml-1">({m.unit})</span>}
-                                    </TableCell>
-                                    <TableCell>{m.quantity}</TableCell>
-                                    <TableCell>
-                                        {(() => {
-                                            const deliveryStatus = m.deliveryStatus || 'pending';
-                                            const purchaseStatus = m.purchaseRequestStatus || 'not-sent';
+                                    {!mrsLoading && paginatedMrsItems.length === 0 && (
+                                        <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">No materials found.</TableCell></TableRow>
+                                    )}
 
-                                            // Check if Purchase is already active
-                                            const isPurchaseActive = purchaseStatus === 'sent' || purchaseStatus === 'processed';
+                                    {paginatedMrsItems.map((m) => (
+                                        <TableRow key={m.id || m._id} className={m.isWbsLinked ? "bg-slate-50" : ""}>
+                                            <TableCell>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={!!selectedIds[m.id || m._id!]}
+                                                    onChange={() => toggleSelect(m.id || m._id!)}
+                                                />
+                                            </TableCell>
+                                            <TableCell>
+                                                {m.task || "—"}
+                                                {m.task && <Badge variant="secondary" className="ml-2 text-[10px]">WBS</Badge>}
+                                            </TableCell>
+                                            <TableCell className="font-medium">
+                                                {m.item}
+                                                {m.unit && <span className="text-xs text-gray-500 ml-1">({m.unit})</span>}
+                                            </TableCell>
+                                            <TableCell>{m.quantity}</TableCell>
+                                            <TableCell>
+                                                {(() => {
+                                                    const deliveryStatus = m.deliveryStatus || 'pending';
+                                                    const purchaseStatus = m.purchaseRequestStatus || 'not-sent';
 
-                                            // Check for different variations of in-transit
-                                            const isInTransit = deliveryStatus === 'in-transit' ||
-                                                deliveryStatus === 'intransit' ||
-                                                deliveryStatus === 'in_transit' ||
-                                                deliveryStatus?.toLowerCase().includes('transit');
+                                                    // Check if Purchase is already active
+                                                    const isPurchaseActive = purchaseStatus === 'sent' || purchaseStatus === 'processed';
 
-                                            const isReceived = deliveryStatus === 'received' ||
-                                                deliveryStatus === 'delivered';
+                                                    // Check for different variations of in-transit
+                                                    const isInTransit = deliveryStatus === 'in-transit' ||
+                                                        deliveryStatus === 'intransit' ||
+                                                        deliveryStatus === 'in_transit' ||
+                                                        deliveryStatus?.toLowerCase().includes('transit');
 
-                                            const isSent = deliveryStatus === 'sent' && !isInTransit && !isReceived;
-                                            const isRejected =
-                                                m.status === 'rejected' ||
-                                                m.deliveryStatus === 'rejected';
+                                                    const isReceived = deliveryStatus === 'received' ||
+                                                        deliveryStatus === 'delivered';
 
-                                            if (isRejected) {
-                                                return (
-                                                    <Button
-                                                        size="sm"
-                                                        variant="outline"
-                                                        disabled
-                                                        className="bg-red-50 text-red-700 border-red-200"
-                                                    >
-                                                        Rejected ✕
+                                                    const isSent = deliveryStatus === 'sent' && !isInTransit && !isReceived;
+                                                    const isRejected =
+                                                        m.status === 'rejected' ||
+                                                        m.deliveryStatus === 'rejected';
+
+                                                    if (isRejected) {
+                                                        return (
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                disabled
+                                                                className="bg-red-50 text-red-700 border-red-200"
+                                                            >
+                                                                Rejected ✕
+                                                            </Button>
+                                                        );
+                                                    }
+
+                                                    if (isReceived) {
+                                                        return (
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                disabled
+                                                                className="bg-green-50 text-green-700 border-green-200"
+                                                            >
+                                                                Received ✓
+                                                            </Button>
+                                                        );
+                                                    } else if (isInTransit) {
+                                                        return (
+                                                            <Button
+                                                                size="sm"
+                                                                variant="default"
+                                                                className="bg-green-600 hover:bg-green-700"
+                                                                onClick={() => handleItemReceived(m)}
+                                                            >
+                                                                Item Received
+                                                            </Button>
+                                                        );
+                                                    }
+                                                    else if (isSent) {
+                                                        return (
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                disabled
+                                                                className="bg-blue-50 text-blue-700 border-blue-200"
+                                                            >
+                                                                Sent ✓
+                                                            </Button>
+                                                        );
+                                                    } else if (isPurchaseActive) {
+                                                        // 🔒 NEW: Disable if sent to Purchase
+                                                        return (
+                                                            <TooltipProvider>
+                                                                <Tooltip>
+                                                                    <Popover>
+                                                                        <PopoverTrigger asChild>
+                                                                            <Button size="sm" variant="ghost" disabled className="text-gray-400 bg-gray-100">
+                                                                                Sent
+                                                                            </Button>
+                                                                        </PopoverTrigger>
+                                                                        <PopoverContent className="w-auto p-2 text-xs">
+                                                                            Item sent to Purchase
+                                                                        </PopoverContent>
+                                                                    </Popover>
+                                                                </Tooltip>
+                                                            </TooltipProvider>
+                                                        );
+                                                    } else {
+                                                        return (
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                onClick={() => handleSendClick(m, "INVENTORY")}
+                                                            >
+                                                                <Truck className="h-4 w-4 mr-1" />
+                                                                Send to Delivery
+                                                            </Button>
+                                                        );
+                                                    }
+                                                })()}
+                                            </TableCell>
+                                            <TableCell>
+                                                {(() => {
+                                                    const deliveryStatus =
+                                                        m.status === 'rejected'
+                                                            ? 'rejected'
+                                                            : m.deliveryStatus?.toLowerCase() || 'pending';
+                                                    const statusConfig: Record<string, { label: string; className: string }> = {
+                                                        'pending': { label: 'Pending', className: 'bg-yellow-100 text-yellow-800' },
+                                                        'sent': { label: 'Sent', className: 'bg-blue-100 text-blue-800' },
+                                                        'in-transit': { label: 'In Transit', className: 'bg-purple-100 text-purple-800' },
+                                                        'intransit': { label: 'In Transit', className: 'bg-purple-100 text-purple-800' },
+                                                        'in_transit': { label: 'In Transit', className: 'bg-purple-100 text-purple-800' },
+                                                        'received': { label: 'Received', className: 'bg-green-100 text-green-800' },
+                                                        'delivered': { label: 'Delivered', className: 'bg-green-100 text-green-800' },
+                                                        'rejected': { label: 'Rejected', className: 'bg-red-100 text-red-800' },
+                                                    };
+                                                    const config = statusConfig[deliveryStatus] || statusConfig['pending'];
+                                                    return <Badge className={config.className}>{config.label}</Badge>;
+                                                })()}
+                                            </TableCell>
+                                            <TableCell>{m.requiredDate ? new Date(m.requiredDate).toLocaleDateString() : "—"}</TableCell>
+                                            <TableCell>
+                                                <div className="flex gap-1">
+                                                    <Button size="sm" variant="ghost" onClick={() => handleCheckStatus(m)}>
+                                                        📊
                                                     </Button>
-                                                );
-                                            }
-
-                                            if (isReceived) {
-                                                return (
-                                                    <Button
-                                                        size="sm"
-                                                        variant="outline"
-                                                        disabled
-                                                        className="bg-green-50 text-green-700 border-green-200"
-                                                    >
-                                                        Received ✓
+                                                    <Button size="sm" variant="ghost" onClick={() => handleDeleteMRS(m.id || m._id!)} disabled={m.isWbsLinked}>
+                                                        <Trash2 className="h-4 w-4 text-red-500" />
                                                     </Button>
-                                                );
-                                            } else if (isInTransit) {
-                                                return (
-                                                    <Button
-                                                        size="sm"
-                                                        variant="default"
-                                                        className="bg-green-600 hover:bg-green-700"
-                                                        onClick={() => handleItemReceived(m)}
-                                                    >
-                                                        Item Received
+                                                </div>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </TabsContent>
+
+                        {/* Purchase Tab Content */}
+                        <TabsContent value="purchase" className="space-y-4">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead className="w-[50px]"></TableHead>
+                                        <TableHead>Source Task</TableHead>
+                                        <TableHead>Item / Material</TableHead>
+                                        <TableHead>Quantity</TableHead>
+                                        <TableHead>Price</TableHead>
+                                        <TableHead>Purchase Status</TableHead>
+                                        <TableHead>Required Date</TableHead>
+                                        <TableHead>Actions</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {mrsLoading && <TableRow><TableCell colSpan={8} className="text-center">Loading MRS...</TableCell></TableRow>}
+
+                                    {!mrsLoading && paginatedMrsItems.length === 0 && (
+                                        <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">No materials found.</TableCell></TableRow>
+                                    )}
+
+                                    {paginatedMrsItems.map((m) => (
+                                        <TableRow key={m.id || m._id} className={m.isWbsLinked ? "bg-slate-50" : ""}>
+                                            <TableCell>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={!!selectedIds[m.id || m._id!]}
+                                                    onChange={() => toggleSelect(m.id || m._id!)}
+                                                />
+                                            </TableCell>
+                                            <TableCell>
+                                                {m.task || "—"}
+                                                {m.task && <Badge variant="secondary" className="ml-2 text-[10px]">WBS</Badge>}
+                                            </TableCell>
+                                            <TableCell className="font-medium">
+                                                {m.item}
+                                                {m.unit && <span className="text-xs text-gray-500 ml-1">({m.unit})</span>}
+                                            </TableCell>
+                                            <TableCell>{m.quantity}</TableCell>
+                                            <TableCell>₹{m.price?.toFixed(2) || "0.00"}</TableCell>
+                                            <TableCell>
+                                                {(() => {
+                                                    const purchaseStatus = m.purchaseRequestStatus || 'not-sent';
+                                                    const deliveryStatus = m.deliveryStatus || 'pending';
+
+                                                    // Check if item is already sent to Inventory
+                                                    const isDeliveryActive = deliveryStatus === 'sent' ||
+                                                        deliveryStatus === 'in-transit' ||
+                                                        deliveryStatus === 'intransit' ||
+                                                        deliveryStatus === 'in_transit' ||
+                                                        deliveryStatus === 'received' ||
+                                                        deliveryStatus === 'delivered';
+
+                                                    if (purchaseStatus === 'processed') {
+                                                        return (
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                disabled
+                                                                className="bg-green-50 text-green-700 border-green-200"
+                                                            >
+                                                                Processed ✓
+                                                            </Button>
+                                                        );
+                                                    } else if (purchaseStatus === 'sent') {
+                                                        return (
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                disabled
+                                                                className="bg-blue-50 text-blue-700 border-blue-200"
+                                                            >
+                                                                Sent to Purchase ✓
+                                                            </Button>
+                                                        );
+                                                    } else if (isDeliveryActive) {
+                                                        // 🔒 Disable if sent to Inventory/Delivery
+                                                        return (
+                                                            <TooltipProvider>
+                                                                <Tooltip>
+                                                                    <Popover>
+                                                                        <PopoverTrigger asChild>
+                                                                            <Button size="sm" variant="ghost" disabled className="text-gray-400 bg-gray-100">
+                                                                                Send
+                                                                            </Button>
+                                                                        </PopoverTrigger>
+                                                                        <PopoverContent className="w-auto p-2 text-xs">
+                                                                            Item sent to Delivery
+                                                                        </PopoverContent>
+                                                                    </Popover>
+                                                                </Tooltip>
+                                                            </TooltipProvider>
+                                                        );
+                                                    } else {
+                                                        return (
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                onClick={() => handleSendClick(m, "PURCHASE")}
+                                                            >
+                                                                <ShoppingCart className="h-4 w-4 mr-1" />
+                                                                Send to Purchase
+                                                            </Button>
+                                                        );
+                                                    }
+                                                })()}
+                                            </TableCell>
+                                            <TableCell>{m.requiredDate ? new Date(m.requiredDate).toLocaleDateString() : "—"}</TableCell>
+                                            <TableCell>
+                                                <div className="flex gap-1">
+                                                    <Button size="sm" variant="ghost" onClick={() => handleCheckStatus(m)}>
+                                                        📊
                                                     </Button>
-                                                );
-                                            }
-                                            else if (isSent) {
-                                                return (
-                                                    <Button
-                                                        size="sm"
-                                                        variant="outline"
-                                                        disabled
-                                                        className="bg-blue-50 text-blue-700 border-blue-200"
-                                                    >
-                                                        Sent ✓
+                                                    <Button size="sm" variant="ghost" onClick={() => handleDeleteMRS(m.id || m._id!)} disabled={m.isWbsLinked}>
+                                                        <Trash2 className="h-4 w-4 text-red-500" />
                                                     </Button>
-                                                );
-                                            } else if (isPurchaseActive) {
-                                                // 🔒 NEW: Disable if sent to Purchase
-                                                return (
-                                                    <TooltipProvider>
-                                                        <Tooltip>
-                                                            <Popover>
-                                                                <PopoverTrigger asChild>
-                                                                    <Button size="sm" variant="ghost" disabled className="text-gray-400 bg-gray-100">
-                                                                        Sent
-                                                                    </Button>
-                                                                </PopoverTrigger>
-                                                                <PopoverContent className="w-auto p-2 text-xs">
-                                                                    Item sent to Purchase
-                                                                </PopoverContent>
-                                                            </Popover>
-                                                        </Tooltip>
-                                                    </TooltipProvider>
-                                                );
-                                            } else {
-                                                return (
-                                                    <Button
-                                                        size="sm"
-                                                        variant="outline"
-                                                        onClick={() => handleSendClick(m, "INVENTORY")}
-                                                    >
-                                                        Sent
-                                                    </Button>
-                                                );
-                                            }
-                                        })()}
-                                    </TableCell>
-                                    <TableCell className="border-r-[3px] border-r-gray-800">
-                                        {(() => {
-                                            const deliveryStatus =
-                                                m.status === 'rejected'
-                                                    ? 'rejected'
-                                                    : m.deliveryStatus || 'pending';
-
-                                            const getStatusColor = (status: string) => {
-                                                switch (status) {
-                                                    case 'pending':
-                                                        return 'bg-gray-100 text-gray-800';
-
-                                                    case 'sent':
-                                                        return 'bg-blue-100 text-blue-800';
-
-                                                    case 'in-transit':
-                                                        return 'bg-yellow-100 text-yellow-800';
-
-                                                    case 'received':
-                                                    case 'delivered':
-                                                        return 'bg-green-100 text-green-800';
-
-                                                    case 'returned':
-                                                    case 'rejected':   // ✅ ADD THIS
-                                                        return 'bg-red-100 text-red-800';
-
-                                                    default:
-                                                        return 'bg-gray-100 text-gray-800';
-                                                }
-                                            };
-
-
-                                            return (
-                                                <Badge className={`${getStatusColor(deliveryStatus)} capitalize`}>
-                                                    {deliveryStatus.replace('-', ' ')}
-                                                </Badge>
-                                            );
-                                        })()}
-                                    </TableCell>
-                                    <TableCell>{m.requiredDate ? new Date(m.requiredDate).toLocaleDateString() : "—"}</TableCell>
-                                    <TableCell>
-                                        <div className="flex gap-2">
-                                            {/* Delete Button (Keep existing logic) */}
-                                            <Button
-                                                size="icon"
-                                                variant="ghost"
-                                                onClick={() => {
-                                                    handleDelete(m.id || m._id!, !!m.task);
-                                                }}
-                                                disabled={
-                                                    mrsLoading ||
-                                                    m.deliveryStatus === 'received' ||
-                                                    m.status === 'rejected'
-                                                }
-
-                                                className={m.deliveryStatus === 'received' ? 'opacity-50 cursor-not-allowed' : ''}
-                                            >
-                                                <Trash2 className={`h-4 w-4 ${m.deliveryStatus === 'received' ? 'text-gray-400' : 'text-red-600'}`} />
-                                            </Button>
-
-                                            {/* Purchase Button Logic */}
-                                            {(() => {
-                                                const purchaseStatus = m.purchaseRequestStatus || 'not-sent';
-                                                const deliveryStatus = m.deliveryStatus || 'pending';
-
-                                                // Check if Inventory/Delivery is already active
-                                                const isInventoryActive = ['sent', 'in-transit', 'received', 'delivered', 'intransit', 'in_transit']
-                                                    .includes(deliveryStatus);
-
-                                                if (purchaseStatus === 'sent') {
-                                                    return (
-                                                        <Button
-                                                            variant="outline"
-                                                            size="sm"
-                                                            disabled
-                                                            className="bg-green-50 text-green-700 border-green-200"
-                                                        >
-                                                            <ShoppingCartIcon className="mr-2 h-4 w-4" />
-                                                            Sent ✓
-                                                        </Button>
-                                                    );
-                                                } else if (purchaseStatus === 'processed') {
-                                                    return (
-                                                        <Button
-                                                            variant="outline"
-                                                            size="sm"
-                                                            disabled
-                                                            className="bg-blue-50 text-blue-700 border-blue-200"
-                                                        >
-                                                            <ShoppingCartIcon className="mr-2 h-4 w-4" />
-                                                            Processed ✓
-                                                        </Button>
-                                                    );
-                                                } else if (isInventoryActive) {
-                                                    // 🔒 NEW: Disable if sent to Inventory
-                                                    return (
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            disabled
-                                                            className="text-gray-400 opacity-50"
-                                                            title="Item is already being processed by Delivery/Inventory"
-                                                        >
-                                                            <ShoppingCartIcon className="mr-2 h-4 w-4" />
-                                                            Send
-                                                        </Button>
-                                                    );
-                                                } else {
-                                                    return (
-                                                        <Button
-                                                            variant="ghost"
-                                                            onClick={() => handleSendClick(m, "PURCHASE")}
-                                                        >
-                                                            <ShoppingCartIcon className="mr-2 h-4 w-4" />
-                                                            Send
-                                                        </Button>
-                                                    );
-                                                }
-                                            })()}
-
-                                            {/* Check Status Button (Keep existing logic) */}
-                                            <Button size="sm" onClick={() => handleCheckStatus(m)}>
-                                                <Truck className="h-4 w-4" /> Check Status
-                                            </Button>
-                                        </div>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
+                                                </div>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </TabsContent>
+                    </Tabs>
 
                     {/* Pagination */}
                     {displayedMrsList.length > MRS_PAGE_SIZE && (
@@ -2145,7 +2180,6 @@ export default function ProcurementPage() {
         </div>
     );
 }
-
 // "use client";
 
 // import React, { useEffect, useMemo, useState } from "react";
@@ -3519,15 +3553,15 @@ export default function ProcurementPage() {
 //                         <Plus className="mr-2 h-4 w-4" /> Create MRS Item
 //                     </Button>
 
-//                     {/* <Button 
-//                         variant="outline" 
-//                         onClick={() => dispatch(fetchMRS())} 
+//                     {/* <Button
+//                         variant="outline"
+//                         onClick={() => dispatch(fetchMRS())}
 //                         disabled={mrsLoading}
 //                     >
 //                         <RefreshCcw className="mr-2 h-4 w-4" /> Refresh
 //                     </Button> */}
-//                     {/* <Button 
-//                         variant="outline" 
+//                     {/* <Button
+//                         variant="outline"
 //                         onClick={resetSendCounts}
 //                         className="text-red-600 hover:text-red-700"
 //                     >

@@ -34,6 +34,14 @@ export interface RawMaterial {
       sgst?: number;
       igst?: number;
     };
+    documents?: {
+      name: string;
+      type: string;
+      size: number;
+      url: string;
+      publicId: string;
+    }[];
+
 
     totalCost?: number;
 
@@ -106,26 +114,21 @@ export const addMaterial = createAsyncThunk(
 
 export const updateMaterial = createAsyncThunk(
   "raw/update",
-  async (
-    { id, data }: { id: string; data: any },
-    { rejectWithValue }
-  ) => {
+  async ({ id, data }: { id: string; data: any }, { rejectWithValue }) => {
     try {
-      const res = await api.put(`/raw/update/${id}`, data, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      });
+      const res = await api.put(`/raw/update/${id}`, data);
 
       toast.success("Material updated successfully");
       return res.data.material;
     } catch (error: any) {
-      const msg = error?.response?.data?.message || "Failed to update material";
+      const msg =
+        error?.response?.data?.message || "Failed to update material";
       toast.error(msg);
       return rejectWithValue(msg);
     }
   }
 );
+
 
 
 export const deleteMaterial = createAsyncThunk(

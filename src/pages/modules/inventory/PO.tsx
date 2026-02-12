@@ -55,7 +55,7 @@ export default function PurchaseOrderPage() {
         (state: RootState) => state.masterData
     );
 
-    const [supplierValue, setSupplierValue] = useState("");
+    // const [supplierValue, setSupplierValue] = useState("");
 
     const { list, loading, pagination } = useSelector(
         (state: RootState) => state.purchaseOrdersInventory
@@ -64,14 +64,55 @@ export default function PurchaseOrderPage() {
     const [locationId, setLocationId] = useState<string | null>(null);
 
     const resetForm = () => {
-        setSupplierValue("");
-        setProjectId("");
-        setRawMaterialId(null);
-        setRawMaterialName("");
         setLocationId(null);
-        setQuantity(1);
         setPoDate(undefined);
+
+        setItems([
+            {
+                projectId: "",
+                rawMaterialId: "",
+                rawMaterialName: "",
+                quantity: 1,
+                price: 0,
+            },
+        ]);
     };
+
+
+    const addItem = () => {
+        setItems([
+            ...items,
+            {
+                projectId: "",
+                task: "",
+                rawMaterialId: "",
+                rawMaterialName: "",
+                quantity: 1,
+                price: 0,
+                requiredDate: "",
+            },
+        ]);
+    };
+
+    const removeItem = (index: number) => {
+        setItems(items.filter((_, i) => i !== index));
+    };
+    const handleChange = (
+        index: number,
+        field: string,
+        value: any
+    ) => {
+        const updated = [...items];
+        updated[index][field] = value;
+
+        if (field === "rawMaterialId") {
+            const material = materials.find((m) => m._id === value);
+            updated[index].rawMaterialName = material?.name || "";
+        }
+
+        setItems(updated);
+    };
+
 
     const getStatusStyle = (status: string) => {
         switch (status) {
@@ -88,12 +129,12 @@ export default function PurchaseOrderPage() {
 
     const {
         projects = [] } = useSelector((state: RootState) => state.projects);
-    const { supplier: supplierList = [] } =
-        useSelector((state: RootState) => state.inventoryMaster);
+    // const { supplier: supplierList = [] } =
+    // useSelector((state: RootState) => state.inventoryMaster);
 
     // raw materials
-    const [rawMaterialId, setRawMaterialId] = useState<string | null>(null);
-    const [rawMaterialName, setRawMaterialName] = useState("");
+    // const [rawMaterialId, setRawMaterialId] = useState<string | null>(null);
+    // const [rawMaterialName, setRawMaterialName] = useState("");
 
     const {
         materials = [],
@@ -112,10 +153,19 @@ export default function PurchaseOrderPage() {
     const { userProfile } = useSelector((state: RootState) => state.auth);
     // 🔹 Create PO modal
     const [createOpen, setCreateOpen] = useState(false);
+    const [items, setItems] = useState([
+        {
+            projectId: "",
+            rawMaterialId: "",
+            rawMaterialName: "",
+            quantity: 1,
+            price: 0,
+        },
+    ]);
 
     // const [supplier, setSupplier] = useState("");
-    const [item, setItem] = useState("");
-    const [quantity, setQuantity] = useState(1);
+    // const [item, setItem] = useState("");
+    // const [quantity, setQuantity] = useState(1);
     // const [price, setPrice] = useState(0);
     const [poDate, setPoDate] = useState<Date>();
 
@@ -168,49 +218,64 @@ export default function PurchaseOrderPage() {
     };
 
     const handleCreatePO = () => {
-        if (!supplierValue || !rawMaterialId || !locationId || !poDate) {
-            alert("Please fill all required fields");
+        if (!locationId || !poDate) {
+            alert("Please fill required fields");
             return;
         }
 
+        const invalidItem = items.some(
+            (item) =>
+                !item.projectId ||
+                !item.rawMaterialId ||
+                !item.quantity
+        );
 
+
+        if (invalidItem) {
+            alert("Please complete all item fields");
+            return;
+        }
+
+        // ✅ Find the full location object to get the name
         const selectedLocation = locations.find(l => l._id === locationId);
 
-        dispatch(createPurchaseOrder({
-            supplier: supplierValue,
-            projectId,
-            rawMaterialId,
-            rawMaterialName,
-            quantity,
-            location: locationId,
-            locationName: selectedLocation?.name, // ✅ REQUIRED
-            poDate,
-        })).then(() => {
+        dispatch(
+            createPurchaseOrder({
+                location: locationId,
+                locationName: selectedLocation?.name, // [!code ++] // Add this line
+                poDate: poDate?.toISOString(),
+                items,
+            })
+        ).then(() => {
+
             setCreateOpen(false);
             resetForm();
         });
     };
-    const handleUpdatePO = () => {
-        if (!editPO) return;
 
-        dispatch(updatePurchaseOrder({
-            id: editPO._id,
-            data: {
-                supplier: supplierValue,
-                projectId,
-                item: {
-                    rawMaterialId,
-                    rawMaterialName,
+    const handleUpdatePO = () => {
+        if (!editPO || !locationId || !poDate) return;
+
+        const selectedLocation = locations.find(
+            (l) => l._id === locationId
+        );
+
+        dispatch(
+            updatePurchaseOrder({
+                id: editPO._id,
+                data: {
+                    location: locationId,
+                    locationName: selectedLocation?.name,
+                    poDate: poDate.toISOString(),
+                    items,   // 🔥 send full array
                 },
-                quantity,
-                location: locationId,
-                poDate,
-            }
-        })).then(() => {
+            })
+        ).then(() => {
             setEditOpen(false);
             setEditPO(null);
         });
     };
+
     const handleDeletePO = (id: string) => {
         if (!confirm("Are you sure you want to delete this PO?")) return;
 
@@ -275,7 +340,7 @@ export default function PurchaseOrderPage() {
     useEffect(() => {
         if (organisationId) {
             dispatch(fetchProjects({}))
-            dispatch(fetchInventoryMaster({ type: "supplier" }));
+            // dispatch(fetchInventoryMaster({ type: "supplier" }));
             dispatch(fetchMaterials({ page, limit }));
         }
         dispatch(fetchMasterData("location"));
@@ -296,7 +361,16 @@ export default function PurchaseOrderPage() {
         );
     }, [dispatch, organisationId, page, limit, fromDate, toDate, search]);
 
-
+    // Permission check
+    if (!canView) {
+        return (
+            <div className="text-center py-12 px-4">
+                <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h3>
+                <p className="text-gray-600">You do not have the necessary permissions to view quality checks.</p>
+            </div>
+        );
+    }
 
     return (
         <div className="p-6 space-y-6">
@@ -305,16 +379,21 @@ export default function PurchaseOrderPage() {
                 <h1 className="text-2xl font-semibold">Purchase Orders</h1>
 
                 <div className="flex gap-2">
-                    <Button variant="outline" onClick={() => setCreateOpen(true)}>
-                        Add Purchase Order
-                    </Button>
+                    {canCreate && (
+                        <Button variant="outline" onClick={() => setCreateOpen(true)}>
+                            Add Purchase Order
+                        </Button>
+                    )}
 
-                    <Button
-                        disabled={selected.length === 0}
-                        onClick={handleSendToRFQ}
-                    >
-                        Send to RFQ
-                    </Button>
+                    {canCreate && (
+                        <Button
+                            disabled={selected.length === 0}
+                            onClick={handleSendToRFQ}
+                        >
+                            Send to RFQ
+                        </Button>
+                    )}
+
 
                 </div>
             </div>
@@ -357,7 +436,7 @@ export default function PurchaseOrderPage() {
 
                 {/* Search */}
                 <Input
-                    placeholder="Search PO / Supplier..."
+                    placeholder="Search PO ...."
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     className="w-[250px]"
@@ -387,7 +466,7 @@ export default function PurchaseOrderPage() {
                                 />
                             </TableHead>
                             <TableHead>PO No</TableHead>
-                            <TableHead>Supplier</TableHead>
+                            {/* <TableHead>Supplier</TableHead> */}
                             <TableHead>Items</TableHead>
                             <TableHead>Date</TableHead>
                             <TableHead>Location</TableHead>   {/* ✅ ADD THIS */}
@@ -411,9 +490,16 @@ export default function PurchaseOrderPage() {
                                     {po.poNumber}
                                 </TableCell>
 
-                                <TableCell>{po.supplier}</TableCell>
+                                {/* <TableCell>{po.supplier}</TableCell> */}
 
-                                <TableCell>{po.rawMaterialName}</TableCell>
+                                <TableCell>
+                                    {po.items?.map((item: any, i: number) => (
+                                        <div key={i}>
+                                            {item.rawMaterialName} (Qty: {item.quantity})
+                                        </div>
+                                    ))}
+                                </TableCell>
+
 
                                 <TableCell>
                                     {new Date(po.poDate).toLocaleDateString("en-IN")}
@@ -443,24 +529,38 @@ export default function PurchaseOrderPage() {
                                             <Eye size={16} />
                                         </Button>
 
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            onClick={() => {
-                                                setEditPO(po);
-                                                setEditOpen(true);
-                                            }}
-                                        >
-                                            <Pencil size={16} />
-                                        </Button>
+                                        {canEdit && (
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                onClick={() => {
+                                                    setEditPO(po);
+                                                    setLocationId(
+                                                        typeof po.location === "string"
+                                                            ? po.location
+                                                            : po.location._id
+                                                    );
+                                                    setPoDate(new Date(po.poDate));
+                                                    setItems(po.items);
+                                                    setEditOpen(true);
+                                                }}
+                                            >
+                                                <Pencil size={16} />
+                                            </Button>
+                                        )}
 
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            onClick={() => handleDeletePO(po._id)}
-                                        >
-                                            <Trash size={16} className="text-red-500" />
-                                        </Button>
+
+
+                                        {canDelete && (
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                onClick={() => handleDeletePO(po._id)}
+                                            >
+                                                <Trash size={16} className="text-red-500" />
+                                            </Button>
+                                        )}
+
                                     </div>
                                 </TableCell>
                             </TableRow>
@@ -506,14 +606,10 @@ export default function PurchaseOrderPage() {
 
                     {viewPO && (
                         <div className="space-y-4 text-sm">
+
                             <div className="flex justify-between">
                                 <span className="text-muted-foreground">PO Number</span>
                                 <span className="font-medium">{viewPO.poNumber}</span>
-                            </div>
-
-                            <div className="flex justify-between">
-                                <span className="text-muted-foreground">Supplier</span>
-                                <span className="font-medium">{viewPO.supplier}</span>
                             </div>
 
                             <div className="flex justify-between">
@@ -523,74 +619,401 @@ export default function PurchaseOrderPage() {
                                 </span>
                             </div>
 
+                            <div className="flex justify-between">
+                                <span className="text-muted-foreground">Location</span>
+                                <span>{viewPO.locationName}</span>
+                            </div>
+
                             <div className="flex justify-between items-center">
                                 <span className="text-muted-foreground">Status</span>
-                                <Badge
-                                    variant={
-                                        viewPO.status === "Draft"
-                                            ? "secondary"
-                                            : viewPO.status === "Approved"
-                                                ? "default"
-                                                : "success"
-                                    }
-                                >
-                                    {viewPO.status}
-                                </Badge>
+                                <Badge>{viewPO.status}</Badge>
                             </div>
 
                             <Separator />
 
-                            <div className="flex justify-between">
-                                <span className="text-muted-foreground">Items</span>
-                                <span>{viewPO.rawMaterialName ?? "—"}</span>
+                            <div>
+                                <h4 className="text-sm font-semibold mb-2">Items</h4>
+
+                                <div className="space-y-2">
+                                    {viewPO.items?.map((item, index) => (
+                                        <div
+                                            key={index}
+                                            className="flex justify-between border rounded-md px-3 py-2 bg-muted/30"
+                                        >
+                                            <div>
+                                                <div className="font-medium">
+                                                    {item.rawMaterialName}
+                                                </div>
+                                                <div className="text-xs text-muted-foreground">
+                                                    Qty: {item.quantity}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
 
-                            {/* <div className="flex justify-between text-base font-semibold">
-                                <span>Total Price</span>
-                                <span>₹{viewPO.totalPrice.toLocaleString()}</span>
-                            </div> */}
                         </div>
                     )}
+
                 </DialogContent>
             </Dialog>
 
             {/* 🔹 Create Purchase Order Modal */}
             <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-                <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col p-0 rounded-xl">
+                <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col p-0 rounded-xl">
 
-                    {/* 🔹 HEADER (Fixed) */}
+                    {/* HEADER */}
                     <div className="p-6 border-b">
                         <DialogHeader>
                             <DialogTitle className="text-xl font-semibold">
                                 Create Purchase Order
                             </DialogTitle>
                             <p className="text-sm text-muted-foreground">
-                                Fill in the required details to generate a new purchase order.
+                                Add one or more items to generate a purchase order.
                             </p>
                         </DialogHeader>
                     </div>
 
-                    {/* 🔹 SCROLLABLE BODY */}
-                    <div className="flex-1 overflow-y-auto px-6 py-6">
+                    <div className="flex-1 overflow-y-auto px-6 py-6 space-y-8">
 
-                        <div className="space-y-8">
+                        {/* ===== MAIN ITEM (Original Layout) ===== */}
+                        <div className="space-y-4">
 
-                            {/* 🔸 BASIC INFORMATION */}
-                            <div className="space-y-4">
-                                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                    Basic Information
-                                </h3>
+                            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                Item Details
+                            </h3>
+
+                            {/* Project */}
+                            <div className="space-y-2">
+                                <Label>Project</Label>
+                                <select
+                                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                                    value={items[0]?.projectId}
+                                    onChange={(e) =>
+                                        handleChange(0, "projectId", e.target.value)
+                                    }
+                                >
+                                    <option value="">Select project...</option>
+                                    {projects.map((p) => (
+                                        <option key={p._id} value={p._id}>
+                                            {p.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Item */}
+                            <div className="space-y-2">
+                                <Label>Item</Label>
+                                <select
+                                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                                    value={items[0]?.rawMaterialId}
+                                    onChange={(e) =>
+                                        handleChange(0, "rawMaterialId", e.target.value)
+                                    }
+                                >
+                                    <option value="">Select item...</option>
+                                    {materials.map((rm) => (
+                                        <option key={rm._id} value={rm._id}>
+                                            {rm.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Quantity + Location */}
+                            <div className="grid grid-cols-2 gap-6">
+
+                                <div className="space-y-2">
+                                    <Label>Quantity</Label>
+                                    <Input
+                                        type="number"
+                                        min={1}
+                                        value={items[0]?.quantity}
+                                        onChange={(e) =>
+                                            handleChange(0, "quantity", Number(e.target.value))
+                                        }
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label>Location</Label>
+                                    <Popover open={locationOpen} onOpenChange={setLocationOpen}>
+                                        <PopoverTrigger asChild>
+                                            <Button variant="outline" className="w-full justify-between">
+                                                {locationId
+                                                    ? locations.find((l) => l._id === locationId)?.name
+                                                    : "Select Location"}
+                                                <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="p-0 w-full">
+                                            <Command>
+                                                <CommandInput placeholder="Search location..." />
+                                                <CommandList>
+                                                    <CommandEmpty>No location found.</CommandEmpty>
+                                                    <CommandGroup>
+                                                        {locations.map((l) => (
+                                                            <CommandItem
+                                                                key={l._id}
+                                                                value={l.name}
+                                                                onSelect={() => {
+                                                                    setLocationId(l._id);
+                                                                    setLocationOpen(false);
+                                                                }}
+                                                            >
+                                                                {l.name}
+                                                            </CommandItem>
+                                                        ))}
+                                                    </CommandGroup>
+                                                </CommandList>
+                                            </Command>
+                                        </PopoverContent>
+                                    </Popover>
+                                </div>
+
+                            </div>
+
+                            {/* PO Date */}
+                            <div className="space-y-2">
+                                <Label>PO Date</Label>
+                                <Popover>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="outline"
+                                            className={cn(
+                                                "w-full justify-start text-left",
+                                                !poDate && "text-muted-foreground"
+                                            )}
+                                        >
+                                            <CalendarIcon className="mr-2 h-4 w-4" />
+                                            {poDate
+                                                ? poDate.toLocaleDateString("en-IN")
+                                                : "Select date"}
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="p-0">
+                                        <Calendar
+                                            mode="single"
+                                            selected={poDate}
+                                            onSelect={setPoDate}
+                                        />
+                                    </PopoverContent>
+                                </Popover>
+                            </div>
+
+                        </div>
+
+                        {/* ===== ADDITIONAL ITEMS ===== */}
+                        {items.slice(1).map((item, index) => {
+                            const actualIndex = index + 1;
+                            return (
+                                <div key={actualIndex} className="border rounded-lg p-4 space-y-4 bg-muted/20 relative">
+                                    <div className="flex justify-between items-center">
+                                        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                            Additional Item #{actualIndex}
+                                        </h3>
+                                        <Button
+                                            size="sm"
+                                            variant="destructive"
+                                            className="h-7 px-2"
+                                            onClick={() => removeItem(actualIndex)}
+                                        >
+                                            Remove
+                                        </Button>
+                                    </div>
+
+                                    {/* Project */}
+                                    <div className="space-y-2">
+                                        <Label>Project</Label>
+                                        <select
+                                            className="w-full border rounded-lg px-3 py-2 text-sm"
+                                            value={item.projectId}
+                                            onChange={(e) => handleChange(actualIndex, "projectId", e.target.value)}
+                                        >
+                                            <option value="">Select project...</option>
+                                            {projects.map((p) => (
+                                                <option key={p._id} value={p._id}>{p.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    {/* Item */}
+                                    <div className="space-y-2">
+                                        <Label>Item</Label>
+                                        <select
+                                            className="w-full border rounded-lg px-3 py-2 text-sm"
+                                            value={item.rawMaterialId}
+                                            onChange={(e) => {
+                                                const mat = materials.find(m => m._id === e.target.value);
+                                                handleChange(actualIndex, "rawMaterialId", e.target.value);
+                                                handleChange(actualIndex, "rawMaterialName", mat?.name || "");
+                                            }}
+                                        >
+                                            <option value="">Select item...</option>
+                                            {materials.map((rm) => (
+                                                <option key={rm._id} value={rm._id}>{rm.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    {/* Quantity - You can keep this in a grid or full width to match top */}
+                                    <div className="space-y-2">
+                                        <Label>Quantity</Label>
+                                        <Input
+                                            type="number"
+                                            min={1}
+                                            value={item.quantity}
+                                            onChange={(e) => handleChange(actualIndex, "quantity", Number(e.target.value))}
+                                        />
+                                    </div>
+
+
+                                </div>
+                            );
+                        })}
+
+                        {/* ADD MORE BUTTON */}
+                        <Button variant="outline" onClick={addItem}>
+                            + Add More Item
+                        </Button>
+
+                    </div>
+
+
+
+                    {/* FOOTER */}
+                    <div className="p-6 border-t flex justify-end gap-3">
+                        <Button variant="outline" onClick={() => setCreateOpen(false)}>
+                            Cancel
+                        </Button>
+                        <Button onClick={handleCreatePO}>
+                            Create Purchase Order
+                        </Button>
+                    </div>
+
+                </DialogContent>
+            </Dialog>
+
+
+
+            {/* 🔹 Update Purchase Order Modal */}
+            <Dialog open={editOpen} onOpenChange={setEditOpen}>
+                <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col p-0 rounded-xl">
+
+                    {/* HEADER */}
+                    <div className="p-6 border-b">
+                        <DialogHeader>
+                            <DialogTitle className="text-xl font-semibold">
+                                Update Purchase Order
+                            </DialogTitle>
+                        </DialogHeader>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto px-6 py-6 space-y-8">
+
+                        {/* LOCATION + DATE */}
+                        <div className="grid grid-cols-2 gap-6">
+
+                            {/* Location */}
+                            <div className="space-y-2">
+                                <Label>Location</Label>
+                                <Popover open={locationOpen} onOpenChange={setLocationOpen}>
+                                    <PopoverTrigger asChild>
+                                        <Button variant="outline" className="w-full justify-between">
+                                            {locationId
+                                                ? locations.find((l) => l._id === locationId)?.name
+                                                : "Select Location"}
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="p-0 w-full">
+                                        <Command>
+                                            <CommandInput placeholder="Search location..." />
+                                            <CommandList>
+                                                <CommandEmpty>No location found.</CommandEmpty>
+                                                <CommandGroup>
+                                                    {locations.map((l) => (
+                                                        <CommandItem
+                                                            key={l._id}
+                                                            value={l.name}
+                                                            onSelect={() => {
+                                                                setLocationId(l._id);
+                                                                setLocationOpen(false);
+                                                            }}
+                                                        >
+                                                            {l.name}
+                                                        </CommandItem>
+                                                    ))}
+                                                </CommandGroup>
+                                            </CommandList>
+                                        </Command>
+                                    </PopoverContent>
+                                </Popover>
+                            </div>
+
+                            {/* PO Date */}
+                            <div className="space-y-2">
+                                <Label>PO Date</Label>
+                                <Popover>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="outline"
+                                            className={cn(
+                                                "w-full justify-start text-left",
+                                                !poDate && "text-muted-foreground"
+                                            )}
+                                        >
+                                            <CalendarIcon className="mr-2 h-4 w-4" />
+                                            {poDate
+                                                ? poDate.toLocaleDateString("en-IN")
+                                                : "Select date"}
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="p-0">
+                                        <Calendar
+                                            mode="single"
+                                            selected={poDate}
+                                            onSelect={setPoDate}
+                                        />
+                                    </PopoverContent>
+                                </Popover>
+                            </div>
+
+                        </div>
+
+                        {/* ITEMS */}
+                        {items.map((item, index) => (
+                            <div
+                                key={index}
+                                className="border rounded-lg p-4 space-y-4 bg-muted/20"
+                            >
+
+                                <div className="flex justify-between items-center">
+                                    <h4 className="font-medium">
+                                        Item #{index + 1}
+                                    </h4>
+
+                                    {items.length > 1 && (
+                                        <Button
+                                            size="sm"
+                                            variant="destructive"
+                                            onClick={() => removeItem(index)}
+                                        >
+                                            Remove
+                                        </Button>
+                                    )}
+                                </div>
 
                                 {/* Project */}
                                 <div className="space-y-2">
                                     <Label>Project</Label>
                                     <select
-                                        className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary outline-none"
-                                        value={projectId}
-                                        onChange={(e) => {
-                                            setProjectId(e.target.value);
-                                            setItem("");
-                                        }}
+                                        className="w-full border rounded-lg px-3 py-2 text-sm"
+                                        value={item.projectId}
+                                        onChange={(e) =>
+                                            handleChange(index, "projectId", e.target.value)
+                                        }
                                     >
                                         <option value="">Select project...</option>
                                         {projects.map((p) => (
@@ -601,285 +1024,72 @@ export default function PurchaseOrderPage() {
                                     </select>
                                 </div>
 
-                                {/* Supplier */}
+                                {/* Item */}
                                 <div className="space-y-2">
-                                    <Label>Supplier</Label>
+                                    <Label>Item</Label>
                                     <select
-                                        className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary outline-none"
-                                        value={supplierValue}
-                                        onChange={(e) => setSupplierValue(e.target.value)}
+                                        className="w-full border rounded-lg px-3 py-2 text-sm"
+                                        value={item.rawMaterialId}
+                                        onChange={(e) => {
+                                            const mat = materials.find(
+                                                (m) => m._id === e.target.value
+                                            );
+                                            handleChange(index, "rawMaterialId", e.target.value);
+                                            handleChange(
+                                                index,
+                                                "rawMaterialName",
+                                                mat?.name || ""
+                                            );
+                                        }}
                                     >
-                                        <option value="">Select supplier...</option>
-                                        {supplierList.map((s) => (
-                                            <option key={s._id ?? s} value={s.name ?? s}>
-                                                {s.name ?? s}
+                                        <option value="">Select item...</option>
+                                        {materials.map((rm) => (
+                                            <option key={rm._id} value={rm._id}>
+                                                {rm.name}
                                             </option>
                                         ))}
                                     </select>
                                 </div>
-                            </div>
 
-                            {/* 🔸 ITEM DETAILS */}
-                            <div className="space-y-4">
-                                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                    Item Details
-                                </h3>
-
-                                <div className="grid grid-cols-2 gap-6">
-
-                                    {/* Item */}
-                                    <div className="col-span-2 space-y-2">
-                                        <Label>Item</Label>
-                                        <select
-                                            className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary outline-none"
-                                            value={rawMaterialId ?? ""}
-                                            onChange={(e) => {
-                                                const rm = materials.find(r => r._id === e.target.value);
-                                                setRawMaterialId(rm?._id ?? null);
-                                                setRawMaterialName(rm?.name ?? "");
-                                            }}
-                                        >
-                                            <option value="">Select item...</option>
-                                            {materials.map((rm) => (
-                                                <option key={rm._id} value={rm._id}>
-                                                    {rm.name}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-
-                                    {/* Quantity */}
-                                    <div className="space-y-2">
-                                        <Label>Quantity</Label>
-                                        <Input
-                                            type="number"
-                                            min={1}
-                                            value={quantity}
-                                            onChange={(e) => setQuantity(Number(e.target.value))}
-                                        />
-                                    </div>
-
-                                    {/* Location */}
-                                    <div className="space-y-2">
-                                        <Label>Location</Label>
-
-                                        <Popover open={locationOpen} onOpenChange={setLocationOpen}>
-                                            <PopoverTrigger asChild>
-                                                <Button
-                                                    variant="outline"
-                                                    className="w-full justify-between"
-                                                    disabled={isLocationRestricted}
-                                                >
-                                                    {locationId
-                                                        ? locations.find((l) => l._id === locationId)?.name
-                                                        : "Select Location"}
-                                                    <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
-                                                </Button>
-                                            </PopoverTrigger>
-
-                                            {!isLocationRestricted && (
-                                                <PopoverContent className="p-0 w-full">
-                                                    <Command>
-                                                        <CommandInput placeholder="Search location..." />
-                                                        <CommandList>
-                                                            <CommandEmpty>No location found.</CommandEmpty>
-                                                            <CommandGroup>
-                                                                {locations.map((l) => (
-                                                                    <CommandItem
-                                                                        key={l._id}
-                                                                        value={l.name}
-                                                                        onSelect={() => {
-                                                                            setLocationId(l._id);
-                                                                            setLocationOpen(false);
-                                                                        }}
-                                                                    >
-                                                                        <Check
-                                                                            className={cn(
-                                                                                "mr-2 h-4 w-4",
-                                                                                locationId === l._id
-                                                                                    ? "opacity-100"
-                                                                                    : "opacity-0"
-                                                                            )}
-                                                                        />
-                                                                        {l.name}
-                                                                    </CommandItem>
-                                                                ))}
-                                                            </CommandGroup>
-                                                        </CommandList>
-                                                    </Command>
-                                                </PopoverContent>
-                                            )}
-                                        </Popover>
-
-                                        {isLocationRestricted && (
-                                            <p className="text-xs text-muted-foreground">
-                                                * Location is fixed based on your permissions.
-                                            </p>
-                                        )}
-                                    </div>
-
-                                    {/* PO Date */}
-                                    <div className="col-span-2 space-y-2">
-                                        <Label>PO Date</Label>
-                                        <Popover>
-                                            <PopoverTrigger asChild>
-                                                <Button
-                                                    variant="outline"
-                                                    className={cn(
-                                                        "w-full justify-start text-left",
-                                                        !poDate && "text-muted-foreground"
-                                                    )}
-                                                >
-                                                    <CalendarIcon className="mr-2 h-4 w-4" />
-                                                    {poDate
-                                                        ? poDate.toLocaleDateString("en-IN")
-                                                        : "Select date"}
-                                                </Button>
-                                            </PopoverTrigger>
-                                            <PopoverContent className="p-0">
-                                                <Calendar
-                                                    mode="single"
-                                                    selected={poDate}
-                                                    onSelect={setPoDate}
-                                                />
-                                            </PopoverContent>
-                                        </Popover>
-                                    </div>
-
-                                </div>
-                            </div>
-
-                        </div>
-                    </div>
-
-                    {/* 🔹 FOOTER (Fixed) */}
-                    <div className="p-6 border-t flex justify-end gap-3 bg-background">
-                        <Button variant="outline" onClick={() => setCreateOpen(false)}>
-                            Cancel
-                        </Button>
-                        <Button onClick={handleCreatePO} className="px-6">
-                            Create PO
-                        </Button>
-                    </div>
-
-                </DialogContent>
-            </Dialog>
-
-
-            {/* 🔹 Update Purchase Order Modal */}
-            <Dialog open={editOpen} onOpenChange={setEditOpen}>
-                <DialogContent className="max-w-xl">
-                    <DialogHeader>
-                        <DialogTitle>Update Purchase Order</DialogTitle>
-                        <p className="text-sm text-muted-foreground">
-                            Modify purchase order details
-                        </p>
-                    </DialogHeader>
-
-                    <div className="grid grid-cols-2 gap-4 mt-4">
-                        {/* Project */}
-                        <div className="col-span-2">
-                            <label className="text-sm font-medium">Project</label>
-                            <select
-                                className="w-full border rounded-md px-3 py-2 text-sm"
-                                value={projectId}
-                                onChange={(e) => {
-                                    setProjectId(e.target.value);
-                                    setItem("");
-                                }}
-                            >
-                                <option value="">Select project...</option>
-                                {projects.map((p) => (
-                                    <option key={p._id} value={p._id}>
-                                        {p.name}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                        <div>
-                            <label className="text-sm font-medium">Item</label>
-                            <select
-                                className="w-full border rounded-md px-3 py-2 text-sm"
-                                value={item}
-                                disabled={!selectedProject}
-                                onChange={(e) => setItem(e.target.value)}
-                            >
-                                <option value="">Select item...</option>
-                                {selectedProject?.items?.map((i) => (
-                                    <option key={i} value={i}>
-                                        {i}
-                                    </option>
-                                ))}
-                            </select>
-
-                        </div>
-
-                        {/* Supplier */}
-                        <div className="col-span-2">
-                            <label className="text-sm font-medium">Supplier</label>
-                            <select
-                                value={supplierValue}
-                                onChange={(e) => setSupplierValue(e.target.value)}
-                            >
-                                <option value="">Select supplier...</option>
-                                {supplierList.map((s) => (
-                                    <option key={s._id ?? s} value={s.name ?? s}>
-                                        {s.name ?? s}
-                                    </option>
-                                ))}
-                            </select>
-
-                        </div>
-
-                        {/* Quantity */}
-                        <div>
-                            <label className="text-sm font-medium">Quantity</label>
-                            <Input
-                                type="number"
-                                min={1}
-                                value={quantity}
-                                onChange={(e) => setQuantity(Number(e.target.value))}
-                            />
-                        </div>
-
-                        {/* PO Date */}
-                        <div>
-                            <label className="text-sm font-medium">PO Date</label>
-                            <Popover>
-                                <PopoverTrigger asChild>
-                                    <Button
-                                        variant="outline"
-                                        className={cn(
-                                            "w-full justify-start text-left",
-                                            !poDate && "text-muted-foreground"
-                                        )}
-                                    >
-                                        <CalendarIcon className="mr-2 h-4 w-4" />
-                                        {poDate ? poDate.toDateString() : "dd-mm-yyyy"}
-                                    </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="p-0">
-                                    <Calendar
-                                        mode="single"
-                                        selected={poDate}
-                                        onSelect={setPoDate}
+                                {/* Quantity */}
+                                <div className="space-y-2">
+                                    <Label>Quantity</Label>
+                                    <Input
+                                        type="number"
+                                        min={1}
+                                        value={item.quantity}
+                                        onChange={(e) =>
+                                            handleChange(
+                                                index,
+                                                "quantity",
+                                                Number(e.target.value)
+                                            )
+                                        }
                                     />
-                                </PopoverContent>
-                            </Popover>
-                        </div>
+                                </div>
+
+                            </div>
+                        ))}
+
+                        <Button variant="outline" onClick={addItem}>
+                            + Add More Item
+                        </Button>
+
                     </div>
 
-                    <div className="flex justify-end gap-2 mt-6">
+                    {/* FOOTER */}
+                    <div className="p-6 border-t flex justify-end gap-3">
                         <Button variant="outline" onClick={() => setEditOpen(false)}>
                             Cancel
                         </Button>
                         <Button onClick={handleUpdatePO}>
                             Update Purchase Order
                         </Button>
-
                     </div>
+
                 </DialogContent>
             </Dialog>
+
 
 
         </div>

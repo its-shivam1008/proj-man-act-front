@@ -7,7 +7,7 @@ export interface Vendor {
   phone?: string;
   address?: string;
   gstin?: string;
-  organisationId:string;
+  organisationId: string;
   currency: string;
   paymentTerms: string;
   productsSupplied?: string;
@@ -32,7 +32,7 @@ export interface RFQProduct {
 export interface RFQ {
   id: string;
   location: string | { name: string; } | any;
-  organisationId:string;
+  organisationId: string;
   rfqNumber: string;
   orderDate?: string;
   currency?: string;
@@ -48,7 +48,7 @@ export interface RFQ {
 
 export interface PurchaseOrderProductLine {
   itemType?: "material" | "product";
-    materialId?: string | { _id: string; materialName?: string };
+  materialId?: string | { _id: string; materialName?: string };
   /** Item name (existing or new) */
   product: string;
 
@@ -60,6 +60,7 @@ export interface PurchaseOrderProductLine {
   unitPrice: number;
   taxes: number;
   subtotal: number;
+  documents?: FileList | null;
 
   organisationId: string;
   warehouse: string | { name: string } | any;
@@ -106,7 +107,7 @@ export interface PurchaseOrder {
 export interface PurchaseAgreement {
   location: string | { name: string; } | any;
   id: string;
-  organisationId:string;
+  organisationId: string;
   agreementNumber: string;
   vendor: string; // Vendor Name
   vendorId?: string; // Vendor ID

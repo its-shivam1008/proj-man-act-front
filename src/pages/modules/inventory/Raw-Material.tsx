@@ -110,6 +110,9 @@ export default function RawMaterialMaster() {
   const [purchaseHistory, setPurchaseHistory] = useState<{ [key: string]: any[] }>({});
   const [loadingHistory, setLoadingHistory] = useState<{ [key: string]: boolean }>({});
 
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+
+
   // Warehouse Dialog State
   const [warehouseDialogOpen, setWarehouseDialogOpen] = useState(false);
   const [selectedMaterialForWarehouses, setSelectedMaterialForWarehouses] = useState<any>(null);
@@ -748,25 +751,14 @@ export default function RawMaterialMaster() {
       };
 
       // 🔥 Convert quantity → stocks
-      if (data.trackInventory && data.quantity > 0) {
+      if (data.trackInventory && data.quantity && data.quantity > 0) {
         const quantity = Number(data.quantity || 0);
         const unitCost = Number(data.unitCost || 0);
-        const gstPercent = Number(data.gstPercent || 0);
 
-        const baseCost = unitCost * quantity;
-        const gstAmount = (baseCost * gstPercent) / 100;
-        const totalCost = Number((baseCost + gstAmount).toFixed(2));
-
-        // Auto split GST
         const cgst = Number(gstSplit.cgst || 0);
         const sgst = Number(gstSplit.sgst || 0);
         const igst = Number(gstSplit.igst || 0);
 
-        // ✅ VALIDATION: must match GST %
-        // if (cgst + sgst + igst !== gstPercent) {
-        //   toast.error("CGST + SGST + IGST must equal GST %");
-        //   return;
-        // }
         payload.stocks = [
           {
             warehouseId: data.warehouse,
@@ -774,41 +766,48 @@ export default function RawMaterialMaster() {
             unitCost,
             purchaseDate: new Date().toISOString(),
             remainingQuantity: quantity,
-
-            gst: {
-              cgst,   // % ONLY
-              sgst,   // % ONLY
-              igst,   // % ONLY
-            },
-
-            totalCost, // ✅ CORRECT
+            gst: { cgst, sgst, igst },
           },
         ];
-
-
       } else {
         payload.stocks = [];
       }
 
-
-      // ❌ Remove legacy fields
       delete payload.quantity;
       delete payload.unitCost;
       delete payload.warehouse;
 
+      // 🚀 CREATE FORMDATA
+      const formData = new FormData();
+
+      Object.keys(payload).forEach((key) => {
+        if (key === "stocks") {
+          formData.append("stocks", JSON.stringify(payload.stocks));
+        } else {
+          formData.append(key, payload[key]);
+        }
+      });
+
+      // ✅ Append selected images
+      selectedFiles.forEach((file) => {
+        formData.append("documents", file);
+      });
+
       if (editing) {
-        await dispatch(updateMaterial({ id: editing._id!, data: payload })).unwrap();
+        await dispatch(updateMaterial({ id: editing._id!, data: formData })).unwrap();
         toast.success("Material updated successfully");
       } else {
-        await dispatch(addMaterial(payload)).unwrap();
+        await dispatch(addMaterial(formData)).unwrap();
         toast.success("Material created successfully");
       }
 
       dispatch(fetchMaterials({ page, limit }));
       reset();
+      setSelectedFiles([]);
       setEditing(null);
       setOpen(false);
-    } catch (error: any) {
+
+    } catch (error) {
       console.error(error);
       toast.error("Operation failed");
     }
@@ -1287,6 +1286,17 @@ export default function RawMaterialMaster() {
                   <Textarea rows={3} {...register("technicalSpecs")} />
                 </div>
 
+                <div className="col-span-2">
+                  <Label>Upload Images</Label>
+                  <Input
+                    type="file"
+                    multiple
+                    accept="image/*"
+                    onChange={(e) => setSelectedFiles(Array.from(e.target.files || []))}
+                  />
+                </div>
+
+
                 <div className="col-span-2 flex justify-end gap-2 mt-4">
                   {/* [!code ++] Fixed Cancel Button: Added type="button" */}
                   <Button
@@ -1594,63 +1604,147 @@ export default function RawMaterialMaster() {
             open={!!viewItem}
             onOpenChange={(o) => !o && setViewItem(null)}
           >
-            <DialogContent className="max-w-lg">
+            <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>Material Details</DialogTitle>
+                <DialogTitle className="text-2xl font-bold">
+                  {viewItem?.name}
+                </DialogTitle>
               </DialogHeader>
 
-              <div className="space-y-3">
-                <p><strong>Name:</strong> {viewItem?.name}</p>
-                <p><strong>Item Code:</strong> {viewItem?.itemCode}</p>
-                {/* Show Warehouses */}
-                <p><strong>Warehouses:</strong> {viewItem ? (() => {
-                  const warehouses = getWarehousesForMaterial(viewItem._id || '');
-                  if (warehouses.length === 0) {
-                    return getWarehouseName(viewItem.warehouse || viewItem.location);
-                  }
-                  return warehouses.map(w => w.name).join(', ');
-                })() : 'N/A'}</p>
-                <p><strong>Unit:</strong> {viewItem?.unitOfMeasure}</p>
-                <p><strong>Qty:</strong> {viewItem?.quantity}</p>
-                {/* <p><strong>Cost:</strong> ₹{viewItem?.unitCost}</p> */}
-                <p><strong>HSN:</strong> {viewItem?.hsn}</p>
-                <p><strong>GST %:</strong> {viewItem?.gstPercent}</p>
-                <p><strong>Valuation:</strong> {viewItem?.valuationMethod}</p>
-                <p><strong>Reorder Level:</strong> {viewItem?.reorderLevel}</p>
-                <p><strong>Technical Specs:</strong> {viewItem?.technicalSpecs}</p>
+              <div className="space-y-6">
 
-                {viewItem && purchaseHistory[viewItem._id!] && (() => {
-                  const cost = getCostFromPurchaseHistory(viewItem._id!);
+                {/* ================= BASIC INFO ================= */}
+                <div className="grid grid-cols-2 gap-6 bg-gray-50 p-4 rounded-xl">
+                  <div>
+                    <p className="text-sm text-gray-500">Item Code</p>
+                    <p className="font-medium">{viewItem?.itemCode || "N/A"}</p>
+                  </div>
 
-                  return (
-                    <>
-                      <p><strong>Base Cost:</strong> ₹{cost.base}</p>
+                  <div>
+                    <p className="text-sm text-gray-500">Warehouses</p>
+                    <p className="font-medium">
+                      {viewItem ? (() => {
+                        const warehouses = getWarehousesForMaterial(viewItem._id || '');
+                        if (warehouses.length === 0) {
+                          return getWarehouseName(viewItem.warehouse || viewItem.location);
+                        }
+                        return warehouses.map(w => w.name).join(', ');
+                      })() : 'N/A'}
+                    </p>
+                  </div>
 
-                    </>
-                  );
-                })()}
+                  <div>
+                    <p className="text-sm text-gray-500">Unit</p>
+                    <p className="font-medium">{viewItem?.unitOfMeasure}</p>
+                  </div>
 
+                  <div>
+                    <p className="text-sm text-gray-500">Quantity</p>
+                    <p className="font-medium">{viewItem?.quantity}</p>
+                  </div>
 
-                {viewItem && (() => {
-                  const gst = getGSTBreakup(viewItem);
-                  const totalCost = getTotalMaterialCost(viewItem);
+                  <div>
+                    <p className="text-sm text-gray-500">HSN</p>
+                    <p className="font-medium">{viewItem?.hsn}</p>
+                  </div>
 
-                  return (
-                    <>
-                      <p><strong>CGST:</strong> ₹{gst.cgst}</p>
-                      <p><strong>SGST:</strong> ₹{gst.sgst}</p>
-                      <p><strong>IGST:</strong> ₹{gst.igst}</p>
+                  <div>
+                    <p className="text-sm text-gray-500">GST %</p>
+                    <p className="font-medium">{viewItem?.gstPercent}%</p>
+                  </div>
 
-                      <p className="text-lg font-semibold text-green-700">
-                        <strong>Total Cost:</strong> ₹{totalCost}
-                      </p>
-                    </>
-                  );
-                })()}
+                  <div>
+                    <p className="text-sm text-gray-500">Valuation</p>
+                    <p className="font-medium">{viewItem?.valuationMethod}</p>
+                  </div>
+
+                  <div>
+                    <p className="text-sm text-gray-500">Reorder Level</p>
+                    <p className="font-medium">{viewItem?.reorderLevel}</p>
+                  </div>
+                </div>
+
+                {/* ================= COST SUMMARY ================= */}
+                {viewItem && (
+                  <div className="bg-white border rounded-xl p-4 shadow-sm">
+                    <h3 className="font-semibold text-lg mb-3">Cost Summary</h3>
+
+                    {(() => {
+                      const gst = getGSTBreakup(viewItem);
+                      const totalCost = getTotalMaterialCost(viewItem);
+
+                      return (
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>CGST: <span className="font-medium">₹{gst.cgst}</span></div>
+                          <div>SGST: <span className="font-medium">₹{gst.sgst}</span></div>
+                          <div>IGST: <span className="font-medium">₹{gst.igst}</span></div>
+                          <div className="text-green-700 font-semibold">
+                            Total Cost: ₹{totalCost}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* ================= TECHNICAL SPECS ================= */}
+                {viewItem?.technicalSpecs && (
+                  <div className="bg-gray-50 p-4 rounded-xl">
+                    <h3 className="font-semibold mb-2">Technical Specifications</h3>
+                    <p className="text-sm text-gray-700 whitespace-pre-line">
+                      {viewItem.technicalSpecs}
+                    </p>
+                  </div>
+                )}
+
+                {/* ================= IMAGES ================= */}
+                {viewItem?.documents && viewItem.documents.length > 0 && (
+                  <div>
+                    <h3 className="font-semibold text-lg mb-4">Uploaded Images</h3>
+
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-5">
+                      {viewItem.documents.map((doc: any, index: number) => (
+                        <div
+                          key={index}
+                          className="group border rounded-xl overflow-hidden shadow-sm hover:shadow-lg transition"
+                        >
+                          {/* Image */}
+                          <div className="overflow-hidden">
+                            <img
+                              src={doc.url}
+                              alt={doc.name || `image-${index}`}
+                              className="w-full h-48 object-cover transform group-hover:scale-105 transition duration-300"
+                            />
+                          </div>
+
+                          {/* Footer */}
+                          <div className="p-3 space-y-2">
+                            <p className="text-xs truncate text-gray-600">
+                              {doc.name || `Image ${index + 1}`}
+                            </p>
+
+                            <a
+                              href={doc.url.replace(
+                                "/upload/",
+                                "/upload/fl_attachment,f_png/"
+                              )}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block text-center bg-blue-600 text-white text-xs py-2 rounded-md hover:bg-blue-700 transition"
+                            >
+                              Download PNG
+                            </a>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
               </div>
-
             </DialogContent>
           </Dialog>
+
         </CardContent>
       </Card>
 
