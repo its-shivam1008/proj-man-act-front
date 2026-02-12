@@ -63,6 +63,9 @@ export default function PurchaseOrderPage() {
     const [locationOpen, setLocationOpen] = useState(false);
     const [locationId, setLocationId] = useState<string | null>(null);
 
+    const [customItemIndex, setCustomItemIndex] = useState<number | null>(null);
+
+
     const resetForm = () => {
         setLocationId(null);
         setPoDate(undefined);
@@ -74,6 +77,7 @@ export default function PurchaseOrderPage() {
                 rawMaterialName: "",
                 quantity: 1,
                 price: 0,
+                isCustom: false,
             },
         ]);
     };
@@ -84,34 +88,49 @@ export default function PurchaseOrderPage() {
             ...items,
             {
                 projectId: "",
-                task: "",
                 rawMaterialId: "",
                 rawMaterialName: "",
                 quantity: 1,
-                price: 0,
-                requiredDate: "",
+                isCustom: false, // ✅ ADD
             },
         ]);
     };
+    ;
 
     const removeItem = (index: number) => {
         setItems(items.filter((_, i) => i !== index));
     };
-    const handleChange = (
-        index: number,
-        field: string,
-        value: any
-    ) => {
-        const updated = [...items];
-        updated[index][field] = value;
+    const handleChange = (index: number, field: string, value: any) => {
+        setItems((prev) =>
+            prev.map((item, i) => {
+                if (i !== index) return item;
 
-        if (field === "rawMaterialId") {
-            const material = materials.find((m) => m._id === value);
-            updated[index].rawMaterialName = material?.name || "";
-        }
+                let updatedItem = { ...item, [field]: value };
 
-        setItems(updated);
+                // 🔥 If switching to custom mode
+                if (field === "isCustom" && value === true) {
+                    updatedItem = {
+                        ...updatedItem,
+                        rawMaterialId: "",
+                        rawMaterialName: "",
+                    };
+                }
+
+                // 🔥 If selecting normal material
+                if (field === "rawMaterialId") {
+                    const material = materials.find((m) => m._id === value);
+                    updatedItem = {
+                        ...updatedItem,
+                        rawMaterialName: material?.name || "",
+                        isCustom: false,
+                    };
+                }
+
+                return updatedItem;
+            })
+        );
     };
+
 
 
     const getStatusStyle = (status: string) => {
@@ -160,6 +179,7 @@ export default function PurchaseOrderPage() {
             rawMaterialName: "",
             quantity: 1,
             price: 0,
+            isCustom: false,
         },
     ]);
 
@@ -223,12 +243,16 @@ export default function PurchaseOrderPage() {
             return;
         }
 
-        const invalidItem = items.some(
-            (item) =>
-                !item.projectId ||
-                !item.rawMaterialId ||
-                !item.quantity
-        );
+        const invalidItem = items.some((item) => {
+            if (!item.projectId || !item.quantity) return true;
+
+            if (item.isCustom) {
+                return !item.rawMaterialName;   // custom must have name
+            } else {
+                return !item.rawMaterialId;     // normal must have ID
+            }
+        });
+
 
 
         if (invalidItem) {
@@ -380,9 +404,16 @@ export default function PurchaseOrderPage() {
 
                 <div className="flex gap-2">
                     {canCreate && (
-                        <Button variant="outline" onClick={() => setCreateOpen(true)}>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                resetForm();   // 🔥 clear everything
+                                setCreateOpen(true);
+                            }}
+                        >
                             Add Purchase Order
                         </Button>
+
                     )}
 
                     {canCreate && (
@@ -541,7 +572,13 @@ export default function PurchaseOrderPage() {
                                                             : po.location._id
                                                     );
                                                     setPoDate(new Date(po.poDate));
-                                                    setItems(po.items);
+                                                    setItems(
+                                                        po.items.map((item: any) => ({
+                                                            ...item,
+                                                            isCustom: item.isCustom ?? !item.rawMaterialId,
+                                                        }))
+                                                    );
+
                                                     setEditOpen(true);
                                                 }}
                                             >
@@ -704,23 +741,73 @@ export default function PurchaseOrderPage() {
                             </div>
 
                             {/* Item */}
+                            {/* Item */}
                             <div className="space-y-2">
                                 <Label>Item</Label>
-                                <select
-                                    className="w-full border rounded-lg px-3 py-2 text-sm"
-                                    value={items[0]?.rawMaterialId}
-                                    onChange={(e) =>
-                                        handleChange(0, "rawMaterialId", e.target.value)
-                                    }
-                                >
-                                    <option value="">Select item...</option>
-                                    {materials.map((rm) => (
-                                        <option key={rm._id} value={rm._id}>
-                                            {rm.name}
-                                        </option>
-                                    ))}
-                                </select>
+
+                                {items[0]?.isCustom ? (
+                                    <div className="space-y-2">
+                                        <Input
+                                            placeholder="Enter custom item name..."
+                                            value={items[0]?.rawMaterialName}
+                                            onChange={(e) =>
+                                                handleChange(0, "rawMaterialName", e.target.value)
+                                            }
+                                        />
+
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => {
+                                                handleChange(0, "isCustom", false);
+                                                handleChange(0, "rawMaterialName", "");
+                                            }}
+                                        >
+                                            ← Back
+                                        </Button>
+                                    </div>
+                                ) : (
+                                    <select
+                                        className="w-full border rounded-lg px-3 py-2 text-sm"
+                                        value={items[0]?.rawMaterialId}
+                                        onChange={(e) => {
+                                            if (e.target.value === "other") {
+                                                setItems(prev =>
+                                                    prev.map((item, i) =>
+                                                        i === 0
+                                                            ? {
+                                                                ...item,
+                                                                isCustom: true,
+                                                                rawMaterialId: "",
+                                                                rawMaterialName: "",
+                                                            }
+                                                            : item
+                                                    )
+                                                );
+                                            }
+                                            else {
+                                                const mat = materials.find(
+                                                    (m) => m._id === e.target.value
+                                                );
+                                                handleChange(0, "rawMaterialId", e.target.value);
+                                                handleChange(0, "rawMaterialName", mat?.name || "");
+                                            }
+                                        }}
+                                    >
+                                        <option value="">Select item...</option>
+
+                                        {materials.map((rm) => (
+                                            <option key={rm._id} value={rm._id}>
+                                                {rm.name}
+                                            </option>
+                                        ))}
+
+                                        <option value="other">Other (Custom)</option>
+                                    </select>
+                                )}
                             </div>
+
+
 
                             {/* Quantity + Location */}
                             <div className="grid grid-cols-2 gap-6">
@@ -842,21 +929,63 @@ export default function PurchaseOrderPage() {
                                     {/* Item */}
                                     <div className="space-y-2">
                                         <Label>Item</Label>
-                                        <select
-                                            className="w-full border rounded-lg px-3 py-2 text-sm"
-                                            value={item.rawMaterialId}
-                                            onChange={(e) => {
-                                                const mat = materials.find(m => m._id === e.target.value);
-                                                handleChange(actualIndex, "rawMaterialId", e.target.value);
-                                                handleChange(actualIndex, "rawMaterialName", mat?.name || "");
-                                            }}
-                                        >
-                                            <option value="">Select item...</option>
-                                            {materials.map((rm) => (
-                                                <option key={rm._id} value={rm._id}>{rm.name}</option>
-                                            ))}
-                                        </select>
+
+                                        {item.isCustom ? (
+                                            <div className="space-y-2">
+                                                <Input
+                                                    placeholder="Enter custom item name..."
+                                                    value={item.rawMaterialName}
+                                                    onChange={(e) =>
+                                                        handleChange(actualIndex, "rawMaterialName", e.target.value)
+                                                    }
+                                                />
+
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => {
+                                                        handleChange(actualIndex, "isCustom", false);
+                                                        handleChange(actualIndex, "rawMaterialName", "");
+                                                    }}
+                                                >
+                                                    ← Back
+                                                </Button>
+                                            </div>
+                                        ) : (
+                                            <select
+                                                className="w-full border rounded-lg px-3 py-2 text-sm"
+                                                value={item.rawMaterialId}
+                                                onChange={(e) => {
+                                                    if (e.target.value === "other") {
+                                                        handleChange(actualIndex, "isCustom", true);
+                                                        handleChange(actualIndex, "rawMaterialId", "");
+                                                    } else {
+                                                        const mat = materials.find(
+                                                            (m) => m._id === e.target.value
+                                                        );
+                                                        handleChange(actualIndex, "rawMaterialId", e.target.value);
+                                                        handleChange(
+                                                            actualIndex,
+                                                            "rawMaterialName",
+                                                            mat?.name || ""
+                                                        );
+                                                    }
+                                                }}
+                                            >
+                                                <option value="">Select item...</option>
+
+                                                {materials.map((rm) => (
+                                                    <option key={rm._id} value={rm._id}>
+                                                        {rm.name}
+                                                    </option>
+                                                ))}
+
+                                                <option value="other">Other (Custom)</option>
+                                            </select>
+                                        )}
                                     </div>
+
+
 
                                     {/* Quantity - You can keep this in a grid or full width to match top */}
                                     <div className="space-y-2">
@@ -915,8 +1044,7 @@ export default function PurchaseOrderPage() {
 
                         {/* LOCATION + DATE */}
                         <div className="grid grid-cols-2 gap-6">
-
-                            {/* Location */}
+                            {/* ... Location and Date inputs remain unchanged ... */}
                             <div className="space-y-2">
                                 <Label>Location</Label>
                                 <Popover open={locationOpen} onOpenChange={setLocationOpen}>
@@ -979,7 +1107,6 @@ export default function PurchaseOrderPage() {
                                     </PopoverContent>
                                 </Popover>
                             </div>
-
                         </div>
 
                         {/* ITEMS */}
@@ -1024,32 +1151,65 @@ export default function PurchaseOrderPage() {
                                     </select>
                                 </div>
 
-                                {/* Item */}
+                                {/* Item - Updated to Support Custom Input */}
                                 <div className="space-y-2">
                                     <Label>Item</Label>
-                                    <select
-                                        className="w-full border rounded-lg px-3 py-2 text-sm"
-                                        value={item.rawMaterialId}
-                                        onChange={(e) => {
-                                            const mat = materials.find(
-                                                (m) => m._id === e.target.value
-                                            );
-                                            handleChange(index, "rawMaterialId", e.target.value);
-                                            handleChange(
-                                                index,
-                                                "rawMaterialName",
-                                                mat?.name || ""
-                                            );
-                                        }}
-                                    >
-                                        <option value="">Select item...</option>
-                                        {materials.map((rm) => (
-                                            <option key={rm._id} value={rm._id}>
-                                                {rm.name}
-                                            </option>
-                                        ))}
-                                    </select>
+
+                                    {item.isCustom ? (
+                                        <div className="space-y-2">
+                                            <Input
+                                                placeholder="Enter custom item name..."
+                                                value={item.rawMaterialName}
+                                                onChange={(e) =>
+                                                    handleChange(index, "rawMaterialName", e.target.value)
+                                                }
+                                            />
+
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => {
+                                                    handleChange(index, "isCustom", false);
+                                                    handleChange(index, "rawMaterialName", "");
+                                                    handleChange(index, "rawMaterialId", ""); // Reset ID
+                                                }}
+                                            >
+                                                ← Back to List
+                                            </Button>
+                                        </div>
+                                    ) : (
+                                        <select
+                                            className="w-full border rounded-lg px-3 py-2 text-sm"
+                                            value={item.rawMaterialId}
+                                            onChange={(e) => {
+                                                if (e.target.value === "other") {
+                                                    handleChange(index, "isCustom", true);
+                                                    handleChange(index, "rawMaterialId", "");
+                                                    handleChange(index, "rawMaterialName", "");
+                                                } else {
+                                                    const mat = materials.find(
+                                                        (m) => m._id === e.target.value
+                                                    );
+                                                    handleChange(index, "rawMaterialId", e.target.value);
+                                                    handleChange(
+                                                        index,
+                                                        "rawMaterialName",
+                                                        mat?.name || ""
+                                                    );
+                                                }
+                                            }}
+                                        >
+                                            <option value="">Select item...</option>
+                                            {materials.map((rm) => (
+                                                <option key={rm._id} value={rm._id}>
+                                                    {rm.name}
+                                                </option>
+                                            ))}
+                                            <option value="other">Other (Custom)</option>
+                                        </select>
+                                    )}
                                 </div>
+
 
                                 {/* Quantity */}
                                 <div className="space-y-2">
@@ -1089,7 +1249,6 @@ export default function PurchaseOrderPage() {
 
                 </DialogContent>
             </Dialog>
-
 
 
         </div>
