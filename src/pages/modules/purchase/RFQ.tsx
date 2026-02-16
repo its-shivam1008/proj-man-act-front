@@ -139,18 +139,16 @@ const RFQComponent: React.FC = () => {
   const handleRejectPoRequest = async (request: any) => {
     try {
       await api.patch(
-        `${BASE_URL}/api/notifications/po-to-rfq/reject/${request._id}`,
-        {},
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-        }
+        `${BASE_URL}/api/notifications/po-to-rfq/reject/${request._id}`
       );
 
       toast.success("PO request rejected successfully");
 
-      fetchPoRequests(); // refresh list
+      // 🔥 Remove immediately from modal
+      setPoRequests(prev =>
+        prev.filter(req => req._id !== request._id)
+      );
+
     } catch (error) {
       console.error("Reject error:", error);
       toast.error("Failed to reject request");
@@ -214,13 +212,15 @@ const RFQComponent: React.FC = () => {
         // Safely access the first PO's location
         location: pos[0]?.location || "",
         paymentTerms: "Net 30",
-        products: pos.map((po: any) => ({
-          name: po.rawMaterialName || "Unknown Product",
-          quantity: po.quantity || 0,
-          uom: po.uom || "pieces",
-          unitPrice: 0,
-          taxes: 0,
-        })),
+        products: pos.flatMap((po: any) =>
+          (po.items || []).map((item: any) => ({
+            name: item.rawMaterialName || "Unknown Product",
+            quantity: item.quantity || 0,
+            uom: "pieces",
+            unitPrice: 0,
+            taxes: 0,
+          }))
+        ),
         notes: "Generated from Purchase Orders",
       });
 
