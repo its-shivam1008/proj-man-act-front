@@ -305,7 +305,11 @@ const CreateRepairOrderModal: React.FC<CreateRepairOrderModalProps> = ({
                   <p className="text-sm font-medium">
                     Total Estimated Cost:
                     <span className="ml-2 text-lg font-bold">
-                      ₹{(Number(formData.partsCost) + Number(formData.laborCost)).toFixed(2)}
+                      ₹{(
+                        (Number(formData.partsCost) || 0) +
+                        (Number(formData.laborCost) || 0)
+                      ).toFixed(2)}
+
                     </span>
                   </p>
                 </div>
@@ -602,7 +606,7 @@ const RepairOrders: React.FC = () => {
 
   // Create form data
   const [createFormData, setCreateFormData] = useState({
-    assetType: 'equipment', // 'equipment' | 'machinery'
+    assetType: 'equipment',
     assetId: '',
 
     customerName: '',
@@ -617,8 +621,13 @@ const RepairOrders: React.FC = () => {
     expectedCompletion: '',
     location: '',
 
+    partsCost: 0,
+    laborCost: 0,
+    quantity: 1,
+
     notes: '',
   });
+
 
 
   // Location restrictions

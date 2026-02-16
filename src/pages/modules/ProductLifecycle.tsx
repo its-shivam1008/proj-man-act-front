@@ -18,23 +18,23 @@ import TeamsTab from "../../pages/modules/ProductLifecycleManagement/TemsTab";
 import ReportsTab from "../../pages/modules/ProductLifecycleManagement/ReportsTab";
 import CollaborationTab from "./ProductLifecycleManagement/CollaborationTab";
 
-/* ================= MOCK DATA (REPLACE WITH API) ================= */
+/* ================= MOCK DATA ================= */
 
 const mockEcos: any[] = [];
 const mockDocuments: any[] = [];
 const mockTeams: any[] = [];
 
-/* ================= MAIN PAGE ================= */
-
 const ProductLifecycle = () => {
   const [activeTab, setActiveTab] = useState("overview");
+  const [selectedTeam, setSelectedTeam] = useState<any>(null);
 
   return (
     <div className="space-y-6">
-
       {/* PAGE HEADER */}
       <div>
-        <h1 className="text-xl font-semibold">Product Lifecycle Management</h1>
+        <h1 className="text-xl font-semibold">
+          Product Lifecycle Management
+        </h1>
         <p className="text-sm text-gray-500">
           Manage engineering changes, BoM versions, documents, and approval workflows
         </p>
@@ -101,9 +101,28 @@ const ProductLifecycle = () => {
             <Placeholder title="Approval Workflow" />
           )}
 
-          {activeTab === "teams" && <TeamsTab teams={mockTeams} />}
+          {/* TEAMS TAB */}
+          {activeTab === "teams" && (
+  <TeamsTab
+    onSelectTeam={(team) => {
+      setSelectedTeam(team);
+      setActiveTab("collaboration");
+    }}
+  />
+)}
 
-         {activeTab === "collaboration" && <CollaborationTab />}
+
+          {/* COLLABORATION TAB */}
+       {activeTab === "collaboration" && (
+  selectedTeam ? (
+    <CollaborationTab teamId={selectedTeam._id} />
+  ) : (
+    <div className="text-gray-500">
+      Please select a team first from Engineering Teams tab.
+    </div>
+  )
+)}
+
 
           {activeTab === "reports" && <ReportsTab />}
         </div>
@@ -111,8 +130,6 @@ const ProductLifecycle = () => {
     </div>
   );
 };
-
-/* ================= TAB BUTTON ================= */
 
 const TabButton = ({
   icon: Icon,
@@ -132,8 +149,6 @@ const TabButton = ({
     {label}
   </button>
 );
-
-/* ================= PLACEHOLDER ================= */
 
 const Placeholder = ({ title }: { title: string }) => (
   <div className="bg-white rounded-xl shadow p-10 text-center text-gray-500">

@@ -1,5 +1,7 @@
-import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
+import { createSlice, createAsyncThunk} from "@reduxjs/toolkit";
 import axios from "@/utils/axiosApi";
+
+/* ================= ASYNC ================= */
 
 export const fetchMessages = createAsyncThunk(
   "chat/fetch",
@@ -16,15 +18,42 @@ export const sendMessage = createAsyncThunk(
     return res.data;
   }
 );
+export const clearChat = createAsyncThunk(
+  "chat/clear",
+  async (teamId: string) => {
+    await axios.delete(`/messages/clear/${teamId}`);
+    return teamId;
+  }
+);
+
+/* ================= STATE ================= */
+
+interface ChatState {
+  messages: any[];
+  loading: boolean;
+  error: string | null;
+}
+
+const initialState: ChatState = {
+  messages: [],
+  loading: false,
+  error: null,
+};
+
+/* ================= SLICE ================= */
 
 const chatSlice = createSlice({
-  name: "chat",
-  initialState: {
-    messages: [] as any[],
-    loading: false,
-    error: null as string | null,
+ name: "chat",
+  initialState,
+  reducers: {
+    messageReceived: (state, action) => {
+      state.messages.push(action.payload);
+    },
+
+    clearLocal: (state) => {
+      state.messages = [];
+    },
   },
-  reducers: {},
   extraReducers: (builder) => {
     builder
       // FETCH
@@ -38,13 +67,21 @@ const chatSlice = createSlice({
       .addCase(fetchMessages.rejected, (state, action) => {
         state.loading = false;
         state.error = action.error.message || "Failed to load messages";
-      })
-
-      // SEND
-      .addCase(sendMessage.fulfilled, (state, action) => {
-        state.messages.push(action.payload);
+      }).addCase(clearChat.fulfilled, (state) => {
+        state.messages = [];
       });
+
+
+    // ❌ REMOVE THIS (avoid duplicate)
+    /*
+    .addCase(sendMessage.fulfilled, (state, action) => {
+      state.messages.push(action.payload);
+    });
+    */
   },
 });
+
+export const { messageReceived, clearLocal } = chatSlice.actions;
+
 
 export default chatSlice.reducer;

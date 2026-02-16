@@ -1,426 +1,334 @@
-// TeamsTab.tsx
-import { useState, useEffect } from "react";
-import {
-  Users,
-  Plus,
-  X,
-  Mail,
-  Phone,
-  ChevronDown,
-  ChevronUp,
-} from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { AppDispatch, RootState } from "@/redux/store";
-import {
-  clearTeams,
-  createTeam,
-  deleteTeam,
-  fetchTeams,
-  updateTeam,
-} from "@/redux/slices/teamSlice";
+import { 
+  Users, Plus, Mail, Phone, Search, 
+  MoreVertical, Edit2, Trash2, MessageSquare, 
+  ChevronDown, ChevronUp 
+} from "lucide-react";
 
-// ------------------------------------------------------------------
-// Types
-// ------------------------------------------------------------------
+import { AppDispatch, RootState } from "@/redux/store";
+import { fetchTeams, createTeam, updateTeam, deleteTeam } from "@/redux/slices/teamSlice";
+
+// Shadcn UI Components
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { 
+  Dialog, DialogContent, DialogDescription, 
+  DialogFooter, DialogHeader, DialogTitle 
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
+
+// --- Types ---
 interface TeamMember {
   userId: string;
   name: string;
-  availability: string; // e.g. "available", "busy", "on-leave"
+  availability: string;
 }
 
 interface Team {
-  _id: string;                    // ← Change from 'id' to '_id'
+  _id: string;
   teamName: string;
   teamLead: string;
   productCategories: string[];
-  contactInfo?: {
-    email?: string;
-    phone?: string;
-  };
+  contactInfo?: { email?: string; phone?: string; };
   members: TeamMember[];
-  location?: string;
 }
 
-// ------------------------------------------------------------------
-// Main Component
-// ------------------------------------------------------------------
-const TeamsTab = () => {
+interface TeamsTabProps {
+  onSelectTeam?: (team: Team) => void;
+}
+
+const TeamsTab = ({ onSelectTeam }: TeamsTabProps) => {
   const dispatch = useDispatch<AppDispatch>();
   const { teams, loading, error } = useSelector((state: RootState) => state.teams);
 
   const [search, setSearch] = useState("");
-  const [showModal, setShowModal] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [expandedTeam, setExpandedTeam] = useState<string | null>(null);
-  const [editingTeam, setEditingTeam] = useState<Team | null>(null); // for edit mode
-  const orgId = localStorage.getItem('organisationId')
-  // Fetch teams on mount
-  useEffect(() => {
-    if(orgId){
-      dispatch(fetchTeams({ page: 1, limit: 20 }));
-    }
-  }, [dispatch , orgId]);
-    
-    
+  const [editingTeam, setEditingTeam] = useState<Team | null>(null);
+  
+  const orgId = localStorage.getItem('organisationId');
 
-  const filteredTeams = teams.filter((team) =>
-    team.teamName.toLowerCase().includes(search.toLowerCase())
+  useEffect(() => {
+    if (orgId) dispatch(fetchTeams({ page: 1, limit: 20 }));
+  }, [dispatch, orgId]);
+
+  const filteredTeams = useMemo(() => 
+    teams.filter((team) =>
+      team.teamName.toLowerCase().includes(search.toLowerCase())
+    ), [teams, search]
   );
 
-  const handleCreateOrUpdate = (payload: any) => {
-  if (editingTeam) {
-    // Use _id here!
-    dispatch(updateTeam({ id: editingTeam._id, payload }));
-  } else {
-    dispatch(createTeam(payload));
-  }
-  setShowModal(false);
-  setEditingTeam(null);
-};
-
-  const openEditModal = (team: Team) => {
-    setEditingTeam(team);
-    setShowModal(true);
+  const handleSave = (payload: any) => {
+    if (editingTeam) {
+      dispatch(updateTeam({ id: editingTeam._id, payload }));
+    } else {
+      dispatch(createTeam(payload));
+    }
+    setIsModalOpen(false);
+    setEditingTeam(null);
   };
 
   return (
-    <div className="space-y-6 p-6">
-      {/* HEADER */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold">Engineering Teams</h2>
-          <p className="text-sm text-gray-500">
-            Manage engineering teams, members, and responsibilities
+    <div className="container mx-auto p-6 space-y-8 animate-in fade-in duration-500">
+      {/* Header Section */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div className="space-y-1">
+          <h2 className="text-3xl font-bold tracking-tight">Engineering Teams</h2>
+          <p className="text-muted-foreground">
+            Manage your organization's engineering squads and member availability.
           </p>
         </div>
 
-        <div className="flex gap-3">
-          <input
-            type="text"
-            placeholder="Search team..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="border rounded-lg px-4 py-2 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-
-          <button
-            onClick={() => {
-              setEditingTeam(null);
-              setShowModal(true);
-            }}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition"
-          >
-            <Plus className="h-4 w-4" />
-            Add Team
-          </button>
+        <div className="flex items-center gap-3">
+          <div className="relative w-64">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Filter teams..."
+              className="pl-9"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <Button onClick={() => { setEditingTeam(null); setIsModalOpen(true); }}>
+            <Plus className="mr-2 h-4 w-4" /> Add Team
+          </Button>
         </div>
       </div>
 
-      {/* Loading / Error */}
-      {loading && <p className="text-center">Loading teams...</p>}
-      {error && <p className="text-red-500 text-center">{error}</p>}
+      <Separator />
 
-      {/* TEAMS GRID */}
+      {/* State Feedback */}
+      {loading && <div className="py-20 text-center text-muted-foreground">Loading squad data...</div>}
+      {error && <div className="py-20 text-center text-destructive font-medium">{error}</div>}
+
+      {/* Grid Layout */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredTeams.map((team) => (
-          <div
-            key={team._id}
-            className="bg-white rounded-xl shadow hover:shadow-lg transition p-6 border"
-          >
-            {/* Card Header */}
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="bg-blue-100 p-3 rounded-lg">
-                  <Users className="h-6 w-6 text-blue-600" />
+          <Card key={team._id} className="group hover:shadow-md transition-all border-border/60">
+            <CardHeader className="pb-3">
+              <div className="flex justify-between items-start">
+                <div className="flex items-center gap-3">
+                  <div className="bg-primary/10 p-2.5 rounded-xl">
+                    <Users className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-xl">{team.teamName}</CardTitle>
+                    <CardDescription>Lead: {team.teamLead}</CardDescription>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-semibold text-lg">{team.teamName}</h3>
-                  <p className="text-sm text-gray-600">Lead: {team.teamLead}</p>
-                </div>
-              </div>
-
-              <button
-                onClick={() =>
-                  setExpandedTeam(expandedTeam === team._id ? null : team._id)
-                }
-                className="text-gray-500 hover:text-gray-800"
-              >
-                {expandedTeam === team._id ? (
-                  <ChevronUp className="h-5 w-5" />
-                ) : (
-                  <ChevronDown className="h-5 w-5" />
-                )}
-              </button>
-            </div>
-
-            {/* Categories */}
-            <div className="flex flex-wrap gap-2 mb-4">
-              {team.productCategories.map((cat) => (
-                <span
-                  key={cat}
-                  className="text-xs bg-gray-100 px-3 py-1 rounded-full"
-                >
-                  {cat}
-                </span>
-              ))}
-            </div>
-
-            {/* Contact Info */}
-            <div className="space-y-2 text-sm text-gray-600 mb-4">
-              {team.contactInfo?.email && (
-                <div className="flex items-center gap-2">
-                  <Mail className="h-4 w-4" />
-                  {team.contactInfo.email}
-                </div>
-              )}
-              {team.contactInfo?.phone && (
-                <div className="flex items-center gap-2">
-                  <Phone className="h-4 w-4" />
-                  {team.contactInfo.phone}
-                </div>
-              )}
-            </div>
-
-            {/* Members (expanded) */}
-            {expandedTeam === team._id && (
-              <div className="border-t pt-4">
-                <p className="font-medium mb-3">
-                  Team Members ({team.members.length})
-                </p>
-                <div className="space-y-2">
-                  {team.members.map((m) => (
-                    <div
-                      key={m.userId}
-                      className="flex justify-between items-center bg-gray-50 rounded-lg px-3 py-2 text-sm"
+                
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                      <MoreVertical className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => { setEditingTeam(team); setIsModalOpen(true); }}>
+                      <Edit2 className="mr-2 h-4 w-4" /> Edit Details
+                    </DropdownMenuItem>
+                    <DropdownMenuItem 
+                      className="text-destructive focus:text-destructive"
+                      onClick={() => window.confirm("Delete team?") && dispatch(deleteTeam(team._id))}
                     >
-                      <span>{m.name}</span>
-                      <span className="text-gray-500 capitalize">
-                        {m.availability}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                      <Trash2 className="mr-2 h-4 w-4" /> Delete Team
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
-            )}
+            </CardHeader>
 
-            {/* Actions */}
-            <div className="flex justify-end gap-2 mt-4">
-              <button
-                onClick={() => openEditModal(team)}
-                className="text-sm text-blue-600 hover:underline"
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap gap-1.5">
+                {team.productCategories.map((cat) => (
+                  <Badge key={cat} variant="secondary" className="font-medium">
+                    {cat}
+                  </Badge>
+                ))}
+              </div>
+
+              <div className="space-y-2 text-sm text-muted-foreground">
+                {team.contactInfo?.email && (
+                  <div className="flex items-center gap-2">
+                    <Mail className="h-3.5 w-3.5" /> {team.contactInfo.email}
+                  </div>
+                )}
+                {team.contactInfo?.phone && (
+                  <div className="flex items-center gap-2">
+                    <Phone className="h-3.5 w-3.5" /> {team.contactInfo.phone}
+                  </div>
+                )}
+              </div>
+
+              {/* Members Toggle */}
+              <div className="pt-2">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="w-full justify-between h-8 px-2"
+                  onClick={() => setExpandedTeam(expandedTeam === team._id ? null : team._id)}
+                >
+                  <span className="text-xs font-semibold">MEMBERS ({team.members.length})</span>
+                  {expandedTeam === team._id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </Button>
+                
+                {expandedTeam === team._id && (
+                  <div className="mt-2 space-y-1.5 animate-in slide-in-from-top-2 duration-200">
+                    {team.members.map((m) => (
+                      <div key={m.userId} className="flex justify-between items-center text-xs bg-muted/50 p-2 rounded">
+                        <span className="font-medium">{m.name}</span>
+                        <span className={m.availability === 'available' ? 'text-green-600' : 'text-orange-500'}>
+                          {m.availability}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+
+            <CardFooter className="pt-0">
+              <Button 
+                variant="outline" 
+                className="w-full group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
+                onClick={() => onSelectTeam?.(team)}
               >
-                Edit
-              </button>
-              <button
-                onClick={() => {
-                  if (window.confirm("Are you sure you want to delete this team?\nThis action cannot be undone.")) {
-                    dispatch(deleteTeam(team._id));
-                  }
-                }}
-                className="text-sm text-red-600 hover:underline"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
+                <MessageSquare className="mr-2 h-4 w-4" /> Open Chat
+              </Button>
+            </CardFooter>
+          </Card>
         ))}
       </div>
 
-      {/* ADD / EDIT MODAL */}
-      {showModal && (
-        <AddTeamModal
-          team={editingTeam}
-          onClose={() => {
-            setShowModal(false);
-            setEditingTeam(null);
-          }}
-          onSave={handleCreateOrUpdate}
-        />
-      )}
+      <TeamDialog 
+        open={isModalOpen} 
+        onOpenChange={setIsModalOpen}
+        team={editingTeam}
+        onSave={handleSave}
+      />
     </div>
   );
 };
 
-// ------------------------------------------------------------------
-// Modal Component
-// ------------------------------------------------------------------
-interface AddTeamModalProps {
-  team?: Team | null;
-  onClose: () => void;
-  onSave: (data: any) => void;
-}
-
-const AddTeamModal = ({ team, onClose, onSave }: AddTeamModalProps) => {
+// --- Modal Component ---
+function TeamDialog({ open, onOpenChange, team, onSave }: any) {
   const [form, setForm] = useState({
-    teamName: team?.teamName || "",
-    teamLead: team?.teamLead || "",
-    productCategories: team?.productCategories.join(", ") || "",
-    email: team?.contactInfo?.email || "",
-    phone: team?.contactInfo?.phone || "",
-    membersText: team?.members
-      .map((m) => `${m.name} (${m.availability})`)
-      .join("\n") || "",
+    teamName: "",
+    teamLead: "",
+    productCategories: "",
+    email: "",
+    phone: "",
+    membersText: "",
   });
 
-  const handleSubmit = () => {
-    const members: TeamMember[] = form.membersText
-      .split("\n")
-      .filter((line) => line.trim())
-      .map((line, idx) => {
-        const match = line.trim().match(/^(.+?)\s*\((available|busy|on-leave|.*)\)$/i);
-        if (match) {
-          return {
-            userId: `${Date.now()}-${idx}`, // temporary ID
-            name: match[1].trim(),
-            availability: match[2].toLowerCase(),
-          };
-        }
-        return {
-          userId: `${Date.now()}-${idx}`,
-          name: line.trim(),
-          availability: "available",
-        };
+  useEffect(() => {
+    if (team) {
+      setForm({
+        teamName: team.teamName,
+        teamLead: team.teamLead,
+        productCategories: team.productCategories.join(", "),
+        email: team.contactInfo?.email || "",
+        phone: team.contactInfo?.phone || "",
+        membersText: team.members.map((m: any) => `${m.name} (${m.availability})`).join("\n"),
       });
+    } else {
+      setForm({ teamName: "", teamLead: "", productCategories: "", email: "", phone: "", membersText: "" });
+    }
+  }, [team, open]);
+// const { userProfile } = useSelector((state: RootState) => state.auth);
+//   const handleSubmit = () => {
+//     const members = form.membersText.split("\n").filter(l => l.trim()).map((line, idx) => {
+//       const match = line.trim().match(/^(.+?)\s*\((.+)\)$/);
+//       return {
+//         userId: userProfile._id,
+//         name: match ? match[1].trim() : line.trim(),
+//         availability: match ? match[2].toLowerCase() : "available",
+//       };
+//     });
+  const handleSubmit = () => {
+    const members = form.membersText.split("\n").filter(l => l.trim()).map((line, idx) => {
+      const match = line.trim().match(/^(.+?)\s*\((.+)\)$/);
+      return {
+        userId: `${Date.now()}-${idx}`,
+        name: match ? match[1].trim() : line.trim(),
+        availability: match ? match[2].toLowerCase() : "available",
+      };
+    });
 
-    const payload = {
+    onSave({
       teamName: form.teamName,
       teamLead: form.teamLead,
-      productCategories: form.productCategories
-        .split(",")
-        .map((c) => c.trim())
-        .filter(Boolean),
-      contactInfo: {
-        ...(form.email && { email: form.email }),
-        ...(form.phone && { phone: form.phone }),
-      },
+      productCategories: form.productCategories.split(",").map(c => c.trim()).filter(Boolean),
+      contactInfo: { email: form.email, phone: form.phone },
       members,
-    };
-
-    onSave(payload);
+    });
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex justify-between items-center px-6 py-4 border-b">
-          <h3 className="text-xl font-semibold">
-            {team ? "Edit Team" : "Add New Engineering Team"}
-          </h3>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-800">
-            <X className="h-6 w-6" />
-          </button>
-        </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[600px]">
+        <DialogHeader>
+          <DialogTitle>{team ? "Edit Team" : "Create New Team"}</DialogTitle>
+          <DialogDescription>Fill in the details for the engineering squad.</DialogDescription>
+        </DialogHeader>
 
-        {/* Body */}
-        <div className="p-6 space-y-5">
-          <Input
-            label="Team Name *"
-            value={form.teamName}
-            onChange={(v) => setForm({ ...form, teamName: v })}
-          />
-          <Input
-            label="Team Lead *"
-            value={form.teamLead}
-            onChange={(v) => setForm({ ...form, teamLead: v })}
-          />
-          <Input
-            label="Product Categories (comma-separated)"
-            value={form.productCategories}
-            onChange={(v) => setForm({ ...form, productCategories: v })}
-          />
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <Input
-              label="Contact Email"
-              value={form.email}
-              onChange={(v) => setForm({ ...form, email: v })}
-            />
-            <Input
-              label="Contact Phone"
-              value={form.phone}
-              onChange={(v) => setForm({ ...form, phone: v })}
-            />
+        <div className="grid gap-4 py-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Team Name</label>
+              <Input value={form.teamName} onChange={(e) => setForm({...form, teamName: e.target.value})} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Team Lead</label>
+              <Input value={form.teamLead} onChange={(e) => setForm({...form, teamLead: e.target.value})} />
+            </div>
+          </div>
+          
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Categories (comma separated)</label>
+            <Input value={form.productCategories} onChange={(e) => setForm({...form, productCategories: e.target.value})} />
           </div>
 
-          <Textarea
-            label="Team Members (one per line: Name (availability))"
-            placeholder="John Doe (available)&#10;Jane Smith (busy)"
-            value={form.membersText}
-            onChange={(v) => setForm({ ...form, membersText: v })}
-          />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Email</label>
+              <Input type="email" value={form.email} onChange={(e) => setForm({...form, email: e.target.value})} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Phone</label>
+              <Input value={form.phone} onChange={(e) => setForm({...form, phone: e.target.value})} />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Members (Name (availability))</label>
+            <Textarea 
+              placeholder="John Doe (available)&#10;Jane Smith (busy)" 
+              className="min-h-[120px]"
+              value={form.membersText}
+              onChange={(e) => setForm({...form, membersText: e.target.value})}
+            />
+          </div>
         </div>
 
-        {/* Footer */}
-        <div className="flex justify-end gap-3 px-6 py-4 border-t">
-          <button
-            onClick={onClose}
-            className="px-5 py-2 border rounded-lg hover:bg-gray-100"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            {team ? "Update Team" : "Add Team"}
-          </button>
-        </div>
-      </div>
-    </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={handleSubmit}>Save Changes</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
-};
-
-// ------------------------------------------------------------------
-// Reusable Input Components
-// ------------------------------------------------------------------
-const Input = ({
-  label,
-  value,
-  onChange,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-}) => (
-  <div>
-    <label className="block text-sm font-medium text-gray-700 mb-1">
-      {label}
-    </label>
-    <input
-      type="text"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder ?? label}
-      className="w-full border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-    />
-  </div>
-);
-
-const Textarea = ({
-  label,
-  value,
-  onChange,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-}) => (
-  <div>
-    <label className="block text-sm font-medium text-gray-700 mb-1">
-      {label}
-    </label>
-    <textarea
-      rows={6}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      className="w-full border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-    />
-  </div>
-);
+}
 
 export default TeamsTab;

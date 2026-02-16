@@ -205,7 +205,13 @@ export default function SparePartsInventory() {
   if (!id) return "-";
   const sup = supplier.find((s: any) => s._id === id);
   // Check for company name first, then falling back to name
-  return sup?.company || sup?.name || "Unknown";
+  return  sup?.name || "Unknown";
+};
+
+const parseDate = (val: any) => {
+  if (!val) return "";
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? "" : d.toISOString().split("T")[0];
 };
 
   const organisationId = localStorage.getItem("organisationId") || "";
@@ -281,21 +287,22 @@ export default function SparePartsInventory() {
       "Purchase Date",
       "Notes"
     ]];
-    const exampleRow = [
-      "SP-2026-0001 (Optional)",
-      "Bearing 6205 (Required)",
-      "ABC Suppliers",
-      "Main Store (Required)",
-      "10 (Required)",
-      "5",
-      "1000",
-      "90",
-      "0",
-      "90",
-      "INV-001",
-      "2026-01-15",
-      "High quality bearing"
-    ];
+  const exampleRow = [
+  "SP-2026-0001 (Optional)", // 0
+  "Bearing 6205 (Required)", // 1
+  "ABC Vendor",              // 2 Vendor
+  "Temporibus eius erro",    // 3 Supplier
+  "Main Store (Required)",   // 4 Location
+  "10",                      // 5 Quantity
+  "5",                       // 6 Reorder
+  "1000",                    // 7 Basic
+  "90",                      // 8 CGST
+  "0",                       // 9 IGST
+  "90",                      // 10 SGST
+  "INV-001",                 // 11 Invoice
+  "2026-01-15",              // 12 Purchase Date
+  "High quality bearing"     // 13 Notes
+];
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([headers[0], exampleRow]);
     ws['!cols'] = headers[0].map(() => ({ wch: 18 }));
@@ -328,12 +335,33 @@ export default function SparePartsInventory() {
 
         for (let i = 0; i < rows.length; i++) {
           const row = rows[i];
+
+                      const supplierNameRaw = row[3];
+let supplierId = "";
+
+if (supplierNameRaw) {
+  const supplierName = supplierNameRaw.toString().trim().toLowerCase();
+
+  const matchedSupplier = supplier.find((s: any) => {
+    const dbName = s.name?.toLowerCase();
+    const dbCompany = s.company?.toLowerCase();
+    return dbName === supplierName || dbCompany === supplierName;
+  });
+
+  if (matchedSupplier) {
+    supplierId = matchedSupplier._id;
+  } else {
+    throw new Error(`Supplier not found: ${supplierNameRaw}`);
+  }
+}
           try {
+
+
             const sparePartData = {
   code: row[0] || `SP-${Date.now()}-${i}`,
   name: row[1],
   vendor: row[2] || "",
-  supplier: row[3] || "",
+  supplier: supplierId,
   location: row[4] || "",
   quantity: parseInt(row[5]) || 1,
   reorderLevel: parseInt(row[6]) || 1,
@@ -347,7 +375,7 @@ export default function SparePartsInventory() {
     (parseFloat(row[9]) || 0) +
     (parseFloat(row[10]) || 0),
   invoiceNumber: row[11] || "",
-  purchaseDate: row[12] || "",
+  purchaseDate: parseDate(row[12]),
   notes: row[13] || "",
 };
 
@@ -1011,7 +1039,7 @@ export default function SparePartsInventory() {
         supplier.map((sup: any) => (
           <SelectItem key={sup._id} value={sup._id}>
             {/* ✅ Use company or name field */}
-            {sup.company || sup.name}
+            {sup.name}
           </SelectItem>
         ))
       )}

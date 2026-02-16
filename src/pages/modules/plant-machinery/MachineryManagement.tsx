@@ -415,8 +415,8 @@ export default function MachineryManagementPage() {
       (c: any) => c.name === machinery.category
     );
 
-    const matchedSupplier = supplier.find(
-      (s: any) => s.name === machinery.supplier
+    const matchedSupplier = supplierList.find(
+      (s: any) => s._id === machinery.supplier
     );
 
     setEditing(machinery);
@@ -520,7 +520,8 @@ export default function MachineryManagementPage() {
     XLSX.writeFile(wb, "Machinery_Import_Template.xlsx");
     toast.success("Template downloaded! Fields marked (Required) are mandatory.");
   };
-
+  const cleanText = (val: any) =>
+    val?.toString().replace("(Required)", "").trim().toLowerCase();
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -558,13 +559,42 @@ export default function MachineryManagementPage() {
             if (!row["Name"]) missingFields.push("Name");
 
             const locName = row["Location Name"] || row["Location"];
+
             let locationId = "";
 
+            // Debug log (IMPORTANT)
+            console.log("Excel Location Raw:", locName);
+            console.log("Master Locations:", masterLocations);
+
             if (locName) {
-              const foundLoc = masterLocations.find((l: any) =>
-                l.name.toLowerCase() === locName.toString().trim().toLowerCase()
-              );
-              if (foundLoc) locationId = foundLoc._id;
+              const cleanedLocName = locName
+                .toString()
+                .replace("(Required)", "")
+                .trim()
+                .toLowerCase();
+
+              const foundLoc = masterLocations.find((l: any) => {
+                const nameMatch =
+                  l.name?.toString().trim().toLowerCase() === cleanedLocName;
+
+                const idMatch =
+                  l._id?.toString().trim().toLowerCase() === cleanedLocName;
+
+                return nameMatch || idMatch;
+              });
+
+              if (foundLoc) {
+                locationId = foundLoc._id;
+              }
+            }
+
+            // FINAL VALIDATION
+            if (isLocationRestricted) {
+              locationId = userProfile.location;
+            }
+
+            if (!locationId) {
+              missingFields.push("Location Name");
             }
 
             if (isLocationRestricted) {
@@ -572,8 +602,14 @@ export default function MachineryManagementPage() {
             } else if (!locationId && !isLocationRestricted) {
               missingFields.push("Location Name");
             }
+            const parseNumber = (val: any) => {
+              if (!val) return 0;
+              const cleaned = val.toString().replace(/[^0-9.-]/g, "").trim();
+              return cleaned ? Number(cleaned) : 0;
+            };
 
-            const quantity = Number(row["Quantity"] || 0);
+            const quantity = parseNumber(row["Quantity"]);
+            // const quantity = Number(row["Quantity"] || 0);
             if (quantity < 1) missingFields.push("Quantity (must be >= 1)");
 
             // If any required fields missing, throw error with details
@@ -596,30 +632,95 @@ export default function MachineryManagementPage() {
             };
 
             const machineryId = row["Machinery ID"] || row["MachineryID"] || generateUniqueMachineryCode();
-            const categoryName = row["Category"];
-            const matchedCategory = categoryList.find(
-              (c: any) =>
-                c.name.toLowerCase() === categoryName?.toString().toLowerCase()
-            );
+            // const categoryName = row["Category"];
+            // const matchedCategory = categoryList.find(
+            //   (c: any) =>
+            //     c.name.toLowerCase() === categoryName?.toString().toLowerCase()
+            // );
 
+            const categoryName = cleanText(row["Category"]);
+            let categoryId;
 
+            if (categoryName) {
+              const matchedCategory = categoryList.find(
+                (c: any) => c.name?.toLowerCase().trim() === categoryName
+              );
+
+              if (matchedCategory) {
+                categoryId = matchedCategory._id;
+              } else {
+                missingFields.push("Invalid Category");
+              }
+            }
+            const supplierNameRaw = row["Supplier"];
+            const supplierName = supplierNameRaw
+              ?.toString()
+              .replace("(Required)", "")
+              .trim()
+              .toLowerCase();
+
+            let supplierId;
+
+            if (supplierName) {
+              const matchedSupplier = supplierList.find((s: any) => {
+                const dbName = s.name?.toString().trim().toLowerCase();
+                const dbCompany = s.company?.toString().trim().toLowerCase();
+
+                return dbName === supplierName || dbCompany === supplierName;
+              });
+
+              console.log("Trying to match:", supplierName);
+              console.log("Matched Supplier:", matchedSupplier);
+
+              if (matchedSupplier) {
+                supplierId = matchedSupplier._id;
+              } else {
+                missingFields.push("Invalid Supplier");
+              }
+            }
+            // const payload: Partial<Machinery> = {
+            //   name: row["Name"],
+            //   code: machineryId,
+            //   category: matchedCategory?._id || undefined,
+            //   location: locationId,
+            //   quantity: quantity,
+            //   basicCost,
+            //   // assetType: "machinery",       // or "equipment"
+            //   // assetId: selectedAssetId,     // ObjectId
+            //   // assetCode: selectedAssetCode,
+            //   cgst,
+            //   igst,
+            //   sgst,
+            //   totalCost: basicCost + cgst + igst + sgst,
+            //   invoiceNumber: row["Invoice Number"] || "",
+            //   purchaseDate: parseDate(row["Purchase Date"]),
+            //   supplier: row["Supplier"] || "",
+            //   insuranceDate: parseDate(row["Insurance Date"]),
+            //   insuranceExpiry: parseDate(row["Insurance Expiry"]),
+            //   puDate: parseDate(row["PU Date"]),
+            //   puDateExpiry: parseDate(row["PU Date Expiry"]),
+            //   vTaxPayment,
+            //   capacity: row["Capacity"] || "",
+            //   warranty: row["Warranty"] || "",
+            //   createdAt: new Date().toISOString(),
+            //   frequency: "Monthly",
+            //   depreciation: "Straight-line",
+            //   status: "Active"
+            // };
             const payload: Partial<Machinery> = {
               name: row["Name"],
               code: machineryId,
-              category: matchedCategory?._id || undefined,
+              category: categoryId,
+              supplier: supplierId,
               location: locationId,
-              quantity: quantity,
+              quantity,
               basicCost,
-              assetType: "machinery",       // or "equipment"
-              assetId: selectedAssetId,     // ObjectId
-              assetCode: selectedAssetCode,
               cgst,
               igst,
               sgst,
               totalCost: basicCost + cgst + igst + sgst,
               invoiceNumber: row["Invoice Number"] || "",
               purchaseDate: parseDate(row["Purchase Date"]),
-              supplier: row["Supplier"] || "",
               insuranceDate: parseDate(row["Insurance Date"]),
               insuranceExpiry: parseDate(row["Insurance Expiry"]),
               puDate: parseDate(row["PU Date"]),
@@ -632,7 +733,6 @@ export default function MachineryManagementPage() {
               depreciation: "Straight-line",
               status: "Active"
             };
-
             await dispatch(createMachinery(payload)).unwrap();
             successCount++;
 
@@ -725,8 +825,10 @@ export default function MachineryManagementPage() {
 
   const getSupplierName = (id?: string) => {
     if (!id) return "-";
-    const sup = supplier.find((s: any) => s._id === id);
-    return sup?.name || "-";
+
+    const sup = supplierList.find((s: any) => s._id === id);
+
+    return sup?.company || sup?.name || "-";
   };
 
 

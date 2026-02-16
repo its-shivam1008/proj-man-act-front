@@ -956,20 +956,33 @@ export default function PurchaseOrderPage() {
                                                 className="w-full border rounded-lg px-3 py-2 text-sm"
                                                 value={item.rawMaterialId}
                                                 onChange={(e) => {
-                                                    if (e.target.value === "other") {
-                                                        handleChange(actualIndex, "isCustom", true);
-                                                        handleChange(actualIndex, "rawMaterialId", "");
-                                                    } else {
-                                                        const mat = materials.find(
-                                                            (m) => m._id === e.target.value
-                                                        );
-                                                        handleChange(actualIndex, "rawMaterialId", e.target.value);
-                                                        handleChange(
-                                                            actualIndex,
-                                                            "rawMaterialName",
-                                                            mat?.name || ""
-                                                        );
-                                                    }
+                                                    const value = e.target.value;
+
+                                                    setItems((prev) =>
+                                                        prev.map((it, i) => {
+                                                            if (i !== actualIndex) return it;
+
+                                                            // 🔥 If custom selected
+                                                            if (value === "other") {
+                                                                return {
+                                                                    ...it,
+                                                                    isCustom: true,
+                                                                    rawMaterialId: "",
+                                                                    rawMaterialName: "",
+                                                                };
+                                                            }
+
+                                                            // 🔥 If normal material selected
+                                                            const mat = materials.find((m) => m._id === value);
+
+                                                            return {
+                                                                ...it,
+                                                                isCustom: false,
+                                                                rawMaterialId: value,
+                                                                rawMaterialName: mat?.name || "",
+                                                            };
+                                                        })
+                                                    );
                                                 }}
                                             >
                                                 <option value="">Select item...</option>
@@ -1182,29 +1195,43 @@ export default function PurchaseOrderPage() {
                                             className="w-full border rounded-lg px-3 py-2 text-sm"
                                             value={item.rawMaterialId}
                                             onChange={(e) => {
-                                                if (e.target.value === "other") {
-                                                    handleChange(index, "isCustom", true);
-                                                    handleChange(index, "rawMaterialId", "");
-                                                    handleChange(index, "rawMaterialName", "");
-                                                } else {
-                                                    const mat = materials.find(
-                                                        (m) => m._id === e.target.value
-                                                    );
-                                                    handleChange(index, "rawMaterialId", e.target.value);
-                                                    handleChange(
-                                                        index,
-                                                        "rawMaterialName",
-                                                        mat?.name || ""
-                                                    );
-                                                }
+                                                const value = e.target.value;
+
+                                                setItems((prev) =>
+                                                    prev.map((it, i) => {
+                                                        if (i !== index) return it;
+
+                                                        // 🔥 If Custom Selected
+                                                        if (value === "other") {
+                                                            return {
+                                                                ...it,
+                                                                isCustom: true,
+                                                                rawMaterialId: "",
+                                                                rawMaterialName: "",
+                                                            };
+                                                        }
+
+                                                        // 🔥 If Normal Material Selected
+                                                        const mat = materials.find((m) => m._id === value);
+
+                                                        return {
+                                                            ...it,
+                                                            isCustom: false,
+                                                            rawMaterialId: value,
+                                                            rawMaterialName: mat?.name || "",
+                                                        };
+                                                    })
+                                                );
                                             }}
                                         >
                                             <option value="">Select item...</option>
+
                                             {materials.map((rm) => (
                                                 <option key={rm._id} value={rm._id}>
                                                     {rm.name}
                                                 </option>
                                             ))}
+
                                             <option value="other">Other (Custom)</option>
                                         </select>
                                     )}

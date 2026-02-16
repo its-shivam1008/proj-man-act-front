@@ -700,6 +700,7 @@ export default function RawMaterialMaster() {
     dispatch(fetchWarehouses(localStorage.getItem("organisationId")));
     dispatch(fetchMaterials({ page, limit }));
     dispatch(fetchInventoryMaster({ type: "hsn", page: 1, limit: 100 }));
+    dispatch(fetchInventoryMaster({ type: "rawmaterial", page: 1, limit: 100 }));
     fetchNotifications();
   }, [dispatch, page, limit, warehouseFilter]);
 

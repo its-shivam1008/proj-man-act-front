@@ -5,6 +5,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 // import api from '@/utils/axiosApi';
 import { useDispatch, useSelector } from "react-redux";
+import { useNavigate } from "react-router-dom";
+
 import {
     deleteNotification,
     fetchNotifications,
@@ -14,6 +16,7 @@ import {
 import { RootState, AppDispatch } from "@/redux/store";
 
 const NotificationSidebar = ({ open, onOpenChange, onUnreadChange }) => {
+    const navigate = useNavigate();
 
     // const unreadCount = notifications?.filter(n => !n.read).length || 0;
     const dispatch = useDispatch<AppDispatch>();
@@ -193,11 +196,23 @@ const NotificationSidebar = ({ open, onOpenChange, onUnreadChange }) => {
                                 </div>
                             ) : (
                                 notifications.map((notification, index) => (
+                                    // <div
+                                    //     key={notification._id}
+                                    //     className="notification-item slide-in rounded-xl p-4 border border-slate-200 bg-white shadow-sm"
+                                    //     style={{ animationDelay: `${index * 0.05}s` }}
+                                    // >
                                     <div
                                         key={notification._id}
-                                        className="notification-item slide-in rounded-xl p-4 border border-slate-200 bg-white shadow-sm"
-                                        style={{ animationDelay: `${index * 0.05}s` }}
+                                        onClick={() => {
+                                            if (notification.metadata?.teamId) {
+                                                navigate(`/product-lifecycle?teamId=${notification.metadata.teamId}`);
+                                                markAsRead(notification._id);
+                                                onOpenChange(false);
+                                            }
+                                        }}
+                                        className="notification-item slide-in rounded-xl p-4 border border-slate-200 bg-white shadow-sm cursor-pointer hover:bg-slate-50"
                                     >
+
                                         <div className="flex items-start gap-3">
                                             <div className={`mt-1 p-2 rounded-lg border ${getTypeColor(notification.type)}`}>
                                                 <Bell className="h-4 w-4" />
