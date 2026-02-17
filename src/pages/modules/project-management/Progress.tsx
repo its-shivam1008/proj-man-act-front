@@ -87,6 +87,7 @@ export default function DailyProgressPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearchTerm = useDebounce(searchTerm, 500);
   const [locationFilter, setLocationFilter] = useState("all");
+  const [wbsTypeFilter, setWbsTypeFilter] = useState("all");
   const [updatingWbs, setUpdatingWbs] = useState<string | null>(null);
 
   // Local progress state for optimistic updates and animations
@@ -430,7 +431,7 @@ export default function DailyProgressPage() {
         <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
           {/* Location Filter */}
           <Select disabled={isLocationRestricted} value={locationFilter} onValueChange={handleLocationFilterChange}>
-            <SelectTrigger className="w-full md:w-48">
+            <SelectTrigger className="w-full md:w-36">
               <SelectValue placeholder="Filter Location" />
             </SelectTrigger>
             <SelectContent>
@@ -450,14 +451,14 @@ export default function DailyProgressPage() {
                 variant="outline"
                 role="combobox"
                 aria-expanded={projectPopoverOpen}
-                className="w-full md:w-72 justify-between"
+                className="w-full md:w-64 justify-between"
               >
                 {selectedProjectDetails ? (
                   <span className="truncate">
                     {selectedProjectDetails.code} - {selectedProjectDetails.name}
                   </span>
                 ) : (
-                  "Select a Project for Analysis"
+                  "Select a Project"
                 )}
                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
               </Button>
@@ -563,6 +564,20 @@ export default function DailyProgressPage() {
             </CardContent>
           </Card>
 
+          {/* WBS Type Filter */}
+          <Select value={wbsTypeFilter} onValueChange={setWbsTypeFilter}>
+            <SelectTrigger className="w-full md:w-36">
+              <SelectValue placeholder="Filter Type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Types</SelectItem>
+              <SelectItem value="phase">Phase</SelectItem>
+              <SelectItem value="activity">Activity</SelectItem>
+              <SelectItem value="task">Task</SelectItem>
+              <SelectItem value="subtask">Subtask</SelectItem>
+            </SelectContent>
+          </Select>
+
           {/* --- WBS ITEM PROGRESS LIST --- */}
           <Card>
             <CardHeader>
@@ -577,11 +592,10 @@ export default function DailyProgressPage() {
                 ) : (
                   <div className="grid gap-4">
                     {wbs.filter(i => {
-                      // Show items that are:
-                      // 1. Not parent items (parentId !== null)
-                      // 2. AND (status is 'in-progress' OR progress is 0 or undefined)
-                      // console.log(" i ==- ",wbs)
-                      return i.status === 'in-progress';
+                      // Filter by status and type
+                      const statusMatch = i.status === 'in-progress';
+                      const typeMatch = wbsTypeFilter === 'all' || i.type === wbsTypeFilter;
+                      return statusMatch && typeMatch;
                     }).map((item) => {
                       const currentProgress = localProgress[item._id] ?? item.progress;
                       const isChanging = localProgress[item._id] !== undefined && localProgress[item._id] !== item.progress;
@@ -683,7 +697,7 @@ export default function DailyProgressPage() {
                 </div>
               ) : (
                 <div className="space-y-6 max-h-[500px] overflow-y-auto">
-                  {wbs.map((wbsItem) => {
+                  {wbs.filter(i => wbsTypeFilter === 'all' || i.type === wbsTypeFilter).map((wbsItem) => {
 
                     // 🔥 Get materials from MRS for this WBS
                     const materialsForWbs = mrsList?.filter(
@@ -702,7 +716,7 @@ export default function DailyProgressPage() {
 
                         {/* WBS TITLE */}
                         <h4 className="font-semibold text-lg mb-4">
-                          {wbsItem.name}
+                          {wbsItem.name} <span className="text-sm font-normal text-muted-foreground ml-2 uppercase">({wbsItem.type})</span>
                         </h4>
 
                         {/* MATERIALS */}

@@ -189,6 +189,7 @@ const WBSNode: React.FC<WBSNodeProps> = ({
     [allwbs, item.id]
   );
 
+
   const getStatusColor = (status?: wbstatus) => {
     // Check if item is paused first
     if (item.isPaused) {
@@ -404,6 +405,8 @@ export default function WBS() {
   const { locations } = useSelector((state: RootState) => state.masterData);
   const canView = usePermission("wbsManagement", "view");
   const canCreate = usePermission("wbsManagement", "create");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+
 
   const [billModalOpen, setBillModalOpen] = useState(false);
   const [selectedBillWbsId, setSelectedBillWbsId] = useState<string | null>(null);
@@ -1063,6 +1066,21 @@ export default function WBS() {
     };
   }, [selectedProjectId, dispatch]);
 
+  const sortedTopLevelItems = useMemo(() => {
+    const items = [...topLevelItems];
+
+    items.sort((a, b) => {
+      if (sortOrder === "asc") {
+        return a.name.localeCompare(b.name);
+      } else {
+        return b.name.localeCompare(a.name);
+      }
+    });
+
+    return items;
+  }, [topLevelItems, sortOrder]);
+
+
   if (!canView) {
     return (
       <div className="text-center py-12 px-4">
@@ -1498,8 +1516,24 @@ export default function WBS() {
       {/* --- WBS TREE SECTION --- */}
       <Card>
         <CardHeader>
-          <CardTitle>WBS Tree</CardTitle>
-          <div className="flex items-center border-b border-gray-300 py-2 mt-2 text-sm font-semibold text-muted-foreground">
+
+          {/* Top Row */}
+          <div className="flex items-center justify-between">
+            <CardTitle>WBS Tree</CardTitle>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))
+              }
+            >
+              Sort: {sortOrder === "asc" ? "Ascending" : "Descending"}
+            </Button>
+          </div>
+
+          {/* Column Headers */}
+          <div className="flex items-center border-b border-gray-300 py-2 mt-3 text-sm font-semibold text-muted-foreground">
             <div className="flex-1">
               <span className="ml-10">Task Name</span>
             </div>
@@ -1510,7 +1544,9 @@ export default function WBS() {
             <div className="w-32 text-center">Materials</div>
             <div className="w-60 text-right pr-4">Actions</div>
           </div>
+
         </CardHeader>
+
         {selectedBillWbsId && (
           <BillModal
             open={billModalOpen}
@@ -1540,7 +1576,7 @@ export default function WBS() {
               </Button>
             </div>
           ) : (
-            topLevelItems.map((item) => (
+            sortedTopLevelItems.map((item) => (
               <WBSNode
                 key={item.id}
                 item={item}
