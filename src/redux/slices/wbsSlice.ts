@@ -1,6 +1,6 @@
-import { BASE_URL } from "@/utils/constants";
+// import { BASE_URL } from "@/utils/constants";
 import { createAsyncThunk, createSlice, PayloadAction } from "@reduxjs/toolkit";
-import axios from "axios";
+// import axios from "axios";
 import api from "@/utils/axiosApi";
 
 export type WBSItemType = "phase" | "activity" | "task" | "subtask";
@@ -52,6 +52,12 @@ export interface WBSItem {
     reason?: string;
     resumeReason?: string;
   }>;
+  linkedMaterials?: {
+  materialId: string;
+  name: string;
+  quantity: number;        // total required
+  usedQuantity: number;    // already consumed
+}[];
   pausedAssignmentsSnapshot?: any;
   totalPausedSeconds?: number;
   totalPausedMilliseconds?: number;
@@ -250,6 +256,7 @@ const wbsSlice = createSlice({
       state.wbs = action.payload; // FIXED
     });
     builder.addCase(fetchWbsByProject.rejected, (state, action) => {
+      console.log("WBS DATA:", action.payload);
       state.loading = false;
       state.error = action.payload || "Fetch failed";
     }).addCase(fetchWbsByIds.pending, (state) => {

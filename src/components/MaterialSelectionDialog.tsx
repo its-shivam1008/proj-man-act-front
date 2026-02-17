@@ -52,11 +52,11 @@ type MaterialInputState = {
 type ReturnModalState = {
   open: boolean;
   item:
-    | (SelectedMaterial & {
-        assignedQty: number;
-        returnQty: number | string;
-      })
-    | null;
+  | (SelectedMaterial & {
+    assignedQty: number;
+    returnQty: number | string;
+  })
+  | null;
   submitting?: boolean;
 };
 
@@ -98,7 +98,7 @@ export default function MaterialSelectionDialog({
     if (isOpen) {
       dispatch(fetchMaterials({ page: 1, limit: 100 }));
       dispatch(fetchMRS()); // Also fetch MRS data
-      
+
       if (isUpdateMode && wbsItem?.linkedMaterials) {
         const prefilled = wbsItem.linkedMaterials.map((link: any) => {
           const details = (materials || []).find(
@@ -161,12 +161,12 @@ export default function MaterialSelectionDialog({
   // Centralized function to calculate saved materials from database
   const calculateSavedMaterials = () => {
     if (!isOpen || !wbsItem?.name || materials.length === 0) return [];
-    
+
     // First, let's see ALL MRS items for debugging
     (mrsList || []).forEach((mrs: any, index: number) => {
       console.log(`  ${index + 1}. ${mrs.item} - Task: ${mrs.task} - DeliveryStatus: ${mrs.deliveryStatus} - Status: ${mrs.status} - Deleted: ${mrs.isDeleted}`);
     });
-    
+
     // Now let's see items for this specific task
     const allTaskItems = (mrsList || []).filter((mrs: any) => mrs.task === wbsItem.name && !mrs.isDeleted);
     allTaskItems.forEach((mrs: any, index: number) => {
@@ -176,10 +176,10 @@ export default function MaterialSelectionDialog({
     // Get MRS materials for this specific task (only received ones from database)
     const taskMRSMaterials = (mrsList || []).filter((mrs: any) => {
       const isForThisTask = mrs.task === wbsItem.name && !mrs.isDeleted;
-      
+
       // Check database delivery status - look for 'received' status in deliveryStatus
       const isReceived = mrs.deliveryStatus === 'received';
-      
+
       console.log(`📋 MRS ${mrs.item} (${mrs._id}):`, {
         task: mrs.task,
         isForThisTask,
@@ -188,7 +188,7 @@ export default function MaterialSelectionDialog({
         deliveryDetails: mrs.deliveryDetails,
         isReceived
       });
-      
+
       return isForThisTask && isReceived;
     });
 
@@ -196,13 +196,13 @@ export default function MaterialSelectionDialog({
     // Convert MRS materials to SelectedMaterial format
     const mrsAsSavedMaterials = taskMRSMaterials.map((mrs: any) => {
       const materialDetails = materials.find((m) => m.name.toLowerCase() === mrs.item.toLowerCase());
-      
+
       // Use database quantity (consider returns if stored in database)
       const originalQuantity = mrs.quantity || 1;
       const receivedQuantity = mrs.deliveryDetails?.receivedQuantity || originalQuantity;
       const returnedQuantity = mrs.deliveryDetails?.returnedQuantity || 0;
       const availableQuantity = receivedQuantity - returnedQuantity;
-      
+
       // console.log(`🧮 Material ${mrs.item} (${mrs._id}):`, {
       //   original: originalQuantity,
       //   received: receivedQuantity,
@@ -210,35 +210,37 @@ export default function MaterialSelectionDialog({
       //   available: availableQuantity
       // });
       const usedQuantity = mrs.usedQuantity || 0;
-      
+
       return {
         materialId: mrs._id,
         name: mrs.item,
         quantity: availableQuantity,
         unit: materialDetails?.unitOfMeasure || mrs.unit || 'units',
-        usedQuantity: usedQuantity 
+        usedQuantity: usedQuantity
       } as SelectedMaterial;
     }).filter(material => Number(material.quantity) > 0);
 
     // Get existing linkedMaterials
     const linkedMaterials = (wbsItem?.linkedMaterials || []).map((link: any) => {
       const details = materials.find((m) => m._id === link.materialId);
+
       return {
         materialId: link.materialId,
         name: details?.name || "Unknown Material",
         quantity: link.quantity,
         unit: link.unit,
-      } as SelectedMaterial;
+        usedQuantity: link.usedQuantity || 0,   // ✅ ADD THIS
+      };
     });
 
     // Combine both sources, merging duplicate materials by adding quantities
     const allMaterials = [...linkedMaterials];
-    
+
     mrsAsSavedMaterials.forEach(mrsMaterial => {
-      const existingIndex = allMaterials.findIndex(existing => 
+      const existingIndex = allMaterials.findIndex(existing =>
         existing.name.toLowerCase() === mrsMaterial.name.toLowerCase()
       );
-      
+
       if (existingIndex >= 0) {
         // Material already exists, add the quantities
         const existing = allMaterials[existingIndex];
@@ -277,7 +279,7 @@ export default function MaterialSelectionDialog({
 
     window.addEventListener('materialReturned', handleDatabaseUpdate);
     window.addEventListener('mrsStatusChanged', handleMRSStatusChange);
-    
+
     return () => {
       window.removeEventListener('materialReturned', handleDatabaseUpdate);
       window.removeEventListener('mrsStatusChanged', handleMRSStatusChange);
@@ -334,8 +336,8 @@ export default function MaterialSelectionDialog({
         const found = materials.find((m) => m._id === materialId);
         setSavedMaterials((prev) =>
           prev.map((p) =>
-            p.materialId === materialId 
-              ? { ...p, name: found?.name || p.name, quantity: qtyNum, unit } 
+            p.materialId === materialId
+              ? { ...p, name: found?.name || p.name, quantity: qtyNum, unit }
               : p
           )
         );
@@ -387,7 +389,7 @@ export default function MaterialSelectionDialog({
 
       // Refetch materials to get updated stock (this will update the left side list)
       dispatch(fetchMaterials({ page: 1, limit: 100 }));
-      
+
       // Refetch WBS data to get updated linkedMaterials
       if (wbsItem?.projectId) {
         dispatch(fetchWbsByProject(wbsItem.projectId));
@@ -426,7 +428,7 @@ export default function MaterialSelectionDialog({
         dispatch(fetchWbsByProject(wbsItem.projectId));
       }
       dispatch(fetchMaterials({ page: 1, limit: 100 }));
-      
+
       // 🔥 Refetch MRS to update Procurement page
       dispatch(fetchMRS());
     } catch (err) {
@@ -437,22 +439,22 @@ export default function MaterialSelectionDialog({
   /* ------------------ Return Material ------------------ */
   const openReturnModal = (m: SelectedMaterial) => {
     // For MRS materials, we need to get the original quantity from the MRS entry
-    const isMRSMaterial = mrsList?.some((mrs: any) => 
+    const isMRSMaterial = mrsList?.some((mrs: any) =>
       mrs._id === m.materialId && mrs.task === wbsItem?.name
     );
-    
+
     let originalQuantity = Number(m.quantity);
-    
+
     if (isMRSMaterial) {
       // Find the original MRS entry to get the original quantity
-      const mrsEntry = mrsList?.find((mrs: any) => 
+      const mrsEntry = mrsList?.find((mrs: any) =>
         mrs._id === m.materialId
       );
       if (mrsEntry) {
         originalQuantity = mrsEntry.quantity || 1;
       }
     }
-    
+
     setReturnModal({
       open: true,
       item: { ...m, assignedQty: originalQuantity, returnQty: "" },
@@ -472,7 +474,7 @@ export default function MaterialSelectionDialog({
 
       // 🔍 DETECT ITEM TYPE
       // Check if this ID belongs to an MRS entry
-      const mrsEntry = mrsList?.find((m: any) => 
+      const mrsEntry = mrsList?.find((m: any) =>
         m._id === it.materialId
       );
 
@@ -485,7 +487,7 @@ export default function MaterialSelectionDialog({
       // - No duplicate movements created
       // ============================================================
       console.log(`🔄 Processing material return using WBS API (unified approach)...`);
-      
+
       await api.post("/wbs/return-material", {
         wbsId,
         materialId: it.materialId,
@@ -493,18 +495,18 @@ export default function MaterialSelectionDialog({
         isMRSMaterial: !!mrsEntry, // Flag to help backend identify MRS materials
         mrsId: mrsEntry ? mrsEntry._id : null // Pass MRS ID for tracking
       });
-      
+
       console.log(`✅ WBS return API completed - stock updated and return movement created`);
-      
+
       // ❌ REMOVED: No longer calling MRS API separately to avoid duplicate movements
       // The WBS API now handles MRS record updates internally
 
       // ============================================================
       // COMMON SUCCESS HANDLING
       // ============================================================
-      
+
       // Update local UI state immediately to reflect change
-      setSavedMaterials(prevMaterials => 
+      setSavedMaterials(prevMaterials =>
         prevMaterials.map(material => {
           if (material.materialId === it.materialId) {
             const newQuantity = Number(material.quantity) - returnQty;
@@ -516,12 +518,12 @@ export default function MaterialSelectionDialog({
           return material;
         }).filter(material => Number(material.quantity) > 0)
       );
-      
+
       toast.success(`✅ Returned ${returnQty} ${it.unit} of ${it.name}. Stock updated! Check MovesAnalysis for return record.`);
-      
+
       // Close modal
       setReturnModal({ open: false, item: null, submitting: false });
-      
+
       // Refresh all data including material movements
       setTimeout(() => {
         dispatch(fetchMaterials({ page: 1, limit: 100 }));
@@ -529,7 +531,7 @@ export default function MaterialSelectionDialog({
         if (wbsItem?.projectId) {
           dispatch(fetchWbsByProject(wbsItem.projectId));
         }
-        
+
         // 🔥 Refresh material movements for MovesAnalysis page
         const organisationId = localStorage.getItem("organisationId");
         if (organisationId) {
@@ -537,7 +539,7 @@ export default function MaterialSelectionDialog({
           dispatch(fetchMovements({ organisationId }));
           dispatch(fetchMovementSummary({ organisationId }));
           console.log(`✅ Material movements refreshed - check MovesAnalysis page`);
-          
+
           // 📡 Dispatch custom event to notify MovesAnalysis page
           window.dispatchEvent(new CustomEvent('materialReturned', {
             detail: {
@@ -656,7 +658,7 @@ export default function MaterialSelectionDialog({
                   // Filter materials based on search term
                   const filteredMaterials = savedMaterials.filter((material) => {
                     if (!searchTerm.trim()) return true;
-                    
+
                     const searchLower = searchTerm.toLowerCase();
                     return (
                       material.name.toLowerCase().includes(searchLower) ||
@@ -683,22 +685,22 @@ export default function MaterialSelectionDialog({
 
                   return filteredMaterials.map((m) => {
                     // Check if this is from MRS or linkedMaterials
-                    const isMRSMaterial = mrsList?.some((mrs: any) => 
+                    const isMRSMaterial = mrsList?.some((mrs: any) =>
                       mrs._id === m.materialId && mrs.task === wbsItem?.name
                     );
-                    
+
                     // Get material status from database (MRS deliveryStatus)
                     const materialStatus = (() => {
                       // Check if this is an MRS material and get its actual database status
-                      const mrsEntry = mrsList?.find((mrs: any) => 
+                      const mrsEntry = mrsList?.find((mrs: any) =>
                         mrs._id === m.materialId && mrs.task === wbsItem?.name
                       );
-                      
+
                       if (mrsEntry) {
                         // Use the actual deliveryStatus from database
                         return mrsEntry.deliveryStatus || 'pending';
                       }
-                      
+
                       // For non-MRS materials, check localStorage as fallback
                       const syncData = JSON.parse(localStorage.getItem('MRS_STATUS_SYNC') || '{}');
                       return syncData[m.materialId] || 'pending';
@@ -735,12 +737,12 @@ export default function MaterialSelectionDialog({
                               <p className="text-xs text-gray-600">
                                 Available: <strong>{m.quantity}</strong> {m.unit}
                               </p>
-                              
+
                               {/* [!code ++] Display Used Quantity */}
                               <p className="text-xs text-blue-600">
                                 Used: <strong>{m.usedQuantity || 0}</strong> {m.unit}
                               </p>
-                          </div>
+                            </div>
                           </div>
 
                           {/* <div className="flex gap-2">
@@ -857,8 +859,8 @@ export default function MaterialSelectionDialog({
                     ? "Updating..."
                     : "Adding..."
                   : materialInput.isEditing
-                  ? "Update"
-                  : "Add"}
+                    ? "Update"
+                    : "Add"}
               </Button>
             </div>
           </div>
@@ -890,7 +892,7 @@ export default function MaterialSelectionDialog({
               Original Quantity:{" "}
               <strong>{returnModal.item?.assignedQty || 0}</strong>
             </p>
-            
+
             <p className="text-sm text-gray-600">
               Available to Return:{" "}
               <strong>{returnModal.item?.quantity || 0}</strong>
