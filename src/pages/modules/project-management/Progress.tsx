@@ -57,14 +57,9 @@ import { Progress } from "@/components/ui/progress";
 import { Slider } from "@/components/ui/slider";
 import axios from "axios";
 import { BASE_URL } from "@/utils/constants";
-import { fetchMaterials } from "@/redux/slices/materialSlice";
-import { fetchMRS } from "@/redux/slices/mrsSlice";
 
 export default function DailyProgressPage() {
   const dispatch = useDispatch<AppDispatch>();
-
-  // const usedQuantity = (progress / 100) * totalQuantity;
-  // const availableQuantity = totalQuantity - usedQuantity;
 
   // -- Selectors --
   const { items, loading: progressLoading } = useSelector((state: RootState) => state.dailyProgress);
@@ -72,68 +67,6 @@ export default function DailyProgressPage() {
   const { wbs, loading: wbsLoading } = useSelector((state: RootState) => state.wbs);
   const { userProfile } = useSelector((state: RootState) => state.auth);
   const { locations } = useSelector((state: RootState) => state.masterData);
-
-  const { list: mrsList } = useSelector((state: RootState) => state.mrs);
-  const { materials } = useSelector((state: RootState) => state.rawMaterials);
-
-  // const usedQuantity = (progress / 100) * totalQuantity;
-  // const availableQuantity = totalQuantity - usedQuantity;
-
-  const getCalculatedMaterials = (item: any) => {
-    if (!item?.name) return [];
-
-    console.log("🔎 Checking materials for WBS:", item.name);
-
-    const taskMRSMaterials = (mrsList || []).filter((mrs: any) =>
-      mrs.task === item.name &&
-      !mrs.isDeleted &&
-      mrs.deliveryStatus === "received"
-    );
-
-    console.log("   ➜ Matching MRS:", taskMRSMaterials);
-
-    const mrsMaterials = taskMRSMaterials.map((mrs: any) => {
-      const materialDetails = materials.find(
-        (m: any) => m.name.toLowerCase() === mrs.item.toLowerCase()
-      );
-
-      console.log("      ➜ Matched raw material:", materialDetails);
-
-      const originalQuantity = mrs.quantity || 1;
-      const receivedQuantity = mrs.deliveryDetails?.receivedQuantity || originalQuantity;
-      const returnedQuantity = mrs.deliveryDetails?.returnedQuantity || 0;
-      const availableQuantity = receivedQuantity - returnedQuantity;
-
-      return {
-        materialId: mrs._id,
-        name: mrs.item,
-        quantity: availableQuantity,
-        unit: materialDetails?.unitOfMeasure || mrs.unit || "units",
-        usedQuantity: mrs.usedQuantity || 0,
-      };
-    });
-
-    const linkedMaterials = (item.linkedMaterials || []).map((link: any) => {
-      console.log("   ➜ Linked material from WBS:", link);
-
-      const details = materials.find((m: any) => m._id === link.materialId);
-
-      return {
-        materialId: link.materialId,
-        name: details?.name || link.name,
-        quantity: link.quantity,
-        unit: link.unit,
-        usedQuantity: link.usedQuantity || 0,
-      };
-    });
-
-    const combined = [...linkedMaterials, ...mrsMaterials];
-
-    console.log("   ✅ Final Combined Materials:", combined);
-
-    return combined;
-  };
-  const [progressFilter, setProgressFilter] = useState("all");
 
   const canView = usePermission('progressUpdates', 'view');
 
@@ -420,7 +353,7 @@ export default function DailyProgressPage() {
       );
 
       // Refresh WBS and daily logs
-     dispatch(fetchWbsByProject(selectedProjectId)); 
+      dispatch(fetchWbsByProject(selectedProjectId));
       dispatch(fetchDailyProgress());
     } catch (error) {
       console.error("Failed to update progress:", error);
@@ -451,14 +384,7 @@ export default function DailyProgressPage() {
       delete debounceTimers.current[wbsId];
     }, 800);
   }, [updateProgressAPI]);
-  useEffect(() => {
-    console.log("📦 MRS LIST:", mrsList);
-  }, [mrsList]);
 
-  useEffect(() => {
-    dispatch(fetchMRS());
-    dispatch(fetchMaterials({ page: 1, limit: 100 }));
-  }, [dispatch]);
   // Cleanup timers on unmount
   useEffect(() => {
     return () => {
@@ -623,26 +549,9 @@ export default function DailyProgressPage() {
 
           {/* --- WBS ITEM PROGRESS LIST --- */}
           <Card>
-            <div className="flex justify-between items-center w-full p-3">
-              <CardHeader>
-                <CardTitle>WBS Items Breakdown</CardTitle>
-              </CardHeader>
-              <Select
-                value={progressFilter}
-                onValueChange={(val) => setProgressFilter(val)}
-              >
-                <SelectTrigger className="w-40">
-                  <SelectValue placeholder="Progress Filter" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="not-started">Not Started</SelectItem>
-                  <SelectItem value="in-progress">In Progress</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
+            <CardHeader>
+              <CardTitle>WBS Items Breakdown</CardTitle>
+            </CardHeader>
             <CardContent>
               <div className="space-y-1 overflow-y-auto max-h-[400px]">
                 {wbsLoading ? (
@@ -651,146 +560,93 @@ export default function DailyProgressPage() {
                   <p className="text-muted-foreground text-center">No WBS items found for this project.</p>
                 ) : (
                   <div className="grid gap-4">
-                    {wbs
-                      .filter((item) => {
-                        // Only show child tasks (optional — keep if needed)
-                        if (item.parentId === null) return false;
+                    {wbs.filter(i => {
+                      // Show items that are:
+                      // 1. Not parent items (parentId !== null)
+                      // 2. AND (status is 'in-progress' OR progress is 0 or undefined)
+                      // console.log(" i ==- ",wbs)
+                      return i.status === 'in-progress';
+                    }).map((item) => {
+                      const currentProgress = localProgress[item._id] ?? item.progress;
+                      const isChanging = localProgress[item._id] !== undefined && localProgress[item._id] !== item.progress;
+                      const isIncreasing = isChanging && currentProgress > item.progress;
+                      const isDecreasing = isChanging && currentProgress < item.progress;
 
-                        // Apply progress filter
-                        if (progressFilter === "all") return true;
-
-                        return item.status === progressFilter;
-                      })
-                      .map((item) => {
-                        const currentProgress = localProgress[item._id] ?? item.progress;
-                        const isChanging = localProgress[item._id] !== undefined && localProgress[item._id] !== item.progress;
-                        const isIncreasing = isChanging && currentProgress > item.progress;
-                        const isDecreasing = isChanging && currentProgress < item.progress;
-
-                        return (
-                          <div key={item._id} className="grid grid-cols-12 items-center gap-4 border-b pb-3 last:border-0">
-                            <div className="col-span-4 md:col-span-3">
-                              <div className="font-medium truncate">{item.name}</div>
-                              <div className="text-xs text-muted-foreground capitalize">{item.type}</div>
-                            </div>
-                            <div className="col-span-4 md:col-span-6">
-                              <div className="flex items-center justify-between text-xs mb-2">
-                                <span>{item.startDate}</span>
-                                <div className="flex items-center gap-2">
-                                  <span className={`font-semibold text-base transition-all duration-300 ${isIncreasing ? 'text-green-600 scale-110' :
-                                    isDecreasing ? 'text-red-600 scale-110' :
-                                      'scale-100'
-                                    }`}>
-                                    {currentProgress}%
-                                  </span>
-                                  {isIncreasing && (
-                                    <span className="text-green-600 text-sm animate-bounce">↑</span>
-                                  )}
-                                  {isDecreasing && (
-                                    <span className="text-red-600 text-sm animate-bounce">↓</span>
-                                  )}
-                                </div>
-                                <span>{item.endDate}</span>
-                              </div>
-                              <div className="relative">
-                                <Slider
-                                  value={[currentProgress]}
-                                  onValueChange={(value) => handleProgressChange(item._id, value[0])}
-                                  max={100}
-                                  step={1}
-                                  className={`cursor-pointer transition-all duration-300 ${isChanging ? 'opacity-80' : 'opacity-100'
-                                    }`}
-                                  disabled={updatingWbs === item._id}
-                                />
-                                {/* Progress bar background animation */}
-                                <div
-                                  className="absolute top-0 left-0 h-full rounded-full transition-all duration-500 ease-out pointer-events-none"
-                                  style={{
-                                    width: `${currentProgress}%`,
-                                    background: isIncreasing
-                                      ? 'linear-gradient(90deg, rgba(34,197,94,0.2) 0%, rgba(34,197,94,0.4) 100%)'
-                                      : isDecreasing
-                                        ? 'linear-gradient(90deg, rgba(239,68,68,0.2) 0%, rgba(239,68,68,0.4) 100%)'
-                                        : 'transparent'
-                                  }}
-                                />
-                              </div>
-                              {/* {!isChanging && !updatingWbs && currentProgress === 0 && (
-                                <div className="text-xs text-amber-600 mt-1 flex items-center gap-1">
-                                  <div className="h-1.5 w-1.5 rounded-full bg-amber-600" />
-                                  Not started - Drag slider to begin
-                                </div>
-                              )} */}
-                              {/* --- MATERIAL AVAILABILITY DISPLAY --- */}
-                              {(() => {
-                                const calculatedMaterials = getCalculatedMaterials(item);
-
-                                if (!calculatedMaterials.length) return null;
-
-                                return (
-                                  <div className="mt-3 space-y-2 bg-gray-50 p-3 rounded-md border">
-                                    <p className="text-xs font-semibold text-gray-600">
-                                      Materials
-                                    </p>
-
-                                    {calculatedMaterials.map((mat: any) => {
-                                      const total = Number(mat.quantity || 0);
-
-                                      const currentProgress =
-                                        localProgress[item._id] ?? item.progress ?? 0;
-
-                                      const used = Math.round((currentProgress / 100) * total);
-
-                                      const available = total - used;
-
-                                      return (
-                                        <div
-                                          key={mat.materialId}
-                                          className="flex justify-between text-xs"
-                                        >
-                                          <span>{mat.name}</span>
-
-                                          <span>
-                                            <span className="text-blue-600">{used}</span>
-                                            {" / "}
-                                            {total} {mat.unit}
-                                            <span className="ml-2 text-green-600">
-                                              (Available: {available})
-                                            </span>
-                                          </span>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                );
-                              })()}
-                              {updatingWbs === item._id && (
-                                <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                                  <Loader2 className="h-3 w-3 animate-spin" />
-                                  Saving...
-                                </div>
-                              )}
-                              {isChanging && updatingWbs !== item._id && (
-                                <div className="text-xs text-blue-600 mt-1 flex items-center gap-1">
-                                  <div className="h-1 w-1 rounded-full bg-blue-600 animate-pulse" />
-                                  Will save in a moment...
-                                </div>
-                              )}
-                              {!isChanging && !updatingWbs && currentProgress === 0 && (
-                                <div className="text-xs text-amber-600 mt-1 flex items-center gap-1">
-                                  <div className="h-1.5 w-1.5 rounded-full bg-amber-600" />
-                                  Not started - Drag slider to begin
-                                </div>
-                              )}
-                            </div>
-                            <div className="col-span-4 md:col-span-3 text-right">
-                              <Badge variant={item.status === 'completed' ? 'default' : 'outline'} className="capitalize">
-                                {item.status?.replace('-', ' ')}
-                              </Badge>
-                            </div>
+                      return (
+                        <div key={item.id} className="grid grid-cols-12 items-center gap-4 border-b pb-3 last:border-0">
+                          <div className="col-span-4 md:col-span-3">
+                            <div className="font-medium truncate">{item.name}</div>
+                            <div className="text-xs text-muted-foreground capitalize">{item.type}</div>
                           </div>
-                        );
-                      })}
+                          <div className="col-span-4 md:col-span-6">
+                            <div className="flex items-center justify-between text-xs mb-2">
+                              <span>{item.startDate}</span>
+                              <div className="flex items-center gap-2">
+                                <span className={`font-semibold text-base transition-all duration-300 ${isIncreasing ? 'text-green-600 scale-110' :
+                                  isDecreasing ? 'text-red-600 scale-110' :
+                                    'scale-100'
+                                  }`}>
+                                  {currentProgress}%
+                                </span>
+                                {isIncreasing && (
+                                  <span className="text-green-600 text-sm animate-bounce">↑</span>
+                                )}
+                                {isDecreasing && (
+                                  <span className="text-red-600 text-sm animate-bounce">↓</span>
+                                )}
+                              </div>
+                              <span>{item.endDate}</span>
+                            </div>
+                            <div className="relative">
+                              <Slider
+                                value={[currentProgress]}
+                                onValueChange={(value) => handleProgressChange(item._id, value[0])}
+                                max={100}
+                                step={1}
+                                className={`cursor-pointer transition-all duration-300 ${isChanging ? 'opacity-80' : 'opacity-100'
+                                  }`}
+                                disabled={updatingWbs === item._id}
+                              />
+                              {/* Progress bar background animation */}
+                              <div
+                                className="absolute top-0 left-0 h-full rounded-full transition-all duration-500 ease-out pointer-events-none"
+                                style={{
+                                  width: `${currentProgress}%`,
+                                  background: isIncreasing
+                                    ? 'linear-gradient(90deg, rgba(34,197,94,0.2) 0%, rgba(34,197,94,0.4) 100%)'
+                                    : isDecreasing
+                                      ? 'linear-gradient(90deg, rgba(239,68,68,0.2) 0%, rgba(239,68,68,0.4) 100%)'
+                                      : 'transparent'
+                                }}
+                              />
+                            </div>
+                            {updatingWbs === item._id && (
+                              <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                Saving...
+                              </div>
+                            )}
+                            {isChanging && updatingWbs !== item._id && (
+                              <div className="text-xs text-blue-600 mt-1 flex items-center gap-1">
+                                <div className="h-1 w-1 rounded-full bg-blue-600 animate-pulse" />
+                                Will save in a moment...
+                              </div>
+                            )}
+                            {!isChanging && !updatingWbs && currentProgress === 0 && (
+                              <div className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                                <div className="h-1.5 w-1.5 rounded-full bg-amber-600" />
+                                Not started - Drag slider to begin
+                              </div>
+                            )}
+                          </div>
+                          <div className="col-span-4 md:col-span-3 text-right">
+                            <Badge variant={item.status === 'completed' ? 'default' : 'outline'} className="capitalize">
+                              {item.status?.replace('-', ' ')}
+                            </Badge>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
