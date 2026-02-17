@@ -71,11 +71,11 @@ export const deleteMRS = createAsyncThunk<string, string>(
     try {
       console.log("🗑️ Redux: Deleting MRS item with ID:", id);
       console.log("🌐 Redux: Making DELETE request to:", `/delete/mrs/${id}`);
-      
+
       const response = await api.delete(`/delete/mrs/${id}`);
       console.log("✅ Redux: Delete MRS response:", response.data);
       console.log("✅ Redux: Response status:", response.status);
-      
+
       return id;
     } catch (err: any) {
       console.error("❌ Redux: Delete MRS error:", err);
@@ -85,7 +85,25 @@ export const deleteMRS = createAsyncThunk<string, string>(
     }
   }
 );
+// export const updateUsedQuantity = createAsyncThunk<
+//   MRSItem,
+//   { id: string; usedQuantity: number; wbsId?: string }
+// >(
+//   "mrs/updateUsedQuantity",
+//   async ({ id, usedQuantity, wbsId }, { rejectWithValue }) => {
+//     try {
+//       const res = await api.post(`/mrs/update-used-quantity`, {
+//         mrsId: id,
+//         usedQuantity,
+//         wbsId,
+//       });
 
+//       return res.data.updatedMRS as MRSItem;
+//     } catch (err: any) {
+//       return rejectWithValue(err.response?.data || err.message);
+//     }
+//   }
+// );
 // 🚀 NEW: Delivery Status Management Actions
 
 export const updateDeliveryStatus = createAsyncThunk<
@@ -171,7 +189,23 @@ export const fetchDeliveryStatistics = createAsyncThunk<any>(
     }
   }
 );
+export const updateUsedQuantity = createAsyncThunk<
+  MRSItem,
+  { id: string; usedQuantity: number }
+>(
+  "mrs/updateUsedQuantity",
+  async ({ id, usedQuantity }, { rejectWithValue }) => {
+    try {
+      const res = await api.patch(`/mrs/${id}/usage`, {
+        usedQuantity,
+      });
 
+      return res.data.data as MRSItem;
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data || err.message);
+    }
+  }
+);
 // 🚀 NEW: Purchase Request Status Management Actions
 
 export const markAsSentToPurchase = createAsyncThunk<
@@ -306,7 +340,11 @@ const mrsSlice = createSlice({
         const updated = action.payload;
         const idx = state.list.findIndex((i) => i._id === updated._id);
         if (idx !== -1) state.list[idx] = updated;
-      });
+      }).addCase(updateUsedQuantity.fulfilled, (state, action) => {
+        const updated = action.payload;
+        const idx = state.list.findIndex(i => i._id === updated._id);
+        if (idx !== -1) state.list[idx] = updated;
+      })
   },
 });
 

@@ -57,10 +57,12 @@ import { Progress } from "@/components/ui/progress";
 import { Slider } from "@/components/ui/slider";
 import axios from "axios";
 import { BASE_URL } from "@/utils/constants";
+import { fetchMRS, updateUsedQuantity } from "@/redux/slices/mrsSlice";
 
 export default function DailyProgressPage() {
   const dispatch = useDispatch<AppDispatch>();
-
+  const { list: mrsList } = useSelector((state: RootState) => state.mrs);
+  const [localMaterialUsage, setLocalMaterialUsage] = useState<Record<string, number>>({});
   // -- Selectors --
   const { items, loading: progressLoading } = useSelector((state: RootState) => state.dailyProgress);
   const { projects, loading: projectLoading } = useSelector((state: RootState) => state.projects);
@@ -114,11 +116,25 @@ export default function DailyProgressPage() {
       setLocationFilter(userProfile.location);
     }
   }, [isLocationRestricted, userProfile]);
+  const handleMaterialUsageChange = (
+    mrs: any,
+    newUsedQty: number
+  ) => {
+    if (newUsedQty === mrs.usedQuantity) return;
 
+    dispatch(
+      updateUsedQuantity({
+        id: mrs._id,
+        usedQuantity: newUsedQty,
+      })
+    );
+  };
   const handleLocationFilterChange = (val: string) => {
     setLocationFilter(val);
   };
-
+  useEffect(() => {
+    dispatch(fetchMRS());
+  }, [dispatch]);
   // Fetch Projects on search
   useEffect(() => {
     dispatch(
@@ -650,6 +666,124 @@ export default function DailyProgressPage() {
                   </div>
                 )}
               </div>
+            </CardContent>
+          </Card>
+
+          {/* --- MATERIAL USAGE BREAKDOWN --- */}
+          {/* --- WBS MATERIAL USAGE BREAKDOWN --- */}
+          <Card>
+            <CardHeader>
+              <CardTitle>WBS Material Usage</CardTitle>
+            </CardHeader>
+
+            <CardContent>
+              {wbsLoading ? (
+                <div className="text-center py-4">
+                  <Loader2 className="animate-spin mx-auto" />
+                </div>
+              ) : (
+                <div className="space-y-6 max-h-[500px] overflow-y-auto">
+                  {wbs.map((wbsItem) => {
+
+                    // 🔥 Get materials from MRS for this WBS
+                    const materialsForWbs = mrsList?.filter(
+                      (mrs: any) =>
+                        mrs.task === wbsItem.name &&
+                        mrs.deliveryStatus === "received" &&
+                        !mrs.isDeleted
+                    );
+
+                    if (!materialsForWbs || materialsForWbs.length === 0) {
+                      return null;
+                    }
+
+                    return (
+                      <div key={wbsItem._id} className="border rounded-lg p-4 bg-slate-50">
+
+                        {/* WBS TITLE */}
+                        <h4 className="font-semibold text-lg mb-4">
+                          {wbsItem.name}
+                        </h4>
+
+                        {/* MATERIALS */}
+                        <div className="space-y-4">
+                          {materialsForWbs.map((mrs: any) => {
+
+                            const receivedQty =
+                              mrs.deliveryDetails?.receivedQuantity ||
+                              mrs.quantity ||
+                              0;
+
+                            // const usedQty = mrs.usedQuantity || 0;
+                            const usedQty =
+                              localMaterialUsage[mrs._id] ??
+                              mrs.usedQuantity ??
+                              0;
+                            const availableQty = receivedQty - usedQty;
+
+                            return (
+                              <div
+                                key={mrs._id}
+                                className="bg-white border rounded-md p-4 space-y-3"
+                              >
+                                <div className="flex justify-between items-center">
+                                  <div>
+                                    <p className="font-medium">
+                                      {mrs.item}
+                                    </p>
+
+                                    <div className="flex gap-2 mt-1">
+                                      <Badge variant="secondary">
+                                        MRS
+                                      </Badge>
+                                      <Badge variant="outline">
+                                        Received
+                                      </Badge>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex justify-between text-sm text-muted-foreground">
+                                  <span>
+                                    Available:{" "}
+                                    <strong>
+                                      {availableQty} {mrs.unit}
+                                    </strong>
+                                  </span>
+
+                                  <span>
+                                    Used:{" "}
+                                    <strong>
+                                      {usedQty} {mrs.unit}
+                                    </strong>
+                                  </span>
+                                </div>
+
+                                <Slider
+                                  value={[usedQty]}
+                                  min={0}
+                                  max={receivedQty}
+                                  step={1}
+                                  onValueChange={(val) => {
+                                    const newValue = val[0];
+
+                                    setLocalMaterialUsage(prev => ({
+                                      ...prev,
+                                      [mrs._id]: newValue
+                                    }));
+
+                                    handleMaterialUsageChange(mrs, newValue);
+                                  }}
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
