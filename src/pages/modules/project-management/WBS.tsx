@@ -177,7 +177,7 @@ const WBSNode: React.FC<WBSNodeProps> = ({
   onOpenPay,
   getMaterialStatusSummary,
 }) => {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
   const { userProfile } = useSelector((state: RootState) => state.auth);
   const canEdit = usePermission("wbsManagement", "edit");
   const canDelete = usePermission("wbsManagement", "delete");
