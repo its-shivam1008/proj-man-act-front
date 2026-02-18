@@ -116,19 +116,22 @@ export const updateMaterial = createAsyncThunk(
   "raw/update",
   async ({ id, data }: { id: string; data: any }, { rejectWithValue }) => {
     try {
-      const res = await api.put(`/raw/update/${id}`, data);
+      // Add the headers for multipart/form-data
+      const res = await api.put(`/raw/update/${id}`, data, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
 
       toast.success("Material updated successfully");
       return res.data.material;
     } catch (error: any) {
-      const msg =
-        error?.response?.data?.message || "Failed to update material";
+      const msg = error?.response?.data?.message || "Failed to update material";
       toast.error(msg);
       return rejectWithValue(msg);
     }
   }
 );
-
 
 
 export const deleteMaterial = createAsyncThunk(
@@ -167,8 +170,15 @@ const rawMaterialSlice = createSlice({
       })
 
       .addCase(fetchMaterials.fulfilled, (state, action) => {
+        console.log("API RESPONSE:", action.payload);
+
         state.loading = false;
-        state.materials = action.payload.materials;
+        state.materials = Array.isArray(action.payload?.materials)
+          ? action.payload.materials
+          : Array.isArray(action.payload)
+            ? action.payload
+            : [];
+
         state.total = action.payload.total;
         state.page = action.payload.page;
         state.limit = action.payload.limit;

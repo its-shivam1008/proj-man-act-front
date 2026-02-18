@@ -1,6 +1,24 @@
 import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
 import api from "@/utils/axiosApi";
 import { Milestone, Invoice } from "@/types/billing";
+export interface ContractorBill {
+  _id: string;
+  organisationId: string;
+  projectId: string;
+  wbsId: string;
+  contractorId: string;
+  amount: number;
+  paymentDate: string;
+  notes?: string;
+}
+export interface CreateContractorBillPayload {
+  projectId: string;
+  wbsId: string;
+  contractorId: string;
+  amount: number;
+  paymentDate: string;
+  notes?: string;
+}
 
 /* ---------------------------------------------------
    Helper: get organisationId from localStorage
@@ -36,6 +54,61 @@ export const fetchPaginatedMilestones = createAsyncThunk(
       },
     });
     return res.data;
+  }
+);
+
+
+//contractor bills
+/* ---------------------------------------------------
+   FETCH CONTRACTOR BILLS
+--------------------------------------------------- */
+export const fetchContractorBills = createAsyncThunk(
+  "billing/fetchContractorBills",
+  async () => {
+    const res = await api.get("/get/contractor-bill", {
+      params: { organisationId: getOrg() },
+    });
+    return res.data.data;
+  }
+);
+
+/* ---------------------------------------------------
+   CREATE CONTRACTOR BILL
+--------------------------------------------------- */
+export const createContractorBill = createAsyncThunk<
+  ContractorBill,
+  CreateContractorBillPayload
+>(
+  "billing/createContractorBill",
+  async (payload) => {
+    const res = await api.post("/create/contractor-bill", {
+      ...payload,
+      organisationId: getOrg(),
+    });
+
+    return res.data.data;
+  }
+);
+
+/* ---------------------------------------------------
+   UPDATE CONTRACTOR BILL
+--------------------------------------------------- */
+export const updateContractorBill = createAsyncThunk(
+  "billing/updateContractorBill",
+  async ({ id, payload }: { id: string; payload: Partial<ContractorBill> }) => {
+    const res = await api.put(`/update/contractor-bill/${id}`, payload);
+    return res.data.data;
+  }
+);
+
+/* ---------------------------------------------------
+   DELETE CONTRACTOR BILL
+--------------------------------------------------- */
+export const deleteContractorBill = createAsyncThunk(
+  "billing/deleteContractorBill",
+  async (id: string) => {
+    await api.delete(`/delete/contractor-bill/${id}`);
+    return id;
   }
 );
 
@@ -147,6 +220,7 @@ interface BillingState {
   milestones: Milestone[];
   invoices: Invoice[];
   loading: boolean;
+  contractorBills: ContractorBill[];
   page: number;
   total: number;
   totalPages: number;
@@ -155,6 +229,7 @@ interface BillingState {
 const initialState: BillingState = {
   milestones: [],
   invoices: [],
+  contractorBills: [],
   loading: false,
   page: 1,
   total: 0,
@@ -242,7 +317,40 @@ const billingSlice = createSlice({
             (i) => i._id !== action.payload
           );
         }
-      );
+      )/* ----------------- CONTRACTOR BILLS ----------------- */
+
+      .addCase(
+        fetchContractorBills.fulfilled,
+        (state, action: PayloadAction<ContractorBill[]>) => {
+          state.contractorBills = action.payload;
+        }
+      )
+
+      .addCase(
+        createContractorBill.fulfilled,
+        (state, action: PayloadAction<ContractorBill>) => {
+          state.contractorBills.unshift(action.payload);
+        }
+      )
+
+      .addCase(
+        updateContractorBill.fulfilled,
+        (state, action: PayloadAction<ContractorBill>) => {
+          const idx = state.contractorBills.findIndex(
+            (b) => b._id === action.payload._id
+          );
+          if (idx !== -1) state.contractorBills[idx] = action.payload;
+        }
+      )
+
+      .addCase(
+        deleteContractorBill.fulfilled,
+        (state, action: PayloadAction<string>) => {
+          state.contractorBills = state.contractorBills.filter(
+            (b) => b._id !== action.payload
+          );
+        }
+      );;
   },
 });
 

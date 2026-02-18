@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import BillModal from "@/components/wbsBill";
 import { parseISO, format, min, max } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -97,6 +97,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 // import { hrmsOrganisationIdFromDB } from "@/utils/constants";
 import { fetchMasterData } from "@/redux/slices/masterDataSlice";
+import { createContractorBill } from "@/redux/slices/billingSlice";
 
 // --- TYPES ---
 type WBSItemType = "phase" | "activity" | "task" | "subtask";
@@ -114,6 +115,9 @@ interface LinkedMaterial {
 interface WBSItem extends Omit<ImportedWBSItem, 'linkedMaterials'> {
   linkedMaterials?: LinkedMaterial[];
   delayReason?: string;
+  contractorId?: string | null;
+  contractorCharge?: number;
+  isContractorPaid?: boolean;
   assignedPersons?: Array<{
     resourceId: string;
     type: string;
@@ -147,6 +151,7 @@ interface WBSNodeProps {
   onShowToast: (message: string) => void;
   onPause: (item: WBSItem) => void;
   onResume: (item: WBSItem) => void;
+  onOpenPay: (item: WBSItem) => void;
   getMaterialStatusSummary: (wbsItem: WBSItem) => {
     total: number;
     received: number;
@@ -169,6 +174,7 @@ const WBSNode: React.FC<WBSNodeProps> = ({
   onPause,
   onResume,
   onOpenBill,
+  onOpenPay,
   getMaterialStatusSummary,
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
@@ -350,6 +356,23 @@ const WBSNode: React.FC<WBSNodeProps> = ({
                 onClick={() => onEdit(item)}
               />
             )}
+            {canEdit && item.status === "completed" && !item.isContractorPaid && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 text-xs text-green-600 border-green-600"
+                onClick={() => onOpenPay(item)}
+              >
+                💰 Pay
+              </Button>
+            )}
+
+            {item.isContractorPaid && (
+              <Badge className="bg-green-100 text-green-700 border-green-200">
+                Paid
+              </Badge>
+            )}
+
 
             {canEdit && (
               <FileText
@@ -381,6 +404,7 @@ const WBSNode: React.FC<WBSNodeProps> = ({
             allwbs={allwbs}
             level={level + 1}
             onEdit={onEdit}
+            onOpenPay={openPayModal}
             onDelete={onDelete}
             onLinkTeam={onLinkTeam} // Pass down prop
             onLinkMaterial={onLinkMaterial} // Pass down prop
@@ -402,10 +426,80 @@ export default function WBS() {
   const { wbs } = useSelector((state: RootState) => state.wbs);
   const { list: mrsList } = useSelector((state: RootState) => state.mrs);
   const { userProfile } = useSelector((state: RootState) => state.auth);
-  const { locations } = useSelector((state: RootState) => state.masterData);
+  const { locations, contractors } = useSelector((state: RootState) => state.masterData);
   const canView = usePermission("wbsManagement", "view");
   const canCreate = usePermission("wbsManagement", "create");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+
+  const [payDialogOpen, setPayDialogOpen] = useState(false);
+  const [payingItem, setPayingItem] = useState<WBSItem | null>(null);
+  const [contractorChargeInput, setContractorChargeInput] = useState(0);
+  const openPayModal = (item: WBSItem) => {
+    setPayingItem(item);
+    setContractorChargeInput(item.contractorCharge || 0);
+    setPayDialogOpen(true);
+  };
+  const getOrg = () => localStorage.getItem("organisationId");
+
+
+  const handleConfirmPayment = async () => {
+    if (!payingItem) return;
+
+    try {
+      if (!payingItem.contractorId) {
+        toast({
+          title: "Error",
+          description: "No contractor assigned to this task.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      await dispatch(
+        createContractorBill({
+          projectId: payingItem.projectId,
+          wbsId: payingItem.id,
+          contractorId: payingItem.contractorId,
+          amount: contractorChargeInput,
+          paymentDate: new Date().toISOString(),
+        })
+      ).unwrap();
+
+      await dispatch(
+        updateWbsItem({
+          id: payingItem._id,
+          data: {
+            contractorCharge: contractorChargeInput,
+            isContractorPaid: true,
+            contractorPaidAt: new Date().toISOString(),
+            status: payingItem.status, // ✅ preserve current status
+            progress: payingItem.progress, // optional safety
+          },
+        })
+      ).unwrap();
+
+
+      // 🔥 IMPORTANT
+      await dispatch(fetchWbsByProject(payingItem.projectId));
+
+      toast({
+        title: "Payment Successful",
+        description: "Contractor bill created & marked as paid.",
+      });
+
+      setPayDialogOpen(false);
+      setPayingItem(null);
+
+    } catch (error: any) {
+      toast({
+        title: "Payment Failed",
+        description: error?.message || "Could not process payment",
+        variant: "destructive",
+      });
+    }
+  };
+
+
 
 
   const [billModalOpen, setBillModalOpen] = useState(false);
@@ -468,6 +562,7 @@ export default function WBS() {
   // Fetch Master Data on mount
   useEffect(() => {
     dispatch(fetchMasterData("location"));
+    dispatch(fetchMasterData("contractor"));
   }, [dispatch]);
 
   useEffect(() => {
@@ -502,22 +597,23 @@ export default function WBS() {
 
     return diffDays > 0 ? diffDays : 0;
   };
-
+  const formDataRef = useRef<Partial<WBSItem>>({});
   // remain it commented.
   const handleSave = async () => {
-    // 1. Basic Validation
-    if (!formData.name || !formData.projectId || !formData.type) {
+    const currentFormData = formDataRef.current;
+
+    console.log("currentFormData at save:", JSON.stringify(currentFormData));
+
+    if (!currentFormData.name || !currentFormData.projectId || !currentFormData.type) {
       toastSonner.error("Validation Error", {
         description: "Name, Project, and Type are required.",
       });
       return;
     }
 
-    // 2. Date Validation
-    if (formData.startDate && formData.endDate) {
-      const start = new Date(formData.startDate);
-      const end = new Date(formData.endDate);
-
+    if (currentFormData.startDate && currentFormData.endDate) {
+      const start = new Date(currentFormData.startDate);
+      const end = new Date(currentFormData.endDate);
       if (end < start) {
         toastSonner.error("Date Error", {
           description: "End Date cannot be earlier than Start Date.",
@@ -526,39 +622,31 @@ export default function WBS() {
       }
     }
 
-    // 3. Delay Reason Validation
-    if (formData.status === "delayed" && !formData.delayReason?.trim()) {
+    if (currentFormData.status === "delayed" && !currentFormData.delayReason?.trim()) {
       toastSonner.error("Validation Error", {
         description: "Please provide a reason for the delay.",
       });
       return;
     }
 
-    // 4. Parent Validation
-    if (formData.type === "phase") {
-      formData.parentId = null;
-    } else if (!formData.parentId) {
+    const payload = { ...currentFormData };
+
+    if (payload.type === "phase") {
+      payload.parentId = null;
+    } else if (!payload.parentId) {
       toastSonner.error("Validation Error", {
-        description: `${formData.type} must have a Parent Item.`,
+        description: `${payload.type} must have a Parent Item.`,
       });
       return;
     }
 
     try {
       if (editingItem) {
-        // A. Update the Item First
-        await dispatch(updateWbsItem({ id: editingItem.id, data: formData })).unwrap();
+        await dispatch(updateWbsItem({ id: editingItem.id, data: payload })).unwrap();
 
-        // B. Check if Status is Delayed and Item is NOT already paused
-        // We trigger the pause action automatically here
-        if (formData.status === "delayed" && !editingItem.isPaused) {
-          const pauseReason = `DELAYED: ${formData.delayReason}`;
-
-          await dispatch(pauseWbsTask({
-            id: editingItem.id,
-            reason: pauseReason
-          })).unwrap();
-
+        if (payload.status === "delayed" && !editingItem.isPaused) {
+          const pauseReason = `DELAYED: ${payload.delayReason}`;
+          await dispatch(pauseWbsTask({ id: editingItem.id, reason: pauseReason })).unwrap();
           toastSonner.warning("Task Delayed & Paused", {
             description: "The task has been paused automatically due to delay status.",
           });
@@ -568,16 +656,11 @@ export default function WBS() {
           });
         }
       } else {
-        // Create New Item
-        const newItem = await dispatch(createWbsItem(formData)).unwrap();
+        const newItem = await dispatch(createWbsItem(payload)).unwrap();
 
-        // Handle case where a new item is created immediately as delayed (rare but possible)
-        if (formData.status === "delayed") {
-          const pauseReason = `DELAYED: ${formData.delayReason}`;
-          await dispatch(pauseWbsTask({
-            id: newItem.id,
-            reason: pauseReason
-          })).unwrap();
+        if (payload.status === "delayed") {
+          const pauseReason = `DELAYED: ${payload.delayReason}`;
+          await dispatch(pauseWbsTask({ id: newItem.id, reason: pauseReason })).unwrap();
         }
 
         toastSonner.success("Success", {
@@ -585,7 +668,6 @@ export default function WBS() {
         });
       }
 
-      // Close Dialog and Reset
       setIsDialogOpen(false);
       resetForm();
 
@@ -1000,7 +1082,9 @@ export default function WBS() {
       maxEndDate,
     };
   }, [selectedProjectId, wbs]);
-
+  useEffect(() => {
+    formDataRef.current = formData;
+  }, [formData]);
   useEffect(() => {
     if (selectedProjectId) {
       setFormData((prev) => ({
@@ -1238,10 +1322,7 @@ export default function WBS() {
                   <Label>Project</Label>
                   <Input
                     disabled
-                    value={
-                      projects.find((p) => p._id === formData.projectId)
-                        ?.name || ""
-                    }
+                    value={projects.find((p) => p._id === formData.projectId)?.name || ""}
                   />
                 </div>
 
@@ -1251,11 +1332,7 @@ export default function WBS() {
                     <Select
                       value={formData.type}
                       onValueChange={(value: WBSItemType) =>
-                        setFormData({
-                          ...formData,
-                          type: value,
-                          parentId: null,
-                        })
+                        setFormData((prev) => ({ ...prev, type: value, parentId: null }))
                       }
                       disabled={!!editingItem}
                     >
@@ -1264,11 +1341,7 @@ export default function WBS() {
                       </SelectTrigger>
                       <SelectContent>
                         {WBS_ITEM_TYPES.map((type) => (
-                          <SelectItem
-                            key={type}
-                            value={type}
-                            className="capitalize"
-                          >
+                          <SelectItem key={type} value={type} className="capitalize">
                             {type}
                           </SelectItem>
                         ))}
@@ -1280,7 +1353,7 @@ export default function WBS() {
                     <Select
                       value={formData.parentId || ""}
                       onValueChange={(value) =>
-                        setFormData({ ...formData, parentId: value })
+                        setFormData((prev) => ({ ...prev, parentId: value }))
                       }
                       disabled={!formData.type || formData.type === "phase"}
                     >
@@ -1303,35 +1376,38 @@ export default function WBS() {
                     </Select>
                   </div>
                 </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="name">Name *</Label>
                   <Input
                     id="name"
                     value={formData.name || ""}
                     onChange={(e) =>
-                      setFormData({ ...formData, name: e.target.value })
+                      setFormData((prev) => ({ ...prev, name: e.target.value }))
                     }
                     placeholder="e.g., Foundation Work"
                   />
                 </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="drawingCode">Drawing Code</Label>
                   <Input
                     id="drawingCode"
                     value={formData.drawingCode || ""}
                     onChange={(e) =>
-                      setFormData({ ...formData, drawingCode: e.target.value })
+                      setFormData((prev) => ({ ...prev, drawingCode: e.target.value }))
                     }
                     placeholder="e.g. STR-05"
                   />
                 </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="description">Description</Label>
                   <Textarea
                     id="description"
                     value={formData.description || ""}
                     onChange={(e) =>
-                      setFormData({ ...formData, description: e.target.value })
+                      setFormData((prev) => ({ ...prev, description: e.target.value }))
                     }
                     placeholder="Detailed description of the work..."
                   />
@@ -1346,15 +1422,11 @@ export default function WBS() {
                       value={formData.startDate || ""}
                       onChange={(e) => {
                         const newStartDate = e.target.value;
-                        const newDuration = calculateDuration(
-                          newStartDate,
-                          formData.endDate || ""
-                        );
-                        setFormData({
-                          ...formData,
+                        setFormData((prev) => ({
+                          ...prev,
                           startDate: newStartDate,
-                          duration: newDuration,
-                        });
+                          duration: calculateDuration(newStartDate, prev.endDate || ""),
+                        }));
                       }}
                     />
                   </div>
@@ -1366,15 +1438,11 @@ export default function WBS() {
                       value={formData.endDate || ""}
                       onChange={(e) => {
                         const newEndDate = e.target.value;
-                        const newDuration = calculateDuration(
-                          formData.startDate || "",
-                          newEndDate
-                        );
-                        setFormData({
-                          ...formData,
+                        setFormData((prev) => ({
+                          ...prev,
                           endDate: newEndDate,
-                          duration: newDuration,
-                        });
+                          duration: calculateDuration(prev.startDate || "", newEndDate),
+                        }));
                       }}
                     />
                   </div>
@@ -1399,10 +1467,10 @@ export default function WBS() {
                       type="number"
                       value={formData.plannedCost || ""}
                       onChange={(e) =>
-                        setFormData({
-                          ...formData,
+                        setFormData((prev) => ({
+                          ...prev,
                           plannedCost: parseFloat(e.target.value) || 0,
-                        })
+                        }))
                       }
                       placeholder="500000"
                     />
@@ -1412,7 +1480,7 @@ export default function WBS() {
                     <Select
                       value={formData.status}
                       onValueChange={(value: wbstatus) =>
-                        setFormData({ ...formData, status: value })
+                        setFormData((prev) => ({ ...prev, status: value }))
                       }
                     >
                       <SelectTrigger>
@@ -1420,11 +1488,7 @@ export default function WBS() {
                       </SelectTrigger>
                       <SelectContent>
                         {WBS_ITEM_STATUSES.map((status) => (
-                          <SelectItem
-                            key={status}
-                            value={status}
-                            className="capitalize"
-                          >
+                          <SelectItem key={status} value={status} className="capitalize">
                             {status.replace("-", " ")}
                           </SelectItem>
                         ))}
@@ -1442,7 +1506,7 @@ export default function WBS() {
                       id="delayReason"
                       value={formData.delayReason || ""}
                       onChange={(e) =>
-                        setFormData({ ...formData, delayReason: e.target.value })
+                        setFormData((prev) => ({ ...prev, delayReason: e.target.value }))
                       }
                       placeholder="Provide a reason for your delay..."
                       className="border-red-200 focus:border-red-500"
@@ -1451,23 +1515,44 @@ export default function WBS() {
                 )}
 
                 <div className="space-y-2">
-                  <Label>Dependencies</Label>
+                  <Label htmlFor="contractorId">Contractor</Label>
+                  <Select
+                    value={
+                      typeof formData.contractorId === "object" && formData.contractorId !== null
+                        ? (formData.contractorId as any)._id
+                        : (formData.contractorId as string) || ""
+                    }
+                    onValueChange={(value) =>
+                      setFormData((prev) => ({ ...prev, contractorId: value || null }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select contractor" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {contractors.map((c: any) => (
+                        <SelectItem key={c._id} value={c._id}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
+                <div className="space-y-2">
+                  <Label>Dependencies</Label>
                   <Select
                     onValueChange={(value) => {
-                      const newDeps = formData.dependencies
-                        ? [...formData.dependencies]
-                        : [];
-                      if (!newDeps.includes(value)) {
-                        newDeps.push(value);
-                      }
-                      setFormData({ ...formData, dependencies: newDeps });
+                      setFormData((prev) => {
+                        const newDeps = prev.dependencies ? [...prev.dependencies] : [];
+                        if (!newDeps.includes(value)) newDeps.push(value);
+                        return { ...prev, dependencies: newDeps };
+                      });
                     }}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select dependency" />
                     </SelectTrigger>
-
                     <SelectContent>
                       {wbs
                         .filter((item) => item.id !== editingItem?.id)
@@ -1478,19 +1563,16 @@ export default function WBS() {
                         ))}
                     </SelectContent>
                   </Select>
-
                   <div className="flex flex-wrap gap-2 mt-2">
                     {formData.dependencies?.map((dep) => (
                       <span
                         key={dep}
                         className="px-2 py-1 text-xs bg-blue-100 border rounded cursor-pointer"
                         onClick={() =>
-                          setFormData({
-                            ...formData,
-                            dependencies: formData.dependencies!.filter(
-                              (d) => d !== dep
-                            ),
-                          })
+                          setFormData((prev) => ({
+                            ...prev,
+                            dependencies: prev.dependencies!.filter((d) => d !== dep),
+                          }))
                         }
                       >
                         {wbs.find((w) => w.id === dep)?.name || dep} ✕
@@ -1582,6 +1664,7 @@ export default function WBS() {
                 item={item}
                 allwbs={wbs}
                 level={0}
+                onOpenPay={openPayModal}
                 onEdit={openEditDialog}
                 onDelete={handleDelete}
                 onLinkTeam={handleLinkTeam} // Pass link handler
@@ -1750,6 +1833,87 @@ export default function WBS() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+
+      {/* Pay model */}
+      <Dialog open={payDialogOpen} onOpenChange={setPayDialogOpen}>
+        <DialogContent className="max-w-md border-none p-0 overflow-hidden">
+          {/* Header with a subtle background accent */}
+          <div className="bg-slate-50 dark:bg-slate-900 p-6 pb-4">
+            <DialogHeader>
+              <DialogTitle className="text-xl flex items-center gap-2">
+                <span className="p-2 bg-green-100 dark:bg-green-900/30 rounded-full">
+                  <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                </span>
+                Pay Contractor
+              </DialogTitle>
+              <DialogDescription className="pt-2">
+                You are authorizing a payment for: <br />
+                <strong className="text-foreground">"{payingItem?.name}"</strong>
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+
+          <div className="p-6 space-y-6">
+            {/* Contractor Info Display (Read Only) */}
+            <div className="flex items-center justify-between p-3 rounded-lg border bg-slate-50/50 dark:bg-slate-800/50">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Contractor</p>
+                <p className="font-semibold text-sm">
+                  {contractors.find(c => c._id === payingItem?.contractorId)?.name || "Not Assigned"}
+                </p>
+              </div>
+              <div className="h-10 w-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-xs font-bold">
+                {/* Simple Avatar Placeholder */}
+                {contractors.find(c => c._id === payingItem?.contractorId)?.name?.charAt(0) || "?"}
+              </div>
+            </div>
+
+            {/* Payment Input */}
+            <div className="space-y-3">
+              <Label htmlFor="amount" className="text-sm font-medium">
+                Payment Amount
+              </Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-medium">
+                  ₹
+                </span>
+                <Input
+                  id="amount"
+                  type="number"
+                  className="pl-8 text-lg font-semibold focus-visible:ring-green-500"
+                  placeholder="0.00"
+                  value={contractorChargeInput}
+                  onChange={(e) => setContractorChargeInput(Number(e.target.value))}
+                />
+              </div>
+              <p className="text-[11px] text-muted-foreground italic">
+                Please verify the amount before confirming. This action is recorded.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="p-6 pt-0 flex flex-col-reverse sm:flex-row gap-2">
+            <Button
+              variant="ghost"
+              className="flex-1"
+              onClick={() => setPayDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="flex-1 dark:shadow-none transition-all active:scale-[0.98]"
+              onClick={handleConfirmPayment}
+              disabled={!contractorChargeInput || contractorChargeInput <= 0}
+            >
+              Confirm Payment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }

@@ -35,20 +35,24 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 // [!code ++] Import RefreshCw for the sync icon
-import { Pencil, Trash2, Plus, ShieldAlert, RefreshCw } from "lucide-react"; 
+import { Pencil, Trash2, Plus, ShieldAlert, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/userPermission";
 // [!code ++] Import the HRMS integration function
-import { getPublicLocations } from "@/lib/hrmsIntegration"; 
+import { getPublicLocations } from "@/lib/hrmsIntegration";
 import { hrmsOrganisationIdFromDB } from "@/utils/constants";
 
-// [!code ++] Update Type to include location
-type MasterType = "client" | "department" | "project-type" | "location"; 
+type MasterType =
+  | "client"
+  | "department"
+  | "project-type"
+  | "location"
+  | "contractor";
 
 export default function MasterDataPage() {
   const dispatch = useDispatch<AppDispatch>();
   // [!code ++] Add locations to selector
-  const { clients, departments, projectTypes, locations } = useSelector( 
+  const { clients, departments, projectTypes, locations } = useSelector(
     (state: RootState) => state.masterData
   );
   const { paginatedList, page, totalPages, limit, search } = useSelector(
@@ -68,14 +72,16 @@ export default function MasterDataPage() {
   const { userProfile } = useSelector((state: RootState) => state.auth);
 
   // [!code ++] State for sync loading
-  const [isSyncing, setIsSyncing] = useState(false); 
+  const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
     dispatch(fetchMasterData("client"));
     dispatch(fetchMasterData("department"));
     dispatch(fetchMasterData("project-type"));
-    dispatch(fetchMasterData("location")); // [!code ++] Fetch locations
+    dispatch(fetchMasterData("location"));
+    dispatch(fetchMasterData("contractor")); // ✅ ADD
   }, [dispatch]);
+
 
   useEffect(() => {
     dispatch(fetchPaginatedMaster({
@@ -113,7 +119,7 @@ export default function MasterDataPage() {
     try {
       // 1. Fetch from HRMS
       const { data: hrmsLocations, error } = await getPublicLocations(hrmsOrganisationId);
-      
+
       if (error || !hrmsLocations) {
         throw new Error(error || "Failed to fetch from HRMS");
       }
@@ -140,7 +146,7 @@ export default function MasterDataPage() {
               await dispatch(updateMasterItem({
                 type: "location",
                 id: localMatch._id,
-                data: { hrmsLocationId: String(hLoc.id) } as any 
+                data: { hrmsLocationId: String(hLoc.id) } as any
               })).unwrap();
               updatedCount++;
             } catch (err) {
@@ -152,8 +158,8 @@ export default function MasterDataPage() {
           try {
             await dispatch(addMasterItem({
               type: "location",
-              data: { 
-                name: hLoc.name, 
+              data: {
+                name: hLoc.name,
                 description: hLoc.address || hLoc.description || "Imported from HRMS",
                 hrmsLocationId: hLoc.id // Save the ID
               } as any
@@ -170,10 +176,10 @@ export default function MasterDataPage() {
         // Refresh the lists
         dispatch(fetchMasterData("location"));
         dispatch(fetchPaginatedMaster({
-           type: "location", 
-           page: 1, 
-           limit, 
-           search 
+          type: "location",
+          page: 1,
+          limit,
+          search
         }));
       } else {
         toast.info("Locations are already up to date.");
@@ -255,12 +261,12 @@ export default function MasterDataPage() {
       <div className="flex justify-between items-center">
         <h2 className="text-3xl font-bold">Master Data Management</h2>
         <div className="flex gap-2"> {/* [!code ++] Wrap buttons in a flex container */}
-          
+
           {/* [!code ++] Show Sync Button only for Location tab */}
           {activeTab === 'location' && canCreate && (
-            <Button 
-              onClick={handleSyncFromHRMS} 
-              variant="outline" 
+            <Button
+              onClick={handleSyncFromHRMS}
+              variant="outline"
               disabled={isSyncing}
             >
               <RefreshCw className={`mr-2 h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
@@ -282,7 +288,9 @@ export default function MasterDataPage() {
           <TabsTrigger value="client">Clients</TabsTrigger>
           <TabsTrigger value="department">Departments</TabsTrigger>
           <TabsTrigger value="project-type">Project Types</TabsTrigger>
-          <TabsTrigger value="location">Locations</TabsTrigger> {/* [!code ++] Location Tab */}
+          <TabsTrigger value="location">Locations</TabsTrigger>
+          <TabsTrigger value="contractor">Contractors</TabsTrigger>
+
         </TabsList>
 
         <Card className="mt-4">

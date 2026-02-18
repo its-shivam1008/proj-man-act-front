@@ -6,7 +6,7 @@ export interface MasterItem {
   _id: string;
   name: string;
   description?: string;
-  hrmsLocationId?:string;
+  hrmsLocationId?: string;
 }
 
 interface MasterState {
@@ -14,14 +14,15 @@ interface MasterState {
   departments: MasterItem[];
   projectTypes: MasterItem[];
   locations: MasterItem[];
+  contractors: MasterItem[];
   paginatedList: MasterItem[],
   loading: boolean;
   page: number;
   limit: number;
   total: number;
   totalPages: number;
-  search:string;
-  loadingPaginated:boolean;
+  search: string;
+  loadingPaginated: boolean;
 }
 
 const initialState: MasterState = {
@@ -29,6 +30,7 @@ const initialState: MasterState = {
   departments: [],
   projectTypes: [],
   paginatedList: [],
+  contractors: [],
   locations: [],
   page: 1,
   limit: 10,
@@ -41,7 +43,12 @@ const initialState: MasterState = {
 };
 
 // Helper type for args
-type MasterType = "client" | "department" | "project-type" | "location";
+type MasterType =
+  | "client"
+  | "department"
+  | "project-type"
+  | "location"
+  | "contractor";
 export const fetchPaginatedMaster = createAsyncThunk(
   "masterData/fetchPaginated",
   async ({ type, page = 1, limit = 10, search = "" }) => {
@@ -92,7 +99,7 @@ export const deleteMasterItem = createAsyncThunk(
 const masterDataSlice = createSlice({
   name: "masterData",
   initialState,
- reducers: {
+  reducers: {
     setSearchText(state, action) {
       state.search = action.payload;
       state.page = 1;
@@ -100,7 +107,7 @@ const masterDataSlice = createSlice({
     setPage(state, action) {
       state.page = action.payload;
     }
-},
+  },
 
   extraReducers: (builder) => {
     builder
@@ -127,6 +134,7 @@ const masterDataSlice = createSlice({
         if (type === "department") state.departments = data;
         if (type === "project-type") state.projectTypes = data;
         if (type === "location") state.locations = data;
+        if (type === "contractor") state.contractors = data;
       })
       // Add
       .addCase(addMasterItem.fulfilled, (state, action) => {
@@ -135,6 +143,7 @@ const masterDataSlice = createSlice({
         if (type === "department") state.departments.unshift(data);
         if (type === "project-type") state.projectTypes.unshift(data);
         if (type === "location") state.locations.unshift(data);
+        if (type === "contractor") state.contractors.unshift(data);
       })
       // Update
       .addCase(updateMasterItem.fulfilled, (state, action) => {
@@ -146,6 +155,7 @@ const masterDataSlice = createSlice({
         if (type === "department") state.departments = updateList(state.departments);
         if (type === "project-type") state.projectTypes = updateList(state.projectTypes);
         if (type === "location") state.locations = updateList(state.locations);
+        if (type === "contractor") state.contractors = updateList(state.contractors);
       })
       // Delete
       .addCase(deleteMasterItem.fulfilled, (state, action) => {
@@ -156,6 +166,7 @@ const masterDataSlice = createSlice({
         if (type === "department") state.departments = filterList(state.departments);
         if (type === "project-type") state.projectTypes = filterList(state.projectTypes);
         if (type === "location") state.locations = filterList(state.locations);
+        if (type === "contractor") state.contractors = filterList(state.contractors);
       });
   },
 });

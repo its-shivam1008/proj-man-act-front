@@ -31,6 +31,11 @@ export interface WBSItem {
   manpowerRequirement?: string;
   materialRequirement?: string;
   dependencies?: string[];
+  contractorId?: {
+    _id: string;
+    name: string;
+  } | string | null;
+  isContractorPaid?: boolean;
   status?: WBSItemStatus;
   progress?: number;
   wbsCreatedAt?: string;
@@ -103,11 +108,11 @@ export const fetchWbsByProject = createAsyncThunk<
 export const createWbsItem = createAsyncThunk<WBSItem, Partial<WBSItem>>(
   "wbs/create",
   async (payload, { rejectWithValue }) => {
+    console.log("THUNK payload:", JSON.stringify(payload)); // ADD THIS
     try {
       const res = await api.post(`/wbs/create`, payload, {
         params: { organisationId: localStorage.getItem("organisationId") },
       });
-
       return { ...res.data, id: res.data._id };
     } catch (err: any) {
       return rejectWithValue("Create failed");
@@ -270,9 +275,18 @@ const wbsSlice = createSlice({
 
     /* UPDATE */
     builder.addCase(updateWbsItem.fulfilled, (state, action) => {
-      const idx = state.wbs.findIndex((i) => i.id === action.payload.id);
-      if (idx >= 0) state.wbs[idx] = action.payload; // FIXED
+      const index = state.wbs.findIndex(
+        (item) => item.id === action.payload.id
+      );
+
+      if (index !== -1) {
+        state.wbs[index] = {
+          ...state.wbs[index],
+          ...action.payload,
+        };
+      }
     });
+
 
     /* DELETE */
     builder.addCase(deleteWbsItem.fulfilled, (state, action) => {

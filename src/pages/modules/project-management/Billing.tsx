@@ -1,5 +1,7 @@
 "use client";
 import { fetchWbsByIds, fetchWbsByProject } from "@/redux/slices/wbsSlice";
+import { ContractorBill, deleteContractorBill, fetchContractorBills, updateContractorBill } from "@/redux/slices/billingSlice";
+
 import { fetchBillsByWbs, deleteBill } from "@/redux/slices/wbsBillSlice";
 import jsPDF from "jspdf";
 import { fetchMasterData } from "@/redux/slices/masterDataSlice";
@@ -28,7 +30,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 export default function BillingPage() {
     const { userProfile } = useSelector((state: RootState) => state.auth);
     const dispatch = useDispatch();
-    const { milestones, invoices, loading: billingLoading, totalPages } = useSelector((state: RootState) => state.billing);
+    const { milestones, invoices, loading: billingLoading, totalPages, contractorBills } = useSelector((state: RootState) => state.billing);
     const { projects, loading: projectsLoading } = useSelector((state: RootState) => state.projects);
     const { bills: wbsBills, loading: billLoading } = useSelector((state: RootState) => state.wbsBill);
 
@@ -39,6 +41,8 @@ export default function BillingPage() {
     const canCreate = usePermission('billings', 'create');
     const canEdit = usePermission('billings', 'edit');
     const canDelete = usePermission('billings', 'delete');
+    const [selectedBill, setSelectedBill] = useState<ContractorBill | null>(null);
+    const [editBill, setEditBill] = useState<ContractorBill | null>(null);
 
     // Milestone States
     const [wbsList, setWbsList] = useState([]);
@@ -51,12 +55,15 @@ export default function BillingPage() {
         billed: 0,
         location: userProfile?.location || undefined,
     });
+    const safeContractorBills = Array.isArray(contractorBills)
+        ? contractorBills
+        : [];
 
     const isLocationRestricted =
         userProfile?.role !== 'admin' &&
         !!userProfile?.location;
     const [locationFilter, setLocationFilter] = useState("all");
-    
+
     // Invoice States
     const [invoiceOpen, setInvoiceOpen] = useState(false);
     const [invoiceData, setInvoiceData] = useState<any>(null);
@@ -75,7 +82,7 @@ export default function BillingPage() {
     const [search, setSearch] = useState("");
     const [searchDebounce, setSearchDebounce] = useState("");
     const [projectId, setProjectId] = useState("");
-    
+
     // Master Data
     const { locations } = useSelector(
         (state: RootState) => state.masterData
@@ -90,7 +97,7 @@ export default function BillingPage() {
     const safeLocations = Array.isArray(locations) ? locations : []; // Ensure locations is an array
 
     const organisationId = localStorage.getItem("organisationId") || "";
-    
+
     const handleLocationFilterChange = (val: string) => {
         setLocationFilter(val);
         setPage(1);
@@ -102,6 +109,99 @@ export default function BillingPage() {
         const found = safeLocations.find((l) => l._id === locData);
         return found ? found.name : "Unknown Location";
     };
+
+    
+
+const downloadContractorBillPDF = (bill: ContractorBill) => {
+  const doc = new jsPDF();
+  
+  // -- Helper Data --
+  const projectName = typeof bill.projectId === "object" ? bill.projectId?.name : bill.projectId;
+  const wbsName = typeof bill.wbsId === "object" ? bill.wbsId?.name : bill.wbsId;
+  const contractorName = typeof bill.contractorId === "object" ? bill.contractorId?.name : bill.contractorId;
+  const date = new Date(bill.paymentDate).toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric'
+  });
+
+  // 1. Add a Professional Header (Blue Accent)
+  doc.setFillColor(41, 128, 185); // Professional Blue
+  doc.rect(0, 0, 210, 40, 'F'); 
+  
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(22);
+  doc.setFont("helvetica", "bold");
+  doc.text("PAYMENT RECEIPT", 20, 25);
+  
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.text(`Receipt No: #${bill._id.toString().slice(-6).toUpperCase()}`, 160, 25);
+
+  // 2. Project Details Section
+  doc.setTextColor(40, 40, 40);
+  doc.setFontSize(12);
+  doc.setFont("helvetica", "bold");
+  doc.text("Project Information", 20, 55);
+  
+  doc.setLineWidth(0.5);
+  doc.setDrawColor(220, 220, 220);
+  doc.line(20, 58, 190, 58); // Underline
+
+  // 3. Info Grid (Manual positioning)
+  doc.setFontSize(10);
+  doc.setTextColor(100, 100, 100);
+  doc.text("Project:", 20, 68);
+  doc.text("Work Breakdown (WBS):", 20, 75);
+  doc.text("Payment Date:", 20, 82);
+
+  doc.setTextColor(0, 0, 0);
+  doc.setFont("helvetica", "medium");
+  doc.text(`${projectName}`, 70, 68);
+  doc.text(`${wbsName}`, 70, 75);
+  doc.text(`${date}`, 70, 82);
+
+  // 4. Payment Table (Using autoTable for a clean look)
+  autoTable(doc, {
+    startY: 95,
+    head: [['Description', 'Contractor', 'Total Amount']],
+    body: [
+      [
+        { content: bill.notes || 'Service/Task Payment', styles: { fontStyle: 'italic' } },
+        contractorName || 'N/A',
+        { content: `INR ${bill.amount.toLocaleString('en-IN')}`, styles: { halign: 'right', fontStyle: 'bold' } }
+      ]
+    ],
+    headStyles: { fillColor: [41, 128, 185], textColor: 255, fontSize: 11 },
+    alternateRowStyles: { fillColor: [245, 245, 245] },
+    margin: { left: 20, right: 20 },
+    theme: 'striped'
+  });
+
+  // 5. Total Section
+  const finalY = (doc as any).lastAutoTable.finalY + 10;
+  doc.setFontSize(12);
+  doc.setFont("helvetica", "bold");
+  doc.text("Total Paid:", 140, finalY);
+  doc.text(`₹ ${bill.amount.toLocaleString('en-IN')}`, 170, finalY, { align: 'left' });
+
+  // 6. Footer / Signature
+  doc.setFontSize(9);
+  doc.setTextColor(150, 150, 150);
+  doc.text("This is a computer-generated document. No signature required.", 105, 280, { align: "center" });
+  
+  // Border around the whole page
+  doc.setDrawColor(200, 200, 200);
+  doc.rect(5, 5, 200, 287);
+
+  doc.save(`Receipt-${contractorName?.replace(/\s+/g, '-')}-${bill._id.slice(-4)}.pdf`);
+};
+
+    useEffect(() => {
+        if (organisationId) {
+            dispatch(fetchContractorBills());
+        }
+    }, [dispatch, organisationId]);
 
     // Debounce search
     useEffect(() => {
@@ -308,7 +408,7 @@ export default function BillingPage() {
         try {
             await dispatch(createInvoice(invoice)).unwrap();
             await dispatch(fetchInvoices({ organisationId })).unwrap();
-            
+
             // FIXED: Ensure payload matches main useEffect
             await dispatch(fetchPaginatedMilestones({
                 page,
@@ -591,7 +691,7 @@ export default function BillingPage() {
                         </div>
 
                         {/* ... existing dialog content ... */}
-                         {wbsList.length > 0 && (
+                        {wbsList.length > 0 && (
                             <div className="grid gap-2">
                                 <Label>Link WBS Items</Label>
                                 <div className="border rounded-md p-3 max-h-40 overflow-y-auto">
@@ -667,8 +767,8 @@ export default function BillingPage() {
             {/* Invoice & Bill Dialogs (Existing Code) */}
             <Dialog open={invoiceOpen} onOpenChange={setInvoiceOpen}>
                 <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-                     {/* ... Invoice preview content ... */}
-                     <DialogHeader>
+                    {/* ... Invoice preview content ... */}
+                    <DialogHeader>
                         <DialogTitle>Invoice Preview</DialogTitle>
                     </DialogHeader>
                     {invoiceData && (
@@ -741,8 +841,8 @@ export default function BillingPage() {
 
             <Dialog open={!!previewBill} onOpenChange={(open) => !open && setPreviewBill(null)}>
                 <DialogContent className="max-w-2xl">
-                     {/* ... Bill preview content ... */}
-                     <DialogHeader>
+                    {/* ... Bill preview content ... */}
+                    <DialogHeader>
                         <DialogTitle>Bill Preview</DialogTitle>
                     </DialogHeader>
                     {previewBill && (
@@ -792,6 +892,8 @@ export default function BillingPage() {
                     <TabsTrigger value="milestones">Milestones</TabsTrigger>
                     <TabsTrigger value="invoices">Invoices</TabsTrigger>
                     <TabsTrigger value="wbs-bills">WBS Bills</TabsTrigger>
+                    <TabsTrigger value="contractor-bills">Contractor Bills</TabsTrigger>
+
                 </TabsList>
 
                 {/* Milestones Tab */}
@@ -983,8 +1085,8 @@ export default function BillingPage() {
 
                 {/* Invoices Tab */}
                 <TabsContent value="invoices" className="space-y-4">
-                     {/* ... Invoices content ... */}
-                     <Card>
+                    {/* ... Invoices content ... */}
+                    <Card>
                         <CardHeader>
                             <CardTitle>Invoices ({safeInvoices.length})</CardTitle>
                         </CardHeader>
@@ -1025,8 +1127,8 @@ export default function BillingPage() {
 
                 {/* WBS Bills Tab */}
                 <TabsContent value="wbs-bills" className="space-y-4">
-                     {/* ... WBS Bills content ... */}
-                     <Card>
+                    {/* ... WBS Bills content ... */}
+                    <Card>
                         <CardHeader>
                             <CardTitle>WBS Bills</CardTitle>
                             <p className="text-sm text-muted-foreground">
@@ -1160,7 +1262,260 @@ export default function BillingPage() {
                         </CardContent>
                     </Card>
                 </TabsContent>
+
+                <TabsContent value="contractor-bills" className="space-y-4">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>
+                                Contractor Bills ({safeContractorBills.length})
+                            </CardTitle>
+                        </CardHeader>
+
+                        <CardContent>
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Project</TableHead>
+                                        <TableHead>WBS</TableHead>
+                                        <TableHead>Contractor</TableHead>
+                                        <TableHead>Amount</TableHead>
+                                        <TableHead>Date</TableHead>
+                                        <TableHead className="text-right">Actions</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+
+                                <TableBody>
+                                    {safeContractorBills.map((bill) => (
+                                        <TableRow key={bill._id}>
+
+                                            {/* PROJECT */}
+                                            <TableCell>
+                                                {typeof bill.projectId === "object"
+                                                    ? bill.projectId?.name
+                                                    : "—"}
+                                            </TableCell>
+
+                                            {/* WBS */}
+                                            <TableCell>
+                                                {typeof bill.wbsId === "object"
+                                                    ? bill.wbsId?.name
+                                                    : "—"}
+                                            </TableCell>
+
+                                            {/* CONTRACTOR */}
+                                            <TableCell>
+                                                {typeof bill.contractorId === "object"
+                                                    ? bill.contractorId?.name
+                                                    : "—"}
+                                            </TableCell>
+
+                                            {/* AMOUNT */}
+                                            <TableCell>
+                                                ₹{Number(bill.amount).toLocaleString("en-IN")}
+                                            </TableCell>
+
+                                            {/* DATE */}
+                                            <TableCell>
+                                                {new Date(bill.paymentDate).toLocaleDateString()}
+                                            </TableCell>
+
+                                            {/* ACTIONS */}
+                                            <TableCell>
+                                                <div className="flex justify-end gap-2">
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() => setSelectedBill(bill)}
+                                                    >
+                                                        <Eye className="h-4 w-4" />
+                                                    </Button>
+
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() => setEditBill(bill)}
+                                                    >
+                                                        <Edit2 className="h-4 w-4" />
+                                                    </Button>
+
+                                                    <Button
+                                                        size="sm"
+                                                        variant="destructive"
+                                                        onClick={() => dispatch(deleteContractorBill(bill._id))}
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </Button>
+
+                                                    <Button
+                                                        size="sm"
+                                                        variant="secondary"
+                                                        onClick={() => downloadContractorBillPDF(bill)}
+                                                    >
+                                                        <Download className="h-4 w-4" />
+                                                    </Button>
+                                                </div>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+
+
+                            </Table>
+
+                            {safeContractorBills.length === 0 && (
+                                <div className="text-center py-12 text-muted-foreground">
+                                    No contractor payments found.
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
             </Tabs>
+
+          <Dialog
+  open={!!selectedBill}
+  onOpenChange={(open) => {
+    if (!open) setSelectedBill(null);
+  }}
+>
+  <DialogContent className="max-w-md overflow-hidden p-0 border-none shadow-2xl">
+    {/* Subtle Accent Header */}
+    <div className="bg-slate-900 text-white p-6">
+      <DialogHeader>
+        <div className="flex justify-between items-start">
+          <div>
+            <DialogTitle className="text-xl font-bold tracking-tight">
+              Bill Details
+            </DialogTitle>
+            <p className="text-slate-400 text-xs mt-1 uppercase tracking-widest">
+              Transaction ID: #{selectedBill?._id?.slice(-6).toUpperCase()}
+            </p>
+          </div>
+          <div className="bg-green-500/20 text-green-400 px-3 py-1 rounded-full text-[10px] font-bold uppercase border border-green-500/30">
+            Paid
+          </div>
+        </div>
+      </DialogHeader>
+    </div>
+
+    {selectedBill && (
+      <div className="p-6 space-y-6 bg-white dark:bg-slate-950">
+        {/* Main Amount Hero */}
+        <div className="text-center py-4 border-b border-dashed">
+          <p className="text-sm text-muted-foreground mb-1">Total Paid Amount</p>
+          <h2 className="text-4xl font-extrabold text-slate-900 dark:text-white">
+            ₹{Number(selectedBill.amount).toLocaleString("en-IN")}
+          </h2>
+        </div>
+
+        {/* Info Grid */}
+        <div className="grid grid-cols-2 gap-y-4 gap-x-2 text-sm">
+          <div className="space-y-1">
+            <span className="text-muted-foreground text-[11px] uppercase font-bold tracking-wider">Project</span>
+            <p className="font-medium truncate">
+              {typeof selectedBill.projectId === "object" ? selectedBill.projectId?.name : selectedBill.projectId}
+            </p>
+          </div>
+          <div className="space-y-1">
+            <span className="text-muted-foreground text-[11px] uppercase font-bold tracking-wider">Date</span>
+            <p className="font-medium">
+              {new Date(selectedBill.paymentDate).toLocaleDateString("en-IN", {
+                day: '2-digit', month: 'short', year: 'numeric'
+              })}
+            </p>
+          </div>
+          <div className="space-y-1">
+            <span className="text-muted-foreground text-[11px] uppercase font-bold tracking-wider">Contractor</span>
+            <p className="font-medium">
+              {typeof selectedBill.contractorId === "object" ? selectedBill.contractorId?.name : selectedBill.contractorId}
+            </p>
+          </div>
+          <div className="space-y-1">
+            <span className="text-muted-foreground text-[11px] uppercase font-bold tracking-wider">WBS Section</span>
+            <p className="font-medium">
+              {typeof selectedBill.wbsId === "object" ? selectedBill.wbsId?.name : selectedBill.wbsId}
+            </p>
+          </div>
+        </div>
+
+        {/* Notes Section */}
+        {selectedBill.notes && (
+          <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
+            <span className="text-[10px] uppercase font-bold text-muted-foreground block mb-1">Notes</span>
+            <p className="text-xs text-slate-600 dark:text-slate-300 italic">
+              "{selectedBill.notes}"
+            </p>
+          </div>
+        )}
+
+        {/* Action Button */}
+        <div className="pt-2">
+          <Button 
+            variant="outline" 
+            className="w-full gap-2 border-slate-200 hover:bg-slate-50"
+            onClick={() => downloadContractorBillPDF(selectedBill)}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            Download PDF Receipt
+          </Button>
+        </div>
+      </div>
+    )}
+  </DialogContent>
+</Dialog>
+            <Dialog open={!!editBill} onOpenChange={() => setEditBill(null)}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Edit Contractor Bill</DialogTitle>
+                    </DialogHeader>
+
+                    {editBill && (
+                        <div className="space-y-4">
+                            <div>
+                                <Label>Amount</Label>
+                                <Input
+                                    type="number"
+                                    value={editBill.amount}
+                                    onChange={(e) =>
+                                        setEditBill({ ...editBill, amount: Number(e.target.value) })
+                                    }
+                                />
+                            </div>
+
+                            <div>
+                                <Label>Notes</Label>
+                                <Input
+                                    value={editBill.notes || ""}
+                                    onChange={(e) =>
+                                        setEditBill({ ...editBill, notes: e.target.value })
+                                    }
+                                />
+                            </div>
+
+                            <Button
+                                onClick={async () => {
+                                    await dispatch(
+                                        updateContractorBill({
+                                            id: editBill._id,
+                                            payload: {
+                                                amount: editBill.amount,
+                                                notes: editBill.notes,
+                                            },
+                                        })
+                                    );
+                                    setEditBill(null);
+                                }}
+                            >
+                                Update
+                            </Button>
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
+
         </div>
     );
 }

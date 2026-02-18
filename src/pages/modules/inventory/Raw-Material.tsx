@@ -2,10 +2,18 @@ import { usePermission } from "@/hooks/userPermission";
 import React, { useEffect, useMemo, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import * as XLSX from 'xlsx';
-import { Upload, AlertCircle, FileSpreadsheet, Loader2 } from "lucide-react";
+import { Upload, AlertCircle, FileSpreadsheet, Loader2, PackageCheck, IndianRupee } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import { RootState } from "@/redux/store";
-
+import {
+  Truck,
+  FileText,
+  Layers,
+  DollarSign,
+  Download,
+  Tag,
+} from "lucide-react";
+// import { Badge } from "@/components/ui/badge";
 import {
   fetchMaterials,
   addMaterial,
@@ -23,6 +31,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   // DialogTrigger,
@@ -92,6 +102,16 @@ export default function RawMaterialMaster() {
     return totalQty > 0 ? (totalValue / totalQty).toFixed(2) : 0;
   };
 
+  const [shipmentDetails, setShipmentDetails] = useState({
+    dmrNumber: "",
+    challanNumber: "",
+    invoiceNumber: "",
+    invoiceDate: "",
+    dmrDate: "",
+    lrNumber: "",
+    lrDate: "",
+    vehicleNumber: "",
+  });
 
 
   const [page, setPage] = useState(1);
@@ -110,7 +130,128 @@ export default function RawMaterialMaster() {
   const [purchaseHistory, setPurchaseHistory] = useState<{ [key: string]: any[] }>({});
   const [loadingHistory, setLoadingHistory] = useState<{ [key: string]: boolean }>({});
 
+  // Accept Dialog State
+  const [showAcceptDialog, setShowAcceptDialog] = useState(false);
+  const [acceptingNotification, setAcceptingNotification] = useState<any>(null);
+
+  const [acceptForm, setAcceptForm] = useState({
+    dmrNumber: "",
+    challanNumber: "",
+    invoiceNumber: "",
+    invoiceDate: "",
+    dmrDate: "",
+    lrNumber: "",
+    lrDate: "",
+    vehicleNumber: "",
+  });
+
+
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  function InfoCard({ label, value, icon, fullWidth = false, color = "text-slate-900" }: any) {
+    return (
+      <div className={`p-3 rounded-xl border border-slate-100 bg-slate-50/50 ${fullWidth ? 'col-span-full' : ''}`}>
+        <p className="text-[10px] uppercase font-bold text-slate-400 mb-1 flex items-center gap-1">
+          {icon} {label}
+        </p>
+        <p className={`font-semibold truncate ${color}`}>{value || "—"}</p>
+      </div>
+    );
+  }
+
+  function DocItem({ label, value }: { label: string, value?: string }) {
+    return (
+      <div>
+        <p className="text-[10px] uppercase text-slate-400 font-bold">{label}</p>
+        <p className="font-medium text-slate-700">{value || <span className="text-slate-300 italic">N/A</span>}</p>
+      </div>
+    );
+  }
+  const validateAcceptForm = () => {
+    const {
+      dmrNumber,
+      challanNumber,
+      invoiceNumber,
+      invoiceDate,
+      dmrDate,
+      lrNumber,
+      lrDate,
+      vehicleNumber,
+    } = acceptForm;
+
+    if (
+      !dmrNumber ||
+      !challanNumber ||
+      !invoiceNumber ||
+      !invoiceDate ||
+      !dmrDate ||
+      !lrNumber ||
+      !lrDate ||
+      !vehicleNumber
+    ) {
+      toast.error("All fields are required to accept the purchase.");
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleFinalAccept = async () => {
+    if (!validateAcceptForm()) return;
+
+    try {
+      const res = await fetch(`${BASE_URL}/purchase/orders/material-response`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({
+          notificationId: acceptingNotification._id,
+          response: "accepted",
+
+          documentsInfo: {
+            dmrNumber: acceptForm.dmrNumber,
+            challanNumber: acceptForm.challanNumber,
+            invoiceNumber: acceptForm.invoiceNumber,
+            invoiceDate: acceptForm.invoiceDate,
+            dmrDate: acceptForm.dmrDate,
+          },
+
+          transportInfo: {
+            lrNumber: acceptForm.lrNumber,
+            lrDate: acceptForm.lrDate,
+            vehicleNumber: acceptForm.vehicleNumber,
+          },
+        }),
+
+      });
+
+      if (res.ok) {
+        toast.success("Material purchase accepted successfully");
+        fetchNotifications();
+        dispatch(fetchMaterials({ page, limit }));
+        setShowAcceptDialog(false);
+        setAcceptingNotification(null);
+
+        // reset form
+        setAcceptForm({
+          dmrNumber: "",
+          challanNumber: "",
+          invoiceNumber: "",
+          invoiceDate: "",
+          dmrDate: "",
+          lrNumber: "",
+          lrDate: "",
+          vehicleNumber: "",
+        });
+      } else {
+        const errorData = await res.json();
+        toast.error(errorData.message || "Failed to accept material purchase");
+      }
+    } catch (error) {
+      toast.error("Failed to process material purchase response");
+    }
+  };
 
 
   // Warehouse Dialog State
@@ -136,6 +277,18 @@ export default function RawMaterialMaster() {
 
   // [!code ++] Handler
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+
+    const parseExcelDate = (value: any) => {
+      if (!value) return null;
+
+      if (typeof value === "number") {
+        const date = XLSX.SSF.parse_date_code(value);
+        return new Date(date.y, date.m - 1, date.d).toISOString();
+      }
+
+      return new Date(value).toISOString();
+    };
+
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -200,12 +353,30 @@ export default function RawMaterialMaster() {
                 quantity,
                 unitCost,
                 purchaseDate: new Date().toISOString(),
+                remainingQuantity: quantity,
+
                 gst: {
                   cgst: 0,
                   sgst: 0,
                   igst: Number(row["GST"] || 0),
+                },
+
+                documentsInfo: {
+                  dmrNumber: row["DMR Number"] || null,
+                  challanNumber: row["Challan Number"] || null,
+                  invoiceNumber: row["Invoice Number"] || null,
+                  invoiceDate: parseExcelDate(row["Invoice Date"]),
+                  dmrDate: parseExcelDate(row["DMR Date"]),
+                },
+
+                transportInfo: {
+                  lrNumber: row["LR Number"] || null,
+                  lrDate: parseExcelDate(row["LR Date"]),
+                  vehicleNumber: row["Vehicle Number"] || null,
                 }
               }] : []
+
+
 
             };
 
@@ -309,6 +480,9 @@ export default function RawMaterialMaster() {
               referenceNumber: batch.batchId,
               remarks: `FIFO Batch - ${batch.warehouseName || "Warehouse"}`,
               unit: batch.unit || "units",
+
+              documentsInfo: batch.documentsInfo,
+              transportInfo: batch.transportInfo,
             };
           });
 
@@ -430,7 +604,7 @@ export default function RawMaterialMaster() {
 
   // Get detailed warehouse info for a material
   const getWarehouseDetails = (material: any) => {
-    if (!material.stocks || material.stocks.length === 0) return [];
+    if (!Array.isArray(material?.stocks) || material.stocks.length === 0) return [];
 
     const warehouseMap = new Map();
 
@@ -501,8 +675,14 @@ export default function RawMaterialMaster() {
   };
 
   // Redux State
-  const { materials, total, page: currentPage, limit: perPage, loading } =
-    useSelector((state: RootState) => state.rawMaterials);
+  const {
+    materials = [],
+    total = 0,
+    page: currentPage,
+    limit: perPage,
+    loading,
+  } = useSelector((state: RootState) => state.rawMaterials || {});
+
   const hasNext = page * limit < total;
   const [viewItem, setViewItem] = useState<RawMaterial | null>(null);
   const [search, setSearch] = useState("");
@@ -720,6 +900,7 @@ export default function RawMaterialMaster() {
 
   const isSearching = search.trim() !== "";
   const filtered = useMemo(() => {
+    if (!Array.isArray(materials)) return [];
     return materials.filter((m) => {
 
       const matchesCategory =
@@ -734,10 +915,9 @@ export default function RawMaterialMaster() {
       const matchesWarehouse =
         warehouseFilter === "all"
           ? true
-          : Array.isArray(m.stocks) &&
-          m.stocks.some(
-            (s: any) => String(s.warehouseId) === warehouseFilter
-          );
+          : Array.isArray(m?.stocks) &&
+          m.stocks.some((s: any) => s?.warehouseId && String(s.warehouseId) === warehouseFilter)
+
 
       return matchesSearch && matchesWarehouse && matchesCategory;
     });
@@ -752,7 +932,13 @@ export default function RawMaterialMaster() {
       };
 
       // 🔥 Convert quantity → stocks
-      if (data.trackInventory && data.quantity && data.quantity > 0) {
+      if (
+        data.trackInventory &&
+        data.quantity &&
+        data.quantity > 0 &&
+        data.warehouse
+      ) {
+
         const quantity = Number(data.quantity || 0);
         const unitCost = Number(data.unitCost || 0);
 
@@ -768,8 +954,23 @@ export default function RawMaterialMaster() {
             purchaseDate: new Date().toISOString(),
             remainingQuantity: quantity,
             gst: { cgst, sgst, igst },
+
+            documentsInfo: {
+              dmrNumber: shipmentDetails.dmrNumber || null,
+              challanNumber: shipmentDetails.challanNumber || null,
+              invoiceNumber: shipmentDetails.invoiceNumber || null,
+              invoiceDate: shipmentDetails.invoiceDate || null,
+              dmrDate: shipmentDetails.dmrDate || null,
+            },
+
+            transportInfo: {
+              lrNumber: shipmentDetails.lrNumber || null,
+              lrDate: shipmentDetails.lrDate || null,
+              vehicleNumber: shipmentDetails.vehicleNumber || null,
+            },
           },
         ];
+
       } else {
         payload.stocks = [];
       }
@@ -817,7 +1018,6 @@ export default function RawMaterialMaster() {
   const startEdit = (it: RawMaterial) => {
     setEditing(it);
 
-    // Prepare form data: safely extract warehouse ID if it's an object, fallback to location for backward compatibility
     const formData = {
       ...it,
       warehouse: it.warehouse
@@ -826,8 +1026,26 @@ export default function RawMaterialMaster() {
     };
 
     reset(formData);
+
+    // ✅ PREFILL SHIPMENT FROM FIRST STOCK (if exists)
+    if (it.stocks && it.stocks.length > 0) {
+      const stock = it.stocks[0];
+
+      setShipmentDetails({
+        dmrNumber: stock.documentsInfo?.dmrNumber || "",
+        challanNumber: stock.documentsInfo?.challanNumber || "",
+        invoiceNumber: stock.documentsInfo?.invoiceNumber || "",
+        invoiceDate: stock.documentsInfo?.invoiceDate?.split("T")[0] || "",
+        dmrDate: stock.documentsInfo?.dmrDate?.split("T")[0] || "",
+        lrNumber: stock.transportInfo?.lrNumber || "",
+        lrDate: stock.transportInfo?.lrDate?.split("T")[0] || "",
+        vehicleNumber: stock.transportInfo?.vehicleNumber || "",
+      });
+    }
+
     setOpen(true);
   };
+
 
   // [!code ++] New Handler for Add Material
   const handleAdd = () => {
@@ -846,6 +1064,16 @@ export default function RawMaterialMaster() {
       itemCode: "",
       technicalSpecs: "",
       gstPercent: 0
+    });
+    setShipmentDetails({
+      dmrNumber: "",
+      challanNumber: "",
+      invoiceNumber: "",
+      invoiceDate: "",
+      dmrDate: "",
+      lrNumber: "",
+      lrDate: "",
+      vehicleNumber: "",
     });
     setOpen(true);
   };
@@ -1003,7 +1231,12 @@ export default function RawMaterialMaster() {
                 <div className="flex gap-2 ml-4">
                   <Button
                     size="sm"
-                    onClick={() => handleMaterialResponse(notification._id, 'accepted', notification)}
+                    onClick={() => {
+                      setAcceptingNotification(notification);
+                      setShowAcceptDialog(true);
+                    }}
+
+                    // onClick={() => handleMaterialResponse(notification._id, 'accepted', notification)}
                     className="bg-green-600 hover:bg-green-700"
                   >
                     Accept
@@ -1287,6 +1520,99 @@ export default function RawMaterialMaster() {
                   <Textarea rows={3} {...register("technicalSpecs")} />
                 </div>
 
+                {/* ================= SHIPMENT DETAILS ================= */}
+                <div className="col-span-2 mt-4 border-t pt-4">
+                  <h3 className="font-semibold mb-3">Shipment & Document Details</h3>
+
+                  <div className="grid grid-cols-2 gap-4">
+
+                    <div>
+                      <Label>DMR Number</Label>
+                      <Input
+                        value={shipmentDetails.dmrNumber}
+                        onChange={(e) =>
+                          setShipmentDetails({ ...shipmentDetails, dmrNumber: e.target.value })
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <Label>DMR Date</Label>
+                      <Input
+                        type="date"
+                        value={shipmentDetails.dmrDate}
+                        onChange={(e) =>
+                          setShipmentDetails({ ...shipmentDetails, dmrDate: e.target.value })
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <Label>Invoice Number</Label>
+                      <Input
+                        value={shipmentDetails.invoiceNumber}
+                        onChange={(e) =>
+                          setShipmentDetails({ ...shipmentDetails, invoiceNumber: e.target.value })
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <Label>Invoice Date</Label>
+                      <Input
+                        type="date"
+                        value={shipmentDetails.invoiceDate}
+                        onChange={(e) =>
+                          setShipmentDetails({ ...shipmentDetails, invoiceDate: e.target.value })
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <Label>Challan Number</Label>
+                      <Input
+                        value={shipmentDetails.challanNumber}
+                        onChange={(e) =>
+                          setShipmentDetails({ ...shipmentDetails, challanNumber: e.target.value })
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <Label>Vehicle Number</Label>
+                      <Input
+                        value={shipmentDetails.vehicleNumber}
+                        onChange={(e) =>
+                          setShipmentDetails({ ...shipmentDetails, vehicleNumber: e.target.value })
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <Label>LR Number</Label>
+                      <Input
+                        value={shipmentDetails.lrNumber}
+                        onChange={(e) =>
+                          setShipmentDetails({ ...shipmentDetails, lrNumber: e.target.value })
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <Label>LR Date</Label>
+                      <Input
+                        type="date"
+                        value={shipmentDetails.lrDate}
+                        onChange={(e) =>
+                          setShipmentDetails({ ...shipmentDetails, lrDate: e.target.value })
+                        }
+                      />
+                    </div>
+
+                  </div>
+                </div>
+
+
                 <div className="col-span-2">
                   <Label>Upload Images</Label>
                   <Input
@@ -1449,6 +1775,9 @@ export default function RawMaterialMaster() {
                                       <TableHead className="text-xs">FIFO Consumption</TableHead>
                                       <TableHead className="text-xs">Source</TableHead>
                                       <TableHead className="text-xs">Reference</TableHead>
+                                      <TableHead className="text-xs">Documents</TableHead>
+                                      <TableHead className="text-xs">Transport</TableHead>
+
                                       <TableHead className="text-xs">Remarks</TableHead>
                                     </TableRow>
                                   </TableHeader>
@@ -1503,6 +1832,34 @@ export default function RawMaterialMaster() {
                                           <TableCell className="text-xs">
                                             {purchase.referenceNumber || 'N/A'}
                                           </TableCell>
+                                          <TableCell className="text-xs">
+                                            {purchase.documentsInfo ? (
+                                              <div className="space-y-1">
+                                                <div>DMR: {purchase.documentsInfo.dmrNumber}</div>
+                                                <div>Invoice: {purchase.documentsInfo.invoiceNumber}</div>
+                                                <div>Challan: {purchase.documentsInfo.challanNumber}</div>
+                                              </div>
+                                            ) : (
+                                              <span className="text-gray-400 italic">
+                                                No document details available
+                                              </span>
+                                            )}
+                                          </TableCell>
+
+                                          <TableCell className="text-xs">
+                                            {purchase.transportInfo ? (
+                                              <div className="space-y-1">
+                                                <div>LR: {purchase.transportInfo.lrNumber}</div>
+                                                <div>Vehicle: {purchase.transportInfo.vehicleNumber}</div>
+                                              </div>
+                                            ) : (
+                                              <span className="text-gray-400 italic">
+                                                No transport details available
+                                              </span>
+                                            )}
+                                          </TableCell>
+
+
                                           <TableCell className="text-xs">
                                             {purchase.remarks || 'Material purchase'}
                                           </TableCell>
@@ -1605,143 +1962,158 @@ export default function RawMaterialMaster() {
             open={!!viewItem}
             onOpenChange={(o) => !o && setViewItem(null)}
           >
-            <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle className="text-2xl font-bold">
-                  {viewItem?.name}
-                </DialogTitle>
-              </DialogHeader>
-
-              <div className="space-y-6">
-
-                {/* ================= BASIC INFO ================= */}
-                <div className="grid grid-cols-2 gap-6 bg-gray-50 p-4 rounded-xl">
-                  <div>
-                    <p className="text-sm text-gray-500">Item Code</p>
-                    <p className="font-medium">{viewItem?.itemCode || "N/A"}</p>
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0 gap-0">
+              {/* Header Section with a subtle background */}
+              <div className="bg-slate-50 border-b p-6 sticky top-0 z-10">
+                <DialogHeader>
+                  <div className="flex items-center gap-3 mb-1">
+                    <div className="p-2 bg-blue-100 rounded-lg text-blue-700">
+                      <Package size={24} />
+                    </div>
+                    <DialogTitle className="text-3xl font-extrabold tracking-tight text-slate-900">
+                      {viewItem?.name}
+                    </DialogTitle>
                   </div>
+                  <div className="flex gap-2 mt-2">
+                    <Badge variant="secondary" className="font-mono">{viewItem?.itemCode}</Badge>
+                    <Badge variant="outline" className="bg-white">{viewItem?.unitOfMeasure}</Badge>
+                  </div>
+                </DialogHeader>
+              </div>
 
-                  <div>
-                    <p className="text-sm text-gray-500">Warehouses</p>
-                    <p className="font-medium">
-                      {viewItem ? (() => {
+              <div className="p-6 space-y-8">
+                {/* ================= PRIMARY GRID ================= */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+                  {/* Basic Stats */}
+                  <div className="md:col-span-2 grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    <InfoCard label="Quantity" value={viewItem?.quantity} icon={<Layers size={16} />} />
+                    <InfoCard label="Reorder Level" value={viewItem?.reorderLevel} color="text-amber-600" />
+                    <InfoCard label="HSN Code" value={viewItem?.hsn} />
+                    <InfoCard label="GST Rate" value={`${viewItem?.gstPercent}%`} />
+                    <InfoCard label="Valuation" value={viewItem?.valuationMethod} />
+                    <InfoCard
+                      label="Warehouses"
+                      value={viewItem ? (() => {
                         const warehouses = getWarehousesForMaterial(viewItem._id || '');
-                        if (warehouses.length === 0) {
-                          return getWarehouseName(viewItem.warehouse || viewItem.location);
-                        }
-                        return warehouses.map(w => w.name).join(', ');
+                        return warehouses.length === 0
+                          ? getWarehouseName(viewItem.warehouse || viewItem.location)
+                          : warehouses.map(w => w.name).join(', ');
                       })() : 'N/A'}
-                    </p>
+                      fullWidth
+                    />
                   </div>
 
-                  <div>
-                    <p className="text-sm text-gray-500">Unit</p>
-                    <p className="font-medium">{viewItem?.unitOfMeasure}</p>
-                  </div>
-
-                  <div>
-                    <p className="text-sm text-gray-500">Quantity</p>
-                    <p className="font-medium">{viewItem?.quantity}</p>
-                  </div>
-
-                  <div>
-                    <p className="text-sm text-gray-500">HSN</p>
-                    <p className="font-medium">{viewItem?.hsn}</p>
-                  </div>
-
-                  <div>
-                    <p className="text-sm text-gray-500">GST %</p>
-                    <p className="font-medium">{viewItem?.gstPercent}%</p>
-                  </div>
-
-                  <div>
-                    <p className="text-sm text-gray-500">Valuation</p>
-                    <p className="font-medium">{viewItem?.valuationMethod}</p>
-                  </div>
-
-                  <div>
-                    <p className="text-sm text-gray-500">Reorder Level</p>
-                    <p className="font-medium">{viewItem?.reorderLevel}</p>
-                  </div>
-                </div>
-
-                {/* ================= COST SUMMARY ================= */}
-                {viewItem && (
-                  <div className="bg-white border rounded-xl p-4 shadow-sm">
-                    <h3 className="font-semibold text-lg mb-3">Cost Summary</h3>
-
-                    {(() => {
-                      const gst = getGSTBreakup(viewItem);
-                      const totalCost = getTotalMaterialCost(viewItem);
-
-                      return (
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                          <div>CGST: <span className="font-medium">₹{gst.cgst}</span></div>
-                          <div>SGST: <span className="font-medium">₹{gst.sgst}</span></div>
-                          <div>IGST: <span className="font-medium">₹{gst.igst}</span></div>
-                          <div className="text-green-700 font-semibold">
-                            Total Cost: ₹{totalCost}
+                  {/* Cost Summary Card */}
+                  {viewItem && (
+                    <div className="bg-green-50 border border-green-100 rounded-2xl p-5 shadow-sm">
+                      <div className="flex items-center gap-2 mb-4 text-green-800 font-semibold">
+                        <IndianRupee size={18} />
+                        <h3 className="text-lg">Financial Summary</h3>
+                      </div>
+                      {(() => {
+                        const gst = getGSTBreakup(viewItem);
+                        const totalCost = getTotalMaterialCost(viewItem);
+                        return (
+                          <div className="space-y-3">
+                            <div className="flex justify-between text-sm text-green-700">
+                              <span>CGST/SGST</span>
+                              <span className="font-medium">₹{gst.cgst} / ₹{gst.sgst}</span>
+                            </div>
+                            <div className="flex justify-between text-sm text-green-700">
+                              <span>IGST</span>
+                              <span className="font-medium">₹{gst.igst}</span>
+                            </div>
+                            <div className="pt-3 border-t border-green-200 flex justify-between items-end">
+                              <span className="text-xs uppercase font-bold text-green-800">Total Cost</span>
+                              <span className="text-2xl font-black text-green-900">₹{totalCost}</span>
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
+                        );
+                      })()}
+                    </div>
+                  )}
+                </div>
 
                 {/* ================= TECHNICAL SPECS ================= */}
                 {viewItem?.technicalSpecs && (
-                  <div className="bg-gray-50 p-4 rounded-xl">
-                    <h3 className="font-semibold mb-2">Technical Specifications</h3>
-                    <p className="text-sm text-gray-700 whitespace-pre-line">
+                  <section>
+                    <h3 className="flex items-center gap-2 font-bold text-slate-800 mb-3">
+                      <Tag size={18} className="text-slate-400" />
+                      Technical Specifications
+                    </h3>
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm leading-relaxed text-slate-600 whitespace-pre-line">
                       {viewItem.technicalSpecs}
-                    </p>
-                  </div>
+                    </div>
+                  </section>
+                )}
+
+                {/* ================= SHIPMENT DETAILS ================= */}
+                {viewItem?.stocks && viewItem.stocks.length > 0 && (
+                  <section>
+                    <h3 className="flex items-center gap-2 font-bold text-slate-800 mb-4">
+                      <Truck size={18} className="text-slate-400" />
+                      Inventory & Shipment History
+                    </h3>
+                    <div className="space-y-3">
+                      {viewItem.stocks.map((stock: any, index: number) => (
+                        <div key={index} className="group border rounded-xl overflow-hidden hover:border-blue-200 transition-colors">
+                          <div className="bg-slate-50 px-4 py-2 border-b flex justify-between items-center">
+                            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                              Batch: {stock.batchId.toUpperCase()}
+                            </span>
+                            <span className="text-xs text-slate-400">
+                              Purchased: {new Date(stock.purchaseDate).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <div className="p-4 grid grid-cols-2 md:grid-cols-3 gap-y-4 gap-x-8 text-sm">
+                            <DocItem label="DMR" value={stock.documentsInfo?.dmrNumber} />
+                            <DocItem label="Invoice" value={stock.documentsInfo?.invoiceNumber} />
+                            <DocItem label="Vehicle" value={stock.transportInfo?.vehicleNumber} />
+                            <DocItem label="LR No." value={stock.transportInfo?.lrNumber} />
+                            <DocItem label="Challan" value={stock.documentsInfo?.challanNumber} />
+                            <DocItem
+                              label="Inv. Date"
+                              value={stock.documentsInfo?.invoiceDate && new Date(stock.documentsInfo.invoiceDate).toLocaleDateString()}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
                 )}
 
                 {/* ================= IMAGES ================= */}
                 {viewItem?.documents && viewItem.documents.length > 0 && (
-                  <div>
-                    <h3 className="font-semibold text-lg mb-4">Uploaded Images</h3>
-
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-5">
+                  <section className="pb-6">
+                    <h3 className="flex items-center gap-2 font-bold text-slate-800 mb-4">
+                      <FileText size={18} className="text-slate-400" />
+                      Uploaded Documents
+                    </h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                       {viewItem.documents.map((doc: any, index: number) => (
-                        <div
-                          key={index}
-                          className="group border rounded-xl overflow-hidden shadow-sm hover:shadow-lg transition"
-                        >
-                          {/* Image */}
-                          <div className="overflow-hidden">
-                            <img
-                              src={doc.url}
-                              alt={doc.name || `image-${index}`}
-                              className="w-full h-48 object-cover transform group-hover:scale-105 transition duration-300"
-                            />
-                          </div>
-
-                          {/* Footer */}
-                          <div className="p-3 space-y-2">
-                            <p className="text-xs truncate text-gray-600">
-                              {doc.name || `Image ${index + 1}`}
-                            </p>
-
+                        <div key={index} className="group relative rounded-xl overflow-hidden border bg-slate-100 aspect-square">
+                          <img
+                            src={doc.url}
+                            alt={doc.name}
+                            className="w-full h-full object-cover transition group-hover:scale-110"
+                          />
+                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center p-3 text-center">
+                            <p className="text-white text-[10px] mb-2 truncate w-full">{doc.name || `Image ${index + 1}`}</p>
                             <a
-                              href={doc.url.replace(
-                                "/upload/",
-                                "/upload/fl_attachment,f_png/"
-                              )}
+                              href={doc.url.replace("/upload/", "/upload/fl_attachment,f_png/")}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="block text-center bg-blue-600 text-white text-xs py-2 rounded-md hover:bg-blue-700 transition"
+                              className="flex items-center gap-1 bg-white text-black px-3 py-1.5 rounded-full text-xs font-bold hover:bg-blue-50 transition"
                             >
-                              Download PNG
+                              <Download size={12} /> PNG
                             </a>
                           </div>
                         </div>
                       ))}
                     </div>
-                  </div>
+                  </section>
                 )}
-
               </div>
             </DialogContent>
           </Dialog>
@@ -1928,6 +2300,126 @@ export default function RawMaterialMaster() {
           </div>
         </div>
       )}
+
+      <Dialog open={showAcceptDialog} onOpenChange={setShowAcceptDialog}>
+        <DialogContent className="max-w-2xl"> {/* Increased width slightly for better spacing */}
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <PackageCheck className="w-5 h-5 text-primary" />
+              Accept Material Purchase
+            </DialogTitle>
+            <DialogDescription>
+              Please enter the shipment and document details to complete the acceptance.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4 py-4">
+            {/* --- Document Details --- */}
+            <div className="space-y-2">
+              <Label htmlFor="dmrNumber">DMR Number</Label>
+              <Input
+                id="dmrNumber"
+                placeholder="e.g. DMR-2024-001"
+                value={acceptForm.dmrNumber}
+                onChange={(e) => setAcceptForm({ ...acceptForm, dmrNumber: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="dmrDate">DMR Date</Label>
+              <Input
+                id="dmrDate"
+                type="date"
+                value={acceptForm.dmrDate}
+                onChange={(e) => setAcceptForm({ ...acceptForm, dmrDate: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="invoiceNumber">Invoice Number</Label>
+              <Input
+                id="invoiceNumber"
+                placeholder="INV-XXXX"
+                value={acceptForm.invoiceNumber}
+                onChange={(e) => setAcceptForm({ ...acceptForm, invoiceNumber: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="invoiceDate">Invoice Date</Label>
+              <Input
+                id="invoiceDate"
+                type="date"
+                value={acceptForm.invoiceDate}
+                onChange={(e) => setAcceptForm({ ...acceptForm, invoiceDate: e.target.value })}
+              />
+            </div>
+
+            <div className="col-span-2">
+              <hr className="my-2 border-slate-100" />
+              <h4 className="text-sm font-medium text-muted-foreground mb-4">Logistics Information</h4>
+            </div>
+
+            {/* --- Logistics Details --- */}
+            <div className="space-y-2">
+              <Label htmlFor="challanNumber">Challan Number</Label>
+              <Input
+                id="challanNumber"
+                placeholder="CH-8829"
+                value={acceptForm.challanNumber}
+                onChange={(e) => setAcceptForm({ ...acceptForm, challanNumber: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="vehicleNumber">Vehicle Number</Label>
+              <Input
+                id="vehicleNumber"
+                placeholder="AB 00 CD 1234"
+                value={acceptForm.vehicleNumber}
+                onChange={(e) => setAcceptForm({ ...acceptForm, vehicleNumber: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="lrNumber">LR Number (Lorry Receipt)</Label>
+              <Input
+                id="lrNumber"
+                placeholder="LR-9901"
+                value={acceptForm.lrNumber}
+                onChange={(e) => setAcceptForm({ ...acceptForm, lrNumber: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="lrDate">LR Date</Label>
+              <Input
+                id="lrDate"
+                type="date"
+                value={acceptForm.lrDate}
+                onChange={(e) => setAcceptForm({ ...acceptForm, lrDate: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="mt-4">
+            <Button
+              variant="ghost"
+              onClick={() => setShowAcceptDialog(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleFinalAccept}
+              className="px-8"
+            >
+
+              Confirm Acceptance
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
