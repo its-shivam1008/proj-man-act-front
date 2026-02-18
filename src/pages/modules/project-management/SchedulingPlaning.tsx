@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { RootState, AppDispatch } from "@/redux/store";
 import { fetchProjects } from "@/redux/slices/projectSlice";
-import { fetchWbsByProject, updateWbsItem } from "@/redux/slices/wbsSlice";
+import { fetchWbsByProject, updateWbsItem, WBSItem } from "@/redux/slices/wbsSlice";
 import { fetchResources, ResourceAllocation } from "@/redux/slices/resourceSlice";
 import { createReminder, fetchReminders } from "@/redux/slices/reminderSlice";
 import { fetchMasterData } from "@/redux/slices/masterDataSlice";
@@ -61,6 +61,10 @@ import {
   FileText,
   Users,
   BarChart3,
+  ChevronRight,
+  ChevronUp,
+  ChevronDown,
+  Layers,
 } from "lucide-react";
 import { calculateCPM, CPMResult } from "@/components/CPM";
 import {
@@ -117,33 +121,19 @@ interface ReminderForm {
   note: string;
 }
 
-// Helper functions for localStorage management
-const getCustomSequencesKey = (projectId: string | null) => {
-  return projectId ? `customSequences_${projectId}` : 'customSequences_default';
+// Color configuration for WBS types
+const WBS_TYPE_COLORS: Record<string, string> = {
+  phase: "bg-slate-800 text-white border-slate-600 font-semibold",
+  activity: "bg-purple-200 text-purple-900 border-purple-400",
+  task: "bg-sky-200 text-sky-900 border-sky-400",
+  subtask: "bg-amber-200 text-amber-900 border-amber-400",
 };
 
-// Load custom sequences from localStorage
-const loadCustomSequences = (projectId: string | null): Record<string, number> => {
-  try {
-    const key = getCustomSequencesKey(projectId);
-    const saved = localStorage.getItem(key);
-    if (saved) {
-      return JSON.parse(saved);
-    }
-  } catch (error) {
-    console.error('Error loading custom sequences from localStorage:', error);
-  }
-  return {};
-};
-
-// Save custom sequences to localStorage
-const saveCustomSequences = (projectId: string | null, sequences: Record<string, number>) => {
-  try {
-    const key = getCustomSequencesKey(projectId);
-    localStorage.setItem(key, JSON.stringify(sequences));
-  } catch (error) {
-    console.error('Error saving custom sequences to localStorage:', error);
-  }
+const WBS_TYPE_DEPTH: Record<string, number> = {
+  phase: 0,
+  activity: 1,
+  task: 2,
+  subtask: 3,
 };
 
 export default function SchedulingPlanning() {
@@ -165,14 +155,7 @@ export default function SchedulingPlanning() {
   );
   const { userProfile } = useSelector((state: RootState) => state.auth);
   const { locations = [] } = useSelector((state: RootState) => state.masterData);
-  const [customSequences, setCustomSequences] = useState<
-    Record<string, number>
-  >(() => loadCustomSequences(null));
-  const [customHierarchicalNumbers, setCustomHierarchicalNumbers] = useState<
-    Record<string, string>
-  >({});
-  const [editingNumberId, setEditingNumberId] = useState<string | null>(null);
-  const [editingNumberValue, setEditingNumberValue] = useState<string>("");
+  const [reorderLoading, setReorderLoading] = useState<string | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     null
   );
@@ -220,8 +203,8 @@ export default function SchedulingPlanning() {
   const sidebarRef = useRef<HTMLDivElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
 
-  const isLocationRestricted = 
-    userProfile?.role !== 'admin' && 
+  const isLocationRestricted =
+    userProfile?.role !== 'admin' &&
     !!userProfile?.location;
 
   // 1. Fetch Projects and Master Data
@@ -245,8 +228,8 @@ export default function SchedulingPlanning() {
 
   // Fetch projects when location filter changes
   useEffect(() => {
-    dispatch(fetchProjects({ 
-      page: 1, 
+    dispatch(fetchProjects({
+      page: 1,
       limit: 100,
       location: locationFilter === "all" ? undefined : locationFilter
     }));
@@ -259,16 +242,12 @@ export default function SchedulingPlanning() {
     }
   }, [projects, selectedProjectId]);
 
-  // 3. Fetch WBS and load custom sequences for selected project
+  // 3. Fetch WBS for selected project
   useEffect(() => {
     if (selectedProjectId) {
       dispatch(fetchWbsByProject(selectedProjectId));
       dispatch(fetchResources({ projectId: selectedProjectId, search: "" }));
       dispatch(fetchReminders({ projectId: selectedProjectId }));
-      // Load custom sequences for this project from localStorage
-      const loadedSequences = loadCustomSequences(selectedProjectId);
-      setCustomSequences(loadedSequences);
-      setCustomHierarchicalNumbers({});
     }
   }, [selectedProjectId, dispatch]);
 
@@ -279,22 +258,6 @@ export default function SchedulingPlanning() {
       syncRemindersToNotifications();
     }
   }, [dbReminders, selectedProjectId]);
-
-  // 4. Load custom numbers from WBS items (if they exist in backend)
-  useEffect(() => {
-    if (wbs && wbs.length > 0) {
-      const customNumbers: Record<string, string> = {};
-      wbs.forEach((item) => {
-        // Check if item has customNumber field (from backend)
-        if ((item as any).customNumber) {
-          customNumbers[item.id] = (item as any).customNumber;
-        }
-      });
-      if (Object.keys(customNumbers).length > 0) {
-        setCustomHierarchicalNumbers(customNumbers);
-      }
-    }
-  }, [wbs]);
 
   const selectedProject = useMemo(
     () => projects.find((p) => p._id === selectedProjectId),
@@ -461,58 +424,117 @@ export default function SchedulingPlanning() {
       setCpmData(result);
     }
   }, [wbs, selectedProject]);
-  const handleSequenceChange = (id: string, newVal: string) => {
-    if (newVal === "") {
-      // If empty, remove override (revert to auto-date)
-      setCustomSequences((prev) => {
-        const next = { ...prev };
-        delete next[id];
-        saveCustomSequences(selectedProjectId, next);
-        return next;
+  // Build WBS tree structure for hierarchical display
+  const wbsTree = useMemo(() => {
+    if (!wbs || wbs.length === 0) return { flatItems: [] as any[], groupedByPhase: {} as Record<string, any[]> };
+
+    const itemMap: Record<string, WBSItem> = {};
+    const childrenMap: Record<string, string[]> = {};
+
+    wbs.forEach((item) => {
+      itemMap[item.id] = item;
+      if (item.parentId) {
+        if (!childrenMap[item.parentId]) childrenMap[item.parentId] = [];
+        childrenMap[item.parentId].push(item.id);
+      }
+    });
+
+    // Sort children by schedulePriority first, then by startDate
+    Object.keys(childrenMap).forEach((parentId) => {
+      childrenMap[parentId].sort((a, b) => {
+        const priorityA = itemMap[a]?.schedulePriority;
+        const priorityB = itemMap[b]?.schedulePriority;
+        if (priorityA != null && priorityB != null) return priorityA - priorityB;
+        if (priorityA != null) return -1;
+        if (priorityB != null) return 1;
+        const dateA = itemMap[a]?.startDate ? new Date(itemMap[a].startDate!).getTime() : 0;
+        const dateB = itemMap[b]?.startDate ? new Date(itemMap[b].startDate!).getTime() : 0;
+        return dateA - dateB;
       });
-      return;
+    });
+
+    // Find root phases
+    const rootPhases = wbs
+      .filter((item) => !item.parentId && item.type === "phase")
+      .sort((a, b) => {
+        const pA = a.schedulePriority;
+        const pB = b.schedulePriority;
+        if (pA != null && pB != null) return pA - pB;
+        if (pA != null) return -1;
+        if (pB != null) return 1;
+        const dateA = a.startDate ? new Date(a.startDate).getTime() : 0;
+        const dateB = b.startDate ? new Date(b.startDate).getTime() : 0;
+        return dateA - dateB;
+      });
+
+    // Orphaned items (not under a phase)
+    const orphanedItems = wbs.filter((item) => !item.parentId && item.type !== "phase");
+
+    // Flatten tree depth-first
+    const flatItems: Array<{ item: WBSItem; depth: number; phaseName: string }> = [];
+    const groupedByPhase: Record<string, Array<{ item: WBSItem; depth: number }>> = {};
+
+    const walkTree = (itemId: string, depth: number, phaseName: string) => {
+      const item = itemMap[itemId];
+      if (!item) return;
+      flatItems.push({ item, depth, phaseName });
+      if (!groupedByPhase[phaseName]) groupedByPhase[phaseName] = [];
+      groupedByPhase[phaseName].push({ item, depth });
+      const children = childrenMap[itemId] || [];
+      children.forEach((childId) => walkTree(childId, depth + 1, phaseName));
+    };
+
+    rootPhases.forEach((phase) => {
+      walkTree(phase.id, 0, phase.name);
+    });
+
+    // Add orphans under "General" group
+    if (orphanedItems.length > 0) {
+      orphanedItems.forEach((item) => {
+        flatItems.push({ item, depth: 0, phaseName: "General" });
+        if (!groupedByPhase["General"]) groupedByPhase["General"] = [];
+        groupedByPhase["General"].push({ item, depth: 0 });
+      });
     }
 
-    const num = parseInt(newVal);
-    if (!isNaN(num)) {
-      setCustomSequences((prev) => {
-        const updated = { ...prev, [id]: num };
-        saveCustomSequences(selectedProjectId, updated);
-        return updated;
-      });
-    }
-  };
+    return { flatItems, groupedByPhase };
+  }, [wbs]);
   // --- Generate Hierarchical Numbering (1, 1.1, 1.2, 2, 2.1, etc.) ---
   const generateHierarchicalNumbering = useMemo(() => {
     if (!wbs || wbs.length === 0) return {};
 
-    // Build parent-child map
     const childrenMap: Record<string, string[]> = {};
     const itemMap: Record<string, any> = {};
 
     wbs.forEach((item) => {
       itemMap[item.id] = item;
       if (item.parentId) {
-        if (!childrenMap[item.parentId]) {
-          childrenMap[item.parentId] = [];
-        }
+        if (!childrenMap[item.parentId]) childrenMap[item.parentId] = [];
         childrenMap[item.parentId].push(item.id);
       }
     });
 
-    // Sort children by start date for consistent numbering
     Object.keys(childrenMap).forEach((parentId) => {
       childrenMap[parentId].sort((a, b) => {
+        const pA = itemMap[a]?.schedulePriority;
+        const pB = itemMap[b]?.schedulePriority;
+        if (pA != null && pB != null) return pA - pB;
+        if (pA != null) return -1;
+        if (pB != null) return 1;
         const dateA = itemMap[a]?.startDate ? new Date(itemMap[a].startDate).getTime() : 0;
         const dateB = itemMap[b]?.startDate ? new Date(itemMap[b].startDate).getTime() : 0;
         return dateA - dateB;
       });
     });
 
-    // Find root items (phases - no parent)
     const rootItems = wbs
       .filter((item) => !item.parentId && item.type === "phase")
       .sort((a, b) => {
+        const pA = a.schedulePriority;
+        const pB = b.schedulePriority;
+        if (pA != null && pB != null) return pA - pB;
+        if (pA != null) return -1;
+        if (pB != null) return 1;
         const dateA = a.startDate ? new Date(a.startDate).getTime() : 0;
         const dateB = b.startDate ? new Date(b.startDate).getTime() : 0;
         return dateA - dateB;
@@ -521,105 +543,48 @@ export default function SchedulingPlanning() {
     const numbering: Record<string, string> = {};
     let phaseCounter = 0;
 
-    // Recursive function to assign hierarchical numbers
     const assignNumber = (itemId: string, parentNumber: string = "") => {
       const item = itemMap[itemId];
       if (!item) return;
 
-      // Check if custom number exists - use it directly
-      if (customHierarchicalNumbers[itemId]) {
-        numbering[itemId] = customHierarchicalNumbers[itemId];
-        // Still need to process children with the custom number as parent
-        const children = childrenMap[itemId] || [];
-        children.forEach((childId) => {
-          assignNumber(childId, customHierarchicalNumbers[itemId]);
-        });
-        return;
-      }
-
       let currentNumber: string;
-
       if (item.type === "phase") {
         phaseCounter++;
         currentNumber = phaseCounter.toString();
       } else {
-        // For activities and tasks, use parent's number + sub-number
-        const parent = itemMap[item.parentId!];
-        if (parent) {
-          const siblings = childrenMap[item.parentId!] || [];
-          // Filter out siblings that have custom numbers (they should be sorted separately)
-          const siblingsWithoutCustom = siblings.filter(sibId => !customHierarchicalNumbers[sibId]);
-          const index = siblingsWithoutCustom.indexOf(itemId);
-          const subNumber = index + 1;
-
-          if (parent.type === "phase") {
-            currentNumber = `${parentNumber}.${subNumber}`;
-          } else {
-            // Task under activity
-            currentNumber = `${parentNumber}.${subNumber}`;
-          }
-        } else {
-          currentNumber = parentNumber;
-        }
+        const siblings = childrenMap[item.parentId!] || [];
+        const index = siblings.indexOf(itemId);
+        const subNumber = index + 1;
+        currentNumber = parentNumber ? `${parentNumber}.${subNumber}` : subNumber.toString();
       }
 
       numbering[itemId] = currentNumber;
-
-      // Recursively assign numbers to children
       const children = childrenMap[itemId] || [];
-      children.forEach((childId) => {
-        assignNumber(childId, currentNumber);
-      });
+      children.forEach((childId) => assignNumber(childId, currentNumber));
     };
 
-    // Start with root phases
-    rootItems.forEach((phase) => {
-      assignNumber(phase.id);
-    });
+    rootItems.forEach((phase) => assignNumber(phase.id));
 
-    // Handle orphaned items (items without phase parent)
+    // Orphaned items
     wbs
       .filter((item) => !numbering[item.id])
-      .sort((a, b) => {
-        const dateA = a.startDate ? new Date(a.startDate).getTime() : 0;
-        const dateB = b.startDate ? new Date(b.startDate).getTime() : 0;
-        return dateA - dateB;
-      })
       .forEach((item, index) => {
-        if (!numbering[item.id]) {
-          numbering[item.id] = (rootItems.length + index + 1).toString();
-        }
+        numbering[item.id] = (rootItems.length + index + 1).toString();
       });
 
     return numbering;
-  }, [wbs, customHierarchicalNumbers]);
+  }, [wbs]);
 
-  // --- Prepare Gantt Data ---
+  // --- Prepare Gantt Data (tree-based) ---
   const ganttData = useMemo(() => {
     if (!cpmData || !selectedProject) return null;
 
     const groupedFeatures: Record<string, any[]> = {};
 
-    const getGroupName = (itemId: string, parentId: string | null) => {
-      if (!parentId) return "General";
-      const parent = wbs.find((i) => i.id === parentId);
-      if (!parent) return "General";
-      return parent.name || "General";
-    };
-
-    wbs.forEach((item) => {
-      // 1. DEFINE GROUP NAME
-      let groupName = "General";
-      if (item.type === "phase") {
-        groupName = "Phases & Milestones";
-      } else {
-        groupName = getGroupName(item.id, item.parentId);
-      }
-
-      // 2. Initialize group array if it doesn't exist
+    wbsTree.flatItems.forEach(({ item, depth, phaseName }) => {
+      const groupName = phaseName;
       if (!groupedFeatures[groupName]) groupedFeatures[groupName] = [];
 
-      // 3. Calculate Dates & CPM Info
       const cpmInfo = cpmData.taskResults[item.id];
       const fallbackStart = item.startDate
         ? parseISO(item.startDate)
@@ -636,136 +601,76 @@ export default function SchedulingPlanning() {
         viewMode === "cpm" && cpmInfo ? cpmInfo.calculatedEndDate : fallbackEnd;
       const isCritical = cpmInfo ? cpmInfo.isCritical : false;
 
-      // Enhanced color classes with better contrast
-      let colorClass = "bg-blue-200 text-blue-900 border-blue-300";
+      // Color classes based on WBS type
+      let colorClass = WBS_TYPE_COLORS[item.type] || "bg-blue-200 text-blue-900 border-blue-300";
       if (viewMode === "cpm" && isCritical)
         colorClass = "bg-red-200 text-red-900 border-red-400 font-semibold";
       else if (item.status === "completed")
-        colorClass = "bg-green-200 text-green-900 border-green-300";
-      else if (item.type === "phase")
-        colorClass = "bg-slate-800 text-white border-slate-600 font-semibold";
-      else if (item.type === "activity")
-        colorClass = "bg-indigo-200 text-indigo-900 border-indigo-300";
-      else if (item.status === "in-progress")
-        colorClass = "bg-blue-300 text-blue-950 border-blue-400";
+        colorClass = "bg-emerald-200 text-emerald-900 border-emerald-300";
 
-      // 4. Get hierarchical number
       const hierarchicalNumber = generateHierarchicalNumbering[item.id] || "";
-      // Display number will be calculated after sorting
-      const displayNumber = customSequences[item.id]
-        ? customSequences[item.id].toString()
-        : hierarchicalNumber;
 
-      // 5. Find parent dates for constraints (if item has a parent)
+      // Find parent dates for constraints
       let minDate: Date | null = null;
       let maxDate: Date | null = null;
       let originalStartDate: Date = startAt;
       let originalEndDate: Date = endAt;
 
-      // Store original dates from WBS
-      if (item.startDate) {
-        originalStartDate = parseISO(item.startDate);
-      }
-      if (item.endDate) {
-        originalEndDate = parseISO(item.endDate);
-      }
+      if (item.startDate) originalStartDate = parseISO(item.startDate);
+      if (item.endDate) originalEndDate = parseISO(item.endDate);
 
-      // If item has a parent, constrain by parent's dates
       if (item.parentId) {
         const parent = wbs.find((p) => p.id === item.parentId);
         if (parent) {
           const parentStart = parent.startDate ? parseISO(parent.startDate) : null;
           const parentEnd = parent.endDate ? parseISO(parent.endDate) : null;
-
-          // Use parent dates as constraints
           if (parentStart) minDate = parentStart;
           if (parentEnd) maxDate = parentEnd;
         }
       } else {
-        // For phases (no parent), use original dates as constraints
         minDate = originalStartDate;
         maxDate = originalEndDate;
       }
 
-      // 6. Push to the group
       groupedFeatures[groupName].push({
         id: item.id,
         name: item.name,
-        startAt: startAt,
-        endAt: endAt,
+        startAt,
+        endAt,
         status: item.status,
-        isCritical: isCritical,
+        isCritical,
         type: item.type,
         className: colorClass,
-        sequence: displayNumber,
-        hierarchicalNumber: hierarchicalNumber,
+        sequence: groupedFeatures[groupName].length.toString(),
         parentId: item.parentId,
-        minDate: minDate, // Constraint: can't move before this
-        maxDate: maxDate, // Constraint: can't move after this
-        originalStartDate: originalStartDate, // Original start date from WBS
-        originalEndDate: originalEndDate, // Original end date from WBS
+        depth,
+        minDate,
+        maxDate,
+        originalStartDate,
+        originalEndDate,
       });
     });
 
-    // Sort items within groups: Priority numbers first, then by date
-    Object.keys(groupedFeatures).forEach((group) => {
-      groupedFeatures[group].sort((a, b) => {
-        // Check if items have manual priority numbers
-        const hasPriorityA = customSequences[a.id] !== undefined;
-        const hasPriorityB = customSequences[b.id] !== undefined;
-
-        // If both have priority numbers, sort by priority
-        if (hasPriorityA && hasPriorityB) {
-          return customSequences[a.id] - customSequences[b.id];
-        }
-
-        // If only A has priority, A comes first
-        if (hasPriorityA && !hasPriorityB) {
-          return -1;
-        }
-
-        // If only B has priority, B comes first
-        if (!hasPriorityA && hasPriorityB) {
-          return 1;
-        }
-
-        // If neither has priority, sort by start date
-        if (!hasPriorityA && !hasPriorityB) {
-          const dateA = a.startAt ? new Date(a.startAt).getTime() : 0;
-          const dateB = b.startAt ? new Date(b.startAt).getTime() : 0;
-          return dateA - dateB;
-        }
-
-        // Fallback to hierarchical number comparison
-        const numA = a.hierarchicalNumber || "";
-        const numB = b.hierarchicalNumber || "";
-        return numA.localeCompare(numB, undefined, { numeric: true, sensitivity: 'base' });
-      });
-
-      // After sorting, assign sequential numbers to non-priority items
-      // Find the maximum priority number in this group
-      let maxPriority = 0;
-      groupedFeatures[group].forEach((item) => {
-        if (customSequences[item.id] !== undefined) {
-          maxPriority = Math.max(maxPriority, customSequences[item.id]);
-        }
-      });
-
-      // Assign sequential numbers to non-priority items starting from maxPriority + 1
-      let sequentialCounter = maxPriority;
-      groupedFeatures[group].forEach((item) => {
-        if (customSequences[item.id] === undefined) {
-          sequentialCounter++;
-          item.sequence = sequentialCounter.toString();
-        } else {
-          // Keep priority number as is
-          item.sequence = customSequences[item.id].toString();
-        }
+    // Compute sibling info for each item (for arrow enable/disable)
+    const itemMap: Record<string, WBSItem> = {};
+    wbs.forEach((w) => { itemMap[w.id] = w; });
+    Object.values(groupedFeatures).forEach((items) => {
+      items.forEach((gItem) => {
+        const parentKey = gItem.parentId || "__root__";
+        const siblings = items.filter((s) => {
+          const sParentKey = s.parentId || "__root__";
+          if (parentKey === "__root__" && sParentKey === "__root__") {
+            return s.type === gItem.type;
+          }
+          return sParentKey === parentKey;
+        });
+        gItem.siblingIndex = siblings.findIndex((s) => s.id === gItem.id);
+        gItem.siblingCount = siblings.length;
       });
     });
 
     return groupedFeatures;
-  }, [wbs, cpmData, viewMode, selectedProject, customSequences, generateHierarchicalNumbering]);
+  }, [wbs, cpmData, viewMode, selectedProject, wbsTree]);
 
   // --- Sorted List for Table View ---
   const sortedItemsList = useMemo(() => {
@@ -778,24 +683,8 @@ export default function SchedulingPlanning() {
       });
     });
 
-    allItems.sort((a, b) => {
-      const hasPriorityA = customSequences[a.id] !== undefined;
-      const hasPriorityB = customSequences[b.id] !== undefined;
-
-      if (hasPriorityA && hasPriorityB) {
-        return customSequences[a.id] - customSequences[b.id];
-      }
-      if (hasPriorityA && !hasPriorityB) return -1;
-      if (!hasPriorityA && hasPriorityB) return 1;
-
-      const dateA = a.startAt ? new Date(a.startAt).getTime() : 0;
-      const dateB = b.startAt ? new Date(b.startAt).getTime() : 0;
-
-      return dateA - dateB;
-    });
-
     return allItems;
-  }, [ganttData, customSequences]);
+  }, [ganttData]);
   const filteredItems = useMemo(() => {
     if (!searchText.trim()) return sortedItemsList;
 
@@ -828,7 +717,7 @@ export default function SchedulingPlanning() {
   // Combine WBS reminders with database reminders
   const allReminders = useMemo(() => {
     const today = new Date();
-    
+
     // Add WBS-based reminders (existing logic)
     const wbsReminders = reminders.map((item) => ({
       id: `wbs_${item.id}`,
@@ -838,11 +727,11 @@ export default function SchedulingPlanning() {
       daysLeft: item.daysLeft,
       projectName: selectedProject?.name || 'Current Project',
       wbsName: item.name,
-      note: item.description?.includes("[REMINDER]") ? 
+      note: item.description?.includes("[REMINDER]") ?
         item.description.split("[REMINDER]:")[1]?.split("due")[0]?.trim() : '',
       source: 'wbs'
     }));
-    
+
     // Add database reminders
     const databaseReminders = dbReminders
       .filter((reminder) => {
@@ -853,7 +742,7 @@ export default function SchedulingPlanning() {
       .map((reminder) => {
         const deadlineDate = new Date(reminder.deadline);
         const daysDiff = Math.ceil((deadlineDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        
+
         return {
           id: `db_${reminder._id}`,
           name: reminder.title,
@@ -866,7 +755,7 @@ export default function SchedulingPlanning() {
           source: 'database'
         };
       });
-    
+
     // Combine and sort by urgency
     return [...wbsReminders, ...databaseReminders]
       .sort((a, b) => a.daysLeft - b.daysLeft);
@@ -995,7 +884,7 @@ export default function SchedulingPlanning() {
           data: { description: newDesc, endDate: reminderForm.date },
         })
       );
-      
+
       // 2. Create actual reminder in database
       const reminderData = {
         projectId: selectedProjectId,
@@ -1005,16 +894,16 @@ export default function SchedulingPlanning() {
         deadline: new Date(reminderForm.date),
         reminderType: "deadline"
       };
-      
+
       console.log('🔔 Creating reminder:', reminderData);
       await dispatch(createReminder(reminderData));
-      
+
       toast.success("Reminder set successfully!");
       setReminderDialogOpen(false);
-      
+
       // 3. Refresh reminders list
       dispatch(fetchReminders());
-      
+
       // 4. Sync to notifications after creating reminder
       setTimeout(() => syncRemindersToNotifications(), 1000);
     }
@@ -1084,61 +973,83 @@ export default function SchedulingPlanning() {
     }
   };
 
-  // --- Handle Hierarchical Number Edit ---
-  const handleNumberEditStart = (itemId: string, currentNumber: string) => {
-    setEditingNumberId(itemId);
-    setEditingNumberValue(currentNumber);
-  };
+  // --- Handle Move Up/Down (swap with adjacent sibling) ---
+  const normalizeParentId = (pid: string | null | undefined): string => pid || "__root__";
 
-  const handleNumberEditSave = async (itemId: string) => {
-    const trimmedValue = editingNumberValue.trim();
+  const handleMoveItem = async (itemId: string, direction: "up" | "down") => {
+    if (reorderLoading) return;
+    setReorderLoading(itemId);
 
-    if (trimmedValue === "") {
-      // Remove custom priority number (revert to auto-generated)
-      setCustomSequences((prev) => {
-        const next = { ...prev };
-        delete next[itemId];
-        saveCustomSequences(selectedProjectId, next);
-        return next;
-      });
-      toast.success("Priority reset - will sort by date");
-    } else {
-      // Accept simple priority number (1, 2, 3, etc.)
-      const priorityNum = parseInt(trimmedValue);
-      if (isNaN(priorityNum) || priorityNum < 1) {
-        toast.error("Please enter a valid positive number (1, 2, 3, etc.)");
-        return;
+    try {
+      const currentItem = wbs.find((item) => item.id === itemId);
+      if (!currentItem) return;
+
+      const currentParentKey = normalizeParentId(currentItem.parentId);
+
+      // Find siblings (items with same normalized parentId)
+      const siblings = wbs
+        .filter((item) => {
+          const itemParentKey = normalizeParentId(item.parentId);
+          if (currentParentKey === "__root__" && itemParentKey === "__root__") {
+            return item.type === currentItem.type;
+          }
+          return itemParentKey === currentParentKey;
+        })
+        .sort((a, b) => {
+          const pA = a.schedulePriority;
+          const pB = b.schedulePriority;
+          if (pA != null && pB != null) return pA - pB;
+          if (pA != null) return -1;
+          if (pB != null) return 1;
+          const dateA = a.startDate ? new Date(a.startDate).getTime() : 0;
+          const dateB = b.startDate ? new Date(b.startDate).getTime() : 0;
+          return dateA - dateB;
+        });
+
+      const currentIndex = siblings.findIndex((s) => s.id === itemId);
+      if (currentIndex === -1) return;
+
+      const swapIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+      if (swapIndex < 0 || swapIndex >= siblings.length) return;
+
+      // Auto-assign sequential priorities to ALL siblings if not already set
+      const updates: Array<{ id: string; priority: number }> = [];
+      const needsInit = siblings.some((s) => s.schedulePriority == null);
+
+      if (needsInit) {
+        // Initialize all siblings with sequential priorities
+        siblings.forEach((s, i) => {
+          updates.push({ id: s.id, priority: i + 1 });
+        });
       }
 
-      // Check for duplicate priority (same priority should not be assigned to multiple items)
-      const existingItemWithSamePriority = Object.entries(customSequences).find(
-        ([id, priority]) => id !== itemId && priority === priorityNum
+      // Now swap the two items
+      const finalPriorities = needsInit
+        ? updates.map((u) => ({ ...u }))
+        : siblings.map((s, i) => ({ id: s.id, priority: s.schedulePriority ?? i + 1 }));
+
+      const idxA = finalPriorities.findIndex((p) => p.id === siblings[currentIndex].id);
+      const idxB = finalPriorities.findIndex((p) => p.id === siblings[swapIndex].id);
+      const tempPriority = finalPriorities[idxA].priority;
+      finalPriorities[idxA].priority = finalPriorities[idxB].priority;
+      finalPriorities[idxB].priority = tempPriority;
+
+      // Save only the two swapped items (or all if initializing)
+      const toSave = needsInit ? finalPriorities : [finalPriorities[idxA], finalPriorities[idxB]];
+
+      await Promise.all(
+        toSave.map((u) =>
+          dispatch(updateWbsItem({ id: u.id, data: { schedulePriority: u.priority } }))
+        )
       );
 
-      if (existingItemWithSamePriority) {
-        const [existingId] = existingItemWithSamePriority;
-        const existingItem = wbs.find((item) => item.id === existingId);
-        toast.error(`Priority ${priorityNum} is already assigned to "${existingItem?.name || 'another item'}". Please use a different priority number.`);
-        return;
-      }
-
-      // Save priority number for sorting
-      setCustomSequences((prev) => {
-        const updated = { ...prev, [itemId]: priorityNum };
-        saveCustomSequences(selectedProjectId, updated);
-        return updated;
-      });
-
-      toast.success(`Priority ${priorityNum} set - item will appear in priority order`);
+      if (selectedProjectId) dispatch(fetchWbsByProject(selectedProjectId));
+      toast.success("Order updated");
+    } catch {
+      toast.error("Failed to reorder");
+    } finally {
+      setReorderLoading(null);
     }
-
-    setEditingNumberId(null);
-    setEditingNumberValue("");
-  };
-
-  const handleNumberEditCancel = () => {
-    setEditingNumberId(null);
-    setEditingNumberValue("");
   };
 
   if (!canView) {
@@ -1342,16 +1253,20 @@ export default function SchedulingPlanning() {
                           <span className="font-medium">Phase</span>
                         </span>
                         <span className="flex items-center gap-1.5">
-                          <div className="w-3 h-3 bg-red-200 border border-red-400 rounded-sm shadow-sm"></div>
-                          <span className="font-medium">Critical</span>
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                          <div className="w-3 h-3 bg-indigo-200 border border-indigo-300 rounded-sm shadow-sm"></div>
+                          <div className="w-3 h-3 bg-purple-200 border border-purple-400 rounded-sm shadow-sm"></div>
                           <span className="font-medium">Activity</span>
                         </span>
                         <span className="flex items-center gap-1.5">
-                          <div className="w-3 h-3 bg-blue-200 border border-blue-300 rounded-sm shadow-sm"></div>
+                          <div className="w-3 h-3 bg-sky-200 border border-sky-400 rounded-sm shadow-sm"></div>
                           <span className="font-medium">Task</span>
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <div className="w-3 h-3 bg-amber-200 border border-amber-400 rounded-sm shadow-sm"></div>
+                          <span className="font-medium">Sub-task</span>
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <div className="w-3 h-3 bg-red-200 border border-red-400 rounded-sm shadow-sm"></div>
+                          <span className="font-medium">Critical</span>
                         </span>
                       </div>
                     </div>
@@ -1391,78 +1306,69 @@ export default function SchedulingPlanning() {
                               <GanttSidebar>
                                 {Object.entries(ganttData).map(([group, items]) => (
                                   <GanttSidebarGroup key={group} name={group}>
-                                    {items.map((item) => (
+                                    {items.map((item, itemIndex) => (
                                       <div
                                         key={item.id}
-                                        className="flex items-center justify-between group pr-2 hover:bg-slate-100 transition-colors h-12 border-b border-slate-100"
+                                        className="flex items-center justify-between group pr-1 hover:bg-slate-100 transition-colors h-12 border-b border-slate-100"
+                                        style={{ paddingLeft: `${(item.depth || 0) * 16 + 4}px` }}
                                       >
-                                        <div className="w-20 shrink-0 flex items-center justify-center pl-2">
-                                          {editingNumberId === item.id ? (
-                                            <div className="flex items-center gap-1">
-                                              <Input
-                                                type="number"
-                                                min="1"
-                                                value={editingNumberValue}
-                                                onChange={(e) => setEditingNumberValue(e.target.value)}
-                                                onBlur={() => handleNumberEditSave(item.id)}
-                                                onKeyDown={(e) => {
-                                                  if (e.key === "Enter") {
-                                                    handleNumberEditSave(item.id);
-                                                  } else if (e.key === "Escape") {
-                                                    handleNumberEditCancel();
-                                                  }
-                                                }}
-                                                placeholder="Priority"
-                                                className="h-7 w-20 text-xs px-1.5 py-0.5 text-center font-bold"
-                                                autoFocus
-                                              />
-                                            </div>
-                                          ) : (
-                                            <div className="flex flex-col items-center gap-0.5">
-                                              {customSequences[item.id] ? (
-                                                <span
-                                                  className="text-xs font-bold text-white bg-blue-600 px-2 py-1 rounded-md border border-blue-700 shadow-sm cursor-pointer hover:bg-blue-700 transition-colors"
-                                                  onClick={() => handleNumberEditStart(item.id, customSequences[item.id].toString())}
-                                                  title="Click to edit priority number"
-                                                >
-                                                  P{customSequences[item.id]}
-                                                </span>
-                                              ) : (
-                                                <span
-                                                  className="text-xs font-semibold text-slate-600 bg-slate-100 px-2 py-1 rounded-md border border-slate-300 cursor-pointer hover:bg-slate-200 transition-colors"
-                                                  onClick={() => handleNumberEditStart(item.id, "")}
-                                                  title="Click to set priority number (or leave empty to sort by date)"
-                                                >
-                                                  {item.sequence ? `P${item.sequence}` : item.hierarchicalNumber}
-                                                </span>
-                                              )}
-                                              {!customSequences[item.id] && (
-                                                <span className="text-[9px] text-slate-400">Date</span>
-                                              )}
-                                            </div>
-                                          )}
+                                        {/* Move up/down arrows */}
+                                        <div className="flex flex-col shrink-0 mr-0.5">
+                                          <button
+                                            className="p-0.5 rounded hover:bg-slate-200 disabled:opacity-20 disabled:cursor-not-allowed opacity-0 group-hover:opacity-100 transition-opacity"
+                                            disabled={item.siblingIndex === 0 || reorderLoading === item.id}
+                                            onClick={() => handleMoveItem(item.id, "up")}
+                                            title="Move up"
+                                          >
+                                            <ChevronUp className="w-3.5 h-3.5 text-slate-600" />
+                                          </button>
+                                          <button
+                                            className="p-0.5 rounded hover:bg-slate-200 disabled:opacity-20 disabled:cursor-not-allowed opacity-0 group-hover:opacity-100 transition-opacity"
+                                            disabled={item.siblingIndex === item.siblingCount - 1 || reorderLoading === item.id}
+                                            onClick={() => handleMoveItem(item.id, "down")}
+                                            title="Move down"
+                                          >
+                                            <ChevronDown className="w-3.5 h-3.5 text-slate-600" />
+                                          </button>
                                         </div>
+                                        {/* Position badge */}
+                                        <div className="w-7 shrink-0 flex items-center justify-center">
+                                          <span className={`text-[11px] font-bold w-6 h-6 flex items-center justify-center rounded-md ${reorderLoading === item.id
+                                            ? "bg-blue-100 text-blue-400 animate-pulse"
+                                            : item.type === "phase"
+                                              ? "bg-slate-700 text-white"
+                                              : "bg-slate-100 text-slate-700 border border-slate-300"
+                                            }`}>
+                                            {item.siblingIndex + 1}
+                                          </span>
+                                        </div>
+                                        {/* Type indicator dot */}
+                                        <div className={`w-2.5 h-2.5 rounded-full shrink-0 mx-1 ${item.type === "phase" ? "bg-slate-700" :
+                                          item.type === "activity" ? "bg-purple-500" :
+                                            item.type === "task" ? "bg-sky-500" :
+                                              "bg-amber-500"
+                                          }`} title={item.type} />
                                         <div className="flex-1 min-w-0">
                                           <GanttSidebarItem feature={item} />
                                         </div>
-                                        <div className="flex items-center gap-1 shrink-0">
+                                        <div className="flex items-center gap-0.5 shrink-0">
                                           <Button
                                             variant="ghost"
                                             size="icon"
-                                            className="h-7 w-7 opacity-0 group-hover:opacity-100 hover:bg-blue-50"
+                                            className="h-6 w-6 opacity-0 group-hover:opacity-100 hover:bg-blue-50"
                                             onClick={() => openEditDialog(item)}
                                             title="Edit Item"
                                           >
-                                            <Pencil className="w-3.5 h-3.5 text-blue-600" />
+                                            <Pencil className="w-3 h-3 text-blue-600" />
                                           </Button>
                                           <Button
                                             variant="ghost"
                                             size="icon"
-                                            className="h-7 w-7 opacity-0 group-hover:opacity-100 hover:bg-orange-50"
+                                            className="h-6 w-6 opacity-0 group-hover:opacity-100 hover:bg-orange-50"
                                             onClick={() => openReminderDialog(item)}
                                             title="Set Reminder"
                                           >
-                                            <BellRing className="w-3.5 h-3.5 text-orange-500" />
+                                            <BellRing className="w-3 h-3 text-orange-500" />
                                           </Button>
                                         </div>
                                       </div>
@@ -1487,20 +1393,14 @@ export default function SchedulingPlanning() {
                                         <GanttFeatureItem key={item.id} {...item}>
                                           <div
                                             className={`group/item flex items-center gap-2 px-3 py-1.5 w-full h-full rounded-md shadow-md border-2 transition-all hover:shadow-lg min-w-[200px] ${item.className}`}
-                                            title={`${customSequences[item.id] ? `Priority ${customSequences[item.id]}` : item.sequence ? `P${item.sequence}` : item.hierarchicalNumber}: ${item.name} (${item.type})`}
+                                            title={`${item.name} (${item.type})`}
                                           >
-                                            {/* Priority or Hierarchical Number Badge */}
-                                            {customSequences[item.id] ? (
-                                              <span className="font-bold text-xs bg-blue-600 text-white px-2 py-0.5 rounded-md border border-blue-700 shrink-0 shadow-sm">
-                                                P{customSequences[item.id]}
-                                              </span>
-                                            ) : (
-                                              <span className="font-bold text-xs bg-white/40 backdrop-blur-sm px-2 py-0.5 rounded-md border border-white/60 shrink-0 shadow-sm">
-                                                {item.sequence ? `P${item.sequence}` : item.hierarchicalNumber}
-                                              </span>
-                                            )}
+                                            {/* Position Number Badge */}
+                                            <span className="font-bold text-xs bg-white/40 backdrop-blur-sm px-2 py-0.5 rounded-md border border-white/60 shrink-0 shadow-sm">
+                                              {item.sequence}
+                                            </span>
 
-                                            {/* Task Name - More Prominent */}
+                                            {/* Task Name */}
                                             <span className="truncate font-semibold text-sm flex-1 min-w-[120px]">
                                               {item.name}
                                             </span>
@@ -1599,17 +1499,17 @@ export default function SchedulingPlanning() {
                               </span>
                               <Badge
                                 variant={
-                                  item.daysLeft < 0 ? "destructive" : 
-                                  item.daysLeft === 0 ? "destructive" :
-                                  item.daysLeft < 3 ? "secondary" : "outline"
+                                  item.daysLeft < 0 ? "destructive" :
+                                    item.daysLeft === 0 ? "destructive" :
+                                      item.daysLeft < 3 ? "secondary" : "outline"
                                 }
                                 className="text-[10px]"
                               >
                                 {item.daysLeft < 0
                                   ? "Overdue"
                                   : item.daysLeft === 0
-                                  ? "Today"
-                                  : `${item.daysLeft} days`}
+                                    ? "Today"
+                                    : `${item.daysLeft} days`}
                               </Badge>
                             </div>
                             <div className="text-xs text-muted-foreground flex justify-between items-center">
@@ -1673,10 +1573,10 @@ export default function SchedulingPlanning() {
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead className="w-20">Order</TableHead>
+                            <TableHead className="w-16">Order</TableHead>
                             <TableHead>Name</TableHead>
                             <TableHead>Type</TableHead>
-                            <TableHead>Group</TableHead>
+                            <TableHead>Phase</TableHead>
                             <TableHead>Start Date</TableHead>
                             <TableHead>End Date</TableHead>
                             <TableHead>Status</TableHead>
@@ -1684,27 +1584,25 @@ export default function SchedulingPlanning() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {filteredItems.map((item) => (
-                            <TableRow key={item.id}>
+                          {filteredItems.map((item, index) => (
+                            <TableRow key={item.id} className={item.type === "phase" ? "bg-slate-50 font-semibold" : ""}>
                               <TableCell>
-                                <Badge
-                                  variant={customSequences[item.id] ? "default" : "outline"}
-                                  className={
-                                    customSequences[item.id]
-                                      ? "bg-blue-600 text-white"
-                                      : "bg-slate-100 text-slate-700"
-                                  }
-                                >
-                                  {customSequences[item.id]
-                                    ? `P${customSequences[item.id]}`
-                                    : item.sequence
-                                      ? `P${item.sequence}`
-                                      : item.hierarchicalNumber || "-"}
+                                <Badge variant="outline" className={`${item.type === "phase"
+                                  ? "bg-slate-700 text-white border-slate-600"
+                                  : "bg-slate-100 text-slate-700 border-slate-300"
+                                  }`}>
+                                  {index + 1}
                                 </Badge>
                               </TableCell>
-                              <TableCell className="font-medium">{item.name}</TableCell>
+                              <TableCell className="font-medium" style={{ paddingLeft: `${(item.depth || 0) * 16 + 16}px` }}>
+                                {item.name}
+                              </TableCell>
                               <TableCell>
-                                <Badge variant="outline" className="capitalize">
+                                <Badge variant="outline" className={`capitalize ${item.type === "phase" ? "bg-slate-800 text-white border-slate-600" :
+                                  item.type === "activity" ? "bg-purple-100 text-purple-800 border-purple-300" :
+                                    item.type === "task" ? "bg-sky-100 text-sky-800 border-sky-300" :
+                                      "bg-amber-100 text-amber-800 border-amber-300"
+                                  }`}>
                                   {item.type}
                                 </Badge>
                               </TableCell>
@@ -1801,7 +1699,25 @@ export default function SchedulingPlanning() {
               <CardContent className="p-6 space-y-5">
 
                 {/* SEARCH BAR */}
-                <div className="flex justify-end mb-3">
+                <div className="flex justify-between items-center mb-3">
+                  <div className="flex gap-3 text-xs">
+                    <span className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 bg-slate-800 rounded-sm"></div>
+                      <span>Phase</span>
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 bg-purple-200 border border-purple-400 rounded-sm"></div>
+                      <span>Activity</span>
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 bg-sky-200 border border-sky-400 rounded-sm"></div>
+                      <span>Task</span>
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 bg-amber-200 border border-amber-400 rounded-sm"></div>
+                      <span>Sub-task</span>
+                    </span>
+                  </div>
                   <Input
                     placeholder="Search Critical Path..."
                     className="w-64"
@@ -1810,12 +1726,15 @@ export default function SchedulingPlanning() {
                   />
                 </div>
 
-                {/* FILTERED LIST */}
+                {/* HIERARCHICAL TREE TABLE */}
                 {(() => {
-                  const filteredIds = cpmData?.criticalPathIds?.filter((taskId) => {
-                    const task = wbs.find((t) => t.id === taskId);
-                    return task?.name?.toLowerCase().includes(cprSearch.toLowerCase());
-                  }) ?? [];
+                  // Build hierarchical critical path items using wbsTree
+                  const criticalIds = new Set(cpmData?.criticalPathIds ?? []);
+                  const cprItems = wbsTree.flatItems.filter(({ item }) => {
+                    if (!criticalIds.has(item.id)) return false;
+                    if (!cprSearch.trim()) return true;
+                    return item.name?.toLowerCase().includes(cprSearch.toLowerCase());
+                  });
 
                   return (
                     <>
@@ -1824,86 +1743,93 @@ export default function SchedulingPlanning() {
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Order</TableHead>
+                              <TableHead className="w-12">#</TableHead>
+                              <TableHead className="w-16">Order</TableHead>
                               <TableHead>Name</TableHead>
                               <TableHead>Type</TableHead>
-                              <TableHead>Group</TableHead>
+                              <TableHead>Phase</TableHead>
                               <TableHead>Start</TableHead>
                               <TableHead>End</TableHead>
-                              <TableHead>Status</TableHead>
                               <TableHead>Duration</TableHead>
                               <TableHead>Slack</TableHead>
+                              <TableHead>Status</TableHead>
                             </TableRow>
                           </TableHeader>
 
                           <TableBody>
-                            {filteredIds.map((taskId, index) => {
-                              const task = wbs.find((t) => t.id === taskId);
-                              const cpmResult = cpmData.taskResults[taskId];
-                              if (!task || !cpmResult) return null;
+                            {cprItems.map(({ item, depth, phaseName }, index) => {
+                              const cpmResult = cpmData.taskResults[item.id];
+                              if (!cpmResult) return null;
 
-                              const parent = task.parentId
-                                ? wbs.find((t) => t.id === task.parentId)
-                                : null;
-
-                              const groupName = parent
-                                ? parent.name
-                                : task.type === "phase"
-                                  ? "Phases & Milestones"
-                                  : "General";
+                              // Find scheduled position among siblings
+                              const siblingParentKey = item.parentId || "__root__";
+                              const cprSiblings = wbs
+                                .filter((s) => {
+                                  const sKey = s.parentId || "__root__";
+                                  if (siblingParentKey === "__root__" && sKey === "__root__") return s.type === item.type;
+                                  return sKey === siblingParentKey;
+                                })
+                                .sort((a, b) => {
+                                  const pA = a.schedulePriority;
+                                  const pB = b.schedulePriority;
+                                  if (pA != null && pB != null) return pA - pB;
+                                  if (pA != null) return -1;
+                                  if (pB != null) return 1;
+                                  const dateA = a.startDate ? new Date(a.startDate).getTime() : 0;
+                                  const dateB = b.startDate ? new Date(b.startDate).getTime() : 0;
+                                  return dateA - dateB;
+                                });
+                              const scheduledOrder = cprSiblings.findIndex((s) => s.id === item.id) + 1;
 
                               return (
-                                <TableRow key={taskId} className="hover:bg-red-50/50 border-l-4 border-l-red-500">
+                                <TableRow key={item.id} className={`hover:bg-red-50/50 border-l-4 ${item.type === "phase" ? "border-l-slate-700 bg-slate-50" : "border-l-red-500"
+                                  }`}>
                                   <TableCell>
                                     <Badge variant="destructive" className="bg-red-600 text-white">
                                       {index + 1}
                                     </Badge>
                                   </TableCell>
 
-                                  <TableCell className="font-medium flex items-center gap-2">
-                                    <Zap className="w-4 h-4 text-red-600" />
-                                    {task.name}
-                                  </TableCell>
-
                                   <TableCell>
-                                    <Badge variant="outline" className="capitalize">
-                                      {task.type || "task"}
+                                    <Badge variant="outline" className={`${item.type === "phase" ? "bg-slate-700 text-white border-slate-600" : "bg-slate-100 text-slate-700 border-slate-300"}`}>
+                                      {scheduledOrder}
                                     </Badge>
                                   </TableCell>
 
-                                  <TableCell className="text-sm">{groupName}</TableCell>
+                                  <TableCell className="font-medium" style={{ paddingLeft: `${depth * 16 + 16}px` }}>
+                                    <div className="flex items-center gap-2">
+                                      <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${item.type === "phase" ? "bg-slate-700" :
+                                        item.type === "activity" ? "bg-purple-500" :
+                                          item.type === "task" ? "bg-sky-500" :
+                                            "bg-amber-500"
+                                        }`} />
+                                      <Zap className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                                      <span>{item.name}</span>
+                                    </div>
+                                  </TableCell>
 
                                   <TableCell>
-                                    {task.startDate
-                                      ? format(parseISO(task.startDate), "MMM dd, yyyy")
+                                    <Badge variant="outline" className={`capitalize ${item.type === "phase" ? "bg-slate-800 text-white border-slate-600" :
+                                      item.type === "activity" ? "bg-purple-100 text-purple-800 border-purple-300" :
+                                        item.type === "task" ? "bg-sky-100 text-sky-800 border-sky-300" :
+                                          "bg-amber-100 text-amber-800 border-amber-300"
+                                      }`}>
+                                      {item.type || "task"}
+                                    </Badge>
+                                  </TableCell>
+
+                                  <TableCell className="text-sm">{phaseName}</TableCell>
+
+                                  <TableCell>
+                                    {item.startDate
+                                      ? format(parseISO(item.startDate), "MMM dd, yyyy")
                                       : "-"}
                                   </TableCell>
 
                                   <TableCell>
-                                    {task.endDate
-                                      ? format(parseISO(task.endDate), "MMM dd, yyyy")
+                                    {item.endDate
+                                      ? format(parseISO(item.endDate), "MMM dd, yyyy")
                                       : "-"}
-                                  </TableCell>
-
-                                  <TableCell>
-                                    <Badge
-                                      variant={
-                                        task.status === "completed"
-                                          ? "default"
-                                          : task.status === "in-progress"
-                                            ? "secondary"
-                                            : "outline"
-                                      }
-                                      className={
-                                        task.status === "completed"
-                                          ? "bg-green-600 text-white"
-                                          : task.status === "in-progress"
-                                            ? "bg-blue-600 text-white"
-                                            : ""
-                                      }
-                                    >
-                                      {task.status || "not-started"}
-                                    </Badge>
                                   </TableCell>
 
                                   <TableCell>{cpmResult.ef - cpmResult.es} days</TableCell>
@@ -1915,6 +1841,27 @@ export default function SchedulingPlanning() {
                                         : `${cpmResult.slack.toFixed(1)} days`}
                                     </Badge>
                                   </TableCell>
+
+                                  <TableCell>
+                                    <Badge
+                                      variant={
+                                        item.status === "completed"
+                                          ? "default"
+                                          : item.status === "in-progress"
+                                            ? "secondary"
+                                            : "outline"
+                                      }
+                                      className={
+                                        item.status === "completed"
+                                          ? "bg-green-600 text-white"
+                                          : item.status === "in-progress"
+                                            ? "bg-blue-600 text-white"
+                                            : ""
+                                      }
+                                    >
+                                      {item.status || "not-started"}
+                                    </Badge>
+                                  </TableCell>
                                 </TableRow>
                               );
                             })}
@@ -1922,7 +1869,7 @@ export default function SchedulingPlanning() {
                         </Table>
                       </div>
 
-                      {/* CRITICAL PATH FLOW */}
+                      {/* CRITICAL PATH FLOW (Parallel-aware) */}
                       <div className="mt-6 p-4 bg-white rounded-lg border border-red-200">
                         <div className="flex items-center gap-2 mb-3">
                           <FileText className="w-5 h-5 text-red-600" />
@@ -1930,23 +1877,26 @@ export default function SchedulingPlanning() {
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2 p-3 bg-slate-50 rounded-lg overflow-x-auto">
-                          {filteredIds.map((taskId, index) => {
-                            const task = wbs.find((t) => t.id === taskId);
-                            if (!task) return null;
+                          {cprItems.map(({ item, depth }, index) => {
+                            const cpmResult = cpmData.taskResults[item.id];
+                            const typeColor = item.type === "phase" ? "bg-slate-700 border-slate-800" :
+                              item.type === "activity" ? "bg-purple-500 border-purple-600" :
+                                item.type === "task" ? "bg-sky-500 border-sky-600" :
+                                  "bg-amber-500 border-amber-600";
 
                             return (
-                              <React.Fragment key={taskId}>
-                                <div className="px-3 py-2 bg-red-500 text-white rounded-lg shadow-md min-w-[120px] text-center border-2 border-red-600">
-                                  <div className="font-bold">{index + 1}</div>
-                                  <div className="text-xs truncate">{task.name}</div>
-                                  <div className="text-xs mt-1 opacity-90">
-                                    {cpmData.taskResults[taskId]?.ef -
-                                      cpmData.taskResults[taskId]?.es}{" "}
-                                    days
+                              <React.Fragment key={item.id}>
+                                <div className={`px-3 py-2 ${typeColor} text-white rounded-lg shadow-md min-w-[120px] text-center border-2`}>
+                                  <div className="font-bold text-xs">
+                                    {item.schedulePriority != null ? `P${item.schedulePriority}` : `#${index + 1}`}
+                                  </div>
+                                  <div className="text-xs truncate max-w-[140px]">{item.name}</div>
+                                  <div className="text-[10px] mt-1 opacity-80">
+                                    {cpmResult ? `${cpmResult.ef - cpmResult.es} days` : ""}
                                   </div>
                                 </div>
-                                {index < filteredIds.length - 1 && (
-                                  <ArrowRight className="w-5 h-5 text-red-500" />
+                                {index < cprItems.length - 1 && (
+                                  <ArrowRight className="w-5 h-5 text-red-500 shrink-0" />
                                 )}
                               </React.Fragment>
                             );
@@ -1959,7 +1909,7 @@ export default function SchedulingPlanning() {
                         <Card className="bg-gradient-to-br from-red-50 to-white border-red-200">
                           <CardContent className="p-4">
                             <div className="text-xs uppercase mb-1">Total Critical Tasks</div>
-                            <div className="text-2xl font-bold text-red-700">{filteredIds.length}</div>
+                            <div className="text-2xl font-bold text-red-700">{cprItems.length}</div>
                           </CardContent>
                         </Card>
 
@@ -1984,7 +1934,7 @@ export default function SchedulingPlanning() {
                             <div className="text-xs uppercase mb-1">Critical Path %</div>
                             <div className="text-2xl font-bold text-red-700">
                               {wbs.length > 0
-                                ? Math.round((filteredIds.length / wbs.length) * 100)
+                                ? Math.round((cprItems.length / wbs.length) * 100)
                                 : 0}
                               %
                             </div>
@@ -2325,10 +2275,10 @@ export default function SchedulingPlanning() {
                                           : event.type === "phase"
                                             ? "bg-slate-800 text-white"
                                             : event.type === "activity"
-                                              ? "bg-indigo-100 text-indigo-900"
-                                              : event.type === "resource"
-                                                ? "bg-green-100 text-green-900"
-                                                : "bg-blue-100 text-blue-900"
+                                              ? "bg-purple-100 text-purple-900"
+                                              : event.type === "sub-task"
+                                                ? "bg-amber-100 text-amber-900"
+                                                : "bg-sky-100 text-sky-900"
                                           }`}
                                         title={event.title}
                                       >
