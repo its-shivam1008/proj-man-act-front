@@ -90,7 +90,9 @@ export default function InventoryMasterData() {
     name: "",
     description: "",
     categoryType: "",
-    hsnNumber: "",
+    hsnNumber: "", // Keeping for backward compatibility if needed, but we will use Start/End
+    hsnStart: "",
+    hsnEnd: "",
     taxPercent: "",
     company: "",
     phone: "",
@@ -140,6 +142,8 @@ export default function InventoryMasterData() {
         description: item.description || "",
         categoryType: item.categoryType || "", // ✅ IMPORTANT
         hsnNumber: item.hsnNumber || "",
+        hsnStart: item.hsnStart || "",
+        hsnEnd: item.hsnEnd || "",
         taxPercent: item.taxPercent || "",
         company: item.company || "",
         phone: item.phone || "",
@@ -153,6 +157,8 @@ export default function InventoryMasterData() {
         description: "",
         categoryType: "", // ✅ RESET properly
         hsnNumber: "",
+        hsnStart: "",
+        hsnEnd: "",
         taxPercent: "",
         company: "",
         phone: "",
@@ -174,8 +180,8 @@ export default function InventoryMasterData() {
 
 
 
-    if (activeTab === "hsn" && !formData.hsnNumber)
-      return toast.error("HSN number required");
+    if (activeTab === "hsn" && (!formData.hsnStart || !formData.hsnEnd))
+      return toast.error("HSN Start & End required");
 
     if (activeTab === "supplier" && !formData.name)
       return toast.error("Supplier name required");
@@ -264,7 +270,8 @@ export default function InventoryMasterData() {
                     </>
                   ) : activeTab === "hsn" ? (
                     <>
-                      <TableHead>HSN</TableHead>
+                      <TableHead>HSN Start</TableHead>
+                      <TableHead>HSN End</TableHead>
                       <TableHead>Tax %</TableHead>
                     </>
                   ) : (
@@ -298,7 +305,8 @@ export default function InventoryMasterData() {
                         </>
                       ) : activeTab === "hsn" ? (
                         <>
-                          <TableCell>{item.hsnNumber}</TableCell>
+                          <TableCell>{item.hsnStart}</TableCell>
+                          <TableCell>{item.hsnEnd}</TableCell>
                           <TableCell>{item.taxPercent}%</TableCell>
                         </>
                       ) : (
@@ -410,14 +418,28 @@ export default function InventoryMasterData() {
 
             {activeTab === "hsn" && (
               <>
-                <Label>HSN Number</Label>
-                <Input
-                  type="number"
-                  value={formData.hsnNumber}
-                  onChange={(e) =>
-                    setFormData({ ...formData, hsnNumber: e.target.value })
-                  }
-                />
+                <div className="flex gap-4">
+                  <div className="flex-1">
+                    <Label>HSN Start</Label>
+                    <Input
+                      type="number"
+                      value={formData.hsnStart}
+                      onChange={(e) =>
+                        setFormData({ ...formData, hsnStart: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <Label>HSN End</Label>
+                    <Input
+                      type="number"
+                      value={formData.hsnEnd}
+                      onChange={(e) =>
+                        setFormData({ ...formData, hsnEnd: e.target.value })
+                      }
+                    />
+                  </div>
+                </div>
                 <Label>Tax %</Label>
                 <Input
                   type="number"

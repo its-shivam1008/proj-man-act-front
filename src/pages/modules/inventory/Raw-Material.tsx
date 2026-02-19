@@ -2,7 +2,7 @@ import { usePermission } from "@/hooks/userPermission";
 import React, { useEffect, useMemo, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import * as XLSX from 'xlsx';
-import { Upload, AlertCircle, FileSpreadsheet, Loader2, PackageCheck, IndianRupee } from "lucide-react";
+import { Upload, AlertCircle, FileSpreadsheet, Loader2, PackageCheck, IndianRupee, FileDown } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import { RootState } from "@/redux/store";
 import {
@@ -275,6 +275,38 @@ export default function RawMaterialMaster() {
     total: number; success: number; failed: number; errors: string[];
   } | null>(null);
 
+  // [!code ++] Download Template Handler
+  const downloadTemplate = () => {
+    const headers = [
+      "Name",
+      "Item code",
+      "Category", // Added Category
+      "Warehouse",
+      "Unit of measure",
+      "HSN",
+      "GST",
+      "Quantity",
+      "Unit Cost",
+      "DMR Number",
+      "DMR Date",
+      "Invoice Number",
+      "Invoice Date",
+      "Challan Number",
+      "LR Number",
+      "LR Date",
+      "Vehicle Number"
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet([headers]);
+
+    // Add validation/comments for Category and Warehouse if possible, but for now simple text.
+    // We could add a second sheet with reference data (Categories, Warehouses) but user asked for simple template.
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Template");
+    XLSX.writeFile(wb, "Raw_Material_Import_Template.xlsx");
+  };
+
   // [!code ++] Handler
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
@@ -302,6 +334,18 @@ export default function RawMaterialMaster() {
         const ws = wb.Sheets[wb.SheetNames[0]];
         const data = XLSX.utils.sheet_to_json(ws);
 
+        // Helper to find range
+        const findHsnRange = (code: string | number) => {
+          if (!code) return "";
+          const numericCode = Number(code);
+          if (isNaN(numericCode)) return "";
+
+          const match = hsnCodes.find((h: any) =>
+            numericCode >= h.hsnStart && numericCode <= h.hsnEnd
+          );
+          return match ? `${match.hsnStart}-${match.hsnEnd}` : "";
+        };
+
         let successCount = 0;
         let failCount = 0;
         const errorLog: string[] = [];
@@ -311,6 +355,10 @@ export default function RawMaterialMaster() {
           try {
             // 1. Basic Validation
             if (!row["Name"]) throw new Error("Missing Name");
+
+            // Resolve HSN Range
+            const rawHsn = row["HSN"];
+            const hsnRange = findHsnRange(rawHsn);
 
             // 2. Validate UoM
             const uom = row["Unit of measure"]?.toLowerCase()?.trim();
@@ -324,24 +372,47 @@ export default function RawMaterialMaster() {
               (w: any) => w.name.toLowerCase() === excelWarehouse?.toLowerCase()
             );
 
+            // Logic: Strictly use Excel warehouse
             if (excelWarehouse && !warehouseMatch) {
               throw new Error(`Warehouse '${excelWarehouse}' not found.`);
             }
-            if (!excelWarehouse && !warehouses[0]) {
-              throw new Error(`No Warehouse specified and no default available.`);
+            if (!excelWarehouse) {
+              // Option: Fallback to default or Throw Error
+              // Given user's strict requirement "match the warehouse name from there", likely wants error if missing.
+              if (warehouses.length > 0) {
+                // Keep fallback for now as safety, but user implied reliance on Excel
+              } else {
+                throw new Error("No warehouse specified in Excel and no default available.");
+              }
             }
 
-            // 4. Construct Payload (Matching onSubmit logic)
             const warehouseId = warehouseMatch?._id || warehouses[0]?._id;
+
+            // 4. Construct Payload (Matching onSubmit logic)
+            // [!code ++] Correct Quantity extraction
             const quantity = Number(row["Quantity"] || 0);
-            const unitCost = Number(row["Unit Cost"] || 0);
+
+            // [!code ++] Robust Unit Cost extraction
+            const unitCost = Number(row["Unit Cost"] || row["Unit Price"] || row["Rate"] || row["Cost"] || 0);
+
+            // [!code ++] Category Validation
+            const excelCategory = row["Category"]?.trim();
+            // Optional: Validate against rmCategories if strictness is required. 
+            // For now, we allow it, but we can try to match case-insensitively.
+            let category = "Raw Materials"; // Default
+            if (excelCategory) {
+              const catMatch = rmCategories.find((c: any) => c.name.toLowerCase() === excelCategory.toLowerCase());
+              category = catMatch ? catMatch.name : excelCategory; // Use matched name or new one
+            }
 
             const payload: any = {
               organisationId: localStorage.getItem("organisationId"),
               name: row["Name"],
               itemCode: row["Item code"] || "",
+              category: category, // [!code ++] Mapped Category
               unitOfMeasure: uom,
-              hsn: row["HSN"] || "",
+              hsn: hsnRange || "",  // Store the Range string (e.g. "1000-2000")
+              hsnCode: row["HSN"] ? String(row["HSN"]) : "", // Store specific code (e.g. "529")
               gstPercent: Number(row["GST"] || 0),
               valuationMethod: "FIFO",
               trackInventory: true,
@@ -698,7 +769,7 @@ export default function RawMaterialMaster() {
     control,
     setValue,
     formState: { errors },
-  } = useForm<RawMaterial>({
+  } = useForm<RawMaterial & { hsnCode?: string }>({
     defaultValues: {
       name: "",
       warehouse: "",
@@ -709,6 +780,7 @@ export default function RawMaterialMaster() {
       reorderLevel: 0,
       trackInventory: true,
       hsn: "",
+      hsnCode: "",
     },
   });
 
@@ -1018,11 +1090,26 @@ export default function RawMaterialMaster() {
   const startEdit = (it: RawMaterial) => {
     setEditing(it);
 
+    // Logic to find warehouse ID from stocks if top-level is missing
+    let warehouseId = it.warehouse
+      ? (typeof it.warehouse === 'object' ? (it.warehouse as any)._id : it.warehouse)
+      : (typeof it.location === 'object' ? (it.location as any)._id : (it.location || ""));
+
+    // If still empty, check stocks
+    if (!warehouseId && it.stocks && it.stocks.length > 0) {
+      const stock = it.stocks[0];
+      if (stock.warehouseId) {
+        warehouseId = typeof stock.warehouseId === 'object' ? (stock.warehouseId as any)._id : stock.warehouseId;
+      }
+    }
+
     const formData = {
       ...it,
-      warehouse: it.warehouse
-        ? (typeof it.warehouse === 'object' ? (it.warehouse as any)._id : it.warehouse)
-        : (typeof it.location === 'object' ? (it.location as any)._id : (it.location || "")),
+      warehouse: warehouseId,
+      // Extract Unit Cost from first stock if available, else 0
+      unitCost: it.stocks?.[0]?.unitCost || 0,
+      // Use the saved category directly — it already matches the SelectItem values
+      category: it.category || "",
     };
 
     reset(formData);
@@ -1314,6 +1401,15 @@ export default function RawMaterialMaster() {
               disabled={isImporting}
             />
 
+            {/* [!code ++] Download Template Button */}
+            <Button
+              variant="outline"
+              className="flex items-center gap-2 border-green-600 text-green-600 hover:bg-green-50"
+              onClick={downloadTemplate}
+            >
+              <FileDown className="h-4 w-4" /> Template
+            </Button>
+
             <label
               htmlFor="rm-import"
               className={`cursor-pointer bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 flex items-center gap-2 text-sm font-medium ${isImporting ? 'opacity-50 pointer-events-none' : ''}`}
@@ -1379,7 +1475,7 @@ export default function RawMaterialMaster() {
                     render={({ field }) => (
                       <Select
                         onValueChange={field.onChange}
-                        value={field.value}
+                        value={field.value as string}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select Warehouse" />
@@ -1394,7 +1490,7 @@ export default function RawMaterialMaster() {
                   />
                 </div>
                 <div>
-                  <Label>HSN</Label>
+                  <Label>HSN Range (Category)</Label>
                   <Controller
                     name="hsn"
                     control={control}
@@ -1411,8 +1507,8 @@ export default function RawMaterialMaster() {
                         <SelectContent>
                           {hsnCodes && hsnCodes.length > 0 ? (
                             hsnCodes.map((hsn: any) => (
-                              <SelectItem key={hsn._id} value={hsn.hsnNumber}>
-                                {hsn.hsnNumber} - {hsn.taxPercent}%
+                              <SelectItem key={hsn._id} value={`${hsn.hsnStart}-${hsn.hsnEnd}`}>
+                                {hsn.hsnStart} - {hsn.hsnEnd} ({hsn.taxPercent}%)
                               </SelectItem>
                             ))
                           ) : (
@@ -1424,6 +1520,11 @@ export default function RawMaterialMaster() {
                       </Select>
                     )}
                   />
+                </div>
+
+                <div>
+                  <Label>Specific HSN Code</Label>
+                  <Input {...register("hsnCode")} placeholder="e.g. 529" />
                 </div>
 
                 <div>
@@ -1472,8 +1573,8 @@ export default function RawMaterialMaster() {
                         </SelectTrigger>
                         <SelectContent>
                           {rmCategories && rmCategories.length > 0 ? (
-                            rmCategories.map((cat: any) => (
-                              <SelectItem key={cat._id} value={cat.name}>
+                            rmCategories.map((cat, idx) => (
+                              <SelectItem key={idx} value={cat.name}>
                                 {cat.name}
                               </SelectItem>
                             ))

@@ -294,6 +294,7 @@ const PurchaseOrderComponent: React.FC = () => {
             unitOfMeasure: 'kg', // Default unit
             itemCode: '',
             hsn: '',
+            hsnCode: '',
             gstPercent: 0,
             valuationMethod: 'FIFO',
             reorderLevel: 0,
@@ -691,11 +692,11 @@ const PurchaseOrderComponent: React.FC = () => {
                                 }}
                                 className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                               >
-                                <option value="">Select HSN Code</option>
+                                <option value="">Select HSN Range</option>
                                 {hsnCodes && hsnCodes.length > 0 ? (
                                   hsnCodes.map((hsn: any) => (
-                                    <option key={hsn._id} value={hsn.hsnNumber}>
-                                      {hsn.hsnNumber} - {hsn.taxPercent}%
+                                    <option key={hsn._id} value={`${hsn.hsnStart}-${hsn.hsnEnd}`}>
+                                      {hsn.hsnStart} - {hsn.hsnEnd} ({hsn.taxPercent}%)
                                     </option>
                                   ))
                                 ) : (
@@ -704,6 +705,20 @@ const PurchaseOrderComponent: React.FC = () => {
                                   </option>
                                 )}
                               </select>
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-gray-600">HSN Code</label>
+                              <input
+                                type="text"
+                                value={line.hsnCode || ""}
+                                onChange={(e) => {
+                                  const newLines = [...formData.productLines];
+                                  newLines[index].hsnCode = e.target.value;
+                                  setFormData({ ...formData, productLines: newLines });
+                                }}
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                placeholder="Specific Code"
+                              />
                             </div>
                             <div>
                               <label className="text-xs font-medium text-gray-600">GST %</label>
@@ -1277,6 +1292,12 @@ const PurchaseOrderComponent: React.FC = () => {
               materialId: l.materialId,     // ✅ KEEP MATERIAL ID
               warehouse: l.warehouse,
               unitOfMeasure: l.unitOfMeasure,
+              hsn: l.hsn,
+              hsnCode: l.hsnCode,
+              gstPercent: l.gstPercent,
+              valuationMethod: l.valuationMethod,
+              reorderLevel: l.reorderLevel,
+              technicalSpecs: l.technicalSpecs,
             }),
 
             quantity,
@@ -1342,6 +1363,12 @@ const PurchaseOrderComponent: React.FC = () => {
         // raw material only
         warehouse: line.warehouse || "",
         unitOfMeasure: line.unitOfMeasure || "",
+        hsn: line.hsn || "",
+        hsnCode: line.hsnCode || "",
+        gstPercent: line.gstPercent || 0,
+        valuationMethod: line.valuationMethod || "FIFO",
+        reorderLevel: line.reorderLevel || 0,
+        technicalSpecs: line.technicalSpecs || "",
 
         // keep extensible
       })),

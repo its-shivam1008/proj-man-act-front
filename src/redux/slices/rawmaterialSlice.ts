@@ -21,6 +21,7 @@ export interface RawMaterial {
   hsn?: string;
   gstPercent?: number;
   technicalSpecs?: string;
+  category?: string;
   // FIFO fields
   stocks?: Array<{
     warehouseId: string;

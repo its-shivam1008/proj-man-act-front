@@ -69,6 +69,7 @@ export interface PurchaseOrderProductLine {
   itemCode?: string;
   unitOfMeasure?: string;
   hsn?: string;
+  hsnCode?: string;
   gstPercent?: number;
   valuationMethod?: string;
   reorderLevel?: number;
